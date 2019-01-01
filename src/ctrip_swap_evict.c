@@ -180,6 +180,23 @@ void debugSwapOutCommand(client *c) {
     addReplyLongLong(c, nevict);
 }
 
+unsigned long long calculateNextMemoryLimit(size_t mem_used, unsigned long long from, unsigned long long to) {
+    if (from <= to || to == 0) return to;
+    if (server.swap_evict_inprogress_limit < 0) return to;
+
+    /* scale down maxmemory step by step for low evict concurrent */
+    unsigned long long safe_mem_limit = mem_used - server.maxmemory_scaledown_rate;
+    if (safe_mem_limit < from) {
+        return safe_mem_limit > to ? safe_mem_limit : to;
+    }
+    return from;
+}
+
+void updateMaxMemoryScaleFrom() {
+    size_t mem_used = ctrip_getUsedMemory();
+    server.maxmemory_scale_from = calculateNextMemoryLimit(mem_used, server.maxmemory_scale_from, server.maxmemory);
+}
+
 #ifdef REDIS_TEST
 
 void initServerConfig(void);

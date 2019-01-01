@@ -221,9 +221,6 @@ void swapExecBatchPrepareRIOBatch(swapExecBatch *exec_batch, RIOBatch *rios) {
         req = exec_batch->reqs[i];
         rio = RIOBatchAlloc(rios);
 
-        if (req->intention_flags & SWAP_EXEC_OOM_CHECK)
-            rio->oom_check = 1;
-
         switch (exec_batch->action) {
         case ROCKS_GET:
             if ((errcode = swapDataEncodeKeys(req->data,req->intention,
@@ -260,6 +257,10 @@ void swapExecBatchPrepareRIOBatch(swapExecBatch *exec_batch, RIOBatch *rios) {
             swapRequestSetError(req,SWAP_ERR_EXEC_UNEXPECTED_ACTION);
             break;
         }
+
+        if (req->errcode) continue;
+        if (req->intention_flags & SWAP_EXEC_OOM_CHECK)
+            rio->oom_check = 1;
     }
 }
 

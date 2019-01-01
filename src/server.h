@@ -1582,6 +1582,9 @@ struct redisServer {
     unsigned int maxclients;            /* Max number of simultaneous clients */
     unsigned long long swap_max_db_size;     /* Max number of disk bytes to use */
     unsigned long long maxmemory;   /* Max number of memory bytes to use */
+    time_t maxmemory_updated_time_last;
+    unsigned long long maxmemory_scale_from;
+    unsigned long long maxmemory_scaledown_rate; /* Number of bytes actually scale down maxmemory every seconds */
     int maxmemory_policy;           /* Policy for key eviction */
     int maxmemory_samples;          /* Precision of random sampling */
     int maxmemory_eviction_tenacity;/* Aggressiveness of eviction processing */

@@ -2397,7 +2397,12 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
             server.rdb_bgsave_scheduled = 0;
     }
 
-    run_with_period(1000) rocksCron(); 
+    run_with_period(1000) rocksCron();
+    run_with_period(1000) {
+        if (server.swap_mode != SWAP_MODE_MEMORY && server.maxmemory_scale_from > server.maxmemory) {
+            updateMaxMemoryScaleFrom();
+        }
+    }
 
     /* Fire the cron loop modules event. */
     RedisModuleCronLoopV1 ei = {REDISMODULE_CRON_LOOP_VERSION,server.hz};

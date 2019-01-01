@@ -2440,9 +2440,11 @@ static int updateMaxmemory(long long val, long long prev, const char **err) {
     UNUSED(prev);
     UNUSED(err);
     if (val) {
+        server.maxmemory_updated_time_last = server.unixtime;
         size_t used = zmalloc_used_memory()-freeMemoryGetNotCountedMemory();
         if ((unsigned long long)val < used) {
             serverLog(LL_WARNING,"WARNING: the new maxmemory value set via CONFIG SET (%llu) is smaller than the current memory usage (%zu). This will result in key eviction and/or the inability to accept new write commands depending on the maxmemory-policy.", server.maxmemory, used);
+            server.maxmemory_scale_from = calculateNextMemoryLimit(used, prev, val);
         }
         performEvictions();
     }
@@ -2794,10 +2796,10 @@ standardConfig configs[] = {
     createIntConfig("rocksdb.max_open_files", NULL, IMMUTABLE_CONFIG, -1, INT_MAX, server.rocksdb_max_open_files, -1, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("rocksdb.data.max_write_buffer_number", "rocksdb.max_write_buffer_number", IMMUTABLE_CONFIG, 1, 256, server.rocksdb_data_max_write_buffer_number, 3, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("rocksdb.meta.max_write_buffer_number", NULL, IMMUTABLE_CONFIG, 1, 256, server.rocksdb_meta_max_write_buffer_number, 3, INTEGER_CONFIG, NULL, NULL),
-    createIntConfig("rocksdb.max_background_compactions", NULL, IMMUTABLE_CONFIG, 1, 64, server.rocksdb_max_background_compactions, 4, INTEGER_CONFIG, NULL, NULL),
+    createIntConfig("rocksdb.max_background_compactions", NULL, IMMUTABLE_CONFIG, 1, 64, server.rocksdb_max_background_compactions, 2, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("rocksdb.max_background_flushes", NULL, IMMUTABLE_CONFIG, -1, 64, server.rocksdb_max_background_flushes, -1, INTEGER_CONFIG, NULL, NULL),
-    createIntConfig("rocksdb.max_background_jobs", NULL, IMMUTABLE_CONFIG, -1, 64, server.rocksdb_max_background_jobs, 4, INTEGER_CONFIG, NULL, NULL),
-    createIntConfig("rocksdb.max_subcompactions", NULL, IMMUTABLE_CONFIG, 1, 64, server.rocksdb_max_subcompactions, 4, INTEGER_CONFIG, NULL, NULL),
+    createIntConfig("rocksdb.max_background_jobs", NULL, IMMUTABLE_CONFIG, -1, 64, server.rocksdb_max_background_jobs, 2, INTEGER_CONFIG, NULL, NULL),
+    createIntConfig("rocksdb.max_subcompactions", NULL, IMMUTABLE_CONFIG, 1, 64, server.rocksdb_max_subcompactions, 1, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("rocksdb.data.block_size", "rocksdb.block_size", IMMUTABLE_CONFIG, 512, INT_MAX, server.rocksdb_data_block_size, 8192, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("rocksdb.meta.block_size", NULL, IMMUTABLE_CONFIG, 512, INT_MAX, server.rocksdb_meta_block_size, 8192, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("rocksdb.data.level0_slowdown_writes_trigger", "rocksdb.level0_slowdown_writes_trigger", IMMUTABLE_CONFIG, 1, INT_MAX, server.rocksdb_data_level0_slowdown_writes_trigger, 20, INTEGER_CONFIG, NULL, NULL),
@@ -2826,6 +2828,7 @@ standardConfig configs[] = {
 
     /* Unsigned Long Long configs */
     createULongLongConfig("maxmemory", NULL, MODIFIABLE_CONFIG, 0, ULLONG_MAX, server.maxmemory, 0, MEMORY_CONFIG, NULL, updateMaxmemory),
+    createULongLongConfig("maxmemory-scaledown-rate", NULL, MODIFIABLE_CONFIG, 1, ULLONG_MAX, server.maxmemory_scaledown_rate, 1024*1024, MEMORY_CONFIG, NULL, NULL),
     createULongLongConfig("swap-max-db-size", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.swap_max_db_size, 0, MEMORY_CONFIG, NULL, NULL),
     createULongLongConfig("swap-inprogress-memory-slowdown", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.swap_inprogress_memory_slowdown, 64*1024*1024, MEMORY_CONFIG, NULL, NULL), /* Default: 64mb */
     createULongLongConfig("swap-inprogress-memory-stop", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.swap_inprogress_memory_stop, 128*1024*1024, MEMORY_CONFIG, NULL, NULL), /* Default: 128mb */

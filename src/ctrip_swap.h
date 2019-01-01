@@ -1342,6 +1342,8 @@ void tryEvictKeyAsapLater(redisDb *db, robj *key);
 void swapEvictCommand(client *c);
 void swapDebugEvictKeys();
 int swapEvictInprogressLimit(size_t mem_tofree);
+unsigned long long calculateNextMemoryLimit(size_t mem_used, unsigned long long from, unsigned long long to);
+void updateMaxMemoryScaleFrom();
 
 /* Expire */
 int submitExpireClientRequest(client *c, robj *key, int force);

@@ -416,7 +416,11 @@ int getMaxmemoryState(size_t *total, size_t *logical, size_t *tofree, float *lev
     if (mem_used <= server.maxmemory) return C_OK;
 
     /* Compute how much memory we need to free. */
-    mem_tofree = mem_used - server.maxmemory;
+    if (server.swap_mode != SWAP_MODE_MEMORY && server.maxmemory_scale_from > server.maxmemory) {
+        mem_tofree = mem_used - server.maxmemory_scale_from;
+    } else {
+        mem_tofree = mem_used - server.maxmemory;
+    }
 
     if (logical) *logical = mem_used;
     if (tofree) *tofree = mem_tofree;
@@ -498,8 +502,8 @@ static unsigned long evictionTimeLimitUs() {
 }
 
 inline int swapEvictInprogressLimit(size_t mem_tofree) {
-    /* Base inprogress limit is threads num, increase one every n MB */
-    int inprogress_limit = server.swap_threads_num + mem_tofree/(server.swap_evict_inprogress_growth_rate);
+    /* Base inprogress limit is threads num(deffer thread), increase one every n MB */
+    int inprogress_limit = 1 + mem_tofree/(server.swap_evict_inprogress_growth_rate);
 
     if (inprogress_limit > server.swap_evict_inprogress_limit)
         inprogress_limit = server.swap_evict_inprogress_limit;
@@ -575,6 +579,14 @@ end:
     return result;
 }
 
+static inline unsigned long long ctrip_getOOMLimit() {
+    if (server.swap_mode != SWAP_MODE_MEMORY && server.maxmemory_scale_from > server.maxmemory) {
+        return server.swap_maxmemory_oom_percentage*server.maxmemory_scale_from/100;
+    } else {
+        return server.swap_maxmemory_oom_percentage*server.maxmemory/100;
+    }
+}
+
 /* Check that memory usage is within the current "maxmemory" limit.  If over
  * "maxmemory", attempt to free memory by evicting data (if it's safe to do so).
  *
@@ -626,7 +638,7 @@ int performEvictions(void) {
     /* Pause eviction if there are too much swap in progress, Note:
      * - reject only when swapping inflight, otherwise server won't recover. */
     if (eviction_swap_pause || evict_asap_again) {
-        unsigned long long limit = server.swap_maxmemory_oom_percentage*server.maxmemory/100;
+        unsigned long long limit = ctrip_getOOMLimit();
 
 		if (!isEvictionProcRunning) {
 			isEvictionProcRunning = 1;

@@ -123,7 +123,9 @@ void closeSwapChildErrPipe(void) {
 void handleSwapChildErr(swapRdbSaveErrType err_type, int dbid, sds key) {
     int handled = 0;
     if (err_type == SAVE_ERR_META_LEN_MISMATCH) {
-        handled = tryLoadKey(server.db + dbid, createObject(OBJ_STRING, key), 1);
+        robj *kobj = createObject(OBJ_STRING, key);
+        handled = tryLoadKey(server.db + dbid, kobj, 1);
+        decrRefCount(kobj);
     }
 
     if (!handled) {
