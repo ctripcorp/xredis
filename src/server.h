@@ -82,6 +82,7 @@ typedef long long ustime_t; /* microsecond time type. */
 #include "sha1.h"
 #include "endianconv.h"
 #include "crc64.h"
+#include "ctrip_gtid.h"
 
 /* Error codes */
 #define C_OK                    0
@@ -1476,6 +1477,9 @@ struct redisServer {
     char *bio_cpulist; /* cpu affinity list of bio thread. */
     char *aof_rewrite_cpulist; /* cpu affinity list of aof rewrite process. */
     char *bgsave_cpulist; /* cpu affinity list of bgsave process. */
+
+    /* gtid executed */
+    gtidSet *gtid_executed;
 };
 
 typedef struct pubsubPattern {

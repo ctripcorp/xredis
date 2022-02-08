@@ -1,16 +1,21 @@
 #include "server.h"
 
-char* encode(gtid_set *gtid_set) {
+char* gtidEncode(gtidSet *gtid_set) {
 
     return "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:1-7";
 }
 
-gtid_set* decode(char* gtid) {
+gtid_set* gtidDecode(char* gtid) {
 
     return NULL;
 }
 
-gtid_set* add_gtid(gtid_set* gtid_set, char* gtid) {
+gtid_set* gtidAdd(gtidSet *gtid_set, char *gtid) {
+
+    return NULL;
+}
+
+gtidSet* gtidRaise(gtidSet *gtid_set, char *rpl_sid, rpl_gno) {
 
     return NULL;
 }

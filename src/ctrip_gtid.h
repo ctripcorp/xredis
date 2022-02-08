@@ -1,37 +1,37 @@
 #ifndef __REDIS_CTRIP_GTID_H
 #define __REDIS_CTRIP_GTID_H
 
-#include "server.h"
-
-typedef struct gtid_interval gtid_interval;
-typedef struct uuid_set uuid_set;
-typedef struct gtid_set gtid_set;
+typedef struct gtidInterval gtidInterval;
+typedef struct uuidSet uuidSet;
+typedef struct gtidSet gtidSet;
 
 typedef long long int rpl_gno;
 
-struct gtid_interval {
+struct gtidInterval {
 
     rpl_gno gno_start;
 
     rpl_gno gno_end;
 };
 
-struct uuid_set {
+struct uuidSet {
 
-    char rpl_sid[CONFIG_RUN_ID_SIZE+1];
+    char* rpl_sid;
 
-    gtid_interval* gtid_intervals;
+    gtidInterval* gtid_intervals;
 };
 
-struct gtid_set {
+struct gtidSet {
 
-    uuid_set* uuid_sets;
+    uuidSet* uuid_sets;
 };
 
-char *encode(gtid_set*);
+char *gtidEncode(gtidSet*);
 
-gtid_set* decode(char*);
+gtidSet *gtidDecode(char*);
 
-gtid_set* add_gtid(gtid_set*, char*);
+gtidSet *gtidAdd(gtidSet*, char*);
+
+gtidSet *gtidRaise(gtidSet*, char*, rpl_gno);
 
 #endif  /* __REDIS_CTRIP_GTID_H */
