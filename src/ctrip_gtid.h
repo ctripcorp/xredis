@@ -26,12 +26,18 @@ struct gtidSet {
     uuidSet* uuid_sets;
 };
 
-char *gtidEncode(gtidSet*);
+gtidInterval *gtidIntervalNew(rpl_gno);
 
-gtidSet *gtidDecode(char*);
+int gtidIntervalAdd(gtidInterval*, rpl_gno);
 
-gtidSet *gtidAdd(gtidSet*, char*);
+uuidSet *uuidSetNew(const char*, rpl_gno);
 
-gtidSet *gtidRaise(gtidSet*, char*, rpl_gno);
+gtidSet *gtidSetNew();
+
+sds gtidEncode(gtidSet*);
+
+gtidSet *gtidAdd(gtidSet*, const char*);
+
+gtidSet *gtidRaise(gtidSet*, const char*, rpl_gno);
 
 #endif  /* __REDIS_CTRIP_GTID_H */

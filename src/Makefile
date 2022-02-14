@@ -364,6 +364,10 @@ test-sds: sds.c sds.h
 	$(REDIS_CC) sds.c zmalloc.c -DSDS_TEST_MAIN $(FINAL_LIBS) -o /tmp/sds_test
 	/tmp/sds_test
 
+test-gtid: ctrip_gtid.c ctrip_gtid.h
+	$(REDIS_CC) ctrip_gtid.c zmalloc.c sds.c -DGTID_TEST_MAIN $(FINAL_LIBS) -o /tmp/gtid_test
+	/tmp/gtid_test
+
 .PHONY: lcov
 
 bench: $(REDIS_BENCHMARK_NAME)
