@@ -26,6 +26,17 @@ uuidSet *uuidSetNewRange(const char* rpl_sid, rpl_gno start, rpl_gno end) {
     return uuid_set;
 }
 
+void uuidSetFree(uuidSet *uuid_set) {
+    sdsfree(uuid_set->rpl_sid);
+    gtidInterval *cur = uuid_set->intervals;
+    while(cur != NULL) {
+        gtidInterval *next = cur->next;
+        zfree(cur);
+        cur = next;
+    }
+    zfree(uuid_set);
+}
+
 sds uuidSetEncode(uuidSet* uuid_set, sds src) {
     sdscat(src, uuid_set->rpl_sid);
     gtidInterval *cur = uuid_set->intervals;
@@ -39,17 +50,6 @@ sds uuidSetEncode(uuidSet* uuid_set, sds src) {
         cur = cur->next;
     }
     return src;
-}
-
-void uuidSetFree(uuidSet *uuid_set) {
-    sdsfree(uuid_set->rpl_sid);
-    gtidInterval *cur = uuid_set->intervals;
-    while(cur != NULL) {
-        gtidInterval *next = cur->next;
-        zfree(cur);
-        cur = next;
-    }
-    zfree(uuid_set);
 }
 
 int uuidSetAdd(uuidSet *uuid_set, rpl_gno gno) {
