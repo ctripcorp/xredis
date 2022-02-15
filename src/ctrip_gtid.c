@@ -14,6 +14,7 @@ uuidSet *uuidSetNew(const char* rpl_sid, rpl_gno gno) {
     uuidSet *uuid_set = zmalloc(sizeof(*uuid_set));
     uuid_set->rpl_sid = sdsnew(rpl_sid);
     uuid_set->intervals = gtidIntervalNew(gno);
+    uuid_set->next = NULL;
     return uuid_set;
 }
 
@@ -84,6 +85,17 @@ gtidSet* gtidSetNew() {
     return gtid_set;
 }
 
+void gtidSetFree(gtidSet* gtid_set) {
+    uuidSet *next;
+    uuidSet *cur = gtid_set->uuid_sets;
+    while(cur != NULL) {
+        next = cur->next;
+        uuidSetFree(cur);
+        cur = next;
+    }
+    zfree(gtid_set);
+}
+
 sds gtidEncode(gtidSet *gtid_set) {
     if (NULL == gtid_set->uuid_sets) {
         return sdsempty();
@@ -91,9 +103,22 @@ sds gtidEncode(gtidSet *gtid_set) {
     return sdsnew("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:1-7");
 }
 
-gtidSet* gtidAdd(gtidSet *gtid_set, const char *gtid) {
-
-    return NULL;
+gtidSet* gtidAdd(gtidSet *gtid_set, const char *rpl_sid, rpl_gno gno) {
+    uuidSet *cur = gtid_set->uuid_sets;
+    while(cur != NULL) {
+        if (strcmp(rpl_sid, cur->rpl_sid) == 0) {
+            break;
+        }
+        cur = cur->next;
+    }
+    if (cur == NULL) {
+        uuidSet *uuid_set = uuidSetNew(rpl_sid, gno);
+        uuid_set->next = gtid_set->uuid_sets;
+        gtid_set->uuid_sets = uuid_set;
+    } else {
+        uuidSetAdd(cur, gno);
+    }
+    return gtid_set;
 }
 
 gtidSet* gtidRaise(gtidSet *gtid_set, const char *rpl_sid, rpl_gno watermark) {
@@ -111,17 +136,22 @@ int gtidTest(void) {
     {
         /* gtid unit tests*/
 
-        gtidInterval *interval = gtidIntervalNew(9);
-        test_cond("Create an new gtid interval with 9",
-            interval->gno_start == 9 && interval->gno_end == 9);
-
-        zfree(interval);
-
         gtidSet *gtid_set = gtidSetNew();
 
         test_cond("Create an empty gtid set",
             memcmp(gtidEncode(gtid_set), "\0", 1) == 0);
 
+        gtidAdd(gtid_set, "A", 1);
+        gtidAdd(gtid_set, "A", 2);
+        gtidAdd(gtid_set, "B", 3);
+
+        test_cond("Add A:1 A:2 B:3 to empty gtid set",
+            memcmp(gtid_set->uuid_sets->rpl_sid, "B\0", 1) == 0
+            && gtid_set->uuid_sets->intervals->gno_start == 3 && gtid_set->uuid_sets->intervals->gno_end == 3
+            && memcmp(gtid_set->uuid_sets->next->rpl_sid, "A\0", 1) == 0
+            && gtid_set->uuid_sets->next->intervals->gno_start == 1 && gtid_set->uuid_sets->next->intervals->gno_end == 2);
+
+        gtidSetFree(gtid_set);
 
         /* uuid unit tests*/
         uuidSet *uuid_set;
@@ -213,6 +243,14 @@ int gtidTest(void) {
 
         test_cond("add 6 to 5-6",
             uuidSetAdd(uuid_set, 6) == 0);
+
+        /* interval unit tests*/
+
+        gtidInterval *interval = gtidIntervalNew(9);
+        test_cond("Create an new gtid interval with 9",
+            interval->gno_start == 9 && interval->gno_end == 9);
+
+        zfree(interval);
 
     }
     return 0;

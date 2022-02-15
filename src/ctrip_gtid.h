@@ -18,6 +18,7 @@ struct gtidInterval {
 struct uuidSet {
     sds rpl_sid;
     gtidInterval* intervals;
+    uuidSet *next;
 };
 
 struct gtidSet {
@@ -32,8 +33,9 @@ int uuidSetAdd(uuidSet*, rpl_gno);
 
 /* gtid set implementation */
 gtidSet *gtidSetNew();
+void gtidSetFree(gtidSet*);
 sds gtidEncode(gtidSet*);
-gtidSet *gtidAdd(gtidSet*, const char*);
+gtidSet *gtidAdd(gtidSet*, const char*, rpl_gno);
 gtidSet *gtidRaise(gtidSet*, const char*, rpl_gno);
 
 #endif  /* __REDIS_CTRIP_GTID_H */
