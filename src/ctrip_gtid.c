@@ -18,6 +18,21 @@ uuidSet *uuidSetNew(const char* rpl_sid, rpl_gno gno) {
     return uuid_set;
 }
 
+sds uuidSetEncode(uuidSet* uuid_set, sds src) {
+    sdscat(src, uuid_set->rpl_sid);
+    gtidInterval *cur = uuid_set->intervals;
+    while(cur != NULL) {
+        src = sdscat(src, ":");
+        if (cur->gno_start == cur->gno_end) {
+            src = sdscatfmt(src, "%I", cur->gno_start);
+        } else {
+            src = sdscatfmt(src, "%I-%I", cur->gno_start, cur->gno_end);
+        }
+        cur = cur->next;
+    }
+    return src;
+}
+
 void uuidSetFree(uuidSet *uuid_set) {
     sdsfree(uuid_set->rpl_sid);
     gtidInterval *cur = uuid_set->intervals;
@@ -96,11 +111,16 @@ void gtidSetFree(gtidSet* gtid_set) {
     zfree(gtid_set);
 }
 
-sds gtidEncode(gtidSet *gtid_set) {
-    if (NULL == gtid_set->uuid_sets) {
-        return sdsempty();
+sds gtidEncode(gtidSet *gtid_set, sds src) {
+    uuidSet *cur = gtid_set->uuid_sets;
+    while(cur != NULL) {
+        src = uuidSetEncode(cur, src);
+        cur = cur->next;
+        if (cur != NULL) {
+            src = sdscat(src, ",");
+        }
     }
-    return sdsnew("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:1-7");
+    return src;
 }
 
 gtidSet* gtidAdd(gtidSet *gtid_set, const char *rpl_sid, rpl_gno gno) {
@@ -131,15 +151,18 @@ gtidSet* gtidRaise(gtidSet *gtid_set, const char *rpl_sid, rpl_gno watermark) {
 #include "testhelp.h"
 #include "limits.h"
 
-#define UNUSED(x) (void)(x)
 int gtidTest(void) {
     {
         /* gtid unit tests*/
 
         gtidSet *gtid_set = gtidSetNew();
+        sds gtidset = sdsnew("");
+        gtidset = gtidEncode(gtid_set, gtidset);
 
         test_cond("Create an empty gtid set",
-            memcmp(gtidEncode(gtid_set), "\0", 1) == 0);
+            memcmp(gtidset, "\0", 1) == 0);
+
+        sdsfree(gtidset);
 
         gtidAdd(gtid_set, "A", 1);
         gtidAdd(gtid_set, "A", 2);
@@ -150,6 +173,14 @@ int gtidTest(void) {
             && gtid_set->uuid_sets->intervals->gno_start == 3 && gtid_set->uuid_sets->intervals->gno_end == 3
             && memcmp(gtid_set->uuid_sets->next->rpl_sid, "A\0", 1) == 0
             && gtid_set->uuid_sets->next->intervals->gno_start == 1 && gtid_set->uuid_sets->next->intervals->gno_end == 2);
+
+        gtidset = sdsnew("");
+        gtidset = gtidEncode(gtid_set, gtidset);
+
+        test_cond("Add A:1 A:2 B:3 to empty gtid set (encode)",
+            strcmp(gtidset, "B:3,A:1-2") == 0);
+
+        sdsfree(gtidset);
 
         gtidSetFree(gtid_set);
 
@@ -218,13 +249,21 @@ int gtidTest(void) {
         uuidSetAdd(uuid_set, 14);
         uuidSetAdd(uuid_set, 12);
 
-        test_cond("Manual created case: result should be 0-1,3,5-6,11-14,19-20",
+        test_cond("Manual created case: result should be A:0-1:3:5-6:11-14:19-20",
             uuid_set->intervals->gno_start == 0 && uuid_set->intervals->gno_end == 1
             && uuid_set->intervals->next->gno_start == 3 && uuid_set->intervals->next->gno_end == 3
             && uuid_set->intervals->next->next->gno_start == 5 && uuid_set->intervals->next->next->gno_end == 6
             && uuid_set->intervals->next->next->next->gno_start == 11 && uuid_set->intervals->next->next->next->gno_end == 14
             && uuid_set->intervals->next->next->next->next->gno_start == 19 && uuid_set->intervals->next->next->next->next->gno_end == 20
             && memcmp(uuid_set->rpl_sid, "A\0", 2) == 0);
+
+        sds uuidset = sdsnew("");
+        uuidset = uuidSetEncode(uuid_set, uuidset);
+
+        test_cond("Manual created case (encode): result should be A:0-1:3:5-6:1-14:19-20",
+            strcmp(uuidset, "A:0-1:3:5-6:11-14:19-20") == 0);
+
+        sdsfree(uuidset);
 
         uuidSetFree(uuid_set);
 
@@ -244,6 +283,8 @@ int gtidTest(void) {
         test_cond("add 6 to 5-6",
             uuidSetAdd(uuid_set, 6) == 0);
 
+        uuidSetFree(uuid_set);
+
         /* interval unit tests*/
 
         gtidInterval *interval = gtidIntervalNew(9);
@@ -251,7 +292,6 @@ int gtidTest(void) {
             interval->gno_start == 9 && interval->gno_end == 9);
 
         zfree(interval);
-
     }
     return 0;
 }

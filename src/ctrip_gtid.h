@@ -28,13 +28,14 @@ struct gtidSet {
 /* uuid set implementation */
 gtidInterval *gtidIntervalNew(rpl_gno);
 uuidSet *uuidSetNew(const char*, rpl_gno);
+sds uuidSetEncode(uuidSet*, sds);
 void uuidSetFree(uuidSet*);
 int uuidSetAdd(uuidSet*, rpl_gno);
 
 /* gtid set implementation */
 gtidSet *gtidSetNew();
 void gtidSetFree(gtidSet*);
-sds gtidEncode(gtidSet*);
+sds gtidEncode(gtidSet*, sds);
 gtidSet *gtidAdd(gtidSet*, const char*, rpl_gno);
 gtidSet *gtidRaise(gtidSet*, const char*, rpl_gno);
 
