@@ -230,16 +230,13 @@ int gtidTest(void) {
         gtidSet *gtid_set = gtidSetNew();
         sds gtidset = sdsnew("");
         gtidset = gtidEncode(gtid_set, gtidset);
-
         test_cond("Create an empty gtid set",
             memcmp(gtidset, "\0", 1) == 0);
 
         sdsfree(gtidset);
-
         gtidAdd(gtid_set, "A", 1);
         gtidAdd(gtid_set, "A", 2);
         gtidAdd(gtid_set, "B", 3);
-
         test_cond("Add A:1 A:2 B:3 to empty gtid set",
             memcmp(gtid_set->uuid_sets->rpl_sid, "B\0", 1) == 0
             && gtid_set->uuid_sets->intervals->gno_start == 3 && gtid_set->uuid_sets->intervals->gno_end == 3
@@ -248,54 +245,44 @@ int gtidTest(void) {
 
         gtidset = sdsnew("");
         gtidset = gtidEncode(gtid_set, gtidset);
-
         test_cond("Add A:1 A:2 B:3 to empty gtid set (encode)",
             strcmp(gtidset, "B:3,A:1-2") == 0);
 
         sdsfree(gtidset);
-
         gtidAdd(gtid_set, "B", 7);
         gtidRaise(gtid_set, "A", 5);
         gtidRaise(gtid_set, "B", 5);
         gtidRaise(gtid_set, "C", 10);
-
         gtidset = sdsnew("");
         gtidset = gtidEncode(gtid_set, gtidset);
-
         test_cond("Raise A & B to 5, C to 10, towards C:1-10,B:3:7,A:1-2",
             strcmp(gtidset, "C:1-10,B:1-5:7,A:1-5") == 0);
 
         sdsfree(gtidset);
-
         gtidSetFree(gtid_set);
 
         /* uuid unit tests*/
         uuidSet *uuid_set;
 
         uuid_set = uuidSetNew("A", 9);
-
         test_cond("Create an new uuid set with 9",
             uuid_set->intervals->gno_start == 9 && uuid_set->intervals->gno_end == 9
             && memcmp(uuid_set->rpl_sid, "A\0", 2) == 0);
 
         uuidSetAdd(uuid_set, 7);
-
         test_cond("Add 7 to 9",
             uuid_set->intervals->gno_start == 7 && uuid_set->intervals->gno_end == 7
             && uuid_set->intervals->next->gno_start == 9 && uuid_set->intervals->next->gno_end == 9
             && memcmp(uuid_set->rpl_sid, "A\0", 2) == 0);
 
         uuidSetFree(uuid_set);
-
         uuid_set = uuidSetNew("A", 9);
         uuidSetAdd(uuid_set, 8);
-
         test_cond("Add 8 to 9",
             uuid_set->intervals->gno_start == 8 && uuid_set->intervals->gno_end == 9
             && memcmp(uuid_set->rpl_sid, "A\0", 2) == 0);
 
         uuidSetAdd(uuid_set, 6);
-
         test_cond("Add 6 to 8-9",
             uuid_set->intervals->gno_start == 6 && uuid_set->intervals->gno_end == 6
             && uuid_set->intervals->next->gno_start == 8 && uuid_set->intervals->next->gno_end == 9
@@ -305,7 +292,6 @@ int gtidTest(void) {
             uuidSetAdd(uuid_set, 8) == 0);
 
         uuidSetAdd(uuid_set, 7);
-
         test_cond("Add 7 to 6,8-9",
             uuid_set->intervals->gno_start == 6 && uuid_set->intervals->gno_end == 9
             && uuid_set->intervals->next == NULL
@@ -318,7 +304,6 @@ int gtidTest(void) {
             && memcmp(uuid_set->rpl_sid, "A\0", 2) == 0);
 
         uuidSetFree(uuid_set);
-
         uuid_set = uuidSetNew("A", 1);
         uuidSetAdd(uuid_set, 5);
         uuidSetAdd(uuid_set, 6);
@@ -333,7 +318,6 @@ int gtidTest(void) {
         uuidSetAdd(uuid_set, 13);
         uuidSetAdd(uuid_set, 14);
         uuidSetAdd(uuid_set, 12);
-
         test_cond("Manual created case: result should be A:1:3:5-6:11-14:19-20",
             uuid_set->intervals->gno_start == 1 && uuid_set->intervals->gno_end == 1
             && uuid_set->intervals->next->gno_start == 3 && uuid_set->intervals->next->gno_end == 3
@@ -344,42 +328,33 @@ int gtidTest(void) {
 
         sds uuidset = sdsnew("");
         uuidset = uuidSetEncode(uuid_set, uuidset);
-
         test_cond("Manual created case (encode): result should be A:1:3:5-6:1-14:19-20",
             strcmp(uuidset, "A:1:3:5-6:11-14:19-20") == 0);
 
         sdsfree(uuidset);
-
         uuidSetRaise(uuid_set, 30);
         test_cond("Manual created case (raise to 30)",
             uuid_set->intervals->gno_start == 1 && uuid_set->intervals->gno_end == 30
             && uuid_set->intervals->next == NULL
             && memcmp(uuid_set->rpl_sid, "A\0", 2) == 0);
 
-
         uuidSetFree(uuid_set);
-
         uuid_set = uuidSetNew("A", 5);
         uuidSetAdd(uuid_set, 6);
         uuidSetAdd(uuid_set, 8);
         uuidSetAdd(uuid_set, 9);
-
         test_cond("add 9 to 5-6,8-9",
             uuidSetAdd(uuid_set, 9) == 0);
 
         uuidSetFree(uuid_set);
-
         uuid_set = uuidSetNew("A", 5);
         uuidSetAdd(uuid_set, 6);
-
         test_cond("add 6 to 5-6",
             uuidSetAdd(uuid_set, 6) == 0);
 
         uuidSetFree(uuid_set);
-
         uuid_set = uuidSetNew("A", 5);
         uuidSetRaise(uuid_set, 3);
-
         test_cond("raise to 3 towards A:5",
             uuid_set->intervals->gno_start == 1 && uuid_set->intervals->gno_end == 3
             && uuid_set->intervals->next->gno_start == 5 && uuid_set->intervals->next->gno_end == 5
@@ -387,46 +362,34 @@ int gtidTest(void) {
             && memcmp(uuid_set->rpl_sid, "A\0", 2) == 0);
 
         uuidSetFree(uuid_set);
-
-
         uuid_set = uuidSetNew("A", 5);
         uuidSetRaise(uuid_set, 4);
-
         test_cond("raise to 4 towards A:5",
             uuid_set->intervals->gno_start == 1 && uuid_set->intervals->gno_end == 5
             && uuid_set->intervals->next == NULL
             && memcmp(uuid_set->rpl_sid, "A\0", 2) == 0);
 
         uuidSetFree(uuid_set);
-
-
         uuid_set = uuidSetNew("A", 5);
         uuidSetRaise(uuid_set, 6);
-
         test_cond("raise to 6 towards A:5",
             uuid_set->intervals->gno_start == 1 && uuid_set->intervals->gno_end == 6
             && uuid_set->intervals->next == NULL
             && memcmp(uuid_set->rpl_sid, "A\0", 2) == 0);
 
         uuidSetFree(uuid_set);
-
-
         uuid_set = uuidSetNew("A", 5);
         uuidSetAdd(uuid_set, 7);
         uuidSetRaise(uuid_set, 6);
-
         test_cond("raise to 6 towards A:5:7",
             uuid_set->intervals->gno_start == 1 && uuid_set->intervals->gno_end == 7
             && uuid_set->intervals->next == NULL
             && memcmp(uuid_set->rpl_sid, "A\0", 2) == 0);
 
         uuidSetFree(uuid_set);
-
-
         uuid_set = uuidSetNew("A", 5);
         uuidSetAdd(uuid_set, 8);
         uuidSetRaise(uuid_set, 6);
-
         test_cond("raise to 6 towards A:5:8",
             uuid_set->intervals->gno_start == 1 && uuid_set->intervals->gno_end == 6
             && uuid_set->intervals->next->gno_start == 8 && uuid_set->intervals->next->gno_end == 8
@@ -434,7 +397,6 @@ int gtidTest(void) {
             && memcmp(uuid_set->rpl_sid, "A\0", 2) == 0);
 
         uuidSetFree(uuid_set);
-
 
         /* interval unit tests*/
 
