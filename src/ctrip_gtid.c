@@ -3,17 +3,25 @@
 #include "zmalloc.h"
 
 gtidInterval *gtidIntervalNew(rpl_gno gno) {
+    return gtidIntervalNewRange(gno, gno);
+}
+
+gtidInterval *gtidIntervalNewRange(rpl_gno start, rpl_gno end) {
     gtidInterval *interval = zmalloc(sizeof(*interval));
-    interval->gno_start = gno;
-    interval->gno_end = gno;
+    interval->gno_start = start;
+    interval->gno_end = end;
     interval->next = NULL;
     return interval;
 }
 
 uuidSet *uuidSetNew(const char* rpl_sid, rpl_gno gno) {
+    return uuidSetNewRange(rpl_sid, gno, gno);
+}
+
+uuidSet *uuidSetNewRange(const char* rpl_sid, rpl_gno start, rpl_gno end) {
     uuidSet *uuid_set = zmalloc(sizeof(*uuid_set));
     uuid_set->rpl_sid = sdsnew(rpl_sid);
-    uuid_set->intervals = gtidIntervalNew(gno);
+    uuid_set->intervals = gtidIntervalNewRange(start, end);
     uuid_set->next = NULL;
     return uuid_set;
 }
@@ -94,6 +102,58 @@ int uuidSetAdd(uuidSet *uuid_set, rpl_gno gno) {
     return 0;
 }
 
+void uuidSetRaise(uuidSet *uuid_set, rpl_gno watermark) {
+    gtidInterval *cur = uuid_set->intervals;
+    if (watermark < cur->gno_start - 1) {
+        uuid_set->intervals = gtidIntervalNewRange(1, watermark);
+        uuid_set->intervals->next = cur;
+        return;
+    }
+
+    while (cur != NULL) {
+        if (watermark > cur->gno_end + 1) {
+            gtidInterval *temp = cur;
+            cur = cur->next;
+            zfree(temp);
+            continue;
+        }
+
+        if (watermark == cur->gno_end + 1) {
+            if (cur->next == NULL) {
+                cur->gno_start = 1;
+                cur->gno_end = watermark;
+                uuid_set->intervals = cur;
+                break;
+            }
+            if (watermark == cur->next->gno_start - 1) {
+                gtidInterval *prev = cur;
+                cur = cur->next;
+                zfree(prev);
+                cur->gno_start = 1;
+                break;
+            } else {
+                cur->gno_end = watermark;
+                cur->gno_start = 1;
+                break;
+            }
+        }
+        if (watermark < cur->gno_start - 1) {
+            gtidInterval *temp = cur;
+            cur = gtidIntervalNewRange(1, watermark);
+            cur->next = temp;
+            break;
+        } else {
+            cur->gno_start = 1;
+            break;
+        }
+    }
+    if (cur == NULL) {
+        uuid_set->intervals = gtidIntervalNewRange(1, watermark);
+    } else {
+        uuid_set->intervals = cur;
+    }
+}
+
 gtidSet* gtidSetNew() {
     gtidSet *gtid_set = zmalloc(sizeof(*gtid_set));
     gtid_set->uuid_sets = NULL;
@@ -123,7 +183,7 @@ sds gtidEncode(gtidSet *gtid_set, sds src) {
     return src;
 }
 
-gtidSet* gtidAdd(gtidSet *gtid_set, const char *rpl_sid, rpl_gno gno) {
+int gtidAdd(gtidSet *gtid_set, const char *rpl_sid, rpl_gno gno) {
     uuidSet *cur = gtid_set->uuid_sets;
     while(cur != NULL) {
         if (strcmp(rpl_sid, cur->rpl_sid) == 0) {
@@ -132,18 +192,30 @@ gtidSet* gtidAdd(gtidSet *gtid_set, const char *rpl_sid, rpl_gno gno) {
         cur = cur->next;
     }
     if (cur == NULL) {
-        uuidSet *uuid_set = uuidSetNew(rpl_sid, gno);
-        uuid_set->next = gtid_set->uuid_sets;
-        gtid_set->uuid_sets = uuid_set;
+        cur = uuidSetNew(rpl_sid, gno);
+        cur->next = gtid_set->uuid_sets;
+        gtid_set->uuid_sets = cur;
+        return 1;
     } else {
-        uuidSetAdd(cur, gno);
+        return uuidSetAdd(cur, gno);
     }
-    return gtid_set;
 }
 
-gtidSet* gtidRaise(gtidSet *gtid_set, const char *rpl_sid, rpl_gno watermark) {
-
-    return NULL;
+void gtidRaise(gtidSet *gtid_set, const char *rpl_sid, rpl_gno watermark) {
+    uuidSet *cur = gtid_set->uuid_sets;
+    while(cur != NULL) {
+        if (strcmp(rpl_sid, cur->rpl_sid) == 0) {
+            break;
+        }
+        cur = cur->next;
+    }
+    if (cur == NULL) {
+        cur = uuidSetNewRange(rpl_sid, 1, watermark);
+        cur->next = gtid_set->uuid_sets;
+        gtid_set->uuid_sets = cur;
+    } else {
+        uuidSetRaise(cur, watermark);
+    }
 }
 
 #if defined(GTID_TEST_MAIN)
@@ -179,6 +251,19 @@ int gtidTest(void) {
 
         test_cond("Add A:1 A:2 B:3 to empty gtid set (encode)",
             strcmp(gtidset, "B:3,A:1-2") == 0);
+
+        sdsfree(gtidset);
+
+        gtidAdd(gtid_set, "B", 7);
+        gtidRaise(gtid_set, "A", 5);
+        gtidRaise(gtid_set, "B", 5);
+        gtidRaise(gtid_set, "C", 10);
+
+        gtidset = sdsnew("");
+        gtidset = gtidEncode(gtid_set, gtidset);
+
+        test_cond("Raise A & B to 5, C to 10, towards C:1-10,B:3:7,A:1-2",
+            strcmp(gtidset, "C:1-10,B:1-5:7,A:1-5") == 0);
 
         sdsfree(gtidset);
 
@@ -234,7 +319,7 @@ int gtidTest(void) {
 
         uuidSetFree(uuid_set);
 
-        uuid_set = uuidSetNew("A", 0);
+        uuid_set = uuidSetNew("A", 1);
         uuidSetAdd(uuid_set, 5);
         uuidSetAdd(uuid_set, 6);
         uuidSetAdd(uuid_set, 11);
@@ -249,8 +334,8 @@ int gtidTest(void) {
         uuidSetAdd(uuid_set, 14);
         uuidSetAdd(uuid_set, 12);
 
-        test_cond("Manual created case: result should be A:0-1:3:5-6:11-14:19-20",
-            uuid_set->intervals->gno_start == 0 && uuid_set->intervals->gno_end == 1
+        test_cond("Manual created case: result should be A:1:3:5-6:11-14:19-20",
+            uuid_set->intervals->gno_start == 1 && uuid_set->intervals->gno_end == 1
             && uuid_set->intervals->next->gno_start == 3 && uuid_set->intervals->next->gno_end == 3
             && uuid_set->intervals->next->next->gno_start == 5 && uuid_set->intervals->next->next->gno_end == 6
             && uuid_set->intervals->next->next->next->gno_start == 11 && uuid_set->intervals->next->next->next->gno_end == 14
@@ -260,10 +345,17 @@ int gtidTest(void) {
         sds uuidset = sdsnew("");
         uuidset = uuidSetEncode(uuid_set, uuidset);
 
-        test_cond("Manual created case (encode): result should be A:0-1:3:5-6:1-14:19-20",
-            strcmp(uuidset, "A:0-1:3:5-6:11-14:19-20") == 0);
+        test_cond("Manual created case (encode): result should be A:1:3:5-6:1-14:19-20",
+            strcmp(uuidset, "A:1:3:5-6:11-14:19-20") == 0);
 
         sdsfree(uuidset);
+
+        uuidSetRaise(uuid_set, 30);
+        test_cond("Manual created case (raise to 30)",
+            uuid_set->intervals->gno_start == 1 && uuid_set->intervals->gno_end == 30
+            && uuid_set->intervals->next == NULL
+            && memcmp(uuid_set->rpl_sid, "A\0", 2) == 0);
+
 
         uuidSetFree(uuid_set);
 
@@ -285,6 +377,65 @@ int gtidTest(void) {
 
         uuidSetFree(uuid_set);
 
+        uuid_set = uuidSetNew("A", 5);
+        uuidSetRaise(uuid_set, 3);
+
+        test_cond("raise to 3 towards A:5",
+            uuid_set->intervals->gno_start == 1 && uuid_set->intervals->gno_end == 3
+            && uuid_set->intervals->next->gno_start == 5 && uuid_set->intervals->next->gno_end == 5
+            && uuid_set->intervals->next->next == NULL
+            && memcmp(uuid_set->rpl_sid, "A\0", 2) == 0);
+
+        uuidSetFree(uuid_set);
+
+
+        uuid_set = uuidSetNew("A", 5);
+        uuidSetRaise(uuid_set, 4);
+
+        test_cond("raise to 4 towards A:5",
+            uuid_set->intervals->gno_start == 1 && uuid_set->intervals->gno_end == 5
+            && uuid_set->intervals->next == NULL
+            && memcmp(uuid_set->rpl_sid, "A\0", 2) == 0);
+
+        uuidSetFree(uuid_set);
+
+
+        uuid_set = uuidSetNew("A", 5);
+        uuidSetRaise(uuid_set, 6);
+
+        test_cond("raise to 6 towards A:5",
+            uuid_set->intervals->gno_start == 1 && uuid_set->intervals->gno_end == 6
+            && uuid_set->intervals->next == NULL
+            && memcmp(uuid_set->rpl_sid, "A\0", 2) == 0);
+
+        uuidSetFree(uuid_set);
+
+
+        uuid_set = uuidSetNew("A", 5);
+        uuidSetAdd(uuid_set, 7);
+        uuidSetRaise(uuid_set, 6);
+
+        test_cond("raise to 6 towards A:5:7",
+            uuid_set->intervals->gno_start == 1 && uuid_set->intervals->gno_end == 7
+            && uuid_set->intervals->next == NULL
+            && memcmp(uuid_set->rpl_sid, "A\0", 2) == 0);
+
+        uuidSetFree(uuid_set);
+
+
+        uuid_set = uuidSetNew("A", 5);
+        uuidSetAdd(uuid_set, 8);
+        uuidSetRaise(uuid_set, 6);
+
+        test_cond("raise to 6 towards A:5:8",
+            uuid_set->intervals->gno_start == 1 && uuid_set->intervals->gno_end == 6
+            && uuid_set->intervals->next->gno_start == 8 && uuid_set->intervals->next->gno_end == 8
+            && uuid_set->intervals->next->next == NULL
+            && memcmp(uuid_set->rpl_sid, "A\0", 2) == 0);
+
+        uuidSetFree(uuid_set);
+
+
         /* interval unit tests*/
 
         gtidInterval *interval = gtidIntervalNew(9);
@@ -293,6 +444,7 @@ int gtidTest(void) {
 
         zfree(interval);
     }
+    test_report()
     return 0;
 }
 #endif
