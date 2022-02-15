@@ -115,8 +115,9 @@ int gtidTest(void) {
 
 
         /* uuid unit tests*/
+        uuidSet *uuid_set;
 
-        uuidSet *uuid_set = uuidSetNew("A", 9);
+        uuid_set = uuidSetNew("A", 9);
 
         test_cond("Create an new uuid set with 9",
             uuid_set->intervals->gno_start == 9 && uuid_set->intervals->gno_end == 9 && uuid_set->rpl_sid == "A");
@@ -128,6 +129,14 @@ int gtidTest(void) {
             && uuid_set->intervals->next->gno_start == 9 && uuid_set->intervals->next->gno_end == 9
             && uuid_set->rpl_sid == "A");
 
+        uuidSetFree(uuid_set);
+
+        uuid_set = uuidSetNew("A", 9);
+        uuidSetAdd(uuid_set, 8);
+
+        test_cond("Add 8 to 9",
+            uuid_set->intervals->gno_start == 8 && uuid_set->intervals->gno_end == 9
+            && uuid_set->rpl_sid == "A");
 
         uuidSetFree(uuid_set);
     }
