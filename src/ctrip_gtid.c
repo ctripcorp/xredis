@@ -74,9 +74,8 @@ int uuidSetAdd(uuidSet *uuid_set, rpl_gno gno) {
     if (gno > cur->gno_end + 1) {
         cur->next = gtidIntervalNew(gno);
         return 1;
-    } else {
-        return 0;
     }
+    return 0;
 }
 
 gtidSet* gtidSetNew() {
