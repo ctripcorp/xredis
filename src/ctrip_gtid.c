@@ -20,7 +20,7 @@ uuidSet *uuidSetNew(const char* rpl_sid, rpl_gno gno) {
 void uuidSetFree(uuidSet *uuid_set) {
     sdsfree(uuid_set->rpl_sid);
     gtidInterval *cur = uuid_set->intervals;
-    while(NULL != cur) {
+    while(cur != NULL) {
         gtidInterval *next = cur->next;
         zfree(cur);
         cur = next;
@@ -29,6 +29,23 @@ void uuidSetFree(uuidSet *uuid_set) {
 }
 
 int uuidSetAdd(uuidSet *uuid_set, rpl_gno gno) {
+    gtidInterval *cur = uuid_set->intervals;
+    gtidInterval *next = cur->next;
+    if (gno < cur->gno_start - 1) {
+        uuid_set->intervals = gtidIntervalNew(gno);
+        uuid_set->intervals->next = cur;
+        return 1;
+    }
+    if (gno == cur->gno_start - 1) {
+        cur->gno_start = gno;
+        return 1;
+    }
+
+    while(next != NULL) {
+        //TODO
+        cur = next;
+        next = cur->next;
+    }
     return 0;
 }
 
@@ -103,6 +120,14 @@ int gtidTest(void) {
 
         test_cond("Create an new uuid set with 9",
             uuid_set->intervals->gno_start == 9 && uuid_set->intervals->gno_end == 9 && uuid_set->rpl_sid == "A");
+
+        uuidSetAdd(uuid_set, 7);
+
+        test_cond("Add 7 to 9",
+            uuid_set->intervals->gno_start == 7 && uuid_set->intervals->gno_end == 7
+            && uuid_set->intervals->next->gno_start == 9 && uuid_set->intervals->next->gno_end == 9
+            && uuid_set->rpl_sid == "A");
+
 
         uuidSetFree(uuid_set);
     }
