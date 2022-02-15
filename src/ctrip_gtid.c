@@ -61,7 +61,7 @@ int uuidSetAdd(uuidSet *uuid_set, rpl_gno gno) {
             cur->next->next = next;
             return 1;
         }
-        if (gno < next->gno_end) {
+        if (gno <= next->gno_end) {
             return 0;
         }
         cur = next;
@@ -71,8 +71,12 @@ int uuidSetAdd(uuidSet *uuid_set, rpl_gno gno) {
         cur->gno_end = gno;
         return 1;
     }
-    cur->next = gtidIntervalNew(gno);
-    return 1;
+    if (gno > cur->gno_end + 1) {
+        cur->next = gtidIntervalNew(gno);
+        return 1;
+    } else {
+        return 0;
+    }
 }
 
 gtidSet* gtidSetNew() {
@@ -194,6 +198,23 @@ int gtidTest(void) {
             && memcmp(uuid_set->rpl_sid, "A\0", 2) == 0);
 
         uuidSetFree(uuid_set);
+
+        uuid_set = uuidSetNew("A", 5);
+        uuidSetAdd(uuid_set, 6);
+        uuidSetAdd(uuid_set, 8);
+        uuidSetAdd(uuid_set, 9);
+
+        test_cond("add 9 to 5-6,8-9",
+            uuidSetAdd(uuid_set, 9) == 0);
+
+        uuidSetFree(uuid_set);
+
+        uuid_set = uuidSetNew("A", 5);
+        uuidSetAdd(uuid_set, 6);
+
+        test_cond("add 6 to 5-6",
+            uuidSetAdd(uuid_set, 6) == 0);
+
     }
     return 0;
 }
