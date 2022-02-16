@@ -1,4 +1,5 @@
-#include "server.h"
+#include <string.h>
+#include "ctrip_gtid.h"
 #include "sds.h"
 #include "zmalloc.h"
 
@@ -242,6 +243,7 @@ void gtidSetRaise(gtidSet *gtid_set, const char *rpl_sid, rpl_gno watermark) {
 
 #if defined(GTID_TEST_MAIN)
 #include <stdio.h>
+#include <stdlib.h>
 #include "testhelp.h"
 #include "limits.h"
 
