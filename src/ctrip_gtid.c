@@ -154,6 +154,28 @@ void uuidSetRaise(uuidSet *uuid_set, rpl_gno watermark) {
     }
 }
 
+int uuidSetContains(uuidSet *uuid_set, rpl_gno gno) {
+    gtidInterval *cur = uuid_set->intervals;
+    while (cur != NULL) {
+        if (gno >= cur->gno_start && gno <= cur->gno_end) {
+            return 1;
+        }
+        cur = cur->next;
+    }
+    return 0;
+}
+
+rpl_gno uuidSetNext(uuidSet *uuid_set) {
+    if (uuid_set->intervals == NULL) {
+        return 1;
+    }
+    if (uuid_set->intervals->gno_start > 1) {
+        return 1;
+    } else {
+        return uuid_set->intervals->gno_end + 1;
+    }
+}
+
 gtidSet* gtidSetNew() {
     gtidSet *gtid_set = zmalloc(sizeof(*gtid_set));
     gtid_set->uuid_sets = NULL;
@@ -171,7 +193,7 @@ void gtidSetFree(gtidSet* gtid_set) {
     zfree(gtid_set);
 }
 
-sds gtidEncode(gtidSet *gtid_set, sds src) {
+sds gtidSetEncode(gtidSet *gtid_set, sds src) {
     uuidSet *cur = gtid_set->uuid_sets;
     while(cur != NULL) {
         src = uuidSetEncode(cur, src);
@@ -183,7 +205,7 @@ sds gtidEncode(gtidSet *gtid_set, sds src) {
     return src;
 }
 
-int gtidAdd(gtidSet *gtid_set, const char *rpl_sid, rpl_gno gno) {
+int gtidSetAdd(gtidSet *gtid_set, const char *rpl_sid, rpl_gno gno) {
     uuidSet *cur = gtid_set->uuid_sets;
     while(cur != NULL) {
         if (strcmp(rpl_sid, cur->rpl_sid) == 0) {
@@ -201,7 +223,7 @@ int gtidAdd(gtidSet *gtid_set, const char *rpl_sid, rpl_gno gno) {
     }
 }
 
-void gtidRaise(gtidSet *gtid_set, const char *rpl_sid, rpl_gno watermark) {
+void gtidSetRaise(gtidSet *gtid_set, const char *rpl_sid, rpl_gno watermark) {
     uuidSet *cur = gtid_set->uuid_sets;
     while(cur != NULL) {
         if (strcmp(rpl_sid, cur->rpl_sid) == 0) {
@@ -229,14 +251,14 @@ int gtidTest(void) {
 
         gtidSet *gtid_set = gtidSetNew();
         sds gtidset = sdsnew("");
-        gtidset = gtidEncode(gtid_set, gtidset);
+        gtidset = gtidSetEncode(gtid_set, gtidset);
         test_cond("Create an empty gtid set",
             memcmp(gtidset, "\0", 1) == 0);
 
         sdsfree(gtidset);
-        gtidAdd(gtid_set, "A", 1);
-        gtidAdd(gtid_set, "A", 2);
-        gtidAdd(gtid_set, "B", 3);
+        gtidSetAdd(gtid_set, "A", 1);
+        gtidSetAdd(gtid_set, "A", 2);
+        gtidSetAdd(gtid_set, "B", 3);
         test_cond("Add A:1 A:2 B:3 to empty gtid set",
             memcmp(gtid_set->uuid_sets->rpl_sid, "B\0", 1) == 0
             && gtid_set->uuid_sets->intervals->gno_start == 3 && gtid_set->uuid_sets->intervals->gno_end == 3
@@ -244,17 +266,17 @@ int gtidTest(void) {
             && gtid_set->uuid_sets->next->intervals->gno_start == 1 && gtid_set->uuid_sets->next->intervals->gno_end == 2);
 
         gtidset = sdsnew("");
-        gtidset = gtidEncode(gtid_set, gtidset);
+        gtidset = gtidSetEncode(gtid_set, gtidset);
         test_cond("Add A:1 A:2 B:3 to empty gtid set (encode)",
             strcmp(gtidset, "B:3,A:1-2") == 0);
 
         sdsfree(gtidset);
-        gtidAdd(gtid_set, "B", 7);
-        gtidRaise(gtid_set, "A", 5);
-        gtidRaise(gtid_set, "B", 5);
-        gtidRaise(gtid_set, "C", 10);
+        gtidSetAdd(gtid_set, "B", 7);
+        gtidSetRaise(gtid_set, "A", 5);
+        gtidSetRaise(gtid_set, "B", 5);
+        gtidSetRaise(gtid_set, "C", 10);
         gtidset = sdsnew("");
-        gtidset = gtidEncode(gtid_set, gtidset);
+        gtidset = gtidSetEncode(gtid_set, gtidset);
         test_cond("Raise A & B to 5, C to 10, towards C:1-10,B:3:7,A:1-2",
             strcmp(gtidset, "C:1-10,B:1-5:7,A:1-5") == 0);
 
@@ -349,6 +371,8 @@ int gtidTest(void) {
         uuidSetFree(uuid_set);
         uuid_set = uuidSetNew("A", 5);
         uuidSetAdd(uuid_set, 6);
+        test_cond("next of A:5-6 is 1", uuidSetNext(uuid_set) == 1);
+
         test_cond("add 6 to 5-6",
             uuidSetAdd(uuid_set, 6) == 0);
 
@@ -363,6 +387,8 @@ int gtidTest(void) {
 
         uuidSetFree(uuid_set);
         uuid_set = uuidSetNew("A", 5);
+        test_cond("next of A:5 is 1", uuidSetNext(uuid_set) == 1);
+
         uuidSetRaise(uuid_set, 4);
         test_cond("raise to 4 towards A:5",
             uuid_set->intervals->gno_start == 1 && uuid_set->intervals->gno_end == 5
@@ -385,6 +411,7 @@ int gtidTest(void) {
             uuid_set->intervals->gno_start == 1 && uuid_set->intervals->gno_end == 7
             && uuid_set->intervals->next == NULL
             && memcmp(uuid_set->rpl_sid, "A\0", 2) == 0);
+        test_cond("next of A:1-7 is 8", uuidSetNext(uuid_set) == 8);
 
         uuidSetFree(uuid_set);
         uuid_set = uuidSetNew("A", 5);
@@ -395,6 +422,13 @@ int gtidTest(void) {
             && uuid_set->intervals->next->gno_start == 8 && uuid_set->intervals->next->gno_end == 8
             && uuid_set->intervals->next->next == NULL
             && memcmp(uuid_set->rpl_sid, "A\0", 2) == 0);
+        test_cond("next of A:1-6:8 is 7", uuidSetNext(uuid_set) == 7);
+        test_cond("1 is in A:1-6:8", uuidSetContains(uuid_set, 1) == 1);
+        test_cond("3 is in A:1-6:8", uuidSetContains(uuid_set, 3) == 1);
+        test_cond("6 is in A:1-6:8", uuidSetContains(uuid_set, 6) == 1);
+        test_cond("7 is not in A:1-6:8", uuidSetContains(uuid_set, 7) == 0);
+        test_cond("8 is in A:1-6:8", uuidSetContains(uuid_set, 8) == 1);
+        test_cond("30 is not in A:1-6:8", uuidSetContains(uuid_set, 30) == 0);
 
         uuidSetFree(uuid_set);
 

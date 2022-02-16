@@ -34,12 +34,15 @@ void uuidSetFree(uuidSet*);
 sds uuidSetEncode(uuidSet*, sds);
 int uuidSetAdd(uuidSet*, rpl_gno);
 void uuidSetRaise(uuidSet*, rpl_gno);
+int uuidSetContains(uuidSet*, rpl_gno);
+rpl_gno uuidSetNext(uuidSet*);
+
 
 /* gtid set implementation */
 gtidSet *gtidSetNew();
 void gtidSetFree(gtidSet*);
-sds gtidEncode(gtidSet*, sds);
-int gtidAdd(gtidSet*, const char*, rpl_gno);
-void gtidRaise(gtidSet*, const char*, rpl_gno);
+sds gtidSetEncode(gtidSet*, sds);
+int gtidSetAdd(gtidSet*, const char*, rpl_gno);
+void gtidSetRaise(gtidSet*, const char*, rpl_gno);
 
 #endif  /* __REDIS_CTRIP_GTID_H */
