@@ -365,7 +365,7 @@ test-sds: sds.c sds.h
 	/tmp/sds_test
 
 test-gtid: ctrip_gtid.c ctrip_gtid.h
-	$(REDIS_CC) ctrip_gtid.c zmalloc.c sds.c -DGTID_TEST_MAIN $(FINAL_LIBS) -o /tmp/gtid_test
+	$(REDIS_CC) ctrip_gtid.c util.c zmalloc.c sds.c sha256.c -DGTID_TEST_MAIN $(FINAL_LIBS) -o /tmp/gtid_test
 	/tmp/gtid_test
 
 .PHONY: lcov
