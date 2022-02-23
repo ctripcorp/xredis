@@ -48,7 +48,7 @@ sds gtidSetEncode(gtidSet*, sds);
 int gtidSetAdd(gtidSet*, const char*, rpl_gno);
 int gtidSetAddGtidSds(gtidSet*, sds gtid_sds);
 void gtidSetRaise(gtidSet*, const char*, rpl_gno);
-sds gtidSetNext(gtidSet*, const char*, sds);
+sds gtidSetNext(gtidSet*, const char*, sds, int);
 int gtidSetContains(gtidSet*, sds gtid_sds);
 
 #endif  /* __REDIS_CTRIP_GTID_H */

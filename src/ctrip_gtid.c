@@ -41,11 +41,11 @@ gtidInterval *gtidIntervalNewSds(sds interval_sds) {
     return interval;
 }
 
-uuidSet *uuidSetNew(const char* rpl_sid, rpl_gno gno) {
+uuidSet *uuidSetNew(const char *rpl_sid, rpl_gno gno) {
     return uuidSetNewRange(rpl_sid, gno, gno);
 }
 
-uuidSet *uuidSetNewRange(const char* rpl_sid, rpl_gno start, rpl_gno end) {
+uuidSet *uuidSetNewRange(const char *rpl_sid, rpl_gno start, rpl_gno end) {
     uuidSet *uuid_set = zmalloc(sizeof(*uuid_set));
     uuid_set->rpl_sid = sdsnew(rpl_sid);
     uuid_set->intervals = gtidIntervalNewRange(start, end);
@@ -87,8 +87,8 @@ void uuidSetFree(uuidSet *uuid_set) {
     zfree(uuid_set);
 }
 
-sds uuidSetEncode(uuidSet* uuid_set, sds src) {
-    sdscat(src, uuid_set->rpl_sid);
+sds uuidSetEncode(uuidSet *uuid_set, sds src) {
+    src = sdscat(src, uuid_set->rpl_sid);
     gtidInterval *cur = uuid_set->intervals;
     while(cur != NULL) {
         src = sdscat(src, ":");
@@ -242,7 +242,7 @@ gtidSet* gtidSetNew() {
     return gtid_set;
 }
 
-void gtidSetAppendUuidSet(gtidSet* gtid_set, uuidSet *uuid_set) {
+void gtidSetAppendUuidSet(gtidSet *gtid_set, uuidSet *uuid_set) {
     if (gtid_set->uuid_sets == NULL) {
         gtid_set->uuid_sets = uuid_set;
         gtid_set->tail = uuid_set;
@@ -265,7 +265,7 @@ gtidSet *gtidSetNewSds(sds src) {
     return gtid_set;
 }
 
-void gtidSetFree(gtidSet* gtid_set) {
+void gtidSetFree(gtidSet *gtid_set) {
     uuidSet *next;
     uuidSet *cur = gtid_set->uuid_sets;
     while(cur != NULL) {
@@ -305,17 +305,15 @@ int gtidSetAdd(gtidSet *gtid_set, const char *rpl_sid, rpl_gno gno) {
     }
 }
 
-int gtidSetAddGtidSds(gtidSet* gtid_set, sds gtid_sds) {
+int gtidSetAddGtidSds(gtidSet *gtid_set, sds gtid_sds) {
     const char *split = ":";
     rpl_gno gno = 0;
-    int result;
+    int result = 0;
     int count = 0;
     sds *v = sdssplitlen(gtid_sds, sdslen(gtid_sds), split, 1, &count);
     if(count == 2) {
         string2ll(v[1], sdslen(v[1]), &gno);
         result = gtidSetAdd(gtid_set, v[0], gno);
-    } else {
-        result = 0;
     }
     sdsfreesplitres(v, count);
     return result;
@@ -335,6 +333,61 @@ void gtidSetRaise(gtidSet *gtid_set, const char *rpl_sid, rpl_gno watermark) {
     } else {
         uuidSetRaise(cur, watermark);
     }
+}
+
+sds gtidSetNext(gtidSet *gtid_set, const char *rpl_sid, sds src, int updateBeforeReturn) {
+    uuidSet *cur = gtid_set->uuid_sets;
+    while(cur != NULL) {
+        if (strcmp(rpl_sid, cur->rpl_sid) == 0) {
+            break;
+        }
+        cur = cur->next;
+    }
+    src = sdscat(src, rpl_sid);
+    src = sdscat(src, ":");
+
+    rpl_gno gno;
+    if (cur == NULL) {
+        gno = 1;
+        if (updateBeforeReturn) {
+            cur = uuidSetNew(rpl_sid, gno);
+            gtidSetAppendUuidSet(gtid_set, cur);
+        }
+    } else {
+        gno = uuidSetNext(cur, updateBeforeReturn);
+    }
+    src = sdscatfmt(src, "%I", gno);
+    return src;
+}
+
+int gtidSetContains(gtidSet *gtid_set, sds gtid_sds) {
+    const char *split = ":";
+    sds rpl_sid;
+    rpl_gno gno = 0;
+    int count = 0;
+    int result = 0;
+    sds *v = sdssplitlen(gtid_sds, sdslen(gtid_sds), split, 1, &count);
+    if(count != 2) {
+        goto END;
+    }
+    rpl_sid = v[0];
+    string2ll(v[1], sdslen(v[1]), &gno);
+
+    uuidSet *cur = gtid_set->uuid_sets;
+    while(cur != NULL) {
+        if (strcmp(rpl_sid, cur->rpl_sid) == 0) {
+            break;
+        }
+        cur = cur->next;
+    }
+    if (cur == NULL) {
+        goto END;
+    }
+    result = uuidSetContains(cur, gno);
+
+    END:
+    sdsfreesplitres(v, count);
+    return result;
 }
 
 #if defined(GTID_TEST_MAIN)
@@ -395,7 +448,59 @@ int gtidTest(void) {
         sdsfree(gtidset);
         sdsfree(expected);
         gtidSetFree(gtid_set);
+        gtidset = sdsnew("A:1-7,B:9:11-13:20");
+        gtid_set = gtidSetNewSds(gtidset);
+        sds next = sdsnew("");
+        next = gtidSetNext(gtid_set, "B", next, 1);
+        test_cond("B next of A:1-7,B:9:11-13:20 & Update",
+            strcmp("B:1", next) == 0 && gtidSetContains(gtid_set, next));
 
+        sdsclear(next);
+        next = gtidSetNext(gtid_set, "B", next, 1);
+        test_cond("B next of A:1-7,B:1:9:11-13:20 & Update",
+            strcmp("B:2", next) == 0 && gtidSetContains(gtid_set, next));
+
+        sdsclear(next);
+        next = gtidSetNext(gtid_set, "B", next, 1);
+        sdsclear(next);
+        next = gtidSetNext(gtid_set, "B", next, 1);
+        sdsclear(next);
+        next = gtidSetNext(gtid_set, "B", next, 1);
+        sdsclear(next);
+        next = gtidSetNext(gtid_set, "B", next, 1);
+        sdsclear(next);
+        next = gtidSetNext(gtid_set, "B", next, 1);
+        test_cond("B next of A:1-7,B:1-2:9:11-13:20 5 times & Update",
+            strcmp("B:7", next) == 0 && gtidSetContains(gtid_set, next));
+
+        sdsclear(next);
+        next = gtidSetNext(gtid_set, "B", next, 1);
+        test_cond("B next of A:1-7,B:1-7:9:11-13:20 & Update",
+            strcmp("B:8", next) == 0 && gtidSetContains(gtid_set, next));
+
+        sdsclear(next);
+        next = gtidSetNext(gtid_set, "B", next, 1);
+        test_cond("B next of A:1-7,B:1-9:11-13:20 & Update",
+            strcmp("B:10", next) == 0 && gtidSetContains(gtid_set, next));
+
+        sdsclear(next);
+        next = gtidSetNext(gtid_set, "B", next, 1);
+        test_cond("B next of A:1-7,B:1-13:20 & Update",
+            strcmp("B:14", next) == 0 && gtidSetContains(gtid_set, next));
+
+        gtid_sds = sdsnew("C:1");
+        test_cond("C:1 not in A:1-7,B:1-14:20",
+            gtidSetContains(gtid_set, gtid_sds) == 0);
+
+        sdsfree(gtid_sds);
+        gtid_sds = sdsnew("B:15");
+        test_cond("C:1 not in A:1-7,B:1-14:20",
+            gtidSetContains(gtid_set, gtid_sds) == 0);
+
+        sdsfree(gtid_sds);
+        sdsclear(next);
+        sdsfree(next);
+        gtidSetFree(gtid_set);
 
         /* uuid unit tests*/
         uuidSet *uuid_set;
