@@ -3223,7 +3223,6 @@ void initServer(void) {
     server.blocking_op_nesting = 0;
 
     server.gtid_executed = gtidSetNew();
-    server.gtid_in_exec = 0;
     gtidSetAdd(server.gtid_executed, server.runid, strlen(server.runid), 0);
     server.current_uuid = gtidSetFindUuidSet(server.gtid_executed, server.runid, strlen(server.runid));
     

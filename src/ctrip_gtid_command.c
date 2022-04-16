@@ -205,9 +205,6 @@ int execCommandPropagateGtid(struct redisCommand *cmd, int dbid, robj **argv, in
         return 0;
     }
     if (cmd == server.gtidCommand) {
-        if(strcasecmp(argv[2]->ptr, "exec") == 0) {
-            server.gtid_in_exec = 0;
-        }
         return 0;
     }
 
@@ -215,16 +212,11 @@ int execCommandPropagateGtid(struct redisCommand *cmd, int dbid, robj **argv, in
         return 0;
     }
 
-    if(server.gtid_in_exec) {
-        if(cmd == server.execCommand) {
-            server.gtid_in_exec = 0;
-        } else {
-            return 0;
-        }
+    if(server.in_exec && cmd != server.execCommand) {
+        return 0;
     }
 
     if (cmd == server.multiCommand) {
-        server.gtid_in_exec = 1;
         return 0;
     }
     robj *gtidArgv[argc+2];

@@ -1637,7 +1637,6 @@ struct redisServer {
     /* gtid executed */
     int gtid_enabled;  /* Is gtid enabled? */
     gtidSet *gtid_executed;
-    int gtid_in_exec; /* version 6.0.9 temporary replacement server.in_exec */
     uuidSet* current_uuid;
     int gtid_in_merge; /* gtid full sync*/
 };
