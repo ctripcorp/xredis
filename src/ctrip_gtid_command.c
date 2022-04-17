@@ -269,19 +269,17 @@ sds catAppendOnlyGtidExpireAtCommand(sds buf, robj* gtid, robj* comment, struct 
         when += mstime();
     }
     decrRefCount(seconds);
-    int index = 0, expireat_index = 0,time_index = 0;
+    int index = 0, time_index = 0;
     argv[index++] = shared.gtid;
     argv[index++] = gtid;
     if(comment != NULL) {
         argv[index++] = comment;
     }
-    expireat_index = index;
-    argv[index++] = createStringObject("PEXPIREAT",9);
+    argv[index++] = shared.pexpireat;
     argv[index++] = key;
     time_index = index;
     argv[index++] = createStringObjectFromLongLong(when);
     buf = catAppendOnlyGenericCommand(buf, index, argv);
-    decrRefCount(argv[expireat_index]);
     decrRefCount(argv[time_index]);
     return buf;
 }
@@ -299,7 +297,6 @@ sds catAppendOnlyGtidExpireAtCommand(sds buf, robj* gtid, robj* comment, struct 
  */
 sds gtidCommandTranslate(sds buf, struct redisCommand *cmd, robj **argv, int argc) {
     if(cmd == server.gtidCommand) {
-        robj *tmpargv[3];
         int index = 2;
         if(strncmp(argv[index]->ptr,"/*",2 ) == 0)  {
             index++;
@@ -308,18 +305,6 @@ sds gtidCommandTranslate(sds buf, struct redisCommand *cmd, robj **argv, int arg
         if (c->proc == expireCommand || c->proc == pexpireCommand ||
             c->proc == expireatCommand) {
             /* Translate EXPIRE/PEXPIRE/EXPIREAT into PEXPIREAT */
-            if(index == 2) {
-                buf = catAppendOnlyGtidExpireAtCommand(buf,argv[1],NULL,c,argv[index+1],argv[index+2]);
-            } else {
-                buf = catAppendOnlyGtidExpireAtCommand(buf,argv[1],argv[2],c,argv[index+1],argv[index+2]);
-            }
-        } else if (c->proc == setexCommand || c->proc == psetexCommand) {
-            /* Translate SETEX/PSETEX to SET and PEXPIREAT */
-            tmpargv[0] = createStringObject("SET",3);
-            tmpargv[1] = argv[3];
-            tmpargv[2] = argv[5];
-            buf = catAppendOnlyGenericCommand(buf,3,tmpargv);
-            decrRefCount(tmpargv[0]);
             if(index == 2) {
                 buf = catAppendOnlyGtidExpireAtCommand(buf,argv[1],NULL,c,argv[index+1],argv[index+2]);
             } else {
