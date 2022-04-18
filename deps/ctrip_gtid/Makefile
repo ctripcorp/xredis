@@ -1,6 +1,7 @@
 
 STD=-std=c99
-FINAL_CFLAGS+= $(STD) -I./include -I./
+FINAL_CFLAGS=$(STD) $(CFLAGS) -I./include -I./
+
 
 CTRIP_CC=$(CC) $(FINAL_CFLAGS)
 CTRIP_GTID_LIB=lib/libctrip_gtid.a

@@ -49,15 +49,25 @@ tags "aof" {
         }
         return $res
     }
-    proc read_aof {file} {
-        set fd [open $file]
+    proc try_read_aof {file line_count} {
+        set try_num 3
         set res {}
-        set command [read_command $fd]
-        while {$command != {}} {
-            lappend res $command
+        while {$try_num > 0} {
+            set fd [open $file]
+            set res {}
             set command [read_command $fd]
+            while {$command != {}} {
+                lappend res $command
+                set command [read_command $fd]
+            }
+            close $fd
+            if {[llength $res] == $line_count} {
+                break
+            }
+            set try_num [expr {$try_num - 1}]
+            after 1000
         }
-        close $fd
+        assert_equal [llength $res]  $line_count
         return $res
     }
 
@@ -67,6 +77,7 @@ tags "aof" {
             assert_match [lindex $patterns $j] [lindex $s $j]
         }
     }
+    
     test "save aof and reload aof" {
         start_server_aof [list dir $server_path aof-load-truncated yes] {
             test "write expire command save to aof" {
@@ -78,9 +89,11 @@ tags "aof" {
                 $client set k4 v 
                 $client pexpire k4 2000
                 $client set k v
+                # $client bgrewriteaof
+                # waitForBgrewriteaof $client 
                 set config [dict get $srv config]
                 set dir [dict get $config dir]
-                set res [read_aof  "$dir/appendonly.aof"]
+                set res [try_read_aof  "$dir/appendonly.aof" 8]
                 assert_aof $res {
                     {select *} 
                     {gtid * SET k1 v PXAT *} 
@@ -98,7 +111,7 @@ tags "aof" {
             test "restart redis load aof" {
                 set config [dict get $srv config]
                 set dir [dict get $config dir]
-                set res [read_aof  "$dir/appendonly.aof"]
+                set res [try_read_aof  "$dir/appendonly.aof" 8]
                 assert_aof $res {
                     {select *} 
                     {gtid * SET k1 v PXAT *} 
@@ -144,7 +157,7 @@ tags "aof" {
             r set k5 y
             set config [srv 0 config]
             set dir [dict get $config dir]
-            set res [read_aof  "$dir/appendonly.aof"]
+            set res [try_read_aof  "$dir/appendonly.aof" 9]
             assert_aof $res {
                 {select *}
                 {gtid * k1 y PXAT *}
