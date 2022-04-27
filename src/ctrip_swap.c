@@ -758,8 +758,6 @@ static void processFinishedReplCommands() {
         c->db = wc->db;
         c->cmd = backup_cmd;
 
-        struct redisCommand *cur_cmd = wc->cmd;
-
         commandProcessed(wc);
 
         serverAssert(wc->client_hold_mode == CLIENT_HOLD_MODE_REPL);
@@ -1366,7 +1364,7 @@ static int parallelSwapProcess(swapEntry *e) {
 }
 
 /* Submit one swap (task). swap will start and finish in submit order. */
-int parallelSwapSubmit(parallelSwap *ps, sds rawkey, parallelSwapFinishedCb cb, void *pd) {
+int parallelSwapSubmit(parallelSwap *ps, int action, sds rawkey, sds rawval, parallelSwapFinishedCb cb, void *pd) {
     listNode *ln;
     swapEntry *e;
     static int rocksdist = 0;
@@ -1379,7 +1377,7 @@ int parallelSwapSubmit(parallelSwap *ps, sds rawkey, parallelSwapFinishedCb cb, 
     e->cb = cb;
     e->pd = pd;
     e->inprogress = 1;
-    e->r = rocksIOSubmitSync(rocksdist++, ROCKS_GET, rawkey, NULL,
+    e->r = rocksIOSubmitSync(rocksdist++, action, rawkey, rawval,
             e->pipe_write_fd);
     return C_OK;
 }
@@ -1396,5 +1394,18 @@ int parallelSwapDrain(parallelSwap *ps) {
     }
 
     return C_OK;
+}
+
+/* utility functions */
+int parallelSwapGet(sds rawkey, parallelSwapFinishedCb cb, void *pd) {
+    return parallelSwapSubmit(server.rdb_load_ps, SWAP_GET, rawkey, NULL, cb, pd);
+}
+
+int parallelSwapPut(sds rawkey, sds rawval, parallelSwapFinishedCb cb, void *pd) {
+    return parallelSwapSubmit(server.rdb_load_ps, SWAP_PUT, rawkey, rawval, cb, pd);
+}
+
+int parallelSwapDel(sds rawkey, parallelSwapFinishedCb cb, void *pd) {
+    return parallelSwapSubmit(server.rdb_load_ps, SWAP_DEL, rawkey, NULL, cb, pd);
 }
 
