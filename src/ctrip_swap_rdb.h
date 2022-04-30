@@ -11,4 +11,6 @@ struct ctripRdbLoadResult {
 
 void ctripRdbLoadObject(int rdbtype, rio *rdb, sds key, struct ctripRdbLoadResult* result);
 int ctripDbAddColdData(redisDb* db, int datatype, sds key, robj* evict, sds cold_data, long long expire_time);
-
+int releaseSds(sds o);
+sds getSds();
+int initSdsPool(size_t len);

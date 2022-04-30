@@ -1739,6 +1739,10 @@ struct redisServer {
     int ps_parallism_rdb;  /* parallel swap parallelism for rdb save & load. */
     /* rdb */
     struct parallelSwap *rdb_load_ps; /* parallel swap for rdb load */
+    struct {
+        sds* pool; 
+        int len;
+    } sdsNoLockPool;
 };
 
 #define MAX_KEYS_BUFFER 256

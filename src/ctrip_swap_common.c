@@ -56,8 +56,10 @@ const char* typeO2R(int obj_type) {
 }
 
 /* TODO support subkey */
-sds rocksEncodeKey(int obj_type, sds key) {
-    sds rawkey = sdsempty();
+sds rocksEncodeKey(int obj_type, sds key, sds rawkey) {
+    if(rawkey == NULL) {
+        rawkey = sdsempty();
+    }
     rawkey = sdscatlen(rawkey, typeO2R(obj_type), 1);
     rawkey = sdscatsds(rawkey, key);
     return rawkey;

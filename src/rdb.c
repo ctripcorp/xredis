@@ -2455,6 +2455,8 @@ void rdbLoadProgressCallback(rio *r, const void *buf, size_t len) {
     }
 }
 
+
+
 /* Load an RDB file from the rio stream 'rdb'. On success C_OK is returned,
  * otherwise C_ERR is returned and 'errno' is set accordingly. */
 int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
@@ -2464,6 +2466,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
     char buf[1024];
     int error;
     long long empty_keys_skipped = 0, expired_keys_skipped = 0, keys_loaded = 0;
+    initSdsPool((server.ps_parallism_rdb + 1) * 2);
 
     rdb->update_cksum = rdbLoadProgressCallback;
     rdb->max_processing_chunk = server.loading_process_events_interval_bytes;
@@ -2698,7 +2701,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
         struct ctripRdbLoadResult result = {
             type: HOT_DATA,
             val: NULL,
-            cold_data: NULL,
+            cold_data: getSds(),
             error: error
         };
         ctripRdbLoadObject(type, rdb, key, &result);

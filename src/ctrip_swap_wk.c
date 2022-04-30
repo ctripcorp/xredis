@@ -302,7 +302,7 @@ int swapAnaWk(struct redisCommand *cmd, redisDb *db, robj *key, int *action,
     if (keyIsExpired(db,key) && lookupEvictKey(db,key)) {
         swapInWkPd *sipd = zmalloc(sizeof(swapInWkPd));
         *action = SWAP_GET;
-        *rawkey = rocksEncodeKey(obj_type,key->ptr);
+        *rawkey = rocksEncodeKey(obj_type,key->ptr, NULL);
         *rawval = NULL;
         *cb = swapInWk;
         incrRefCount(key);
@@ -312,7 +312,7 @@ int swapAnaWk(struct redisCommand *cmd, redisDb *db, robj *key, int *action,
     } else if (swapaction == SWAP_GET && lookupEvictKey(db,key)) {
         swapInWkPd *sipd = zmalloc(sizeof(swapInWkPd));
         *action = SWAP_GET;
-        *rawkey = rocksEncodeKey(obj_type,key->ptr);
+        *rawkey = rocksEncodeKey(obj_type,key->ptr, NULL);
         *rawval = NULL;
         *cb = swapInWk;
         incrRefCount(key);
@@ -332,7 +332,7 @@ int swapAnaWk(struct redisCommand *cmd, redisDb *db, robj *key, int *action,
             *pd = NULL;
         } else {
             *action = SWAP_PUT;
-            *rawkey = rocksEncodeKey(obj_type,key->ptr);
+            *rawkey = rocksEncodeKey(obj_type,key->ptr, NULL);
             *rawval = encodeValRdbWk(value);
             *cb = swapOutWk;
             incrRefCount(key);
@@ -340,7 +340,7 @@ int swapAnaWk(struct redisCommand *cmd, redisDb *db, robj *key, int *action,
         }
     } else if (swapaction == SWAP_DEL) {
         *action = SWAP_DEL;
-        *rawkey = rocksEncodeKey(obj_type,key->ptr);
+        *rawkey = rocksEncodeKey(obj_type,key->ptr, NULL);
         *rawval = NULL;
         *cb = NULL;
         *pd = NULL;
@@ -374,7 +374,7 @@ void *getComplementSwapsWk(redisDb *db, robj *key, int mode, int *type,
     serverAssert(value || evict);
     obj_type = value ? value->type : evict->type;
 
-    sds rawkey = rocksEncodeKey(obj_type,key->ptr);
+    sds rawkey = rocksEncodeKey(obj_type,key->ptr, NULL);
     /* NOTE that rawkey is sds if this is a complement swap. */
     getSwapsAppendResult(result, (robj*)rawkey, NULL, NULL);
 

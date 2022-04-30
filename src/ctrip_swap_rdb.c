@@ -248,9 +248,8 @@ int rdbPipeWirteLzfStringObject(rio* src, rio* target) {
 
 int rdbPipeWriteStringObject(rio* src, rio* target, int* error) {
     int isencoded;
-    unsigned long long len = rdbLoadLen(src, &isencoded);
+    unsigned long long len = rdbPipeLen(src, target, &isencoded);
     if (len == RDB_LENERR) return 0;
-    rdbSaveLen(target, len);
     if (isencoded) {
         switch(len) {
             case RDB_ENC_INT8:
@@ -297,7 +296,7 @@ int rdbPipeWriteHashObject(rio* src, rio* target, int* error) {
 int rdbLoadObjectString(int rdbtype, rio* rdb, sds key, struct ctripRdbLoadResult* result) {
     //TODO 
     rio obj_rio;
-    rioInitWithBuffer(&obj_rio, sdsempty());
+    rioInitWithBuffer(&obj_rio, result->cold_data);
     int error;
     robj* evict;
     if(rdbtype == RDB_TYPE_STRING) {
@@ -344,11 +343,55 @@ void ctripRdbLoadObject(int rdbtype, rio *rdb, sds key, struct ctripRdbLoadResul
 }
 
 
+int initSdsPool(size_t len) {
+    if(server.sdsNoLockPool.pool == NULL) {
+        server.sdsNoLockPool.len = len;
+        server.sdsNoLockPool.pool = zmalloc(sizeof(void*) * len );
+        for(int i = 0; i < server.sdsNoLockPool.len; i++) {
+            server.sdsNoLockPool.pool[i] = sdsMakeRoomFor(sdsempty() , 1000);
+        }
+        return 1;
+    }
+    return 0;
+}
+
+sds getSds() {
+    for(int i = 0; i < server.sdsNoLockPool.len;i++) {
+        if(server.sdsNoLockPool.pool[i] != NULL) {
+            sds o = server.sdsNoLockPool.pool[i];
+            server.sdsNoLockPool.pool[i] = NULL;
+            return o;
+        }
+    }
+    return NULL;
+}
+
+int releaseSds(sds o) {
+    for(int i = 0; i < server.sdsNoLockPool.len; i++) {
+        if(server.sdsNoLockPool.pool[i] == NULL) {
+            server.sdsNoLockPool.pool[i] = o;
+            sdsclear(o);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int swapPutFinshed(sds rawkey, sds rawval, void *pd) {
+    releaseSds(rawkey);
+    releaseSds(rawval);
+    serverLog(LL_WARNING, "rawkey: %s, rawval:%s ", rawkey, rawval);
+    // robj keyrobj;
+    // initStaticStringObject(keyobj,key);
+    // moduleNotifyKeyspaceEvent(NOTIFY_LOADED, "loaded", &keyobj, db->id);
+}
+
 int ctripDbAddColdData(redisDb* db, int datatype, sds key, robj* evict, sds cold_data, long long expire_time) {
     robj keyobj;
     initStaticStringObject(keyobj,key);
     //submit write to rocksdb task 
-    if(parallelSwapPut(rocksEncodeKey(datatype, key), cold_data, NULL, NULL)) {
+    sds rawkey = rocksEncodeKey(datatype, key, getSds());
+    if(parallelSwapPut(rawkey, cold_data, swapPutFinshed, NULL)) {
         return 0;
     }
     evict->evicted = 1;

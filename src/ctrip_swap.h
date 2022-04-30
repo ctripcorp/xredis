@@ -67,7 +67,7 @@ void rocksIterKeyValue(rocksIter *it, sds *rawkey, sds *rawval);
 void rocksReleaseIter(rocksIter *it);
 void rocksIterGetError(rocksIter *it, char **error);
 
-sds rocksEncodeKey(int type, sds key);
+sds rocksEncodeKey(int type, sds key, sds rawkey);
 int rocksDecodeKey(const char *rawkey, size_t rawlen, const char **key, size_t *klen);
 
 int rdbSaveRocks(rio *rdb, redisDb *db, int rdbflags);
