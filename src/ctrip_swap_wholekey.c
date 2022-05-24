@@ -276,7 +276,9 @@ swapData *createWholeKeySwapData(redisDb *db, robj *key, robj *value,
     wholeKeySwapData *data = zmalloc(sizeof(wholeKeySwapData));
     data->d.type = &wholeKeySwapDataType;
     data->db = db;
+    incrRefCount(key);
     data->key = key;
+    incrRefCount(value);
     data->value = value;
     data->evict = evict;
     wholeKeyDataCtx *datactx = zmalloc(sizeof(wholeKeyDataCtx));

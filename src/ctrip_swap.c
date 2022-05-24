@@ -113,8 +113,14 @@ int keyRequestProceed(void *listeners, redisDb *db, robj *key, client *c,
     void *datactx;
     swapData *data;
     swapCtx *ctx = pd;
-    robj *value = lookupKey(db,key,LOOKUP_NOTOUCH);
-    robj *evict = lookupEvictKey(db,key);
+    robj *value = NULL;
+    robj *evict = NULL;
+    if(key != NULL) {
+        value = lookupKey(db,key,LOOKUP_NOTOUCH);
+        evict = lookupEvictKey(db,key);
+    }
+    
+    
 
     /* key not exists, noswap needed. */
     if (!value && !evict) {

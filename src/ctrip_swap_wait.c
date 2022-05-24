@@ -257,10 +257,14 @@ int requestWait(redisDb *db, robj *key, requestProceed cb, client *c, void *pd) 
     listeners = requestBindListeners(db,key,1);
     blocking = listeners->nlisteners > 0;
     listener = requestListenerCreate(db,key,cb,c,pd);
-    requestListenersPush(listeners, listener);
+    
     /* Current can proceed right away if request key is not blocking,
      * otherwise execution is defered. */
-    if (!blocking) proceed(listeners, listener);
+    if (!blocking) {
+        proceed(listeners, listener);
+    } else {
+        requestListenersPush(listeners, listener);
+    }
     return 0;
 }
 
