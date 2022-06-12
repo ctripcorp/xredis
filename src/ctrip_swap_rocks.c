@@ -231,6 +231,7 @@ void rocksCron() {
                 serverLog(LL_WARNING,"Detected rocksdb disk recovered.");
             }
         }
+        if (fp) fclose(fp);
     }
 
     rocks_cron_loops++;
