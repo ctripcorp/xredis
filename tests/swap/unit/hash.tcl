@@ -283,3 +283,20 @@ start_server {tags "bighash"} {
         assert_equal [r del hash13] 1
     }
 }
+
+
+
+
+start_server {tags {"repl"}} {
+    test "evit big hash(max-subkeys + 1)" {
+        r config set swap-big-hash-threshold 1
+        r config set debug-evict-keys 0
+        r config set swap-evict-step-max-subkeys 2
+        for {set j 0} {$j < 3} {incr j} {
+            r hset key $j [randomValue]
+        }
+        assert [r evict key] 1
+        after 2000
+        assert_equal [r ping] PONG
+    }
+}
