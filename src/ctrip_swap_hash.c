@@ -552,7 +552,7 @@ swapData *createBigHashSwapData(redisDb *db, robj *key, robj *value,
 rdbKeyType bigHashRdbType = {
     .save_start = bighashSaveStart,
     .save = bighashSave,
-    .save_end = NULL,
+    .save_end = bighashSaveEnd,
     .save_deinit = bighashSaveDeinit,
     .load = bighashRdbLoad,
     .load_end = NULL,
@@ -614,6 +614,15 @@ int bighashSaveStart(rdbKeyData *keydata, rio *rdb) {
     return ret;
 }
 
+int bighashSaveEnd(rdbKeyData *keydata) {
+    objectMeta *meta = keydata->savectx.bighash.meta;
+    if (keydata->savectx.bighash.saved != meta->len) {
+        serverLog(LL_WARNING, "bighashBigSave: %d != %d", keydata->savectx.bighash.saved, meta->len);
+        return C_ERR;
+    }
+    return C_OK;
+}
+
 /* return 1 if bighash still need to consume more rawkey. */
 int bighashSave(rdbKeyData *keydata, rio *rdb, decodeResult *decoded,
         int *error) {
@@ -628,7 +637,18 @@ int bighashSave(rdbKeyData *keydata, rio *rdb, decodeResult *decoded,
         *error = 0;
         return 0;
     }
-
+    if (keydata->savectx.value != NULL) {
+        robj *subval = hashTypeGetValueObject(keydata->savectx.value,
+                    decoded->subkey);
+        
+        if (subval != NULL) {
+            serverLog(LL_WARNING, "skip save rdb subval: %s", decoded->subkey);
+            /* skip this subkey */
+            *error = 0;
+            return 1;
+        } 
+    }
+    
     if (rdbSaveRawString(rdb,(unsigned char*)decoded->subkey,
                 sdslen(decoded->subkey)) == -1) {
         *error = -1;
