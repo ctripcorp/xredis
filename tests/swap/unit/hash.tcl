@@ -287,16 +287,22 @@ start_server {tags "bighash"} {
 
 
 
-start_server {tags {"repl"}} {
-    test "evit big hash(max-subkeys + 1)" {
-        r config set swap-big-hash-threshold 1
+start_server {tags {"evict big hash"}} {
+    test {check meta on hash evict} {
         r config set debug-evict-keys 0
+        r config set swap-big-hash-threshold 1
         r config set swap-evict-step-max-subkeys 2
-        for {set j 0} {$j < 3} {incr j} {
-            r hset key $j [randomValue]
-        }
-        assert [r evict key] 1
-        after 2000
-        assert_equal [r ping] PONG
+        r hmset myhash a a b b c c d d e e f f g g h h
+        assert_equal [r hlen myhash] 8
+        assert_equal [r evict myhash] 1
+        after 100
+        assert_equal [r hlen myhash] 8
+        after 100
+        # puts [r swap object myhash]
+        assert_equal [r evict myhash] 1
+        after 100
+        assert_equal [r hlen myhash] 8
+        after 100
+        # puts [r swap object myhash]
     }
 }
