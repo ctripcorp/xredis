@@ -198,8 +198,8 @@ int rdbSaveRocks(rio *rdb, redisDb *db, int rdbflags) {
         }
 
         if ((error = rdbKeySaveStart(keydata,rdb))) {
-            errstr = sdscatfmt(sdsempty(),"Save key(%S) start failed: %s",
-                    decoded->key, strerror(error));
+            errstr = sdscatfmt(sdsempty(),"Save key(%S) start failed: %i",
+                    decoded->key? decoded->key: "null", error);
             decodeResultDeinit(decoded);
             rdbKeyDataDeinitSave(keydata);
             goto err;
@@ -230,8 +230,8 @@ int rdbSaveRocks(rio *rdb, redisDb *db, int rdbflags) {
 
         /* call save_end if save_start called, no matter error or not. */
         if (!error && (error = rdbKeySaveEnd(keydata))) {
-            errstr = sdscatfmt(sdsempty(),"Save key(%S) end failed: %s",
-                    decoded->key, strerror(error));
+            errstr = sdscatfmt(sdsempty(),"Save key(%S) end failed: %i",
+                    decoded->key? decoded->key: "null", error);
             rdbKeyDataDeinitSave(keydata);
             break;
         }
