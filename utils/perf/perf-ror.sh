@@ -181,7 +181,7 @@ get_case_report() {
 
     # QPS：81173<br>延迟(mean,p999): 1206,1753  (us)<br>CPU(mean,p99):  97% 99%<br>内存(mean,max): 10771 10771 (MB)<br>
     if [[ $mode == markdown ]]; then
-        echo "QPS=$QPS<br>Latency(mean,p99):$lat_mean $lat_p99(us)<br>CPU(mean,p99):$cpu_mean $cpu_p99<br>Memory(mean,max):$mem_mean $mem_max(MB)<br>DiskWrite(mean,p99):$disk_read_mean $disk_read_p99<MB/s>DiskWrite(mean,p99):$disk_read_mean $disk_read_p99<MB/s>"
+        echo "QPS=$QPS<br>Latency(mean,p99):$lat_mean $lat_p99(us)<br>CPU(mean,p99):$cpu_mean $cpu_p99<br>Memory(mean,max):$mem_mean $mem_max(MB)<br>DiskRead(mean,p99):$disk_read_mean $disk_read_p99<MB/s><br>DiskWrite(mean,p99):$disk_write_mean $disk_write_p99<MB/s>"
     else
         echo \
 "QPS=$QPS
@@ -220,7 +220,9 @@ execute_cases() {
 
         $bench2 $host:$port $password $case_cmd $rdb_key_count $key_prefix $case_nthd $case_qps_limit $diskname > $case_report_file
 
-        echo "$log_prefix.$perf_case => $(get_case_report $case_report_file markdown)" >> $markddown_report_file
+        echo "$log_prefix.$perf_case: 
+$(get_case_report $case_report_file markdown)" >> $markddown_report_file
+
         case_report=$(get_case_report $case_report_file human)
         echo "execute case: cmd=$case_cmd, load=$case_load finished:"
         echo "=== $log_prefix.$perf_case ==="

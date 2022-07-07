@@ -45,9 +45,13 @@ perf-trocks1:
       setup=hot
       cases=set-100thd,get-100thd,get-1wqps
       ${CI_PROJECT_DIR}/utils/perf/perf-ror.sh
+    - sudo -E
+      mkdir artifacts
+    - sudo -E
+      mv ${base_dir}/${runner}/artifacts/markdown_report artifacts/markdown_report
   artifacts:
      paths:
-       - ${base_dir}/${runner}/artifacts/*
+       - artifacts/*
      expire_in: 1 year
   tags:
     - trocks1
@@ -78,9 +82,13 @@ perf-trocks2:
       configs=swap-big-hash-threshold=1000
       cases=hgetall-100thd,hgetall-1wqps,hget-100thd,hget-1wqps
       ${CI_PROJECT_DIR}/utils/perf/perf-ror.sh
+    - sudo -E
+      mkdir artifacts
+    - sudo -E
+      mv ${base_dir}/${runner}/artifacts/markdown_report artifacts/markdown_report
   artifacts:
      paths:
-       - ${base_dir}/${runner}/artifacts/*
+       - artifacts/*
      expire_in: 1 year
   tags:
     - trocks2
