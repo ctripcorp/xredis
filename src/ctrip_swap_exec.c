@@ -677,8 +677,7 @@ static int executeSwapInRequest(swapRequest *req) {
         goto end;
     }
 
-    req->result = swapDataCreateOrMergeObject(data,decoded,req->datactx);
-    DEBUG_MSGS_APPEND(req->msgs,"execswap-in-createormerge","result=%p",(void*)req->result);
+    req->result = decoded;
 
 end:
     updateStatsSwapRIO(req,rio);
@@ -704,6 +703,10 @@ int finishSwapRequest(swapRequest *req) {
             swapIntentionName(req->intention));
     switch(req->intention) {
     case SWAP_IN:
+        if(req->result != NULL) {
+            req->result = swapDataCreateOrMergeObject(req->data, req->result, req->datactx);
+            DEBUG_MSGS_APPEND(req->msgs,"execswap-in-createormerge","result=%p",(void*)req->result);
+        }
         return swapDataSwapIn(req->data,req->result,req->datactx);
     case SWAP_OUT:
         return swapDataSwapOut(req->data,req->datactx);
