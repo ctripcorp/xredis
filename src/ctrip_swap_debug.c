@@ -87,7 +87,7 @@ long get_dir_size(char *dirname)
             if(strcmp(ptr->d_name,"..") == 0) {
                     continue;
             }
-            if(ptr->d_type == DT_DIR)
+            if (S_ISDIR(buf.st_mode))
             {
                     total_size += get_dir_size(path);
                     memset(path, 0, sizeof(path));
