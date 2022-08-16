@@ -5496,7 +5496,7 @@ sds genRedisInfoString(const char *section) {
     }
 
     /* Rocks */
-    if ((allsections || !strcasecmp(section,"rocks")) &&
+    if ((allsections || defsections || !strcasecmp(section,"rocks")) &&
             server.swap_mode != SWAP_MODE_MEMORY) {
         if (sections++) info = sdscat(info,"\r\n");
         info = sdscatprintf(info, "# Rocks\r\n");

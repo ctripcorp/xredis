@@ -60,3 +60,36 @@ start_server {tags {"repl"}} {
         }
     }
 }
+
+
+start_server {tags {"repl"}} {
+    set master [srv 0 client]
+    $master config set repl-diskless-sync-delay 1
+    test "info" {
+        set value [randomValue]
+        set count 0
+        for {set i 0} {$i < 1} {incr i} {
+            for {set j 0} {$j < 100000} {incr j} {
+                $master set $count  $value
+                incr count
+            }
+            $master bgsave
+            for {set j 0} {$j < 100000} {incr j} {
+                $master set $count $value
+                incr count
+            }
+            $master swap compact
+            assert_equal [status $master TotalFiles] 1
+            assert {
+                [status $master {Wr\(MB/s\)} ] > 0.0
+            }
+            assert {
+                [status $master {Comp\(sec\)} ] > 0.0
+            }
+            # assert {  > 0.0 }
+        }
+        puts [$master info]
+        assert_equal [status $master {cumulative_writes_num\(K\)}] 200.000
+        assert_equal [status $master {cumulative_writes_keys\(K\)}] 200.000
+    }
+}
