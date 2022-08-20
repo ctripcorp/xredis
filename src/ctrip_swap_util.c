@@ -28,6 +28,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "endianconv.h"
+
 typedef unsigned int keylen_t;
 
 int rocksGetObjectType(unsigned char enc_type) {
@@ -92,6 +94,8 @@ sds rocksEncodeSubkey(unsigned char enc_type, uint64_t version, sds key, sds sub
     char *ptr = rawkey;
     keylen_t keylen = (keylen_t)sdslen(key);
     ptr[0] = enc_type, ptr++;
+    /* Encode version in BE order, so that numeric order matches alphabatic. */
+    version = htonu64(version);
     memcpy(ptr, &version, sizeof(version)), ptr += sizeof(version);
     memcpy(ptr, &keylen, sizeof(keylen_t)), ptr += sizeof(keylen_t);
     memcpy(ptr, key, sdslen(key)), ptr += sdslen(key);
@@ -141,6 +145,8 @@ int rocksDecodeSubkey(const char *raw, size_t rawlen, uint64_t *version,
     raw++, rawlen--;
 
     _version = *(uint64_t*)raw;
+    /* version is encoded in BE order. */
+    _version = ntohu64(_version);
     if (version) *version = _version;
     raw += sizeof(uint64_t);
     rawlen -= sizeof(uint64_t);
