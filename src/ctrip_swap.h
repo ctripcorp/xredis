@@ -38,14 +38,13 @@
 #define REQUEST_LEVEL_KEY  2
 
 /* Delete key in rocksdb after right after swap in. */
-#define INTENTION_IN_DEL (1<<0)
+#define INTENTION_IN_DEL_MOCK_VALUE (1<<0)
 /* No need to swap if this is a big object */
 #define INTENTION_IN_META (1<<1)
 /* Delete key in rocksdb without touching keyspace. */
 #define INTENTION_DEL_ASYNC (1<<2)
 /* Load key and elete key in rocksdb after right after swap in. */
-#define INTENTION_IN_AND_DEL (1<<3)
-
+#define INTENTION_IN_DEL (1<<3)
 
 static inline const char *requestLevelName(int level) {
   const char *name = "?";
@@ -72,6 +71,8 @@ void getKeyRequests(client *c, struct getKeyRequestsResult *result);
 void releaseKeyRequests(struct getKeyRequestsResult *result);
 int getKeyRequestsNone(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 int getKeyRequestsGlobal(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsZpopMin(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsZpopMax(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 
 #define getKeyRequestsHsetnx getKeyRequestsHset
 #define getKeyRequestsHget getKeyRequestsHmget
@@ -90,6 +91,33 @@ int getKeyRequestSmove(struct redisCommand *cmd, robj **argv, int argc, struct g
 int getKeyRequestsSinterstore(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 #define getKeyRequestsSdiffstore getKeyRequestsSinterstore
 #define getKeyRequestsSunionstore getKeyRequestsSinterstore
+
+
+/* zset */
+
+
+int getKeyRequestsZScore(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsZAdd(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsZincrby(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsZunionstore(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsZinterstore(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsZdiffstore(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsZrangestore(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsSinterstore(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+#define getKeyRequestsSdiffstore getKeyRequestsSinterstore
+#define getKeyRequestsSunionstore getKeyRequestsSinterstore
+#define getKeyRequestsZrem getKeyRequestsZScore
+
+/** geo **/
+// command use zset object 
+int getKeyRequestsGeoAdd(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsGeoRadius(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsGeoHash(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsGeoDist(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsGeoSearch(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsGeoSearchStore(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+#define getKeyRequestsGeoRadiusByMember getKeyRequestsGeoRadius
+#define getKeyRequestsGeoPos getKeyRequestsGeoHash
 
 #define MAX_KEYREQUESTS_BUFFER 128
 #define GET_KEYREQUESTS_RESULT_INIT { {{0}}, NULL, 0, MAX_KEYREQUESTS_BUFFER}
@@ -118,6 +146,10 @@ void getKeyRequestsFreeResult(getKeyRequestsResult *result);
 #define SWAP_DEL    3
 #define ROCKSDB_UTILS 4
 #define SWAP_TYPES  5
+
+/** ctrip rdb load object flag **/
+#define CTRIP_RDB_LOAD_OBJECT_NONE 0
+#define CTRIP_RDB_LOAD_OBJECT_EXPIRED 1
 
 
 /* --- RDB_KEY_SAVE --- */
@@ -151,7 +183,7 @@ typedef struct swapDataType {
   int (*swapIn)(struct swapData *data, robj *result, void *datactx);
   int (*swapOut)(struct swapData *data, void *datactx);
   int (*swapDel)(struct swapData *data, void *datactx, int async);
-  robj *(*createOrMergeObject)(struct swapData *data, robj *decoded, void *datactx, int data_dirty);
+  robj *(*createOrMergeObject)(struct swapData *data, robj *decoded, void *datactx, int del_flag);
   int (*cleanObject)(struct swapData *data, void *datactx);
   void (*free)(struct swapData *data, void *datactx);
 } swapDataType;
@@ -163,13 +195,14 @@ int swapDataDecodeData(swapData *d, int num, sds *rawkeys, sds *rawvals, robj **
 int swapDataSwapIn(swapData *d, robj *result, void *datactx);
 int swapDataSwapOut(swapData *d, void *datactx);
 int swapDataSwapDel(swapData *d, void *datactx, int async);
-robj *swapDataCreateOrMergeObject(swapData *d, robj *decoded, void *datactx, int data_dirty);
+robj *swapDataCreateOrMergeObject(swapData *d, robj *decoded, void *datactx, int del_flag);
 int swapDataCleanObject(swapData *d, void *datactx);
 void swapDataFree(swapData *data, void *datactx);
 int dbAddEvictRDBLoad(redisDb* db, sds key, robj* evict);
 int rdbLoadStringVerbatim(rio *rdb, sds *verbatim);
 int rdbLoadHashFieldsVerbatim(rio *rdb, unsigned long long len, sds *verbatim);
 int rdbLoadSetMembersVerbatim(rio *rdb, unsigned long long len, sds *verbatim);
+int rdbLoadZSetFieldsVerbatim(rio *rdb, unsigned long long len, sds *verbatim, int type);
 
 /* Debug msgs */
 #ifdef SWAP_DEBUG
@@ -295,10 +328,22 @@ typedef struct bigHashDataCtx {
   robj **subkeys;
   ssize_t meta_len_delta;
   objectMeta *new_meta; /* ref, will be moved to db.meta */
+  int swapin_del_flag;
 } bigHashDataCtx;
 
 void hashTransformBig(robj *o, objectMeta *m);
 swapData *createBigHashSwapData(redisDb *db, robj *key, robj *value, robj *evict, objectMeta *meta, void **pdatactx);
+void cleanBigHashSwapData(swapData *data_, void *datactx_);
+/* -- big ZSet -- */
+typedef struct bigZSetSwapData {
+    bigHashSwapData hd;
+} bigZSetSwapData;
+
+typedef struct bigZSetDataCtx {
+    bigHashDataCtx hctx;
+} bigZSetDataCtx;
+swapData *createBigZSetSwapData(redisDb *db, robj* key, robj* value, robj *evict, objectMeta *meta, void **pdatactx);
+void zsetTransformBig(robj *o, objectMeta *m);
 
 /* Big set */
 typedef struct bigSetSwapData {
@@ -315,7 +360,7 @@ typedef struct bigSetDataCtx {
     robj **subkeys;
     ssize_t meta_len_delta;
     objectMeta *new_meta; /* ref, will be moved to db.meta */
-    int swap_in_data_dirty;
+    int swapin_del_flag;
 } bigSetDataCtx;
 
 void setTransformBig(robj *o, objectMeta *m);
@@ -323,7 +368,9 @@ swapData *createBigSetSwapData(redisDb *db, robj *key, robj *value, robj *evict,
 
 /* --- Exec --- */
 struct swapRequest;
-
+#define SWAPIN_NO_DEL 0
+#define SWAPIN_DEL 1 
+#define SWAPIN_DEL_FULL 2
 typedef void (*swapRequestNotifyCallback)(struct swapRequest *req, void *pd);
 typedef void (*swapRequestFinishedCallback)(swapData *data, void *pd, int errcode);
 
@@ -721,10 +768,12 @@ void evictStopLoading(int success);
 /* rdb key type. */ 
 #define DEFAULT_HASH_FIELD_SIZE 256
 #define DEFAULT_SET_FIELD_SIZE 128
+#define DEFAULT_ZSET_FIELD_SIZE 256
 
 #define RDB_KEY_TYPE_WHOLEKEY 0
 #define RDB_KEY_TYPE_BIGHASH 1
 #define RDB_KEY_TYPE_MEMKEY 2
+#define RDB_KEY_TYPE_BIGZSET 3
 #define RDB_KEY_TYPE_BIGSET 4
 
 typedef struct decodeResult {
@@ -766,11 +815,16 @@ typedef struct rdbKeyData {
             robj *key; /* own */
             int saved;
           } bighash;
-			struct {
-			  objectMeta *meta; /* ref */
-			  robj *key; /* own */
-			  int saved;
-			} bigset;
+          struct {
+            objectMeta *meta; /* ref */
+            robj *key; /* own */
+            int saved;
+          } bigset;
+          struct {
+            objectMeta *meta; /* ref */
+            robj *key; /* own */
+            int saved;
+          } bigzset;
         };
     } savectx;
     struct {
@@ -786,8 +840,10 @@ typedef struct rdbKeyData {
             robj *evict; /* moved (to db.evict) */
             int hash_nfields; /* parsed hash nfields from header */
             sds hash_header; /* moved (to rdbLoadSwapData) */
-			sds set_header;
-			int set_size;
+            sds set_header;
+            int set_size;
+            int zset_nfields;
+            sds zset_header;
           } wholekey;
           struct {
             int hash_nfields;
@@ -795,11 +851,18 @@ typedef struct rdbKeyData {
             robj *evict; /* moved (to db.evict) */
             objectMeta *meta; /* moved (to db.meta) */
           } bighash;
-		  struct {
-			  int set_size;
-			  robj *evict; /* moved (to db.evict) */
-			  objectMeta *meta; /* moved (to db.meta) */
-		  } bigset;
+
+          struct {
+            int set_size;
+            robj *evict; /* moved (to db.evict) */
+            objectMeta *meta; /* moved (to db.meta) */
+          } bigset;
+          struct {
+            int zset_nfields;
+            int scanned_fields;
+            robj *evict;
+            objectMeta *meta;
+          } bigzset;
         };
     } loadctx;
 } rdbKeyData;
@@ -829,11 +892,13 @@ int bighashSaveEnd(rdbKeyData *keydata, int save_result);
 void bighashSaveDeinit(rdbKeyData *keydata);
 /* big set */
 void rdbKeyDataInitSaveBigSet(rdbKeyData *keydata, robj *value, robj *evict, objectMeta *meta, long long expire, sds keystr);
+/* big zset */
+void rdbKeyDataInitSaveBigZSet(rdbKeyData *keydata, robj *value, robj *evict, objectMeta *meta, long long expire, sds keystr);
 
 static inline sds rdbVerbatimNew(unsigned char rdbtype) {
     return sdsnewlen(&rdbtype,1);
 }
-int ctripRdbLoadObject(int rdbtype, rio *rdb, sds key, rdbKeyData *keydata);
+int ctripRdbLoadObject(int rdbtype, rio *rdb, sds key, rdbKeyData *keydata, int flag);
 robj *rdbKeyLoadGetObject(rdbKeyData *keydata);
 int rdbKeyDataInitLoad(rdbKeyData *keydata, rio *rdb, int rdbtype, sds key);
 void rdbKeyDataDeinitLoad(rdbKeyData *keydata);
@@ -861,6 +926,8 @@ void bighashRdbLoadExpired(struct rdbKeyData *keydata);
 /* big set */
 void rdbKeyDataInitLoadBigSet(rdbKeyData *keydata, int rdbtype, sds key);
 
+/* big zset*/
+void rdbKeyDataInitLoadBigZSet(rdbKeyData *keydata, int rdbtype, sds key);
 
 /* --- Util --- */
 #define ROCKS_VAL_TYPE_LEN 1
@@ -939,6 +1006,7 @@ int clearTestRedisServer(void);
 int swapDataWholeKeyTest(int argc, char **argv, int accurate);
 int swapDataBigHashTest(int argc, char **argv, int accurate);
 int swapDataBigSetTest(int argc, char **argv, int accurate);
+int swapDataBigZSetTest(int argc, char **argv, int accurate);
 int swapWaitTest(int argc, char **argv, int accurate);
 int swapWaitReentrantTest(int argc, char **argv, int accurate);
 int swapWaitAckTest(int argc, char **argv, int accurate);

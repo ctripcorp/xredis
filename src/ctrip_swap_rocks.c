@@ -124,6 +124,7 @@ void rocksRelease() {
     rocksdb_readoptions_destroy(rocks->ropts);
     rocksReleaseSnapshot();
     rocksdb_close(rocks->db);
+    if (rocks->rocksdb_stats_cache != NULL) zlibc_free(rocks->rocksdb_stats_cache);
     zfree(rocks);
     server.rocks = NULL;
 }

@@ -287,8 +287,13 @@ start_server {tags {"keyspace"}} {
         r copy zset1 newzset1
         set digest [r debug digest-value zset1]
         assert_equal $digest [r debug digest-value newzset1]
-        assert_equal 1 [r object refcount zset1]
-        assert_equal 1 [r object refcount newzset1]
+        if {$::swap_mode == "disk"} {
+            assert_equal 2 [r object refcount zset1]
+            assert_equal 2 [r object refcount newzset1]
+        } else {
+            assert_equal 1 [r object refcount zset1]
+            assert_equal 1 [r object refcount newzset1]
+        }
         r del zset1
         assert_equal $digest [r debug digest-value newzset1]
     }
@@ -304,8 +309,13 @@ start_server {tags {"keyspace"}} {
         r copy zset2 newzset2
         set digest [r debug digest-value zset2]
         assert_equal $digest [r debug digest-value newzset2]
-        assert_equal 1 [r object refcount zset2]
-        assert_equal 1 [r object refcount newzset2]
+        if {$::swap_mode == "disk"} {
+            assert_equal 2 [r object refcount zset2]
+            assert_equal 2 [r object refcount newzset2]
+        } else {
+            assert_equal 1 [r object refcount zset2]
+            assert_equal 1 [r object refcount newzset2]
+        }
         r del zset2
         assert_equal $digest [r debug digest-value newzset2]
         r config set zset-max-ziplist-entries $original_max

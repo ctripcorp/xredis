@@ -42,11 +42,17 @@ int wholeKeySwapAna(swapData *data_, int cmd_intention,
         if (data->evict) {
             serverAssert(!data->value);
             *intention = SWAP_IN;
+            if (cmd_intention_flags & INTENTION_IN_DEL
+                || cmd_intention_flags & INTENTION_IN_DEL_MOCK_VALUE) {
+                *intention_flags = INTENTION_IN_DEL;
+            }  
         } else if (data->value) {
             serverAssert(!data->evict);
-            if (cmd_intention_flags & INTENTION_IN_DEL) {
+            if (cmd_intention_flags & INTENTION_IN_DEL || 
+                cmd_intention_flags & INTENTION_IN_DEL_MOCK_VALUE) {
                 *intention = SWAP_DEL;
                 *intention_flags = INTENTION_DEL_ASYNC;
+                data->value->dirty = 1;
             } else {
                 *intention = SWAP_NOP;
             }
@@ -144,17 +150,6 @@ int wholeKeyEncodeData(swapData *data, int intention, void *datactx,
     return 0;
 }
 
-/* decoded move to exec module */
-int wholeKeyDecodeData(swapData *data, int num, sds *rawkeys,
-        sds *rawvals, robj **pdecoded) {
-    serverAssert(num == 1);
-    UNUSED(data);
-    UNUSED(rawkeys);
-    sds rawval = rawvals[0];
-    *pdecoded = rocksDecodeValRdb(rawval);
-    return 0;
-}
-
 /* If maxmemory policy is not LRU/LFU, rdbLoadObject might return shared
  * object, but swap needs individual object to track dirty/evict flags. */
 robj *dupSharedObject(robj *o) {
@@ -169,6 +164,21 @@ robj *dupSharedObject(robj *o) {
         return NULL;
     }
 }
+/* decoded move to exec module */
+int wholeKeyDecodeData(swapData *data, int num, sds *rawkeys,
+        sds *rawvals, robj **pdecoded) {
+    serverAssert(num == 1);
+    UNUSED(data);
+    UNUSED(rawkeys);
+    sds rawval = rawvals[0];
+    robj* newval = rocksDecodeValRdb(rawval);
+    if (newval->refcount == OBJ_SHARED_REFCOUNT)
+        newval = dupSharedObject(newval);
+    *pdecoded = newval;
+    return 0;
+}
+
+
 
 static robj *createSwapInObject(robj *newval, robj *evict) {
     robj *swapin = newval;
@@ -177,10 +187,7 @@ static robj *createSwapInObject(robj *newval, robj *evict) {
     serverAssert(evict);
     serverAssert(evict->type == newval->type);
     /* Copy swapin object before modifing If newval is shared object. */
-    if (newval->refcount == OBJ_SHARED_REFCOUNT)
-        swapin = dupSharedObject(newval);
     swapin->lru = evict->lru;
-    swapin->dirty = 0;
     return swapin;
 }
 
@@ -244,11 +251,11 @@ int wholeKeySwapDel(swapData *data_, void *datactx, int async) {
 }
 
 /* decoded moved back by exec to wholekey then moved to exec again. */
-robj *wholeKeyCreateOrMergeObject(swapData *data, robj *decoded, void *datactx, int data_dirty) {
+robj *wholeKeyCreateOrMergeObject(swapData *data, robj *decoded, void *datactx, int del_flag) {
     UNUSED(data);
     UNUSED(datactx);
-    UNUSED(data_dirty);
     serverAssert(decoded);
+    decoded->dirty = del_flag & SWAPIN_DEL;
     return decoded;
 }
 
@@ -336,12 +343,15 @@ void rdbKeyDataInitLoadWholeKey(rdbKeyData *keydata, int rdbtype, sds key) {
     keydata->loadctx.wholekey.evict = NULL;
     keydata->loadctx.wholekey.hash_header = NULL;
     keydata->loadctx.wholekey.hash_nfields = 0;
+    keydata->loadctx.wholekey.zset_header = NULL;
+    keydata->loadctx.wholekey.zset_nfields = 0;
 }
 
 sds empty_hash_ziplist_verbatim;
 sds empty_set_intset_enc16_verbatim;
 sds empty_set_intset_enc32_verbatim;
 sds empty_set_intset_enc64_verbatim;
+sds empty_zset_ziplist_verbatim;
 
 void initSwapWholeKey() {
     robj *emptyhash = createHashObject();
@@ -356,16 +366,25 @@ void initSwapWholeKey() {
     ((intset*)emptyintset->ptr)->encoding = intrev32ifbe(sizeof(int64_t));
     empty_set_intset_enc64_verbatim = rocksEncodeValRdb(emptyintset);
     decrRefCount(emptyintset);
+
+    robj *empty_zset_ziplist = createZsetZiplistObject();
+    empty_zset_ziplist_verbatim = rocksEncodeValRdb(empty_zset_ziplist);
+    decrRefCount(empty_zset_ziplist);
 }
 
 static inline int hashZiplistVerbatimIsEmpty(sds verbatim) {
     return !sdscmp(empty_hash_ziplist_verbatim, verbatim);
 }
 
+
 static inline int setIntsetVerbatimIsEmpty(sds verbatim) {
     return !sdscmp(empty_set_intset_enc16_verbatim, verbatim)
         && !sdscmp(empty_set_intset_enc32_verbatim, verbatim)
         && !sdscmp(empty_set_intset_enc64_verbatim, verbatim);
+}
+
+static inline int zsetZiplistVerbatimIsEmpty(sds verbatim) {
+    return !sdscmp(empty_zset_ziplist_verbatim, verbatim);
 }
 
 int wholekeyRdbLoad(struct rdbKeyData *keydata, rio *rdb, sds *rawkey,
@@ -421,6 +440,28 @@ int wholekeyRdbLoad(struct rdbKeyData *keydata, rio *rdb, sds *rawkey,
             goto err;
         }
         evict = createObject(OBJ_SET,NULL);
+        break;
+    case RDB_TYPE_ZSET_ZIPLIST:
+        verbatim = rdbVerbatimNew((unsigned char)rdbtype);
+        if (rdbLoadStringVerbatim(rdb,&verbatim)) goto err;
+        if (zsetZiplistVerbatimIsEmpty(verbatim)) {
+            *error = RDB_LOAD_ERR_EMPTY_KEY;
+            goto err;
+        }
+        evict = createObject(OBJ_ZSET, NULL);
+        evict->encoding = OBJ_ENCODING_ZIPLIST;
+        break;    
+    case RDB_TYPE_ZSET_2:
+    case RDB_TYPE_ZSET:
+        verbatim = keydata->loadctx.wholekey.zset_header;
+        int zset_nfields = keydata->loadctx.wholekey.zset_nfields;
+        if (zset_nfields == 0) {
+            *error = RDB_LOAD_ERR_EMPTY_KEY;
+            goto err;
+        }
+        if (rdbLoadZSetFieldsVerbatim(rdb,zset_nfields,&verbatim, rdbtype)) goto err;
+        evict = createObject(OBJ_ZSET,NULL);
+        evict->encoding = OBJ_ENCODING_SKIPLIST;
         break;
     default:
         serverPanic("unsupported rdbtype:%d", rdbtype);
@@ -494,6 +535,9 @@ int swapDataWholeKeyTest(int argc, char **argv, int accurate) {
         test_assert(intention == SWAP_NOP);
         wholeKeySwapAna(data, SWAP_IN, 0, NULL, &intention, &intention_flags, ctx);
         test_assert(intention == SWAP_NOP);
+        wholeKeySwapAna(data, SWAP_IN, INTENTION_IN_DEL_MOCK_VALUE, NULL, &intention, &intention_flags, ctx);
+        test_assert(intention == SWAP_DEL);
+        test_assert(intention_flags == INTENTION_DEL_ASYNC);
         wholeKeySwapAna(data, SWAP_IN, INTENTION_IN_DEL, NULL, &intention, &intention_flags, ctx);
         test_assert(intention == SWAP_DEL);
         test_assert(intention_flags == INTENTION_DEL_ASYNC);
@@ -517,6 +561,9 @@ int swapDataWholeKeyTest(int argc, char **argv, int accurate) {
         test_assert(intention == SWAP_NOP);
         wholeKeySwapAna(data, SWAP_IN, 0, NULL, &intention, &intention_flags, ctx);
         test_assert(intention == SWAP_IN);
+        wholeKeySwapAna(data, SWAP_IN, INTENTION_IN_DEL_MOCK_VALUE, NULL, &intention, &intention_flags, ctx);
+        test_assert(intention == SWAP_IN);
+        test_assert(intention_flags == INTENTION_IN_DEL);
         wholeKeySwapAna(data, SWAP_IN, INTENTION_IN_DEL, NULL, &intention, &intention_flags, ctx);
         test_assert(intention == SWAP_IN);
         test_assert(intention_flags == INTENTION_IN_DEL);
@@ -818,7 +865,46 @@ int swapDataWholeKeyTest(int argc, char **argv, int accurate) {
         test_assert(sdscmp(rawval2,rawval) == 0);
         test_assert(keydata->loadctx.wholekey.evict->type == OBJ_HASH);
     }
+    TEST("wholeKey rdb save & load zset") {
+        int err;
+        rdbKeyData _keydata, *keydata = &_keydata;
+        rio sdsrdb;
+        robj *evict = createZsetZiplistObject();
+        decodeResult _decoded, *decoded = &_decoded;
 
+		robj *myzset;
+		sds myzset_key;
+		myzset_key = sdsnew("myzset");
+        myzset = createZsetZiplistObject();
+        int flags;
+        double newscore;
+        zsetAdd(myzset, 10, sdsnew("f1"), ZADD_IN_NONE, &flags, &newscore);
+        zsetAdd(myzset, 20, sdsnew("f2"), ZADD_IN_NONE, &flags, &newscore);
+        zsetAdd(myzset, 30, sdsnew("f3"), ZADD_IN_NONE, &flags, &newscore);
+        test_assert(zsetLength(myzset) == 3);
+
+        sds rawkey = rocksEncodeKey(ENC_TYPE_ZSET,myzset_key);
+        sds rawval = rocksEncodeValRdb(myzset);
+
+        sds rdbraw = sdsnewlen(rawval+1,sdslen(rawval)-1);
+        rocksDecodeRaw(sdsdup(rawkey),rawval[0],rdbraw,decoded);
+        test_assert(decoded->enc_type == ENC_TYPE_ZSET);
+        test_assert(!sdscmp(decoded->key,myzset_key));
+
+        rioInitWithBuffer(&sdsrdb, sdsempty());
+        rdbKeyDataInitSaveWholeKey(keydata,NULL,evict,-1);
+        test_assert(wholekeySave(keydata,&sdsrdb,decoded) == 0);
+
+        sds rawkey2, rawval2;
+        rio sdsrdb2;
+        rioInitWithBuffer(&sdsrdb2, rdbraw);
+        rdbKeyDataInitLoadWholeKey(keydata,rawval[0],myzset_key);
+        wholekeyRdbLoad(keydata,&sdsrdb2,&rawkey2,&rawval2,&err);
+        test_assert(err == 0);
+        test_assert(sdscmp(rawkey2,rawkey) == 0);
+        test_assert(sdscmp(rawval2,rawval) == 0);
+        test_assert(keydata->loadctx.wholekey.evict->type == OBJ_ZSET);
+    }
     return error;
 }
 

@@ -45,13 +45,11 @@ int rocksDecodeRaw(sds rawkey, unsigned char rdbtype, sds rdbraw,
     if (isSubkeyEncType(decoded->enc_type)) {
         if (rocksDecodeSubkey(rawkey,sdslen(rawkey),&key,&klen,
                               &subkey,&slen) == -1) {
-            sdsfree(rawkey);
             sdsfree(rdbraw);
             return -1;
         }
     } else {
         if (rocksDecodeKey(rawkey,sdslen(rawkey),&key,&klen) == -1) {
-            sdsfree(rawkey);
             sdsfree(rdbraw);
             return -1;
         }
@@ -60,7 +58,6 @@ int rocksDecodeRaw(sds rawkey, unsigned char rdbtype, sds rdbraw,
     decoded->subkey = sdsnewlen(subkey,slen);
     decoded->rdbtype = rdbtype;
     decoded->rdbraw = rdbraw;
-    sdsfree(rawkey);
     return 0;
 }
 
@@ -222,6 +219,20 @@ int rdbKeyDataInitSave(rdbKeyData *keydata, redisDb *db, decodeResult *decoded) 
                 serverAssert(meta == NULL);
                 rdbKeyDataInitSaveWholeKey(keydata,value,evict,expire);
             }
+        }  else if (evict->type == OBJ_ZSET) {
+            if (evict->big == 1) {
+                serverAssert(meta != NULL);
+                serverAssert(decoded->enc_type == ENC_TYPE_ZSET_SUB);
+                serverAssert(decoded->rdbtype == RDB_TYPE_STRING);
+                rdbKeyDataInitSaveBigZSet(keydata,value,evict,meta,expire,keystr);
+            } else {
+                serverAssert(meta == NULL);
+                if (decoded->enc_type != ENC_TYPE_ZSET) {
+                    serverAssert(0);
+                    return INIT_SAVE_SKIP;
+                }
+                rdbKeyDataInitSaveWholeKey(keydata,value,evict,expire);
+            }
         } else {
             serverPanic("unsupported cold key type.");
             return INIT_SAVE_ERR;
@@ -253,7 +264,7 @@ int rdbKeyDataInitSave(rdbKeyData *keydata, redisDb *db, decodeResult *decoded) 
 
 int rdbSaveRocksIterDecode(rocksIter *it, decodeResult *decoded,
         rdbSaveRocksStats *stats) {
-    sds rawkey, rawval;
+    sds rawkey = NULL, rawval;
     unsigned char rdbtype;
 
     /* rawkey,rawval moved from rocksIter to decoded. */
@@ -264,8 +275,10 @@ int rdbSaveRocksIterDecode(rocksIter *it, decodeResult *decoded,
             serverLog(LL_WARNING, "Decode rocks raw failed: %s", repr);
             sdsfree(repr);
         }
+        sdsfree(rawkey);
         return C_ERR;
     } else {
+        sdsfree(rawkey);
         stats->iter_decode_ok++;
         return C_OK;
     }
@@ -386,7 +399,7 @@ int rdbSaveRocks(rio *rdb, int *error, redisDb *db, int rdbflags) {
         }
 
         /* call save_end if save_start called, no matter error or not. */
-        if (rdbKeySaveEnd(keydata,save_result) == -1) {
+        if (rdbKeySaveEnd(keydata, save_result) == -1) {
             if (errstr == NULL) {
                 errstr = sdscatfmt(sdsempty(),"Save key end failed: %s",
                         strerror(errno));
@@ -710,6 +723,36 @@ int rdbLoadSetMembersVerbatim(rio *rdb, unsigned long long len, sds *verbatim) {
     return 0;
 }
 
+int rdbLoadBinarayDoubleVerbatim(rio *rdb, sds *verbatim) {
+    return rdbLoadRawVerbatim(rdb, verbatim, sizeof(double));
+}
+
+int rdbLoadDoubleVerbatim(rio *rdb, sds *verbatim) {
+    unsigned char len;
+    if (rioRead(rdb,&len,1) == 0) return -1;
+    *verbatim = sdscatlen(*verbatim, &len, 1);
+    switch(len) {
+        case 255: 
+        case 254:
+        case 253:
+            return 0;
+        default:
+            return rdbLoadRawVerbatim(rdb, verbatim, len);
+    }
+}
+
+int rdbLoadZSetFieldsVerbatim(rio *rdb, unsigned long long len, sds *verbatim, int rdbtype) {
+    while (len--) {
+        if (rdbLoadStringVerbatim(rdb,verbatim)) return -1; /* field */
+        if (rdbtype == RDB_TYPE_ZSET_2) {
+            if (rdbLoadBinarayDoubleVerbatim(rdb,verbatim)) return -1; /* value */
+        } else {
+            if (rdbLoadDoubleVerbatim(rdb,verbatim)) return -1; /* value */
+        }
+    }
+    return 0;
+}
+
 /* return 1 if load not load finished (needs to continue load). */
 int rdbKeyLoad(struct rdbKeyData *keydata, rio *rdb, sds *rawkey, sds *rawval,
         int *error) {
@@ -757,6 +800,7 @@ int rdbKeyDataInitLoad(rdbKeyData *keydata, rio *rdb, int rdbtype, sds key) {
     case RDB_TYPE_STRING:
     case RDB_TYPE_HASH_ZIPLIST:
     case RDB_TYPE_SET_INTSET:
+    case RDB_TYPE_ZSET_ZIPLIST:
         rdbKeyDataInitLoadWholeKey(keydata,rdbtype,key);
         break;
     case RDB_TYPE_HASH:
@@ -797,6 +841,28 @@ int rdbKeyDataInitLoad(rdbKeyData *keydata, rio *rdb, int rdbtype, sds key) {
             }
         }
         break;
+    case RDB_TYPE_ZSET_2:
+        {
+            int isencode;
+            unsigned long long len;
+            sds zset_header = rdbVerbatimNew((unsigned char)rdbtype);
+            /* nfield */
+            // zset len
+            if (rdbLoadLenVerbatim(rdb,&zset_header,&isencode,&len)) {
+                sdsfree(zset_header);
+                return RDB_LOAD_ERR_OTHER;
+            }
+            if (len*DEFAULT_ZSET_FIELD_SIZE < server.swap_big_zset_threshold) {
+                rdbKeyDataInitLoadWholeKey(keydata,rdbtype,key);
+                keydata->loadctx.wholekey.zset_header = zset_header;
+                keydata->loadctx.wholekey.zset_nfields = (int)len;
+            } else { /* big zset */
+                rdbKeyDataInitLoadBigZSet(keydata,rdbtype,key);
+                keydata->loadctx.bigzset.zset_nfields = (int)len;
+                sdsfree(zset_header);
+            }
+        }
+        break;
     default:
         rdbKeyDataInitLoadMemkey(keydata,rdbtype,key);
         break;
@@ -816,6 +882,9 @@ robj *rdbKeyLoadGetObject(struct rdbKeyData *keydata) {
     case RDB_KEY_TYPE_WHOLEKEY:
         x = keydata->loadctx.wholekey.evict;
         break;
+    case RDB_KEY_TYPE_BIGZSET:
+        x = keydata->loadctx.bigzset.evict;
+        break;
     default:
         x = NULL;
         break;
@@ -823,17 +892,23 @@ robj *rdbKeyLoadGetObject(struct rdbKeyData *keydata) {
     return x;
 }
 
-int ctripRdbLoadObject(int rdbtype, rio *rdb, sds key, rdbKeyData *keydata) {
+int ctripRdbLoadObject(int rdbtype, rio *rdb, sds key, rdbKeyData *keydata, int flag) {
     int error = 0, cont;
     sds rawkey, rawval;
     if ((error = rdbKeyDataInitLoad(keydata,rdb,rdbtype,key)))
         return error;
     do {
         cont = rdbKeyLoad(keydata,rdb,&rawkey,&rawval,&error);
-        if (!error && rawkey) {
+        if (!error && rawkey ) {
             serverAssert(rawval);
-            ctripRdbLoadCtxFeed(server.rdb_load_ctx,rawkey,rawval);
-            keydata->loadctx.nfeeds++;
+            if (flag == CTRIP_RDB_LOAD_OBJECT_EXPIRED) {
+                if(rawkey) sdsfree(rawkey);
+                if(rawval) sdsfree(rawval);
+            } else {
+                ctripRdbLoadCtxFeed(server.rdb_load_ctx,rawkey,rawval);
+                keydata->loadctx.nfeeds++;
+            }
+            
         }
     } while (!error && cont);
     if (!error) error = rdbKeyLoadEnd(keydata,rdb);
@@ -956,7 +1031,7 @@ int swapRdbTest(int argc, char *argv[], int accurate) {
 
         evictStartLoading();
         rdbtype = rdbLoadObjectType(&sdsrdb);
-        ctripRdbLoadObject(rdbtype,&sdsrdb,myhash_key,keydata);
+        ctripRdbLoadObject(rdbtype,&sdsrdb,myhash_key,keydata, CTRIP_RDB_LOAD_OBJECT_NONE);
         test_assert(keydata->loadctx.type == RDB_KEY_TYPE_WHOLEKEY);
         evict = keydata->loadctx.wholekey.evict;
         test_assert(evict && evict->type == OBJ_HASH);

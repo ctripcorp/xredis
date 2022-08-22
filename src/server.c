@@ -213,7 +213,7 @@ struct redisCommand redisCommandTable[] = {
      * implicit DEL of a large key. */
     {"set",setCommand,-3,
      "write use-memory @string",
-     0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,NULL,NULL,SWAP_IN,INTENTION_IN_DEL,1,1,1,0,0,0},
 
     {"setnx",setnxCommand,3,
      "write use-memory fast @string",
@@ -237,11 +237,11 @@ struct redisCommand redisCommandTable[] = {
 
     {"del",delCommand,-2,
      "write @keyspace",
-     0,NULL,NULL,SWAP_IN,INTENTION_IN_DEL,1,-1,1,0,0,0},
+     0,NULL,NULL,SWAP_IN,INTENTION_IN_DEL_MOCK_VALUE,1,-1,1,0,0,0},
 
     {"unlink",unlinkCommand,-2,
      "write fast @keyspace",
-     0,NULL,NULL,SWAP_IN,INTENTION_IN_DEL,1,-1,1,0,0,0},
+     0,NULL,NULL,SWAP_IN,INTENTION_IN_DEL_MOCK_VALUE,1,-1,1,0,0,0},
 
     {"exists",existsCommand,-2,
      "read-only fast @keyspace",
@@ -393,7 +393,7 @@ struct redisCommand redisCommandTable[] = {
 
     {"spop",spopCommand,-2,
      "write random fast @set",
-     0,NULL,NULL,SWAP_IN,INTENTION_IN_AND_DEL,1,1,1,0,0,0},
+     0,NULL,NULL,SWAP_IN,INTENTION_IN_DEL,1,1,1,0,0,0},
 
     {"srandmember",srandmemberCommand,-2,
      "read-only random @set",
@@ -433,39 +433,39 @@ struct redisCommand redisCommandTable[] = {
 
     {"zadd",zaddCommand,-4,
      "write use-memory fast @sortedset",
-     0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,NULL,getKeyRequestsZAdd,SWAP_IN,0,1,1,1,0,0,0},
 
     {"zincrby",zincrbyCommand,4,
      "write use-memory fast @sortedset",
-     0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,NULL,getKeyRequestsZincrby,SWAP_IN,0,1,1,1,0,0,0},
 
     {"zrem",zremCommand,-3,
      "write fast @sortedset",
-     0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,NULL,getKeyRequestsZrem,SWAP_IN,INTENTION_IN_DEL,1,1,1,0,0,0},
 
     {"zremrangebyscore",zremrangebyscoreCommand,4,
      "write @sortedset",
-     0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,NULL,NULL,SWAP_IN,INTENTION_IN_DEL,1,1,1,0,0,0},
 
     {"zremrangebyrank",zremrangebyrankCommand,4,
      "write @sortedset",
-     0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,NULL,NULL,SWAP_IN,INTENTION_IN_DEL,1,1,1,0,0,0},
 
     {"zremrangebylex",zremrangebylexCommand,4,
      "write @sortedset",
-     0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,NULL,NULL,SWAP_IN,INTENTION_IN_DEL,1,1,1,0,0,0},
 
     {"zunionstore",zunionstoreCommand,-4,
      "write use-memory @sortedset",
-     0,zunionInterDiffStoreGetKeys,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,zunionInterDiffStoreGetKeys,getKeyRequestsZunionstore,SWAP_IN,0,1,1,1,0,0,0},
 
     {"zinterstore",zinterstoreCommand,-4,
      "write use-memory @sortedset",
-     0,zunionInterDiffStoreGetKeys,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,zunionInterDiffStoreGetKeys,getKeyRequestsZinterstore,SWAP_IN,0,1,1,1,0,0,0},
 
     {"zdiffstore",zdiffstoreCommand,-4,
      "write use-memory @sortedset",
-     0,zunionInterDiffStoreGetKeys,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,zunionInterDiffStoreGetKeys,getKeyRequestsZdiffstore,SWAP_IN,0,1,1,1,0,0,0},
 
     {"zunion",zunionCommand,-3,
      "read-only @sortedset",
@@ -485,7 +485,7 @@ struct redisCommand redisCommandTable[] = {
 
     {"zrangestore",zrangestoreCommand,-5,
      "write use-memory @sortedset",
-     0,NULL,NULL,SWAP_IN,0,1,2,1,0,0,0},
+     0,NULL,getKeyRequestsZrangestore,SWAP_IN,0,1,2,1,0,0,0},
 
     {"zrangebyscore",zrangebyscoreCommand,-4,
      "read-only @sortedset",
@@ -521,7 +521,7 @@ struct redisCommand redisCommandTable[] = {
 
     {"zscore",zscoreCommand,3,
      "read-only fast @sortedset",
-     0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,NULL,getKeyRequestsZScore,SWAP_IN,0,1,1,1,0,0,0},
 
     {"zmscore",zmscoreCommand,-3,
      "read-only fast @sortedset",
@@ -541,19 +541,19 @@ struct redisCommand redisCommandTable[] = {
 
     {"zpopmin",zpopminCommand,-2,
      "write fast @sortedset",
-     0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,NULL,NULL,SWAP_IN,INTENTION_IN_DEL,1,1,1,0,0,0},
 
     {"zpopmax",zpopmaxCommand,-2,
      "write fast @sortedset",
-     0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,NULL,NULL,SWAP_IN,INTENTION_IN_DEL,1,1,1,0,0,0},
 
     {"bzpopmin",bzpopminCommand,-3,
      "write no-script fast @sortedset @blocking",
-     0,NULL,NULL,SWAP_IN,0,1,-2,1,0,0,0},
+     0,NULL,getKeyRequestsZpopMin,SWAP_IN,0,1,-2,1,0,0,0},
 
     {"bzpopmax",bzpopmaxCommand,-3,
      "write no-script fast @sortedset @blocking",
-     0,NULL,NULL,SWAP_IN,0,1,-2,1,0,0,0},
+     0,NULL,getKeyRequestsZpopMax,SWAP_IN,0,1,-2,1,0,0,0},
 
     {"zrandmember",zrandmemberCommand,-2,
      "read-only random @sortedset",
@@ -870,7 +870,7 @@ struct redisCommand redisCommandTable[] = {
 
     {"restore",restoreCommand,-4,
      "write use-memory @keyspace @dangerous",
-     0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,NULL,NULL,SWAP_IN,INTENTION_IN_DEL,1,1,1,0,0,0},
 
     {"restore-asking",restoreCommand,-4,
      "write use-memory cluster-asking @keyspace @dangerous",
@@ -960,12 +960,12 @@ struct redisCommand redisCommandTable[] = {
 
     {"geoadd",geoaddCommand,-5,
      "write use-memory @geo",
-     0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,NULL,getKeyRequestsGeoAdd,SWAP_IN,0,1,1,1,0,0,0},
 
     /* GEORADIUS has store options that may write. */
     {"georadius",georadiusCommand,-6,
      "write use-memory @geo",
-     0,georadiusGetKeys,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,georadiusGetKeys,getKeyRequestsGeoRadius,SWAP_IN,0,1,1,1,0,0,0},
 
     {"georadius_ro",georadiusroCommand,-6,
      "read-only @geo",
@@ -973,7 +973,7 @@ struct redisCommand redisCommandTable[] = {
 
     {"georadiusbymember",georadiusbymemberCommand,-5,
      "write use-memory @geo",
-     0,georadiusGetKeys,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,georadiusGetKeys,getKeyRequestsGeoRadiusByMember,SWAP_IN,0,1,1,1,0,0,0},
 
     {"georadiusbymember_ro",georadiusbymemberroCommand,-5,
      "read-only @geo",
@@ -981,15 +981,15 @@ struct redisCommand redisCommandTable[] = {
 
     {"geohash",geohashCommand,-2,
      "read-only @geo",
-     0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,NULL,getKeyRequestsGeoHash,SWAP_IN,0,1,1,1,0,0,0},
 
     {"geopos",geoposCommand,-2,
      "read-only @geo",
-     0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,NULL,getKeyRequestsGeoPos,SWAP_IN,0,1,1,1,0,0,0},
 
     {"geodist",geodistCommand,-4,
      "read-only @geo",
-     0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,NULL,getKeyRequestsGeoDist,SWAP_IN,0,1,1,1,0,0,0},
 
     {"geosearch",geosearchCommand,-7,
      "read-only @geo",
@@ -997,7 +997,7 @@ struct redisCommand redisCommandTable[] = {
 
     {"geosearchstore",geosearchstoreCommand,-8,
      "write use-memory @geo",
-      0,NULL,NULL,SWAP_IN,0,1,2,1,0,0,0},
+      0,NULL,getKeyRequestsGeoSearchStore,SWAP_IN,0,1,2,1,0,0,0},
 
     {"pfselftest",pfselftestCommand,1,
      "admin @hyperloglog",
@@ -4086,7 +4086,8 @@ int processCommand(client *c) {
     }
 
     moduleCallCommandFilters(c);
-
+    
+    
     /* The QUIT command is handled separately. Normal command procs will
      * go through checking for replication and QUIT will cause trouble
      * when FORCE_REPLICATION is enabled and would be implemented in

@@ -39,6 +39,7 @@ int rocksGetObjectType(unsigned char enc_type) {
     case ENC_TYPE_SET: return OBJ_SET;
     case ENC_TYPE_SET_SUB: return OBJ_SET;
     case ENC_TYPE_ZSET: return OBJ_ZSET;
+    case ENC_TYPE_ZSET_SUB: return OBJ_ZSET;
     case ENC_TYPE_HASH: return OBJ_HASH;
     case ENC_TYPE_HASH_SUB: return OBJ_HASH;
     case ENC_TYPE_MODULE: return OBJ_MODULE;
@@ -168,7 +169,7 @@ int rocksDecodeSubkey(const char *raw, size_t rawlen,
     rawlen-= _klen;
 
     if (rawlen < 0) return -1;
-    if (obj_type == OBJ_SET) {
+    if (obj_type == OBJ_SET || obj_type == OBJ_ZSET) {
         if (rawlen == 0) {
             raw = NULL;
         }

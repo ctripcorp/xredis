@@ -2571,6 +2571,7 @@ standardConfig configs[] = {
     createULongLongConfig("swap-evict-step-max-memory", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.swap_evict_step_max_memory, 1*1024*1024, MEMORY_CONFIG, NULL, NULL), /* Default: 1mb */
     createULongLongConfig("swap-big-hash-threshold", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.swap_big_hash_threshold, 256*1024, MEMORY_CONFIG, NULL, NULL), /* Default: 256k */
     createULongLongConfig("swap-big-set-threshold", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.swap_big_set_threshold, 256*1024, MEMORY_CONFIG, NULL, NULL), /* Default: 256k */
+    createULongLongConfig("swap-big-zset-threshold", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.swap_big_zset_threshold, 256*1024, MEMORY_CONFIG, NULL, NULL), /* Default: 256k */
     createULongLongConfig("swap-max-iter-rate", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.swap_max_iter_rate, 0, MEMORY_CONFIG, NULL, NULL), /* Default: unlimited */
 
     /* Size_t configs */
