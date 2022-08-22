@@ -108,6 +108,7 @@ void getKeyRequestsFreeResult(getKeyRequestsResult *result);
 #define SWAP_OUT    2
 #define SWAP_DEL    3
 #define SWAP_TYPES  4
+#define COMPACT_RANGE 5
 
 /* --- RDB_KEY_SAVE --- */
 #define RDB_KEY_SAVE_NEXT 1
@@ -309,7 +310,7 @@ swapRequest *swapRequestNew(int intention, uint32_t intention_flags, swapData *d
 void swapRequestFree(swapRequest *req);
 int executeSwapRequest(swapRequest *req);
 int finishSwapRequest(swapRequest *req);
-void submitSwapRequest(int mode, int intention, uint32_t intention_flags, swapData* data, void *datactx, swapRequestFinishedCallback cb, void *pd, void *msgs);
+void submitSwapRequest(int mode, int intention, uint32_t intention_flags, swapData* data, void *datactx, swapRequestFinishedCallback cb, void *pd, void *msgs, int thread_idx);
 
 /* --- Threads (encode/rio/decode/finish) --- */
 #define SWAP_THREADS_DEFAULT     4
@@ -326,7 +327,7 @@ typedef struct swapThread {
 
 int swapThreadsInit();
 void swapThreadsDeinit();
-void swapThreadsDispatch(swapRequest *req);
+void swapThreadsDispatch(swapRequest *req, int idx);
 int swapThreadsDrained();
 
 /* RIO */
@@ -409,7 +410,7 @@ void asyncCompleteQueueDeinit(asyncCompleteQueue *cq);
 int asyncCompleteQueueAppend(asyncCompleteQueue *cq, swapRequest *req);
 int asyncCompleteQueueDrain(mstime_t time_limit);
 
-void asyncSwapRequestSubmit(swapRequest *req);
+void asyncSwapRequestSubmit(swapRequest *req, int idx);
 
 /* --- Parallel sync --- */
 typedef struct {
@@ -429,7 +430,7 @@ int parallelSyncInit(int parallel);
 void parallelSyncDeinit();
 int parallelSyncDrain();
 
-int parallelSyncSwapRequestSubmit(swapRequest *req);
+int parallelSyncSwapRequestSubmit(swapRequest *req, int idx);
 
 /* --- Wait --- */
 #define DEFAULT_REQUEST_LISTENER_REENTRANT_SIZE 8
@@ -842,6 +843,13 @@ size_t keyEstimateSize(redisDb *db, robj *key);
 void swapCommand(client *c);
 void expiredCommand(client *c);
 const char *strObjectType(int type);
+
+#define COMPACT_RANGE_TASK 0
+typedef struct rocksdbUtilTaskManager{
+    int compact_range_status;
+} rocksdbUtilTaskManager;
+rocksdbUtilTaskManager* createRocksdbUtilTaskManager();
+int submitUtilTask(int type, void* ctx, sds* error);
 
 
 #ifdef REDIS_TEST

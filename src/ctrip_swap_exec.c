@@ -27,6 +27,8 @@
  */
 
 #include "ctrip_swap.h"
+#include <dirent.h>
+#include <sys/stat.h>
 
 #define EXEC_OK      0
 #define EXEC_FAIL    -1
@@ -483,6 +485,60 @@ end:
     return retval;
 }
 
+
+/*
+    calculate the size of all files in a folder
+*/
+static long get_dir_size(char *dirname)
+{
+    DIR *dir;
+    struct dirent *ptr;
+    long total_size = 0;
+    char path[PATH_MAX] = {0};
+
+    dir = opendir(dirname);
+    if(dir == NULL)
+    {
+        serverLog(LL_WARNING,"open dir(%s) failed.", dirname);
+        return -1;
+    }
+
+    while((ptr=readdir(dir)) != NULL)
+    {
+        snprintf(path, (size_t)PATH_MAX, "%s/%s", dirname,ptr->d_name);
+        struct stat buf;
+        if(lstat(path, &buf) < 0) {
+            serverLog(LL_WARNING, "path(%s) lstat error", path);
+        }
+        if(strcmp(ptr->d_name,".") == 0) {
+            total_size += buf.st_size;
+            continue;
+        }
+        if(strcmp(ptr->d_name,"..") == 0) {
+            continue;
+        }
+        if (S_ISDIR(buf.st_mode))
+        {
+            total_size += get_dir_size(path);
+            memset(path, 0, sizeof(path));
+        } else {
+            total_size += buf.st_size;
+        }
+    }
+    closedir(dir);
+    return total_size;
+}
+
+static int executeCompactRange(swapRequest *req) {
+    char dir[ROCKS_DIR_MAX_LEN];
+    snprintf(dir, ROCKS_DIR_MAX_LEN, "%s/%d", ROCKS_DATA, server.rocksdb_epoch);
+    serverLog(LL_WARNING, "[rocksdb compact range before] dir(%s) size(%ld)", dir, get_dir_size(dir));
+    rocksdb_compact_range(server.rocks->db, NULL, 0, NULL, 0);
+    serverLog(LL_WARNING, "[rocksdb compact range after] dir(%s) size(%ld)", dir, get_dir_size(dir));
+    doNotify(req);
+    return EXEC_OK;
+}
+
 static int executeSwapOutRequest(swapRequest *req) {
     int i, numkeys, retval = EXEC_OK, action;
     sds *rawkeys = NULL, *rawvals = NULL;
@@ -693,6 +749,7 @@ int executeSwapRequest(swapRequest *req) {
     case SWAP_IN: return executeSwapInRequest(req);
     case SWAP_OUT: return executeSwapOutRequest(req);
     case SWAP_DEL: return executeSwapDelRequest(req);
+    case COMPACT_RANGE: return executeCompactRange(req);
     default: return EXEC_FAIL;
     }
 }
@@ -717,13 +774,13 @@ int finishSwapRequest(swapRequest *req) {
 
 void submitSwapRequest(int mode, int intention,
         uint32_t intention_flags, swapData* data, void *datactx,
-        swapRequestFinishedCallback cb, void *pd, void *msgs) {
+        swapRequestFinishedCallback cb, void *pd, void *msgs, int idx) {
     swapRequest *req = swapRequestNew(intention,intention_flags,data,datactx,cb,pd,msgs);
     updateStatsSwapStart(req);
     if (mode == SWAP_MODE_ASYNC) {
-        asyncSwapRequestSubmit(req);
+        asyncSwapRequestSubmit(req, idx);
     } else {
-        parallelSyncSwapRequestSubmit(req);
+        parallelSyncSwapRequestSubmit(req,  idx);
     }
 }
 

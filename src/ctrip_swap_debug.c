@@ -27,8 +27,6 @@
  */
 
 #include "ctrip_swap.h"
-#include <dirent.h>
-#include <sys/stat.h>
 
 int doRIO(RIO *rio);
 
@@ -54,51 +52,6 @@ static sds getSwapMetaInfo(objectMeta *m) {
         return sdsnew("<nil>");
     }
 }
-
-
-/*
-    calculate the size of all files in a folder
-*/
-long get_dir_size(char *dirname)
-{
-        DIR *dir;
-        struct dirent *ptr;
-        long total_size = 0;
-        char path[PATH_MAX] = {0};
-
-        dir = opendir(dirname);
-        if(dir == NULL)
-        {
-            serverLog(LL_WARNING,"open dir(%s) failed.", dirname);
-            return -1;
-        }
-
-        while((ptr=readdir(dir)) != NULL)
-        {
-            snprintf(path, (size_t)PATH_MAX, "%s/%s", dirname,ptr->d_name);
-            struct stat buf;
-            if(lstat(path, &buf) < 0) {
-                serverLog(LL_WARNING, "path(%s) lstat error", path);
-            }
-            if(strcmp(ptr->d_name,".") == 0) {
-                    total_size += buf.st_size;
-                    continue;
-            }
-            if(strcmp(ptr->d_name,"..") == 0) {
-                    continue;
-            }
-            if (S_ISDIR(buf.st_mode))
-            {
-                    total_size += get_dir_size(path);
-                    memset(path, 0, sizeof(path));
-            } else {
-                    total_size += buf.st_size;
-            }
-        }
-        closedir(dir);
-        return total_size;
-}
-
 
 void swapCommand(client *c) {
     if (c->argc == 2 && !strcasecmp(c->argv[1]->ptr,"help")) {
@@ -223,12 +176,13 @@ NULL
         resetStatsSwap();
         addReply(c,shared.ok);
     } else if (!strcasecmp(c->argv[1]->ptr,"compact") && c->argc == 2) {
-        char dir[ROCKS_DIR_MAX_LEN];
-        snprintf(dir, ROCKS_DIR_MAX_LEN, "%s/%d", ROCKS_DATA, server.rocksdb_epoch);
-        serverLog(LL_WARNING, "[rocksdb compact range before] dir(%s) size(%ld)", dir, get_dir_size(dir));
-        rocksdb_compact_range(server.rocks->db, NULL, 0, NULL, 0);
-        serverLog(LL_WARNING, "[rocksdb compact range after] dir(%s) size(%ld)", dir, get_dir_size(dir));
-        addReply(c,shared.ok);
+        sds error = NULL;
+        if (submitUtilTask(COMPACT_RANGE_TASK, NULL, &error)) {
+            addReply(c,shared.ok);
+        } else {
+            addReplyErrorSds(c,error);
+        }
+
     } else {
         addReplySubcommandSyntaxError(c);
         return;

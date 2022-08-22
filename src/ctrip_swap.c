@@ -274,7 +274,7 @@ int genericRequestProceed(void *listeners, redisDb *db, robj *key,
 
     submitSwapRequest(SWAP_MODE_ASYNC,ctx->swap_intention,
             ctx->swap_intention_flags,
-            data,datactx,keyRequestSwapFinished,ctx,msgs);
+            data,datactx,keyRequestSwapFinished,ctx,msgs, -1);
 
     return C_OK;
 

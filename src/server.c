@@ -3479,6 +3479,7 @@ void InitServerLast() {
     server.meta_version = 1;
     server.swap_txid = 0;
     rocksInit();
+    server.util_task_manager = createRocksdbUtilTaskManager();
     asyncCompleteQueueInit();
     parallelSyncInit(server.ps_parallism_rdb);
     swapThreadsInit();
