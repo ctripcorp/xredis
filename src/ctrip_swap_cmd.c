@@ -277,7 +277,7 @@ int getKeyRequestsSinterstore(struct redisCommand *cmd, robj **argv, int argc, s
     getKeyRequestsPrepareResult(result, result->num + argc);
     incrRefCount(argv[1]);
     getKeyRequestsAppendResult(result,REQUEST_LEVEL_KEY,argv[1], 0, NULL,
-                               SWAP_IN, INTENTION_IN_AND_DEL,KEYREQUESTS_DBID);
+                               SWAP_IN, INTENTION_IN_DEL,KEYREQUESTS_DBID);
     for(int i = 2; i < argc; i++) {
         incrRefCount(argv[i]);
         getKeyRequestsAppendResult(result,REQUEST_LEVEL_KEY,argv[i], 0, NULL,
@@ -296,6 +296,7 @@ int getKeyRequestsHmget(struct redisCommand *cmd, robj **argv, int argc,
         struct getKeyRequestsResult *result) {
     return getKeyRequestsSingleKeyWithSubkeys(cmd,argv,argc,result,1,2,-1,1);
 }
+
 
 int getKeyRequestSmembers(struct redisCommand *cmd, robj **argv, int argc,
         struct getKeyRequestsResult *result) {
@@ -322,6 +323,158 @@ int getKeyRequestSmove(struct redisCommand *cmd, robj **argv, int argc,
                                SWAP_IN, 0,KEYREQUESTS_DBID);
 
     return 0;
+}
+
+
+
+/* zset type */
+int getKeyRequestsZScore(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result) {
+    return getKeyRequestsSingleKeyWithSubkeys(cmd,argv,argc,result,1,2,-1,1);
+}
+
+int getKeyRequestsZincrby(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result) {
+    return getKeyRequestsSingleKeyWithSubkeys(cmd, argv, argc, result, 1, 3, -1, 2);
+}
+
+int getKeyRequestsZAdd(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result) {
+    int first_score = 2;
+    while(first_score < argc) {
+        char *opt = argv[first_score]->ptr;
+        if (
+            strcasecmp(opt,"nx") != 0 &&
+            strcasecmp(opt,"xx") != 0 &&
+            strcasecmp(opt,"ch") != 0 &&
+            strcasecmp(opt,"incr") != 0 &&
+            strcasecmp(opt,"gt") != 0 &&
+            strcasecmp(opt,"lt") != 0 
+        ) {
+            break;
+        }
+        first_score++;
+    }
+    return getKeyRequestsSingleKeyWithSubkeys(cmd, argv, argc, result, 1, first_score + 1, -1, 2);
+}
+
+int getKeyRequestsZunionInterDiffGeneric(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result, int op) {
+    long long setnum;
+    int numkeysIndex = 2;
+    if (getLongLongFromObject(argv[2], &setnum) != C_OK) {
+        return C_ERR;
+    }
+    if (setnum < 1 || setnum + 3 > argc) {
+        return C_ERR;
+    }
+    
+    getKeyRequestsPrepareResult(result,result->num+ setnum + 1);
+    incrRefCount(argv[1]);
+    getKeyRequestsAppendResult(result,REQUEST_LEVEL_KEY,argv[1],0,NULL,
+            SWAP_IN, INTENTION_IN_DEL,KEYREQUESTS_DBID);
+    for(long long i = 0; i < setnum; i++) {        
+        incrRefCount(argv[i + 3]);
+        getKeyRequestsAppendResult(result,REQUEST_LEVEL_KEY,argv[i + 3], 0, NULL,
+            SWAP_IN,0,KEYREQUESTS_DBID);
+        
+    }
+    
+    
+    
+    return C_OK;
+}
+
+int getKeyRequestsZunionstore(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result) {
+    return getKeyRequestsZunionInterDiffGeneric(cmd, argv, argc, result, SET_OP_UNION);
+}
+
+int getKeyRequestsZinterstore(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result) {
+    return getKeyRequestsZunionInterDiffGeneric(cmd, argv, argc, result, SET_OP_INTER);
+}
+int getKeyRequestsZdiffstore(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result) {
+    return getKeyRequestsZunionInterDiffGeneric(cmd, argv, argc, result, SET_OP_DIFF);
+}
+
+#define ZMIN -1
+#define ZMAX 1
+int getKeyRequestsZpopGeneric(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result, int flags) {
+    getKeyRequestsPrepareResult(result,result->num+ argc - 2);
+    for(int i = 1; i < argc - 1; i++) {
+        incrRefCount(argv[i]);
+        getKeyRequestsAppendResult(result, REQUEST_LEVEL_KEY, argv[i], 0, NULL, SWAP_IN, INTENTION_IN_DEL, 0);
+    }
+    return C_OK;
+}
+
+int getKeyRequestsZpopMin(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result) {
+    return getKeyRequestsZpopGeneric(cmd, argv, argc, result, ZMIN);  
+}
+
+int getKeyRequestsZpopMax(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result) {
+    return getKeyRequestsZpopGeneric(cmd, argv, argc, result, ZMAX);    
+}
+
+int getKeyRequestsZrangestore(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result) {
+    getKeyRequestsPrepareResult(result,result->num+ 2);
+    for(int i = 1; i < 3; i++) {
+        incrRefCount(argv[i]);
+        getKeyRequestsAppendResult(result, REQUEST_LEVEL_KEY, argv[i], 0, NULL, SWAP_IN, INTENTION_IN_DEL, 0);
+    }
+    return C_OK;
+}
+
+/** geo **/
+int getKeyRequestsGeoAdd(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result) {
+    int first_score = 2;
+    while(first_score < argc) {
+        char *opt = argv[first_score]->ptr;
+        if (
+            strcasecmp(opt,"nx") != 0 &&
+            strcasecmp(opt,"xx") != 0 &&
+            strcasecmp(opt,"ch") != 0 
+        ) {
+            break;
+        }
+        first_score++;
+    }
+    return getKeyRequestsSingleKeyWithSubkeys(cmd, argv, argc, result, 1, first_score + 2, -1, 3);
+}
+
+int getKeyRequestsGeoDist(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result) {
+    return getKeyRequestsSingleKeyWithSubkeys(cmd,argv,argc,result,1,2,-2,1);
+}
+
+int getKeyRequestsGeoHash(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result) {
+    return getKeyRequestsSingleKeyWithSubkeys(cmd,argv,argc,result,1,2,-1,1);
+}
+
+int getKeyRequestsGeoRadius(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result) {
+    robj* storekey = NULL;
+    for(int i =0; i < argc; i++) {
+        if (!strcasecmp(argv[i]->ptr, "store") && (i+1) < argc) {
+            storekey = argv[i+1];
+            i++;
+        } else if(!strcasecmp(argv[i]->ptr, "storedist") && (i+1) < argc) {
+            storekey = argv[i+1];
+            i++;
+        }
+    }
+    getKeyRequestsPrepareResult(result,result->num+ 2);
+    incrRefCount(argv[1]);
+    getKeyRequestsAppendResult(result, REQUEST_LEVEL_KEY, argv[1], 0, NULL, SWAP_IN, 0, 0);
+    if (storekey != NULL) {
+        incrRefCount(storekey);
+        getKeyRequestsAppendResult(result, REQUEST_LEVEL_KEY, storekey, 0, NULL, SWAP_IN, INTENTION_IN_DEL, 0);
+    }
+    return C_OK;
+}
+
+int getKeyRequestsGeoSearchStore(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result) {
+    
+    getKeyRequestsPrepareResult(result,result->num+ 2);
+    incrRefCount(argv[1]);
+    getKeyRequestsAppendResult(result, REQUEST_LEVEL_KEY, argv[1], 0, NULL, SWAP_IN, INTENTION_IN_DEL, 0);
+    
+    incrRefCount(argv[2]);
+    getKeyRequestsAppendResult(result, REQUEST_LEVEL_KEY, argv[2], 0, NULL, SWAP_IN, 0, 0);
+    return C_OK;
 }
 
 #ifdef REDIS_TEST

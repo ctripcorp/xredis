@@ -17,7 +17,6 @@ start_server {tags {"keyspace"}} {
         foreach key {key_x key_y key_z foo_a foo_b foo_c} {
             r set $key hello
         }
-        after 200
         lsort [r keys foo*]
     } {foo_a foo_b foo_c}
 
@@ -160,61 +159,59 @@ start_server {tags {"keyspace"}} {
         r dbsize
     } {0}
 
-    if {!$::swap} {
-        test {DEL all keys again (DB 1)} {
-            r select 10
-            foreach key [r keys *] {
-                r del $key
-            }
-            set res [r dbsize]
-            r select 9
-            format $res
-        } {0}
+    test {DEL all keys again (DB 1)} {
+        r select 10
+        foreach key [r keys *] {
+            r del $key
+        }
+        set res [r dbsize]
+        r select 9
+        format $res
+    } {0}
 
-        test {COPY basic usage for string} {
-            r set mykey foobar
-            set res {}
-            r copy mykey mynewkey
-            lappend res [r get mynewkey]
-            lappend res [r dbsize]
-            r copy mykey mynewkey DB 10
-            r select 10
-            lappend res [r get mynewkey]
-            lappend res [r dbsize]
-            r select 9
-            format $res
-        } [list foobar 2 foobar 1]
+    test {COPY basic usage for string} {
+        r set mykey foobar
+        set res {}
+        r copy mykey mynewkey
+        lappend res [r get mynewkey]
+        lappend res [r dbsize]
+        r copy mykey mynewkey DB 10
+        r select 10
+        lappend res [r get mynewkey]
+        lappend res [r dbsize]
+        r select 9
+        format $res
+    } [list foobar 2 foobar 1]
 
-        test {COPY for string does not replace an existing key without REPLACE option} {
-            r set mykey2 hello
-            catch {r copy mykey2 mynewkey DB 10} e
-            set e
-        } {0}
+    test {COPY for string does not replace an existing key without REPLACE option} {
+        r set mykey2 hello
+        catch {r copy mykey2 mynewkey DB 10} e
+        set e
+    } {0}
 
-        test {COPY for string can replace an existing key with REPLACE option} {
-            r copy mykey2 mynewkey DB 10 REPLACE
-            r select 10
-            r get mynewkey
-        } {hello}
+    test {COPY for string can replace an existing key with REPLACE option} {
+        r copy mykey2 mynewkey DB 10 REPLACE
+        r select 10
+        r get mynewkey
+    } {hello}
 
-        test {COPY for string ensures that copied data is independent of copying data} {
-            r flushdb
-            r select 9
-            r set mykey foobar
-            set res {}
-            r copy mykey mynewkey DB 10
-            r select 10
-            lappend res [r get mynewkey]
-            r set mynewkey hoge
-            lappend res [r get mynewkey]
-            r select 9
-            lappend res [r get mykey]
-            r select 10
-            r flushdb
-            r select 9
-            format $res
-        } [list foobar hoge foobar]
-    }
+    test {COPY for string ensures that copied data is independent of copying data} {
+        r flushdb
+        r select 9
+        r set mykey foobar
+        set res {}
+        r copy mykey mynewkey DB 10
+        r select 10
+        lappend res [r get mynewkey]
+        r set mynewkey hoge
+        lappend res [r get mynewkey]
+        r select 9
+        lappend res [r get mykey]
+        r select 10
+        r flushdb
+        r select 9
+        format $res
+    } [list foobar hoge foobar]
 
     test {COPY for string does not copy data to no-integer DB} {
         r set mykey foobar
@@ -313,8 +310,8 @@ start_server {tags {"keyspace"}} {
         r copy hash1 newhash1
         set digest [r debug digest-value hash1]
         assert_equal $digest [r debug digest-value newhash1]
-        # assert_equal 1 [r object refcount hash1]
-        # assert_equal 1 [r object refcount newhash1]
+        assert_equal 1 [r object refcount hash1]
+        assert_equal 1 [r object refcount newhash1]
         r del hash1
         assert_equal $digest [r debug digest-value newhash1]
     }
@@ -330,8 +327,8 @@ start_server {tags {"keyspace"}} {
         r copy hash2 newhash2
         set digest [r debug digest-value hash2]
         assert_equal $digest [r debug digest-value newhash2]
-        # assert_equal 1 [r object refcount hash2]
-        # assert_equal 1 [r object refcount newhash2]
+        assert_equal 1 [r object refcount hash2]
+        assert_equal 1 [r object refcount newhash2]
         r del hash2
         assert_equal $digest [r debug digest-value newhash2]
         r config set hash-max-ziplist-entries $original_max
@@ -379,74 +376,72 @@ start_server {tags {"keyspace"}} {
         r flushdb
     }
 
-    if {!$::swap} {
-        test {MOVE basic usage} {
-            r set mykey foobar
-            r move mykey 10
-            set res {}
-            lappend res [r exists mykey]
-            lappend res [r dbsize]
-            r select 10
-            lappend res [r get mykey]
-            lappend res [r dbsize]
-            r select 9
-            format $res
-        } [list 0 0 foobar 1]
+    test {MOVE basic usage} {
+        r set mykey foobar
+        r move mykey 10
+        set res {}
+        lappend res [r exists mykey]
+        lappend res [r dbsize]
+        r select 10
+        lappend res [r get mykey]
+        lappend res [r dbsize]
+        r select 9
+        format $res
+    } [list 0 0 foobar 1]
 
-        test {MOVE against key existing in the target DB} {
-            r set mykey hello
-            r move mykey 10
-        } {0}
+    test {MOVE against key existing in the target DB} {
+        r set mykey hello
+        r move mykey 10
+    } {0}
 
-        test {MOVE against non-integer DB (#1428)} {
-            r set mykey hello
-            catch {r move mykey notanumber} e
-            set e
-        } {ERR value is not an integer or out of range}
+    test {MOVE against non-integer DB (#1428)} {
+        r set mykey hello
+        catch {r move mykey notanumber} e
+        set e
+    } {ERR value is not an integer or out of range}
 
-        test {MOVE can move key expire metadata as well} {
-            r select 10
-            r flushdb
-            r select 9
-            r set mykey foo ex 100
-            r move mykey 10
-            assert {[r ttl mykey] == -2}
-            r select 10
-            assert {[r ttl mykey] > 0 && [r ttl mykey] <= 100}
-            assert {[r get mykey] eq "foo"}
-            r select 9
-        }
-
-        test {MOVE does not create an expire if it does not exist} {
-            r select 10
-            r flushdb
-            r select 9
-            r set mykey foo
-            r move mykey 10
-            assert {[r ttl mykey] == -2}
-            r select 10
-            assert {[r ttl mykey] == -1}
-            assert {[r get mykey] eq "foo"}
-            r select 9
-        }
-
-        test {SET/GET keys in different DBs} {
-            r set a hello
-            r set b world
-            r select 10
-            r set a foo
-            r set b bared
-            r select 9
-            set res {}
-            lappend res [r get a]
-            lappend res [r get b]
-            r select 10
-            lappend res [r get a]
-            lappend res [r get b]
-            r select 9
-            format $res
-        } {hello world foo bared}
+    test {MOVE can move key expire metadata as well} {
+        r select 10
+        r flushdb
+        r select 9
+        r set mykey foo ex 100
+        r move mykey 10
+        assert {[r ttl mykey] == -2}
+        r select 10
+        assert {[r ttl mykey] > 0 && [r ttl mykey] <= 100}
+        assert {[r get mykey] eq "foo"}
+        r select 9
     }
+
+    test {MOVE does not create an expire if it does not exist} {
+        r select 10
+        r flushdb
+        r select 9
+        r set mykey foo
+        r move mykey 10
+        assert {[r ttl mykey] == -2}
+        r select 10
+        assert {[r ttl mykey] == -1}
+        assert {[r get mykey] eq "foo"}
+        r select 9
+    }
+
+    test {SET/GET keys in different DBs} {
+        r set a hello
+        r set b world
+        r select 10
+        r set a foo
+        r set b bared
+        r select 9
+        set res {}
+        lappend res [r get a]
+        lappend res [r get b]
+        r select 10
+        lappend res [r get a]
+        lappend res [r get b]
+        r select 9
+        format $res
+    } {hello world foo bared}
 
     test {RANDOMKEY} {
         r flushdb

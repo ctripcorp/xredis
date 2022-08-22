@@ -154,12 +154,12 @@ int bigSetDecodeData(swapData *data_, int num, sds *rawkeys,
     return C_OK;
 }
 
-robj *bigSetCreateOrMergeObject(swapData *data_, robj *decoded, void *datactx_, int data_dirty) {
+robj *bigSetCreateOrMergeObject(swapData *data_, robj *decoded, void *datactx_, int del_flag) {
     robj *result;
     bigSetSwapData *data = (bigSetSwapData*)data_;
     bigSetDataCtx *datactx = datactx_;
     serverAssert(decoded == NULL || decoded->type == OBJ_SET);
-    datactx->swap_in_data_dirty = data_dirty;
+    datactx->swapin_del_flag = del_flag;
 
     if (!data->value || !decoded) {
         /* decoded moved to exec again. */
@@ -260,7 +260,7 @@ int bigSetSwapAna(swapData *data_, int cmd_intention,
                 *intention = SWAP_NOP;
                 *intention_flags = 0;
             } else if (req->num_subkeys == 0) {
-                if (cmd_intention_flags == INTENTION_IN_AND_DEL) {
+                if (cmd_intention_flags == INTENTION_IN_DEL) {
                     if (data->meta->len == 0) {
                         *intention = SWAP_DEL;
                         *intention_flags = INTENTION_DEL_ASYNC;
@@ -268,7 +268,7 @@ int bigSetSwapAna(swapData *data_, int cmd_intention,
                         *intention = SWAP_IN;
                         *intention_flags = INTENTION_IN_DEL;
                     }
-                } else if (cmd_intention_flags == INTENTION_IN_DEL) {
+                } else if (cmd_intention_flags == INTENTION_IN_DEL_MOCK_VALUE) {
                     /* DEL/GETDEL: Lazy delete current key. */
                     createFakeSetForDeleteIfNeeded(data);
                     *intention = SWAP_DEL;
@@ -374,8 +374,8 @@ int bigSetSwapIn(swapData *data_, robj *result, void *datactx_) {
         /* cold key swapped in fields */
         /* dup expire/meta satellites before evict deleted. */
         long long expire = getExpire(data->db,data->key);
-        robj *swapin = createSwapInObject(result,data->evict,datactx->swap_in_data_dirty);
-        if (datactx->swap_in_data_dirty) {
+        robj *swapin = createSwapInObject(result,data->evict,datactx->swapin_del_flag & SWAPIN_DEL);
+        if (datactx->swapin_del_flag & SWAPIN_DEL_FULL) {
             serverAssert(meta->len + datactx->meta_len_delta == 0);
             doSwapIn(data->db, data->key, swapin, expire, NULL);
         } else {
@@ -389,8 +389,9 @@ int bigSetSwapIn(swapData *data_, robj *result, void *datactx_) {
          * and nothing need to be swapped in. */
         serverAssert(result == NULL);
         data->meta->len += datactx->meta_len_delta;
+        data->value->dirty = datactx->swapin_del_flag & SWAP_DEL;
         serverAssert(data->meta->len >= 0);
-        if (datactx->swap_in_data_dirty) {
+        if (datactx->swapin_del_flag & SWAPIN_DEL_FULL) {
             serverAssert(data->meta->len == 0);
             dbDeleteMeta(data->db, data->key);
         }
@@ -659,7 +660,7 @@ swapData *createBigSetSwapData(redisDb *db, robj *key, robj *value, robj *evict,
     datactx->meta_len_delta = 0;
     datactx->num = 0;
     datactx->subkeys = NULL;
-    datactx->swap_in_data_dirty = 0;
+    datactx->swapin_del_flag = SWAPIN_NO_DEL;
     if (pdatactx) *pdatactx = datactx;
 
     return (swapData*)data;

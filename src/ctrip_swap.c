@@ -267,7 +267,8 @@ void genericRequestProceed(void *listeners, redisDb *db, robj *key,
     }
 
     if ((ctx->swap_intention_flags & INTENTION_DEL_ASYNC) ||
-            ctx->swap_intention_flags & INTENTION_IN_DEL) {
+            ctx->swap_intention_flags & INTENTION_IN_DEL || 
+            ctx->swap_intention_flags & INTENTION_IN_DEL ) {
         /* rocksdb and mem differs after rocksdb del. */
         ctx->set_dirty = 1;
     }
@@ -455,6 +456,7 @@ int swapTest(int argc, char **argv, int accurate) {
   result += swapDataBigHashTest(argc, argv, accurate);
   result += swapDataBigSetTest(argc, argv, accurate);
   result += testRocksCalculateNextKey(argc, argv, accurate);
+  result += swapDataBigZSetTest(argc, argv, accurate);
   return result;
 }
 #endif

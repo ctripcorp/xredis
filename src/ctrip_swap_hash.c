@@ -84,6 +84,15 @@ int bigHashSwapAna(swapData *data_, int cmd_intention,
             *intention_flags = 0;
         } else if (req->num_subkeys == 0) {
             if (cmd_intention_flags == INTENTION_IN_DEL) {
+                if (data->meta->len == 0) {
+                    *intention = SWAP_DEL;
+                    *intention_flags = INTENTION_DEL_ASYNC;
+                    if(data->value) data->value->dirty = 1;
+                } else {
+                    *intention = SWAP_IN;
+                    *intention_flags = INTENTION_IN_DEL;
+                }
+            } if (cmd_intention_flags == INTENTION_IN_DEL_MOCK_VALUE) {
                 /* DEL/GETDEL: Lazy delete current key. */
                 createFakeHashForDeleteIfNeeded(data);
                 *intention = SWAP_DEL;
@@ -324,14 +333,14 @@ int bigHashDecodeData(swapData *data_, int num, sds *rawkeys,
     return 0;
 }
 
-static robj *createSwapInObject(robj *newval, robj *evict) {
+static robj *createSwapInObject(robj *newval, robj *evict, int dirty) {
     robj *swapin = newval;
     serverAssert(newval && newval->type == OBJ_HASH);
     serverAssert(evict && evict->type == OBJ_HASH);
     incrRefCount(newval);
     swapin->lru = evict->lru;
     swapin->big = evict->big;
-    swapin->dirty = 0;
+    swapin->dirty = dirty;
     return swapin;
 }
 
@@ -352,19 +361,29 @@ int bigHashSwapIn(swapData *data_, robj *result, void *datactx_) {
         meta->len += datactx->meta_len_delta;
         serverAssert(meta->len >= 0);
         long long expire = getExpire(data->db,data->key);
-        robj *swapin = createSwapInObject(result,data->evict);
+        robj *swapin = createSwapInObject(result,data->evict, datactx->swapin_del_flag & SWAPIN_DEL);
         if (expire != -1) removeExpire(data->db,data->key);
         dbDeleteMeta(data->db,data->key);
         dictDelete(data->db->evict,data->key->ptr);
         dbAdd(data->db,data->key,swapin);
         /* re-add expire/meta satellites for db.dict .*/
         if (expire != -1) setExpire(NULL,data->db,data->key,expire);
-        dbAddMeta(data->db,data->key,meta);
+        if (!(datactx->swapin_del_flag & SWAPIN_DEL_FULL)) {
+            dbAddMeta(data->db,data->key,meta);
+        } else {
+            freeObjectMeta(meta);
+        }
+        
     } else {
         /* if data.value exists, then we expect all fields merged already
          * and nothing need to be swapped in. */
         serverAssert(result == NULL);
         data->meta->len += datactx->meta_len_delta;
+        data->value->dirty = datactx->swapin_del_flag & SWAPIN_DEL;
+        if (datactx->swapin_del_flag & SWAPIN_DEL_FULL) {
+            serverAssert(data->meta->len == 0);
+            dbDeleteMeta(data->db, data->key);
+        }
     }
 
     return 0;
@@ -443,13 +462,12 @@ int bigHashSwapDel(swapData *data_, void *datactx, int async) {
 }
 
 /* decoded moved back by exec to bighash*/
-robj *bigHashCreateOrMergeObject(swapData *data_, robj *decoded, void *datactx_, int data_dirty) {
-    UNUSED(data_dirty);
+robj *bigHashCreateOrMergeObject(swapData *data_, robj *decoded, void *datactx_, int del_flag) {
     robj *result;
     bigHashSwapData *data = (bigHashSwapData*)data_;
     bigHashDataCtx *datactx = datactx_;
     serverAssert(decoded == NULL || decoded->type == OBJ_HASH);
-
+    datactx->swapin_del_flag = del_flag;
     if (!data->value || !decoded) {
         /* decoded moved to exec again. */
         result = decoded;
@@ -484,19 +502,24 @@ int bigHashCleanObject(swapData *data_, void *datactx_) {
     return 0;
 }
 
-void freeBigHashSwapData(swapData *data_, void *datactx_) {
+
+void cleanBigHashSwapData(swapData *data_, void *datactx_) {
     bigHashSwapData *data = (bigHashSwapData*)data_;
     if (data->key) decrRefCount(data->key);
     if (data->value) decrRefCount(data->value);
     if (data->evict) decrRefCount(data->evict);
     /* db.meta is a ref, no need to free. */
-    zfree(data);
+
     bigHashDataCtx *datactx = datactx_;
     for (int i = 0; i < datactx->num; i++) {
         decrRefCount(datactx->subkeys[i]);
     }
     zfree(datactx->subkeys);
-    zfree(datactx);
+}
+void freeBigHashSwapData(swapData *data_, void *datactx_) {
+    cleanBigHashSwapData(data_, datactx_);
+    zfree(data_);
+    zfree(datactx_);
 }
 
 swapDataType bigHashSwapDataType = {
@@ -529,6 +552,7 @@ swapData *createBigHashSwapData(redisDb *db, robj *key, robj *value,
     datactx->meta_len_delta = 0;
     datactx->num = 0;
     datactx->subkeys = NULL;
+    datactx->swapin_del_flag = SWAPIN_NO_DEL;
     if (pdatactx) *pdatactx = datactx;
 
     return (swapData*)data;
@@ -787,7 +811,7 @@ int swapDataBigHashTest(int argc, char **argv, int accurate) {
         test_assert(intention == SWAP_NOP && intention_flags == 0);
         swapDataAna(hash1_data,SWAP_IN,INTENTION_IN_META,kr1,&intention,&intention_flags,hash1_ctx);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
-        swapDataAna(hash1_data,SWAP_IN,INTENTION_IN_DEL,kr1,&intention,&intention_flags,hash1_ctx);
+        swapDataAna(hash1_data,SWAP_IN,INTENTION_IN_DEL_MOCK_VALUE,kr1,&intention,&intention_flags,hash1_ctx);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
         swapDataAna(hash1_data,SWAP_IN,0,kr1,&intention,&intention_flags,hash1_ctx);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
@@ -854,6 +878,7 @@ int swapDataBigHashTest(int argc, char **argv, int accurate) {
         hashTypeDelete(hash1,f1);
         hashTypeDelete(hash1,f2);
         hash1_ctx->meta_len_delta = 2;
+        hash1_ctx->swapin_del_flag = SWAPIN_NO_DEL;
         bigHashSwapOut((swapData*)data, hash1_ctx);
         test_assert((m =lookupMeta(db,key1)) != NULL && m->len == 2);
         test_assert(lookupEvictKey(db,key1) == NULL);

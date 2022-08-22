@@ -174,6 +174,9 @@ int tryEvictKey(redisDb *db, robj *key, int *evict_result) {
     } else if (o->type == OBJ_SET) {
         objectMeta *m = lookupMeta(db, key);
         setTransformBig(o, m);
+    } else if (o->type == OBJ_ZSET) {
+        objectMeta *m = lookupMeta(db, key);
+        zsetTransformBig(o, m);
     }
 
     dirty = o->dirty;

@@ -24,3 +24,11 @@
    fun:ztrymalloc_usable
    fun:ztrymalloc
 }
+
+
+{
+   <rocksdb default args, see code at version_set.cc>
+   Memcheck:Leak
+   ...
+   fun:rocksdb_open_column_families
+}

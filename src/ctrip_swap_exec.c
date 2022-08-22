@@ -629,6 +629,16 @@ end:
     RIODeinit(rio);
 }
 
+static int doSwapIntentionDelRange(swapRequest *req, sds start, sds end) {
+    RIO _rio = {0}, *rio = &_rio;
+    int retval;
+    RIOInitDeleteRange(rio, start, end);
+    updateStatsSwapRIO(req,rio);
+    retval = doRIO(rio);
+    RIODeinit(rio);
+    return retval;
+}
+
 static int doSwapIntentionDel(swapRequest *req, int numkeys, sds *rawkeys) {
     RIO _rio = {0}, *rio = &_rio;
     int i, retval;
@@ -650,15 +660,6 @@ static int doSwapIntentionDel(swapRequest *req, int numkeys, sds *rawkeys) {
     return retval;
 }
 
-static int doSwapIntentionDelRange(swapRequest *req, sds start, sds end) {
-    RIO _rio = {0}, *rio = &_rio;
-    int retval;
-    RIOInitDeleteRange(rio, start, end);
-    updateStatsSwapRIO(req,rio);
-    retval = doRIO(rio);
-    RIODeinit(rio);
-    return retval;
-}
 
 static void executeSwapInRequest(swapRequest *req) {
     robj *decoded;
@@ -666,7 +667,7 @@ static void executeSwapInRequest(swapRequest *req) {
     sds *rawkeys = NULL;
     RIO _rio = {0}, *rio = &_rio;
     swapData *data = req->data;
-    int data_dirty = 0;
+    int del_flag = SWAPIN_NO_DEL;
 
     if ((errcode = swapDataEncodeKeys(data,req->intention,req->datactx,
                 &action,&numkeys,&rawkeys))) {
@@ -695,6 +696,7 @@ static void executeSwapInRequest(swapRequest *req) {
             if ((errcode = doSwapIntentionDel(req,numkeys,rawkeys))) {
                 goto end;
             }
+            del_flag = SWAPIN_DEL;
         }
     } else if (action == ROCKS_GET) {
         serverAssert(numkeys == 1);
@@ -720,6 +722,8 @@ static void executeSwapInRequest(swapRequest *req) {
             if ((errcode = doSwapIntentionDel(req, numkeys, rawkeys))) {
                 goto end;
             }
+            //type must is wholekey 
+            del_flag = SWAPIN_DEL | SWAPIN_DEL_FULL;
         }
         /* rawkeys not moved, only rakeys[0] moved, free when done. */
         zfree(rawkeys);
@@ -736,11 +740,12 @@ static void executeSwapInRequest(swapRequest *req) {
         }
         DEBUG_MSGS_APPEND(req->msgs,"execswap-in-decodedata", "decoded=%p",(void*)decoded);
 
-        if (req->intention_flags & INTENTION_IN_DEL) {
+        if (req->intention_flags & INTENTION_IN_DEL) {            
             if ((errcode = doSwapIntentionDelRange(req, sdsdup(rawkeys[0]), rocksCalculateNextKey(rawkeys[0])))) {
                 goto end;
             }
-            data_dirty = 1;
+            /* assert rocksdb is null*/
+            del_flag = SWAPIN_DEL | SWAPIN_DEL_FULL;
         }
         /* rawkeys not moved, only rakeys[0] moved, free when done. */
         zfree(rawkeys);
@@ -749,7 +754,7 @@ static void executeSwapInRequest(swapRequest *req) {
         goto end;
     }
 
-    req->result = swapDataCreateOrMergeObject(data,decoded,req->datactx, data_dirty);
+    req->result = swapDataCreateOrMergeObject(data,decoded,req->datactx, del_flag);
     DEBUG_MSGS_APPEND(req->msgs,"execswap-in-createormerge","result=%p",(void*)req->result);
 
 end:

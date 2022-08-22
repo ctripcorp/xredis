@@ -2671,13 +2671,18 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
         if ((key = rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL)) == NULL)
             goto eoferr;
 
+
+        int isExpired = iAmMaster() &&
+            !(rdbflags&RDBFLAGS_AOF_PREAMBLE) &&
+            expiretime != -1 && expiretime < now;
         /* Read value */
         rdbKeyData _keydata, *keydata = &_keydata;
         if (server.swap_mode == SWAP_MODE_MEMORY) {
             val = rdbLoadObject(type,rdb,key,&error);
         } else {
             /*could be evict or value */
-            error = ctripRdbLoadObject(type,rdb,key,keydata);
+            int flag = isExpired ? CTRIP_RDB_LOAD_OBJECT_EXPIRED: CTRIP_RDB_LOAD_OBJECT_NONE; 
+            error = ctripRdbLoadObject(type,rdb,key,keydata,flag);
         }
 
         /* Check if the key already expired. This function is used when loading
@@ -2701,9 +2706,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
                 sdsfree(key);
                 goto eoferr;
             }
-        } else if (iAmMaster() &&
-            !(rdbflags&RDBFLAGS_AOF_PREAMBLE) &&
-            expiretime != -1 && expiretime < now)
+        } else if (isExpired)
         {
             sdsfree(key);
             if (server.swap_mode == SWAP_MODE_MEMORY)
