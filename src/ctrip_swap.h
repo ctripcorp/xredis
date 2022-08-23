@@ -107,8 +107,9 @@ void getKeyRequestsFreeResult(getKeyRequestsResult *result);
 #define SWAP_IN     1
 #define SWAP_OUT    2
 #define SWAP_DEL    3
-#define SWAP_TYPES  4
-#define COMPACT_RANGE 5
+#define COMPACT_RANGE 4
+#define SWAP_TYPES  5
+
 
 /* --- RDB_KEY_SAVE --- */
 #define RDB_KEY_SAVE_NEXT 1
@@ -117,7 +118,7 @@ void getKeyRequestsFreeResult(getKeyRequestsResult *result);
 
 static inline const char *swapIntentionName(int intention) {
   const char *name = "?";
-  const char *intentions[] = {"NOP", "IN", "OUT", "DEL"};
+  const char *intentions[] = {"NOP", "IN", "OUT", "DEL","COMPACT"};
   if (intention >= 0 && intention < SWAP_TYPES)
     name = intentions[intention];
   return name;

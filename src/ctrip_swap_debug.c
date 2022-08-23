@@ -68,6 +68,8 @@ void swapCommand(client *c) {
 "    Scan rocksdb with prefix.",
 "RESET-STATS",
 "    Reset swap stats.",
+"COMPACT",
+"   COMPACT rocksdb",
 NULL
         };
         addReplyHelp(c, help);

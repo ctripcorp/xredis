@@ -30,6 +30,7 @@ set swap_not_supported {
 }
 
 set ::disk_tests {
+    swap/integration/compact_range
     swap/integration/multi_bighash
     swap/integration/concurrent
     swap/integration/expire_evict
@@ -101,6 +102,7 @@ set ::disk_tests {
     integration/redis-benchmark
     integration/rdb
     integration/psync2
+    
 }
 
 set ::all_tests {
