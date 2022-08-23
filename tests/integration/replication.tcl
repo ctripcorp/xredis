@@ -795,8 +795,8 @@ test "diskless replication child being killed is collected" {
         $master config set repl-diskless-sync yes
         $master config set repl-diskless-sync-delay 0
         # put enough data in the db that the rdb file will be bigger than the socket buffers
-        $master debug populate 20000 test 10000
         $master config set rdbcompression no
+        $master debug populate 20000 test 10000
         start_server {} {
             set replica [srv 0 client]
             set loglines [count_log_lines 0]
