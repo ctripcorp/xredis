@@ -46,8 +46,8 @@ static sds getSwapObjectInfo(robj *o) {
 static sds getSwapMetaInfo(objectMeta *m) {
     if (m) {
         return sdscatprintf(sdsempty(),
-                "at=%p,len=%ld,version=%lu",
-                (void*)m, m->len, m->version);
+                "at=%p,len=%ld",
+                (void*)m, m->len);
     } else {
         return sdsnew("<nil>");
     }
@@ -58,7 +58,7 @@ void swapCommand(client *c) {
         const char *help[] = {
 "OBJECT <key>",
 "    Show swap info about `key` and assosiated value.",
-"ENCODE-KEY <type:K/H/h/...> <key>|<version key subkey>",
+"ENCODE-KEY <type:K/H/h/...> <key>|<key subkey>",
 "    Encode rocksdb key or subkey.",
 "DECODE-KEY <rawkey>",
 "    Decode rocksdb rawkey.",
@@ -95,17 +95,14 @@ NULL
     } else if (!strcasecmp(c->argv[1]->ptr,"encode-key") && c->argc >= 4) {
         sds typesds = c->argv[2]->ptr;
         char type = typesds[0];
-        long long version;
         sds rawkey;
         if ((sdslen(typesds)) != 1) {
             addReplyError(c,"Key type invalid");
             return;
         } else if (type >= 'A' && type <= 'Z' && c->argc == 4) {
             rawkey = rocksEncodeKey(type, c->argv[3]->ptr);
-        } else if (type >= 'a' && type <= 'z' && c->argc == 6 &&
-                isSdsRepresentableAsLongLong(c->argv[3]->ptr,&version) == C_OK) {
-            rawkey = rocksEncodeSubkey(type, (uint64_t)version,
-                    (sds)c->argv[4]->ptr, (sds)c->argv[5]->ptr);
+        } else if (type >= 'a' && type <= 'z' && c->argc == 5) {
+            rawkey = rocksEncodeSubkey(type,(sds)c->argv[3]->ptr, (sds)c->argv[4]->ptr);
         } else {
             addReply(c, shared.syntaxerr);
             return;
@@ -115,7 +112,6 @@ NULL
         sds raw = c->argv[2]->ptr;
         const char *key = NULL, *sub = NULL;
         size_t klen = 0, slen = 0;
-        uint64_t version = 0;
         char type;
         if (sdslen(raw) < 1) {
             addReplyError(c, "Invalid raw key.");
@@ -126,7 +122,7 @@ NULL
                 return;
             }
         } else if (raw[0] >= 'a' && raw[0] <= 'z') {
-            if ((type = rocksDecodeSubkey(raw,sdslen(raw),&version,
+            if ((type = rocksDecodeSubkey(raw,sdslen(raw),
                             &key,&klen,&sub,&slen)) < 0) {
                 addReplyError(c, "Invalid raw key.");
                 return;
@@ -138,7 +134,6 @@ NULL
 
         addReplyArrayLen(c,4);
         addReplyBulkCBuffer(c,raw,1);
-        addReplyBulkLongLong(c,version);
         addReplyBulkCBuffer(c,key,klen);
         addReplyBulkCBuffer(c,sub,slen);
     } else if (!strcasecmp(c->argv[1]->ptr,"rio-get") && c->argc >= 3) {

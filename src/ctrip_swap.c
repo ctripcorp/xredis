@@ -430,7 +430,6 @@ void createSharedObjects(void);
 int initTestRedisServer() {
     server.maxmemory_policy = MAXMEMORY_FLAG_LFU;
     server.logfile = zstrdup(CONFIG_DEFAULT_LOGFILE);
-    server.meta_version = 1;
     createSharedObjects();
     initTestRedisDb();
     return 1;
@@ -449,6 +448,7 @@ int swapTest(int argc, char **argv, int accurate) {
   result += swapObjectTest(argc, argv, accurate);
   result += swapDataWholeKeyTest(argc, argv, accurate);
   result += swapDataBigHashTest(argc, argv, accurate);
+  result += testRocksCalculateNextKey(argc, argv, accurate);
   return result;
 }
 #endif

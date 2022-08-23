@@ -99,8 +99,7 @@ start_server {tags "bighash"} {
         r hmset hash11 a a b b 1 1 2 2 
         r evict hash11
         wait_keys_evicted r
-        set meta_version [object_meta_version r hash11]
-        set old_b_encode [r swap encode-key h $meta_version hash11 b]
+        set old_b_encode [r swap encode-key h hash11 b]
         r del hash11
         assert_equal [r exists hash11] 0
         assert_equal [r hget hash11 a] {}
@@ -131,8 +130,7 @@ start_server {tags "bighash"} {
         assert [object_is_big r hash10]
 
         assert {[get_info_property r Swaps swap_OUT count] > $old_swap_out_count}
-        set meta_version [object_meta_version r hash10]
-        assert {[r swap rio-get [r swap encode-key h $meta_version hash10 a]] != {}}
+        assert {[r swap rio-get [r swap encode-key h hash10 a]] != {}}
 
         # bighash could not tranform back too wholekey again
         r config set swap-big-hash-threshold 256k
@@ -187,7 +185,6 @@ start_server {tags "bighash"} {
         wait_key_warm r hash11
         assert [object_is_dirty r hash11]
         assert_equal [object_meta_len r hash11] 2
-        set hash11_version [object_meta_version r hash11]
 
         # dirty bighash all evict is still dirty
         r evict hash11
@@ -206,7 +203,6 @@ start_server {tags "bighash"} {
         # all-swapin bighash meta remains
         assert_equal [object_meta_len r hash11] 0
         assert_equal [r hlen hash11] 4
-        assert_equal [object_meta_version r hash11] $hash11_version 
 
         # clean bighash swapout does not triggers swap
         set orig_swap_out_count [get_info_property r swaps swap_OUT count]
@@ -240,15 +236,17 @@ start_server {tags "bighash"} {
     }
 
     test {bighash hdel & del} {
+        set old_swap_threshold [lindex [r config get swap-big-hash-threshold] 1]
+        r config set swap-big-hash-threshold 1
+
         r hmset hash12 a a 1 1
         assert_equal [r evict hash12] 1
         wait_key_cold r hash12
 
-        set hash12_version [object_meta_version r hash12]
         r hdel hash12 a
         r hdel hash12 1
-        assert {[rocks_get_bighash r $hash12_version hash12 a] eq {}}
-        assert {[rocks_get_bighash r $hash12_version hash12 1] eq {}}
+        assert {[rocks_get_bighash r hash12 a] eq {}}
+        assert {[rocks_get_bighash r hash12 1] eq {}}
         catch {r swap object hash12} err
         assert_match "*ERR no such key*" $err
 
@@ -258,13 +256,13 @@ start_server {tags "bighash"} {
         r evict hash12
         assert_equal [r hlen hash12] 2
 
-        set hash12_version2 [object_meta_version r hash12]
-        assert {$hash12_version2 > $hash12_version}
+        r del hash12
+        assert {[rocks_get_bighash r hash12 a] eq {}}
+        assert {[rocks_get_bighash r hash12 1] eq {}}
+        catch {r swap object hash12} err
+        assert_match "*ERR no such key*" $err
 
-        # bighash swapout and swapin all reserves meta
-        r hkeys hash12
-        set hash12_version3 [object_meta_version r hash12]
-        assert {$hash12_version2 == $hash12_version3}
+        r config set swap-big-hash-threshold $old_swap_threshold
     }
 
     test {hdel warm key} {

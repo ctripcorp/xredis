@@ -80,16 +80,6 @@ proc wait_key_warm {r key} {
     }
 }
 
-proc object_meta_version {r key} {
-    set str [$r swap object $key]
-    set meta_version [swap_object_property $str meta version]
-    if {$meta_version != ""} {
-        set _ $meta_version
-    } else {
-        set _ 0
-    }
-}
-
 proc object_meta_len {r key} {
     set str [$r swap object $key]
     set meta_len [swap_object_property $str meta len]
@@ -104,8 +94,8 @@ proc rocks_get_wholekey {r type key} {
     lindex [$r swap rio-get [$r swap encode-key $type $key]] 0
 }
 
-proc rocks_get_bighash {r version key subkey} {
-    lindex [$r swap rio-get [$r swap encode-key h $version $key $subkey]] 0
+proc rocks_get_bighash {r key subkey} {
+    lindex [$r swap rio-get [$r swap encode-key h $key $subkey]] 0
 }
 
 proc get_info_property {r section line property} {

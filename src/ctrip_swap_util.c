@@ -86,23 +86,37 @@ sds rocksEncodeKey(unsigned char enc_type, sds key) {
     return rawkey;
 }
 
-sds rocksEncodeSubkey(unsigned char enc_type, uint64_t version, sds key, sds subkey) {
+sds rocksEncodeSubkey(unsigned char enc_type, sds key, sds subkey) {
     size_t subkeylen = subkey ? sdslen(subkey) : 0;
-    size_t rawkeylen = 1+sizeof(version)+sizeof(keylen_t)+sdslen(key)+subkeylen;
+    size_t rawkeylen = 1+sizeof(keylen_t)+sdslen(key)+subkeylen;
     sds rawkey = sdsnewlen(SDS_NOINIT,rawkeylen);
             
     char *ptr = rawkey;
     keylen_t keylen = (keylen_t)sdslen(key);
     ptr[0] = enc_type, ptr++;
-    /* Encode version in BE order, so that numeric order matches alphabatic. */
-    version = htonu64(version);
-    memcpy(ptr, &version, sizeof(version)), ptr += sizeof(version);
     memcpy(ptr, &keylen, sizeof(keylen_t)), ptr += sizeof(keylen_t);
     memcpy(ptr, key, sdslen(key)), ptr += sdslen(key);
     if (subkey) {
         memcpy(ptr, subkey, sdslen(subkey)), ptr += sdslen(subkey);
     }
     return rawkey;
+}
+
+sds rocksCalculateNextKey(sds current) {
+    sds next = NULL;
+    size_t nextlen = sdslen(current);
+
+    do {
+        if (current[nextlen - 1] != (char)0xff) break;
+        nextlen--;
+    } while(nextlen > 0);
+
+    if (0 == nextlen) return NULL;
+
+    next = sdsnewlen(current, nextlen);
+    next[nextlen - 1]++;
+
+    return next;
 }
 
 sds rocksEncodeValRdb(robj *value) {
@@ -134,22 +148,14 @@ int rocksDecodeKey(const char *raw, size_t rawlen, const char **key,
     return obj_type;
 }
 
-int rocksDecodeSubkey(const char *raw, size_t rawlen, uint64_t *version,
-        const char **key, size_t *klen, const char **sub, size_t *slen) {
+int rocksDecodeSubkey(const char *raw, size_t rawlen,
+                      const char **key, size_t *klen, const char **sub, size_t *slen) {
     int obj_type;
     keylen_t _klen;
-    uint64_t _version;
-    if (rawlen <= 1+sizeof(uint64_t)+sizeof(keylen_t)) return -1;
+    if (rawlen <= 1+sizeof(keylen_t)) return -1;
 
     if ((obj_type = rocksGetObjectType(raw[0])) < 0) return -1;
     raw++, rawlen--;
-
-    _version = *(uint64_t*)raw;
-    /* version is encoded in BE order. */
-    _version = ntohu64(_version);
-    if (version) *version = _version;
-    raw += sizeof(uint64_t);
-    rawlen -= sizeof(uint64_t);
 
     _klen = *(keylen_t*)raw;
     if (klen) *klen = (size_t)_klen;
@@ -233,3 +239,56 @@ const char *strObjectType(int type) {
     }
 }
 
+#ifdef REDIS_TEST
+
+int testRocksCalculateNextKey(int argc, char **argv, int accurate) {
+    sds current = NULL, next = NULL;
+    int error = 0;
+
+    TEST("claculate-next-key: empty string") {
+        current = next = NULL;
+        current = sdsempty();
+        next = rocksCalculateNextKey(current);
+        test_assert(NULL == next);
+        sdsfree(current);
+        sdsfree(next);
+    }
+
+    TEST("claculate-next-key: string full with 0xff") {
+        current = next = NULL;
+        char str[10] = {0};
+        memset(str, (char)0xff, 9);
+        current = sdsnew(str);
+        next = rocksCalculateNextKey(current);
+        test_assert(NULL == next);
+        sdsfree(current);
+        sdsfree(next);
+    }
+
+    TEST("claculate-next-key: end with 0xff") {
+        current = next = NULL;
+        char str[] = {'t', 'e', 's', 't', (char)0xff, (char)0xff, 0};
+        current = sdsnew(str);
+        next = rocksCalculateNextKey(current);
+        test_assert(NULL != next);
+        test_assert(4 == sdslen(next));
+        test_assert(0 == memcmp("tesu", next, 4));
+        sdsfree(current);
+        sdsfree(next);
+    }
+
+    TEST("claculate-next-key: normal string") {
+        current = next = NULL;
+        current = sdsnew("normal string");
+        next = rocksCalculateNextKey(current);
+        test_assert(NULL != next);
+        test_assert(13 == sdslen(next));
+        test_assert(0 == memcmp("normal strinh", next, 13));
+        sdsfree(current);
+        sdsfree(next);
+    }
+
+    return error;
+}
+
+#endif

@@ -244,7 +244,6 @@ extern dictType dbMetaDictType;
 
 typedef struct objectMeta {
   ssize_t len;
-  uint64_t version;
 } objectMeta;
 
 objectMeta *createObjectMeta(size_t len);
@@ -687,7 +686,6 @@ void evictStopLoading(int success);
 
 typedef struct decodeResult {
     unsigned char enc_type;
-    size_t version;
     sds key;
     sds subkey;
     unsigned char rdbtype;
@@ -831,10 +829,11 @@ unsigned char rocksGetEncType(int obj_type, int big);
 int rocksGetObjectType(unsigned char enc_type);
 unsigned char rocksGetObjectEncType(robj *o);
 sds rocksEncodeKey(unsigned char enc_type, sds key);
-sds rocksEncodeSubkey(unsigned char enc_type, uint64_t version, sds key, sds subkey);
+sds rocksEncodeSubkey(unsigned char enc_type, sds key, sds subkey);
 sds rocksEncodeValRdb(robj *value);
 int rocksDecodeKey(const char *rawkey, size_t rawlen, const char **key, size_t *klen);
-int rocksDecodeSubkey(const char *raw, size_t rawlen, uint64_t *version, const char **key, size_t *klen, const char **sub, size_t *slen);
+int rocksDecodeSubkey(const char *raw, size_t rawlen, const char **key, size_t *klen, const char **sub, size_t *slen);
+sds rocksCalculateNextKey(sds current);
 robj *rocksDecodeValRdb(sds raw);
 robj *unshareStringValue(robj *value);
 size_t objectEstimateSize(robj *o);
@@ -871,6 +870,7 @@ int swapCmdTest(int argc, char **argv, int accurate);
 int swapExecTest(int argc, char **argv, int accurate);
 int swapRdbTest(int argc, char **argv, int accurate);
 int swapObjectTest(int argc, char *argv[], int accurate);
+int testRocksCalculateNextKey(int argc, char **argv, int accurate);
 
 int swapTest(int argc, char **argv, int accurate);
 

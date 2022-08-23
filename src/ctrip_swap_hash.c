@@ -158,8 +158,7 @@ int bigHashSwapAna(swapData *data_, int cmd_intention,
             }
             hashTypeReleaseIterator(hi);
 
-            /* create new meta if needed, meta version
-             * will be used to encode data. */
+            /* create new meta if needed */
             if (data->meta == NULL)
                 datactx->new_meta = createObjectMeta(0);
 
@@ -184,18 +183,14 @@ int bigHashSwapAna(swapData *data_, int cmd_intention,
     return 0;
 }
 
-static sds bigHashEncodeSubkey(uint64_t version, sds key, sds subkey) {
-    return rocksEncodeSubkey(rocksGetEncType(OBJ_HASH,1),version,key,subkey);
+static sds bigHashEncodeSubkey(sds key, sds subkey) {
+    return rocksEncodeSubkey(rocksGetEncType(OBJ_HASH,1),key,subkey);
 }
 
-static sds bigHashEncodeDeleteRangeStart(bigHashSwapData *data) {
-    return rocksEncodeSubkey(rocksGetEncType(OBJ_HASH,1),
-            data->meta->version,data->key->ptr,NULL);
-}
-
-static sds bigHashEncodeDeleteRangeEnd(bigHashSwapData *data) {
-    return rocksEncodeSubkey(rocksGetEncType(OBJ_HASH,1),
-            data->meta->version+1,data->key->ptr,NULL);
+static void bigHashEncodeDeleteRange(bigHashSwapData *data, sds *start, sds *end) {
+    *start = rocksEncodeSubkey(rocksGetEncType(OBJ_HASH,1),data->key->ptr,NULL);
+    *end = rocksCalculateNextKey(*start);
+    serverAssert(NULL != *end);
 }
 
 int bigHashEncodeKeys(swapData *data_, int intention, void *datactx_,
@@ -210,16 +205,14 @@ int bigHashEncodeKeys(swapData *data_, int intention, void *datactx_,
             int i;
             rawkeys = zmalloc(sizeof(sds)*datactx->num);
             for (i = 0; i < datactx->num; i++) {
-                rawkeys[i] = bigHashEncodeSubkey(data->meta->version,
-                        data->key->ptr,datactx->subkeys[i]->ptr);
+                rawkeys[i] = bigHashEncodeSubkey(data->key->ptr,datactx->subkeys[i]->ptr);
             }
             *numkeys = datactx->num;
             *prawkeys = rawkeys;
             *action = ROCKS_MULTIGET;
         } else { /* Swap in entire hash. */
             rawkeys = zmalloc(sizeof(sds));
-            rawkeys[0] = bigHashEncodeSubkey(data->meta->version,
-                    data->key->ptr,NULL);
+            rawkeys[0] = bigHashEncodeSubkey(data->key->ptr,NULL);
             *numkeys = 1;
             *prawkeys = rawkeys;
             *action = ROCKS_SCAN;
@@ -228,8 +221,7 @@ int bigHashEncodeKeys(swapData *data_, int intention, void *datactx_,
     case SWAP_DEL:
         if (data->meta) {
             rawkeys = zmalloc(sizeof(sds)*2);
-            rawkeys[0] = bigHashEncodeDeleteRangeStart(data);
-            rawkeys[1] = bigHashEncodeDeleteRangeEnd(data);
+            bigHashEncodeDeleteRange(data, &rawkeys[0], &rawkeys[1]);
             *numkeys = 2;
             *prawkeys = rawkeys;
             *action = ROCKS_DELETERANGE;
@@ -270,11 +262,7 @@ int bigHashEncodeData(swapData *data_, int intention, void *datactx_,
     sds *rawvals = zmalloc(datactx->num*sizeof(sds));
     serverAssert(intention == SWAP_OUT);
     for (int i = 0; i < datactx->num; i++) {
-        uint64_t version;
-        if (data->meta) version = data->meta->version;
-        else version = datactx->new_meta->version;
-        rawkeys[i] = bigHashEncodeSubkey(version,data->key->ptr,
-                datactx->subkeys[i]->ptr);
+        rawkeys[i] = bigHashEncodeSubkey(data->key->ptr,datactx->subkeys[i]->ptr);
         robj *subval = hashTypeGetValueObject(data->value,
                 datactx->subkeys[i]->ptr);
         serverAssert(subval);
@@ -306,16 +294,15 @@ int bigHashDecodeData(swapData *data_, int num, sds *rawkeys,
         sds subkey, subval;
         const char *keystr, *subkeystr;
         size_t klen, slen;
-        uint64_t version;
         robj *subvalobj;
 
         if (rawvals[i] == NULL || sdslen(rawvals[i]) == 0)
             continue;
-        if (rocksDecodeSubkey(rawkeys[i],sdslen(rawkeys[i]),&version,
+        if (rocksDecodeSubkey(rawkeys[i],sdslen(rawkeys[i]),
                 &keystr,&klen,&subkeystr,&slen) < 0)
             continue;
         /* Decode do not hold obselete data.*/
-        if (data->meta == NULL || data->meta->version != version)
+        if (data->meta == NULL)
             continue;
         subkey = sdsnewlen(subkeystr,slen);
         serverAssert(memcmp(data->key->ptr,keystr,klen) == 0); //TODO remove
@@ -348,9 +335,7 @@ static robj *createSwapInObject(robj *newval, robj *evict) {
     return swapin;
 }
 
-/* Note: meta are kept even if all subkeys are swapped in (hot) because
- * meta.version is necessary for swapping in evicted data if not dirty.
- * In fact, meta are kept as long as there are data in rocksdb. */
+/* Note: meta are kept as long as there are data in rocksdb. */
 int bigHashSwapIn(swapData *data_, robj *result, void *datactx_) {
     bigHashSwapData *data = (bigHashSwapData*)data_;
     bigHashDataCtx *datactx = datactx_;
@@ -633,9 +618,7 @@ int bighashSave(rdbKeyData *keydata, rio *rdb, decodeResult *decoded) {
     robj *key = keydata->savectx.bighash.key;
 
     serverAssert(!sdscmp(decoded->key, key->ptr));
-    if (decoded->enc_type != ENC_TYPE_HASH_SUB ||
-            decoded->version != meta->version ||
-            decoded->rdbtype != RDB_TYPE_STRING) {
+    if (decoded->enc_type != ENC_TYPE_HASH_SUB || decoded->rdbtype != RDB_TYPE_STRING) {
         /* check failed, skip this key */
         return 0;
     }
@@ -694,7 +677,6 @@ void rdbKeyDataInitLoadBigHash(rdbKeyData *keydata, int rdbtype, sds key) {
 int bighashRdbLoad(struct rdbKeyData *keydata, rio *rdb, sds *rawkey,
         sds *rawval, int *error) {
     sds subkey, rdbval, key = keydata->loadctx.key;
-    uint64_t version = keydata->loadctx.bighash.meta->version;
 
     *error = RDB_LOAD_ERR_OTHER;
     if ((subkey = rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL)) == NULL) {
@@ -709,7 +691,7 @@ int bighashRdbLoad(struct rdbKeyData *keydata, rio *rdb, sds *rawkey,
     }
 
     *error = 0;
-    *rawkey = rocksEncodeSubkey(ENC_TYPE_HASH_SUB,version,key,subkey);
+    *rawkey = rocksEncodeSubkey(ENC_TYPE_HASH_SUB,key,subkey);
     *rawval = rdbval;
     sdsfree(subkey);
     keydata->loadctx.bighash.meta->len++;
@@ -943,7 +925,7 @@ int swapDataBigHashTest(int argc, char **argv, int accurate) {
 
     TEST("bigHash - rdbLoad & rdbSave") {
         server.swap_big_hash_threshold = 0;
-        int err = 0, version;
+        int err = 0;
 		sds myhash_key = sdsnew("myhash");
 		robj *myhash = createHashObject();
         sds f1 = sdsnew("f1"), f2 = sdsnew("f2");
@@ -969,11 +951,9 @@ int swapDataBigHashTest(int argc, char **argv, int accurate) {
 
         sds coldraw,warmraw,hotraw;
         objectMeta *meta = createObjectMeta(2);
-        version = meta->version;
 
         decodeResult _decoded_fx, *decoded_fx = &_decoded_fx;
         decoded_fx->enc_type = ENC_TYPE_HASH_SUB;
-        decoded_fx->version = version;
         decoded_fx->key = myhash_key;
         decoded_fx->rdbtype = rdbv2[0];
         decoded_fx->subkey = f2;

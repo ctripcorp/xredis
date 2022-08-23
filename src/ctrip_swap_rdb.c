@@ -39,13 +39,12 @@ int dbAddEvictRDBLoad(redisDb* db, sds key, robj* evict) {
 
 int rocksDecodeRaw(sds rawkey, unsigned char rdbtype, sds rdbraw,
         decodeResult *decoded) {
-    uint64_t version = 0;
     const char *key = NULL, *subkey = NULL;
     size_t klen = 0, slen = 0;
     decoded->enc_type = rawkey[0];
     if (isSubkeyEncType(decoded->enc_type)) {
-        if (rocksDecodeSubkey(rawkey,sdslen(rawkey),&version,&key,&klen,
-                &subkey,&slen) == -1) {
+        if (rocksDecodeSubkey(rawkey,sdslen(rawkey),&key,&klen,
+                              &subkey,&slen) == -1) {
             sdsfree(rawkey);
             sdsfree(rdbraw);
             return -1;
@@ -59,7 +58,6 @@ int rocksDecodeRaw(sds rawkey, unsigned char rdbtype, sds rdbraw,
     }
     decoded->key = sdsnewlen(key,klen);
     decoded->subkey = sdsnewlen(subkey,slen);
-    decoded->version = version;
     decoded->rdbtype = rdbtype;
     decoded->rdbraw = rdbraw;
     sdsfree(rawkey);
@@ -216,7 +214,6 @@ int rdbKeyDataInitSave(rdbKeyData *keydata, redisDb *db, decodeResult *decoded) 
         } else { /* bighash */
             serverAssert(meta != NULL);
             if (decoded->enc_type != ENC_TYPE_HASH_SUB ||
-                    decoded->version != meta->version ||
                     decoded->rdbtype != RDB_TYPE_STRING) {
                 return INIT_SAVE_SKIP;
             }
@@ -229,7 +226,6 @@ int rdbKeyDataInitSave(rdbKeyData *keydata, redisDb *db, decodeResult *decoded) 
 
         if (meta && meta->len > 0) {
             if (decoded->enc_type != ENC_TYPE_HASH_SUB ||
-                    decoded->version != meta->version ||
                     decoded->rdbtype != RDB_TYPE_STRING) {
                 return INIT_SAVE_SKIP;
             }

@@ -97,14 +97,12 @@ dictType dbMetaDictType = {
 objectMeta *createObjectMeta(size_t len) {
     objectMeta *m = zmalloc(sizeof(objectMeta));
     m->len = len;
-    m->version = server.meta_version++;
     return m;
 }
 
 objectMeta *dupObjectMeta(objectMeta *ms) {
     objectMeta *m = zmalloc(sizeof(objectMeta));
     m->len = ms->len;
-    m->version = ms->version;
     return m;
 }
 
