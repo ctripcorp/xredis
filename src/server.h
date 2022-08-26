@@ -1689,6 +1689,7 @@ struct redisServer {
     int rocksdb_epoch;
     int rocksdb_disk_error;
     int rocksdb_disk_error_since;
+    int rocksdb_stats_interval;
 		struct rocks *rocks;
     struct rocksdbUtilTaskManager* util_task_manager;
     /* swap threads */

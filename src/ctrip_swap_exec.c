@@ -539,6 +539,26 @@ static int executeCompactRange(swapRequest *req) {
     return EXEC_OK;
 }
 
+static int executeGetRocksdbStats(swapRequest* req) {
+    req->finish_pd = rocksdb_property_value(server.rocks->db, "rocksdb.stats");
+    doNotify(req);
+    return EXEC_OK;
+}
+
+
+static int executeRocksdbUtils(swapRequest *req) {
+    switch(req->intention_flags) {
+        case COMPACT_RANGE_TASK:
+            return executeCompactRange(req);
+            break;
+        case GET_ROCKSDB_STATS_TASK:
+            return executeGetRocksdbStats(req);
+            break;
+        default:
+            break;
+    }
+}
+
 static int executeSwapOutRequest(swapRequest *req) {
     int i, numkeys, retval = EXEC_OK, action;
     sds *rawkeys = NULL, *rawvals = NULL;
@@ -749,7 +769,7 @@ int executeSwapRequest(swapRequest *req) {
     case SWAP_IN: return executeSwapInRequest(req);
     case SWAP_OUT: return executeSwapOutRequest(req);
     case SWAP_DEL: return executeSwapDelRequest(req);
-    case COMPACT_RANGE: return executeCompactRange(req);
+    case ROCKSDB_UTILS: return executeRocksdbUtils(req);
     default: return EXEC_FAIL;
     }
 }

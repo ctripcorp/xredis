@@ -48,6 +48,7 @@ int rocksInit() {
 
     rocks->snapshot = NULL;
     rocks->checkpoint = NULL;
+    rocks->rocksdb_stats_cache = NULL;
     rocks->db_opts = rocksdb_options_create();
     rocksdb_options_set_create_if_missing(rocks->db_opts, 1); 
     /* enable stats might cause fork hang. */
@@ -379,6 +380,9 @@ sds compactLevelInfo(sds info, int level , char* rocksdb_stats) {
      * 
      */
     //TODO get level data
+    if (rocksdb_stats == NULL) {
+        goto end;
+    }
     char find_buf[256];
     sprintf(find_buf, "  L%d", level);
     char* start = strstr(rocksdb_stats, find_buf);
@@ -596,11 +600,14 @@ sds rocksdbStatsInfo(sds info, char* type, char* rocksdb_stats) {
      */
 
     //find writes line frist address
+    if (rocksdb_stats == NULL) {
+        goto end;
+    }
     char find_buf[256];
     sprintf(find_buf, "%s writes: ", Type);
     char* start = strstr(rocksdb_stats, find_buf);
     if (start == NULL) {
-        return info;
+        goto end;
     }
 
     //writes num
@@ -718,6 +725,7 @@ sds rocksdbStatsInfo(sds info, char* type, char* rocksdb_stats) {
     if (start != NULL && end != NULL) {
         stall_percent = sdsnewlen(start, end - start);
     }
+end:
     info = sdscatprintf(info, 
         "# %s\r\n"
         "%s_writes_num(K):%.3f\r\n"
@@ -812,12 +820,10 @@ sds genRocksInfoString(sds info) {
 
 
     // # ROCKSDB  (MOCK TROCKS)
-    char* rocksdb_stats = rocksdb_property_value(server.rocks->db, "rocksdb.stats");
-    size_t before = zmalloc_used_memory();
+    char* rocksdb_stats = server.rocks->rocksdb_stats_cache;
     info = compactLevelsInfo(info, rocksdb_stats);
     info = cumulativeInfo(info, rocksdb_stats);
     info = intervalInfo(info, rocksdb_stats);
-    zlibc_free(rocksdb_stats);
 	return info;
 }
 
@@ -863,6 +869,10 @@ void rocksCron() {
             }
         }
         if (fp) fclose(fp);
+    }
+
+    if (rocks_cron_loops % server.rocksdb_stats_interval == 0) {
+        submitUtilTask(GET_ROCKSDB_STATS_TASK, NULL, NULL);
     }
 
     rocks_cron_loops++;

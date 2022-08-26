@@ -3476,6 +3476,7 @@ void InitServerLast() {
     server.rocksdb_epoch = 0;
     server.rocksdb_disk_error = 0;
     server.rocksdb_disk_error_since = 0;
+    server.rocksdb_stats_interval = 2;
     server.swap_txid = 0;
     rocksInit();
     server.util_task_manager = createRocksdbUtilTaskManager();

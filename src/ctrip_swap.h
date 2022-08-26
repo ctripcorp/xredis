@@ -107,7 +107,7 @@ void getKeyRequestsFreeResult(getKeyRequestsResult *result);
 #define SWAP_IN     1
 #define SWAP_OUT    2
 #define SWAP_DEL    3
-#define COMPACT_RANGE 4
+#define ROCKSDB_UTILS 4
 #define SWAP_TYPES  5
 
 
@@ -541,6 +541,7 @@ typedef struct rocks {
     const rocksdb_snapshot_t *snapshot;
     rocksdb_checkpoint_t* checkpoint;
     sds checkpoint_dir;
+    char* rocksdb_stats_cache;
 } rocks;
 
 typedef struct rocksdbMemOverhead {
@@ -845,12 +846,15 @@ void expiredCommand(client *c);
 const char *strObjectType(int type);
 
 #define COMPACT_RANGE_TASK 0
+#define GET_ROCKSDB_STATS_TASK 1
+#define TASK_COUNT 2
 typedef struct rocksdbUtilTaskManager{
-    int compact_range_status;
+    struct {
+        int stat;
+    } stats[TASK_COUNT];
 } rocksdbUtilTaskManager;
 rocksdbUtilTaskManager* createRocksdbUtilTaskManager();
 int submitUtilTask(int type, void* ctx, sds* error);
-
 
 #ifdef REDIS_TEST
 

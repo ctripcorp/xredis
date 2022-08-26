@@ -143,33 +143,47 @@ int swapThreadsDrained() {
 
 rocksdbUtilTaskManager* createRocksdbUtilTaskManager() {
     rocksdbUtilTaskManager * manager = zmalloc(sizeof(rocksdbUtilTaskManager));
-    manager->compact_range_status = ROCKSDB_UTILS_TASK_DONE;
+    for(int i = 0; i < TASK_COUNT;i++) {
+        manager->stats[i].stat = ROCKSDB_UTILS_TASK_DONE;
+    }
     return manager;
 }
 int isRunningUtilTask(rocksdbUtilTaskManager* manager, int type) {
-    switch (type) {
-        case COMPACT_RANGE_TASK:
-            return manager->compact_range_status == ROCKSDB_UTILS_TASK_DOING;
-        default:
-            return 0;
-    }
+    serverAssert(type < TASK_COUNT);
+    return manager->stats[type].stat == ROCKSDB_UTILS_TASK_DOING;
 }
 
 void compactRangeDone(swapData *data, void *pd){
-    server.util_task_manager->compact_range_status = ROCKSDB_UTILS_TASK_DONE;
+    server.util_task_manager->stats[COMPACT_RANGE_TASK].stat = ROCKSDB_UTILS_TASK_DONE;
+}
+
+void getRocksdbStatsDone(swapData *data, void *pd) {
+    if (pd != NULL) {
+        if (server.rocks->rocksdb_stats_cache != NULL)  {
+            zlibc_free(server.rocks->rocksdb_stats_cache);
+        }
+        server.rocks->rocksdb_stats_cache = pd;
+    }
+    server.util_task_manager->stats[GET_ROCKSDB_STATS_TASK].stat = ROCKSDB_UTILS_TASK_DONE;
 }
 
 int submitUtilTask(int type, void* pd, sds* error) {
     if (isRunningUtilTask(server.util_task_manager, type)) {
-        *error = sdsnew("task running");
+        if(error != NULL) *error = sdsnew("task running");
         return 0;
     }
+    serverAssert(type < TASK_COUNT);
+    server.util_task_manager->stats[type].stat = ROCKSDB_UTILS_TASK_DOING;
     switch (type) {
         case COMPACT_RANGE_TASK:
-            server.util_task_manager->compact_range_status = ROCKSDB_UTILS_TASK_DOING;
-            submitSwapRequest(SWAP_MODE_ASYNC,COMPACT_RANGE,
+            submitSwapRequest(SWAP_MODE_ASYNC,ROCKSDB_UTILS,
                               0,
                               NULL,NULL,compactRangeDone,pd,NULL,server.swap_threads_num);
+            break;
+        case GET_ROCKSDB_STATS_TASK:
+            submitSwapRequest(SWAP_MODE_ASYNC, ROCKSDB_UTILS, 
+                             1, NULL, NULL, getRocksdbStatsDone,pd,NULL,server.swap_threads_num);
+            break;
         default:
             break;
     }
