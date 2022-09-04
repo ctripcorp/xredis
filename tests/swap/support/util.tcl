@@ -105,3 +105,9 @@ proc get_info_property {r section line property} {
     }
 }
 
+proc get_info {r section line} {
+    set str [$r info $section]
+    if {[regexp ".*${line}:(\[^\r\n\]*)\r\n" $str match submatch]} {
+        set _ $submatch
+    }
+}

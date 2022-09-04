@@ -585,11 +585,10 @@ sds rocksdbStatsInfo(sds info, char* type, char* rocksdb_stats) {
     sds stall_time = NULL;
     sds stall_percent = NULL;
     //updateCaseFirst
-    char Type[256] = "";
+    char Type[256] = {0};
     memcpy(&Type, type, strlen(type));
     Type[0] = Type[0] - 32;
     Type[strlen(type)] = '\0';
-
     
     
     /**
@@ -603,8 +602,8 @@ sds rocksdbStatsInfo(sds info, char* type, char* rocksdb_stats) {
     if (rocksdb_stats == NULL) {
         goto end;
     }
-    char find_buf[256];
-    sprintf(find_buf, "%s writes: ", Type);
+    char find_buf[512];
+    snprintf(find_buf, sizeof(find_buf)-1, "%s writes: ", Type);
     char* start = strstr(rocksdb_stats, find_buf);
     if (start == NULL) {
         goto end;
@@ -659,7 +658,7 @@ sds rocksdbStatsInfo(sds info, char* type, char* rocksdb_stats) {
      *      Cumulative WAL: 0 writes, 0 syncs, 0.00 writes per sync, written: 0.00 GB, 0.00 MB/s
      */
     //find writes line frist address
-    sprintf(find_buf, "%s WAL: ", Type);
+    snprintf(find_buf, sizeof(find_buf)-1, "%s WAL: ", Type);
     start = strstr(rocksdb_stats, find_buf);
     if (start != NULL) {
         start = start + strlen(find_buf);
@@ -708,7 +707,7 @@ sds rocksdbStatsInfo(sds info, char* type, char* rocksdb_stats) {
      *      Cumulative stall: 00:00:0.000 H:M:S, 0.0 percent
      */
     //find writes line frist address
-    sprintf(find_buf, "%s stall: ", Type);
+    snprintf(find_buf, sizeof(find_buf)-1, "%s stall: ", Type);
     start = strstr(rocksdb_stats, find_buf);
     if (start != NULL) {
         start = start + strlen(find_buf);
@@ -809,14 +808,16 @@ sds genRocksInfoString(sds info) {
 			"used_percent:%0.2f%%\r\n"
 			"used_disk_size:%lu\r\n"
 			"disk_capacity:%lu\r\n"
-			"used_disk_percent:%0.2f%%\r\n",
+			"used_disk_percent:%0.2f%%\r\n"
+			"swap_error:%lu\r\n",
 			sequence,
 			used_db_size,
 			max_db_size,
 			used_db_percent,
 			used_disk_size,
 			disk_capacity,
-			used_disk_percent);
+			used_disk_percent,
+            server.swap_error);
 
 
     // # ROCKSDB  (MOCK TROCKS)

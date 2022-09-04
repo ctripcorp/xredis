@@ -118,13 +118,20 @@ void swapCtxFree(swapCtx *ctx) {
 void continueProcessCommand(client *c) {
 	c->flags &= ~CLIENT_SWAPPING;
     server.current_client = c;
-    server.in_swap_cb = 1;
-	call(c,CMD_CALL_FULL);
-    server.in_swap_cb = 0;
-    /* post call */
-    c->woff = server.master_repl_offset;
-    if (listLength(server.ready_keys))
-        handleClientsBlockedOnKeys();
+
+    if (c->swap_errcode) {
+        rejectCommandFormat(c,"Swap failed (code=%d)",c->swap_errcode);
+        c->swap_errcode = 0;
+    } else {
+        server.in_swap_cb = 1;
+        call(c,CMD_CALL_FULL);
+        server.in_swap_cb = 0;
+        /* post call */
+        c->woff = server.master_repl_offset;
+        if (listLength(server.ready_keys))
+            handleClientsBlockedOnKeys();
+    }
+
     /* unhold keys for current command. */
     serverAssert(c->client_hold_mode == CLIENT_HOLD_MODE_CMD);
     clientUnholdKeys(c);
@@ -140,19 +147,22 @@ void normalClientKeyRequestFinished(client *c, swapCtx *ctx) {
     robj *key = ctx->key_request->key;
     UNUSED(key);
     DEBUG_MSGS_APPEND(&ctx->msgs,"request-finished",
-            "key=%s, keyrequests_count=%d",
-            key?(sds)key->ptr:"<nil>", c->keyrequests_count);
+            "key=%s, keyrequests_count=%d, errcode=%d",
+            key?(sds)key->ptr:"<nil>", c->keyrequests_count, ctx->errcode);
     c->keyrequests_count--;
+    if (ctx->errcode) clientSwapError(c,ctx->errcode);
     if (c->keyrequests_count == 0) {
         if (!c->CLIENT_DEFERED_CLOSING) continueProcessCommand(c);
     }
 }
 
-int keyRequestSwapFinished(swapData *data, void *pd) {
+void keyRequestSwapFinished(swapData *data, void *pd, int errcode) {
     UNUSED(data);
     swapCtx *ctx = pd;
     redisDb *db = ctx->c->db;
     robj *key = ctx->key_request->key;
+
+    if (errcode) ctx->errcode = errcode;
 
     if (ctx->expired && key) {
         deleteExpiredKeyAndPropagate(db,key);
@@ -172,8 +182,6 @@ int keyRequestSwapFinished(swapData *data, void *pd) {
     clientReleaseRequestIO(ctx->c,ctx);
 
     ctx->finished(ctx->c,ctx);
-    
-    return 0;
 }
 
 /* Expired key should delete only if server is master, check expireIfNeeded
@@ -191,9 +199,9 @@ int keyExpiredAndShouldDelete(redisDb *db, robj *key) {
 #define NOSWAP_REASON_SWAPANADECIDED 4
 #define NOSWAP_REASON_UNEXPECTED 100
 
-int genericRequestProceed(void *listeners, redisDb *db, robj *key,
+void genericRequestProceed(void *listeners, redisDb *db, robj *key,
         client *c, void *pd) {
-    int retval = C_OK, reason_num = 0;
+    int reason_num = 0;
     void *datactx;
     swapData *data = NULL;
     swapCtx *ctx = pd;
@@ -246,8 +254,7 @@ int genericRequestProceed(void *listeners, redisDb *db, robj *key,
     if (swapDataAna(data,cmd_intention,cmd_intention_flags,
                 ctx->key_request, &ctx->swap_intention,
                 &ctx->swap_intention_flags,ctx->datactx)) {
-        ctx->errcode = SWAP_ERR_ANA_FAIL;
-        retval = C_ERR;
+        ctx->errcode = SWAP_ERR_DATA_ANA_FAIL;
         reason = "swap ana failed";
         reason_num = NOSWAP_REASON_UNEXPECTED;
         goto noswap;
@@ -276,7 +283,7 @@ int genericRequestProceed(void *listeners, redisDb *db, robj *key,
             ctx->swap_intention_flags,
             data,datactx,keyRequestSwapFinished,ctx,msgs, -1);
 
-    return C_OK;
+    return;
 
 noswap:
     DEBUG_MSGS_APPEND(&ctx->msgs,"request-proceed",
@@ -288,9 +295,7 @@ noswap:
     }
 
     /* noswap is kinda swapfinished. */
-    keyRequestSwapFinished(data,ctx);
-
-    return retval;
+    keyRequestSwapFinished(data,ctx,ctx->errcode);
 }
 
 void submitClientKeyRequests(client *c, getKeyRequestsResult *result,

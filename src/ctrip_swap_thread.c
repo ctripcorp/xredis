@@ -153,11 +153,13 @@ int isRunningUtilTask(rocksdbUtilTaskManager* manager, int type) {
     return manager->stats[type].stat == ROCKSDB_UTILS_TASK_DOING;
 }
 
-void compactRangeDone(swapData *data, void *pd){
+void compactRangeDone(swapData *data, void *pd, int errcode){
+    UNUSED(data),UNUSED(pd),UNUSED(errcode);
     server.util_task_manager->stats[COMPACT_RANGE_TASK].stat = ROCKSDB_UTILS_TASK_DONE;
 }
 
-void getRocksdbStatsDone(swapData *data, void *pd) {
+void getRocksdbStatsDone(swapData *data, void *pd, int errcode) {
+    UNUSED(data),UNUSED(pd),UNUSED(errcode);
     if (pd != NULL) {
         if (server.rocks->rocksdb_stats_cache != NULL)  {
             zlibc_free(server.rocks->rocksdb_stats_cache);

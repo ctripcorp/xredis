@@ -217,7 +217,7 @@ int bigHashEncodeKeys(swapData *data_, int intention, void *datactx_,
             *prawkeys = rawkeys;
             *action = ROCKS_SCAN;
         }
-        return C_OK;
+        return 0;
     case SWAP_DEL:
         if (data->meta) {
             rawkeys = zmalloc(sizeof(sds)*2);
@@ -230,17 +230,17 @@ int bigHashEncodeKeys(swapData *data_, int intention, void *datactx_,
             *numkeys = 0;
             *prawkeys = NULL;
         }
-        return C_OK;
+        return 0;
     case SWAP_OUT:
     default:
         /* Should not happen .*/
         *action = 0;
         *numkeys = 0;
         *prawkeys = NULL;
-        return C_OK;
+        return 0;
     }
 
-    return C_OK;
+    return 0;
 }
 
 static sds bigHashEncodeSubval(robj *subval) {
@@ -256,7 +256,7 @@ int bigHashEncodeData(swapData *data_, int intention, void *datactx_,
         *numkeys = 0;
         *prawkeys = NULL;
         *prawvals = NULL;
-        return C_OK;
+        return 0;
     }
     sds *rawkeys = zmalloc(datactx->num*sizeof(sds));
     sds *rawvals = zmalloc(datactx->num*sizeof(sds));
@@ -273,7 +273,7 @@ int bigHashEncodeData(swapData *data_, int intention, void *datactx_,
     *numkeys = datactx->num;
     *prawkeys = rawkeys;
     *prawvals = rawvals;
-    return C_OK;
+    return 0;
 }
 
 /* decoded move to exec module */
@@ -286,7 +286,7 @@ int bigHashDecodeData(swapData *data_, int num, sds *rawkeys,
 
     if (num == 0) {
         *pdecoded = NULL;
-        return C_OK;
+        return 0;
     }
 
     decoded = createHashObject();
@@ -321,7 +321,7 @@ int bigHashDecodeData(swapData *data_, int num, sds *rawkeys,
                 HASH_SET_TAKE_FIELD|HASH_SET_TAKE_VALUE);
     }
     *pdecoded = decoded;
-    return C_OK;
+    return 0;
 }
 
 static robj *createSwapInObject(robj *newval, robj *evict) {
@@ -367,7 +367,7 @@ int bigHashSwapIn(swapData *data_, robj *result, void *datactx_) {
         data->meta->len += datactx->meta_len_delta;
     }
 
-    return C_OK;
+    return 0;
 }
 
 static robj *createSwapOutObject(robj *value, robj *evict) {
@@ -426,7 +426,7 @@ int bigHashSwapOut(swapData *data_, void *datactx_) {
         }
     }
 
-    return C_OK;
+    return 0;
 }
 
 int bigHashSwapDel(swapData *data_, void *datactx, int async) {
@@ -434,11 +434,11 @@ int bigHashSwapDel(swapData *data_, void *datactx, int async) {
     UNUSED(datactx);
     if (async) {
         if (data->meta) dbDeleteMeta(data->db,data->key);
-        return C_OK;
+        return 0;
     } else {
         if (data->value) dbDelete(data->db,data->key);
         if (data->evict) dbDeleteEvict(data->db,data->key);
-        return C_OK;
+        return 0;
     }
 }
 
@@ -474,13 +474,13 @@ robj *bigHashCreateOrMergeObject(swapData *data_, robj *decoded, void *datactx_)
 int bigHashCleanObject(swapData *data_, void *datactx_) {
     bigHashSwapData *data = (bigHashSwapData*)data_;
     bigHashDataCtx *datactx = datactx_;
-    if (!data->value) return C_OK;
+    if (!data->value) return 0;
     for (int i = 0; i < datactx->num; i++) {
         if (hashTypeDelete(data->value,datactx->subkeys[i]->ptr)) {
             datactx->meta_len_delta++;
         }
     }
-    return C_OK;
+    return 0;
 }
 
 void freeBigHashSwapData(swapData *data_, void *datactx_) {
@@ -614,7 +614,6 @@ int bighashSaveStart(rdbKeyData *keydata, rio *rdb) {
 
 /* return 1 if bighash still need to consume more rawkey. */
 int bighashSave(rdbKeyData *keydata, rio *rdb, decodeResult *decoded) {
-    objectMeta *meta = keydata->savectx.bighash.meta;
     robj *key = keydata->savectx.bighash.key;
 
     serverAssert(!sdscmp(decoded->key, key->ptr));

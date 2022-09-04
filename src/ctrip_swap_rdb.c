@@ -509,14 +509,13 @@ ctripRdbLoadCtx *ctripRdbLoadCtxNew() {
     return ctx;
 }
 
-int ctripRdbLoadWriteFinished(swapData *data, void *pd) {
-    UNUSED(pd);
+void ctripRdbLoadWriteFinished(swapData *data, void *pd, int errcode) {
+    UNUSED(pd), UNUSED(errcode);
 #ifdef SWAP_DEBUG
     void *msgs = &((rdbLoadSwapData*)data)->msgs;
     DEBUG_MSGS_APPEND(msgs,"request-finish","ok");
 #endif
     rdbLoadSwapDataFree(data,NULL);
-    return 0;
 }
 
 void ctripRdbLoadSendBatch(ctripRdbLoadCtx *ctx) {

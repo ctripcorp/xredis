@@ -118,7 +118,7 @@ void getKeyRequestsFreeResult(getKeyRequestsResult *result);
 
 static inline const char *swapIntentionName(int intention) {
   const char *name = "?";
-  const char *intentions[] = {"NOP", "IN", "OUT", "DEL","COMPACT"};
+  const char *intentions[] = {"NOP", "IN", "OUT", "DEL","UTILS"};
   if (intention >= 0 && intention < SWAP_TYPES)
     name = intentions[intention];
   return name;
@@ -192,7 +192,13 @@ void swapDebugMsgsDump(swapDebugMsgs *msgs);
 #endif
 
 /* Swap context */
-#define SWAP_ERR_ANA_FAIL -100
+#define SWAP_ERR_DATA_FAIL -100
+#define SWAP_ERR_DATA_ANA_FAIL -101
+#define SWAP_ERR_DATA_FIN_FAIL -102
+#define SWAP_ERR_EXEC_FAIL -200
+#define SWAP_ERR_EXEC_RIO_FAIL -201
+#define SWAP_ERR_EXEC_UNEXPECTED_ACTION -202
+#define SWAP_ERR_EXEC_UNEXPECTED_UTIL -203
 
 struct swapCtx;
 
@@ -287,8 +293,8 @@ swapData *createBigHashSwapData(redisDb *db, robj *key, robj *value, robj *evict
 /* --- Exec --- */
 struct swapRequest;
 
-typedef int (*swapRequestNotifyCallback)(struct swapRequest *req, void *pd);
-typedef int (*swapRequestFinishedCallback)(swapData *data, void *pd);
+typedef void (*swapRequestNotifyCallback)(struct swapRequest *req, void *pd);
+typedef void (*swapRequestFinishedCallback)(swapData *data, void *pd, int errcode);
 
 typedef struct swapRequest {
   int intention;
@@ -304,12 +310,13 @@ typedef struct swapRequest {
 #ifdef SWAP_DEBUG
   swapDebugMsgs *msgs;
 #endif
+  int errcode;
 } swapRequest;
 
 swapRequest *swapRequestNew(int intention, uint32_t intention_flags, swapData *data, void *datactx, swapRequestFinishedCallback cb, void *pd, void *msgs);
 void swapRequestFree(swapRequest *req);
-int executeSwapRequest(swapRequest *req);
-int finishSwapRequest(swapRequest *req);
+void executeSwapRequest(swapRequest *req);
+void finishSwapRequest(swapRequest *req);
 void submitSwapRequest(int mode, int intention, uint32_t intention_flags, swapData* data, void *datactx, swapRequestFinishedCallback cb, void *pd, void *msgs, int thread_idx);
 
 /* --- Threads (encode/rio/decode/finish) --- */
@@ -407,7 +414,7 @@ typedef struct asyncCompleteQueue {
 
 int asyncCompleteQueueInit();
 void asyncCompleteQueueDeinit(asyncCompleteQueue *cq);
-int asyncCompleteQueueAppend(asyncCompleteQueue *cq, swapRequest *req);
+void asyncCompleteQueueAppend(asyncCompleteQueue *cq, swapRequest *req);
 int asyncCompleteQueueDrain(mstime_t time_limit);
 
 void asyncSwapRequestSubmit(swapRequest *req, int idx);
@@ -438,7 +445,7 @@ int parallelSyncSwapRequestSubmit(swapRequest *req, int idx);
 #define REQUEST_NOTIFY_RLS  (1<<1)
 
 typedef void (*freefunc)(void *);
-typedef int (*requestProceed)(void *listeners, redisDb *db, robj *key, client *c, void *pd);
+typedef void (*requestProceed)(void *listeners, redisDb *db, robj *key, client *c, void *pd);
 
 typedef struct requestListenerEntry {
   redisDb *db;    /* key level request listener might bind on svr/db level */
@@ -495,7 +502,7 @@ typedef struct requestListeners {
 requestListeners *serverRequestListenersCreate(void);
 void serverRequestListenersRelease(requestListeners *s);
 int requestLockWouldBlock(int64_t txid, redisDb *db, robj *key);
-int requestGetIOAndLock(int64_t txid, redisDb *db, robj *key, requestProceed cb, client *c, void *pd, freefunc pdfree, void *msgs);
+void requestGetIOAndLock(int64_t txid, redisDb *db, robj *key, requestProceed cb, client *c, void *pd, freefunc pdfree, void *msgs);
 int requestReleaseIO(void *listeners);
 int requestReleaseLock(void *listeners);
 
@@ -844,6 +851,12 @@ size_t keyEstimateSize(redisDb *db, robj *key);
 void swapCommand(client *c);
 void expiredCommand(client *c);
 const char *strObjectType(int type);
+static inline void clientSwapError(client *c, int swap_errcode) {
+  if (c && swap_errcode) {
+    atomicIncr(server.swap_error,1);
+    c->swap_errcode = swap_errcode;
+  }
+}
 
 #define COMPACT_RANGE_TASK 0
 #define GET_ROCKSDB_STATS_TASK 1

@@ -2807,6 +2807,7 @@ void initServerConfig(void) {
     server.max_db_size = 0;
     server.debug_evict_keys = 0;
     server.debug_rio_latency = 0;
+    server.debug_rio_error = 0;
 
     /* Failover related */
     server.failover_end_time = 0;
@@ -3398,6 +3399,7 @@ void initServer(void) {
     server.repl_good_slaves_count = 0;
     server.swap_inprogress_count = 0;
     server.swap_inprogress_memory = 0;
+    server.swap_error = 0;
     server.in_swap_cb = 0;
 
     /* Create the timer callback, this is our way to process many background

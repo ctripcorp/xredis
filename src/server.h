@@ -995,6 +995,7 @@ typedef struct client {
     struct client *repl_client; /* Master or peer client if this is a repl worker */
     long long swap_rl_until; /* client should not read or swap untill swap_rl_untill */
     list *swap_locks; /* swap locks */
+    int swap_errcode;
 } client;
 
 struct saveparam {
@@ -1710,11 +1711,13 @@ struct redisServer {
     /* swap rate limiting */
     redisAtomic size_t swap_inprogress_count; /* swap request inprogress count */
     redisAtomic size_t swap_inprogress_memory;  /* swap consumed memory in bytes */
+    redisAtomic size_t swap_error;  /* swap error count */
     unsigned long long swap_memory_slowdown; /* swap memory to slowdown swap requests */
     unsigned long long swap_memory_stop; /* swap memory to (almost) stop swap requests */
     int maxmemory_oom_percentage; /* reject denyoom commands if server used more memory than
                                   maxmemory*maxmemory_oom_percentage */
     int debug_rio_latency; /* sleep debug_rio_latency ms to simulate ssd latency. */
+    int debug_rio_error; /* mock rio error */
     /* repl swap */
     int repl_workers;   /* num of repl worker clients */
     list *repl_worker_clients_free; /* free clients for repl(slaveof & peerof) swap. */
