@@ -280,6 +280,23 @@ start_server {tags "bighash"} {
         assert_equal [r hlen hash13] 1
         assert_equal [r del hash13] 1
     }
+
+    test {big hash deletes other key by mistake} {
+        r hmset hash_aa foo bar        
+        # hash_aa is encoded as: h|1|7hash_aa
+        r evict hash_aa
+        wait_key_cold r hash_aa        
+        r hmset hash_a foo bar
+        # hash_a is encoded as: h|2|6hash_a
+        r evict hash_a
+        wait_key_cold r hash_a
+        # if hash subkey is encoded enc_type|version|keylen|key|subkey
+        # (commit 72322eea3), then delete range is [ h|1, h|2|7|hash_aa ),
+        # which includes h|2|6|hash_a, so subkey of hash_a will be deleted
+        # by mistake.
+        r del hash_aa
+        assert_equal [r hkeys hash_a] {foo}
+    }
 }
 
 start_server {tags {"evict big hash, check hlen"}} {
