@@ -722,11 +722,11 @@ struct redisCommand redisCommandTable[] = {
 
     {"save",saveCommand,1,
      "admin no-script",
-     0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
+     0,NULL,getKeyRequestsGlobal,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"bgsave",bgsaveCommand,-1,
      "admin no-script",
-     0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
+     0,NULL,getKeyRequestsGlobal,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"refullsync",refullsyncCommand,1,
      "admin read-only",
@@ -734,7 +734,7 @@ struct redisCommand redisCommandTable[] = {
 
     {"bgrewriteaof",bgrewriteaofCommand,1,
      "admin no-script",
-     0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
+     0,NULL,getKeyRequestsGlobal,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"shutdown",shutdownCommand,-1,
      "admin no-script ok-loading ok-stale",
@@ -762,11 +762,11 @@ struct redisCommand redisCommandTable[] = {
 
     {"sync",syncCommand,1,
      "admin no-script",
-     0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
+     0,NULL,getKeyRequestsGlobal,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"psync",syncCommand,-3,
      "admin no-script",
-     0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
+     0,NULL,getKeyRequestsGlobal,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"replconf",replconfCommand,-1,
      "admin no-script ok-loading ok-stale",
