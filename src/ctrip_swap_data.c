@@ -43,6 +43,10 @@ swapData *createSwapData(redisDb *db, robj *key, robj *value, robj *evict,
         if (big) data = createBigHashSwapData(db,key,value,evict,meta,datactx);
         else data = createWholeKeySwapData(db,key,value,evict,datactx);
         break;
+    case OBJ_SET:
+        if (big) data = createBigSetSwapData(db,key,value,evict,meta,datactx);
+        else data = createWholeKeySwapData(db,key,value,evict,datactx);
+        break;
     default:
         data = NULL;
         break;

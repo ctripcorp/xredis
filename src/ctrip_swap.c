@@ -453,6 +453,7 @@ int swapTest(int argc, char **argv, int accurate) {
   result += swapObjectTest(argc, argv, accurate);
   result += swapDataWholeKeyTest(argc, argv, accurate);
   result += swapDataBigHashTest(argc, argv, accurate);
+  result += swapDataBigSetTest(argc, argv, accurate);
   result += testRocksCalculateNextKey(argc, argv, accurate);
   return result;
 }

@@ -37,6 +37,7 @@ int rocksGetObjectType(unsigned char enc_type) {
     case ENC_TYPE_STRING: return OBJ_STRING;
     case ENC_TYPE_LIST: return OBJ_LIST;
     case ENC_TYPE_SET: return OBJ_SET;
+    case ENC_TYPE_SET_SUB: return OBJ_SET;
     case ENC_TYPE_ZSET: return OBJ_ZSET;
     case ENC_TYPE_HASH: return OBJ_HASH;
     case ENC_TYPE_HASH_SUB: return OBJ_HASH;

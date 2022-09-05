@@ -290,6 +290,25 @@ typedef struct bigHashDataCtx {
 void hashTransformBig(robj *o, objectMeta *m);
 swapData *createBigHashSwapData(redisDb *db, robj *key, robj *value, robj *evict, objectMeta *meta, void **pdatactx);
 
+/* Big set */
+typedef struct bigSetSwapData {
+    swapData d;
+    redisDb *db;
+    robj *key;
+    robj *value;
+    robj *evict;
+    objectMeta *meta;
+} bigSetSwapData;
+
+typedef struct bigSetDataCtx {
+    int num;
+    robj **subkeys;
+    ssize_t meta_len_delta;
+    objectMeta *new_meta; /* ref, will be moved to db.meta */
+} bigSetDataCtx;
+
+swapData *createBigSetSwapData(redisDb *db, robj *key, robj *value, robj *evict, objectMeta *meta, void **pdatactx);
+
 /* --- Exec --- */
 struct swapRequest;
 
@@ -889,6 +908,7 @@ int clearTestRedisServer(void);
 
 int swapDataWholeKeyTest(int argc, char **argv, int accurate);
 int swapDataBigHashTest(int argc, char **argv, int accurate);
+int swapDataBigSetTest(int argc, char **argv, int accurate);
 int swapWaitTest(int argc, char **argv, int accurate);
 int swapWaitReentrantTest(int argc, char **argv, int accurate);
 int swapWaitAckTest(int argc, char **argv, int accurate);
