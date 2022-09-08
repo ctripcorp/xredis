@@ -369,27 +369,27 @@ struct redisCommand redisCommandTable[] = {
 
     {"sadd",saddCommand,-3,
      "write use-memory fast @set",
-     0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,NULL,getKeyRequestsSadd,SWAP_IN,0,1,1,1,0,0,0},
 
     {"srem",sremCommand,-3,
      "write fast @set",
-     0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,NULL,getKeyRequestsSrem,SWAP_IN,INTENTION_IN_DEL,1,1,1,0,0,0},
 
     {"smove",smoveCommand,4,
      "write fast @set",
-     0,NULL,NULL,SWAP_IN,0,1,2,1,0,0,0},
+     0,NULL,getKeyRequestSmove,SWAP_IN,INTENTION_IN_DEL,1,2,1,0,0,0},
 
     {"sismember",sismemberCommand,3,
      "read-only fast @set",
-     0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,NULL,getKeyRequestSmembers,SWAP_IN,0,1,1,1,0,0,0},
 
     {"smismember",smismemberCommand,-3,
      "read-only fast @set",
-     0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,NULL,getKeyRequestSmembers,SWAP_IN,0,1,1,1,0,0,0},
 
     {"scard",scardCommand,2,
      "read-only fast @set",
-     0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,NULL,NULL,SWAP_IN,INTENTION_IN_META,1,1,1,0,0,0},
 
     {"spop",spopCommand,-2,
      "write random fast @set",
@@ -6316,7 +6316,8 @@ struct redisTest {
     {"zmalloc", zmalloc_test},
     {"sds", sdsTest},
     {"dict", dictTest},
-    {"swap", swapTest}
+    {"swap", swapTest},
+    {"mtest", mtest}
 };
 redisTestProc *getTestProcByName(const char *name) {
     int numtests = sizeof(redisTests)/sizeof(struct redisTest);
