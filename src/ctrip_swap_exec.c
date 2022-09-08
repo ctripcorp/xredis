@@ -218,7 +218,7 @@ static int doRIOMultiGet(RIO *rio) {
 
     rio->multiget.rawvals = zmalloc(rio->multiget.numkeys*sizeof(sds));
     for (i = 0; i < rio->multiget.numkeys; i++) {
-        if (values_list[i] == NULL || values_list_sizes[i] == 0) {
+        if (values_list[i] == NULL) {
             rio->multiget.rawvals[i] = NULL;
         } else {
             rio->multiget.rawvals[i] = sdsnewlen(values_list[i],

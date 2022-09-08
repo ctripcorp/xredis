@@ -132,6 +132,8 @@ int bigSetDecodeData(swapData *data_, int num, sds *rawkeys,
         const char *keystr, *subkeystr;
         size_t klen, slen;
 
+        if (NULL == rawvals[i])
+            continue;
         if (rocksDecodeSubkey(rawkeys[i],sdslen(rawkeys[i]),
                               &keystr,&klen,&subkeystr,&slen) < 0)
             continue;
@@ -146,7 +148,9 @@ int bigSetDecodeData(swapData *data_, int num, sds *rawkeys,
         setTypeAdd(decoded,subkey);
         sdsfree(subkey);
     }
-    *pdecoded = decoded;
+    // return empty set even if request subkeys doesn't exist so that we can swap evict_dict in
+    // or else continue cmd may add members to set and then evict and value exist at the same time
+    *pdecoded = NULL != decoded ? decoded : createSetObject();
     return C_OK;
 }
 
@@ -298,7 +302,6 @@ int bigSetSwapAna(swapData *data_, int cmd_intention,
                 si = setTypeInitIterator(data->value);
                 while (NULL != (vstr = setTypeNextObject(si))) {
                     size_t vlen = sdslen(vstr);
-                    // 需要算encode之后的长度吗？
                     robj* subkey = createObject(OBJ_STRING, vstr);
 
                     evict_memory += vlen;
@@ -467,6 +470,19 @@ rdbKeyType bigSetRdbType = {
     .load_dbadd = NULL,
     .load_deinit = NULL,
 };
+
+void setTransformBig(robj *o, objectMeta *m) {
+    size_t set_size;
+
+    serverAssert(o && o->type == OBJ_SET);
+    if (m != NULL || o->big) return;
+
+    set_size = objectEstimateSize(o);
+    if (set_size > server.swap_big_set_threshold) {
+        o->big = 1;
+        o->dirty = 1; /* rocksdb format changed, set dirty to trigger PUT. */
+    }
+}
 
 swapData *createBigSetSwapData(redisDb *db, robj *key, robj *value, robj *evict, objectMeta *meta, void **pdatactx) {
     bigSetSwapData *data = zmalloc(sizeof(bigSetSwapData));

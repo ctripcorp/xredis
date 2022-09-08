@@ -221,6 +221,25 @@ void expiredCommand(client *c) {
 #define GETKEYS_RESULT_SUBKEYS_INIT_LEN 8
 #define GETKEYS_RESULT_SUBKEYS_LINER_LEN 1024
 
+robj** extractRequestArgs(robj **argv, int argc, int start, int end, int step, int* len) {
+    int i, realstart, realend, num = 0;
+    robj **rst;
+    realstart = start >= 0 ? start : argc + start;
+    realend = end >= 0 ? end : argc + end;
+
+    if (realstart > realend) {
+        *len = 0;
+        return NULL;
+    }
+
+    rst = zmalloc((((realend - realstart)/step) + 1) * sizeof(robj*));
+    for (i = realstart; i <= realend && i < argc; i+=step) {
+        rst[num++] = argv[i];
+    }
+    *len = num;
+    return rst;
+}
+
 int getKeyRequestsSingleKeyWithSubkeys(struct redisCommand *cmd, robj **argv,
         int argc, struct getKeyRequestsResult *result,
         int key_index, int first_subkey, int last_subkey, int subkey_step) {
@@ -254,6 +273,35 @@ int getKeyRequestsSingleKeyWithSubkeys(struct redisCommand *cmd, robj **argv,
     return 0;
 }
 
+int getKeyRequestsMultiKeyWithSameSubkeys(struct redisCommand *cmd, robj **argv, int argc,
+        struct getKeyRequestsResult *result, int first_key, int last_key, int key_step,
+                int first_subkey, int last_subkey, int subkey_step) {
+    int i, j, keyslen, subkeyslen;
+    robj **keys, **subkeys;
+
+    keys = extractRequestArgs(argv, argc, first_key, last_key, key_step, &keyslen);
+    subkeys = extractRequestArgs(argv, argc, first_subkey, last_subkey, subkey_step, & subkeyslen);
+    getKeyRequestsPrepareResult(result,result->num+keyslen);
+
+    for (i = 0; i < keyslen; i++) {
+        robj *key = keys[i];
+        robj **subkeys_dup = subkeys;
+        incrRefCount(key);
+        for (j = 0; j < subkeyslen; j++) {
+            incrRefCount( subkeys[j]);
+        }
+        if (i >= 1) {
+            subkeys_dup = zmalloc(subkeyslen*sizeof(robj*));
+            memcpy(subkeys_dup, subkeys, subkeyslen*sizeof(robj*));
+        }
+        getKeyRequestsAppendResult(result,REQUEST_LEVEL_KEY,keys[i],subkeyslen,subkeys_dup,
+                                   cmd->intention,cmd->intention_flags,
+                                   KEYREQUESTS_DBID);
+    }
+
+    return 0;
+}
+
 int getKeyRequestsHset(struct redisCommand *cmd, robj **argv, int argc,
         struct getKeyRequestsResult *result) {
     return getKeyRequestsSingleKeyWithSubkeys(cmd,argv,argc,result,1,2,-1,2);
@@ -262,6 +310,17 @@ int getKeyRequestsHset(struct redisCommand *cmd, robj **argv, int argc,
 int getKeyRequestsHmget(struct redisCommand *cmd, robj **argv, int argc,
         struct getKeyRequestsResult *result) {
     return getKeyRequestsSingleKeyWithSubkeys(cmd,argv,argc,result,1,2,-1,1);
+}
+
+int getKeyRequestSmembers(struct redisCommand *cmd, robj **argv, int argc,
+        struct getKeyRequestsResult *result) {
+    return getKeyRequestsSingleKeyWithSubkeys(cmd,argv,argc,result,1,2,-1,1);
+}
+
+int getKeyRequestSmove(struct redisCommand *cmd, robj **argv, int argc,
+        struct getKeyRequestsResult *result) {
+    return getKeyRequestsMultiKeyWithSameSubkeys(cmd,argv,argc,result,1,2,1,
+                                                 3,3,1);
 }
 
 #ifdef REDIS_TEST

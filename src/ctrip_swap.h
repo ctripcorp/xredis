@@ -78,9 +78,13 @@ int getKeyRequestsGlobal(struct redisCommand *cmd, robj **argv, int argc, struct
 #define getKeyRequestsHincrby getKeyRequestsHget
 #define getKeyRequestsHincrbyfloat getKeyRequestsHmget
 #define getKeyRequestsHexists getKeyRequestsHmget
+#define getKeyRequestsSadd getKeyRequestSmembers
+#define getKeyRequestsSrem getKeyRequestSmembers
 int getKeyRequestsHset(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 int getKeyRequestsHmget(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 int getKeyRequestsHlen(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestSmembers(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestSmove(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 
 #define MAX_KEYREQUESTS_BUFFER 128
 #define GET_KEYREQUESTS_RESULT_INIT { {{0}}, NULL, 0, MAX_KEYREQUESTS_BUFFER}
@@ -307,6 +311,7 @@ typedef struct bigSetDataCtx {
     objectMeta *new_meta; /* ref, will be moved to db.meta */
 } bigSetDataCtx;
 
+void setTransformBig(robj *o, objectMeta *m);
 swapData *createBigSetSwapData(redisDb *db, robj *key, robj *value, robj *evict, objectMeta *meta, void **pdatactx);
 
 /* --- Exec --- */
@@ -708,6 +713,7 @@ void evictStopLoading(int success);
 
 /* rdb key type. */ 
 #define DEFAULT_HASH_FIELD_SIZE 256
+#define DEFAULT_SET_FIELD_SIZE 128
 
 #define RDB_KEY_TYPE_WHOLEKEY 0
 #define RDB_KEY_TYPE_BIGHASH 1

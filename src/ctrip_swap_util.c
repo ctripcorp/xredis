@@ -204,6 +204,10 @@ size_t objectEstimateSize(robj *o) {
         dict *d = o->ptr;
         asize = sizeof(*o)+sizeof(dict)+(sizeof(struct dictEntry*)*dictSlots(d));
         asize += DEFAULT_HASH_FIELD_SIZE*dictSize(d);
+    } else if (o->type == OBJ_SET && o->encoding == OBJ_ENCODING_HT) {
+        dict *d = o->ptr;
+        asize = sizeof(*o)+sizeof(dict)+(sizeof(struct dictEntry*)*dictSlots(d));
+        asize += DEFAULT_SET_FIELD_SIZE*dictSize(d);
     } else {
         asize = objectComputeSize(o,5);
     }
