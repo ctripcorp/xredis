@@ -443,7 +443,8 @@ int bigHashSwapDel(swapData *data_, void *datactx, int async) {
 }
 
 /* decoded moved back by exec to bighash*/
-robj *bigHashCreateOrMergeObject(swapData *data_, robj *decoded, void *datactx_) {
+robj *bigHashCreateOrMergeObject(swapData *data_, robj *decoded, void *datactx_, int data_dirty) {
+    UNUSED(data_dirty);
     robj *result;
     bigHashSwapData *data = (bigHashSwapData*)data_;
     bigHashDataCtx *datactx = datactx_;
@@ -885,7 +886,7 @@ int swapDataBigHashTest(int argc, char **argv, int accurate) {
         data->value = h;
         data->evict = e;
         data->meta = m;
-        bigHashCreateOrMergeObject((swapData*)data,hash1,hash1_ctx);
+        bigHashCreateOrMergeObject((swapData*)data,hash1,hash1_ctx,0);
         bigHashSwapIn((swapData*)data,NULL,hash1_ctx);
         test_assert((m = lookupMeta(db,key1)) != NULL);
         test_assert((e = lookupEvictKey(db,key1)) == NULL);

@@ -45,6 +45,7 @@ set ::disk_tests {
     swap/unit/swap_out+in
     swap/unit/hash
     swap/unit/big_hash
+    swap/unit/big_set
     swap/unit/lazydel
     swap/unit/swap_error
     swap/unit/keyspace
@@ -65,7 +66,6 @@ set ::disk_tests {
     unit/type/list
     unit/type/list-2
     unit/type/list-3
-    unit/type/set
     unit/type/zset
     unit/type/hash
     unit/expire

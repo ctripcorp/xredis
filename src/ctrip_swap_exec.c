@@ -650,12 +650,23 @@ static int doSwapIntentionDel(swapRequest *req, int numkeys, sds *rawkeys) {
     return retval;
 }
 
+static int doSwapIntentionDelRange(swapRequest *req, sds start, sds end) {
+    RIO _rio = {0}, *rio = &_rio;
+    int retval;
+    RIOInitDeleteRange(rio, start, end);
+    updateStatsSwapRIO(req,rio);
+    retval = doRIO(rio);
+    RIODeinit(rio);
+    return retval;
+}
+
 static void executeSwapInRequest(swapRequest *req) {
     robj *decoded;
     int numkeys, errcode, action;
     sds *rawkeys = NULL;
     RIO _rio = {0}, *rio = &_rio;
     swapData *data = req->data;
+    int data_dirty = 0;
 
     if ((errcode = swapDataEncodeKeys(data,req->intention,req->datactx,
                 &action,&numkeys,&rawkeys))) {
@@ -726,9 +737,10 @@ static void executeSwapInRequest(swapRequest *req) {
         DEBUG_MSGS_APPEND(req->msgs,"execswap-in-decodedata", "decoded=%p",(void*)decoded);
 
         if (req->intention_flags & INTENTION_IN_DEL) {
-            if ((errcode = doSwapIntentionDel(req, numkeys, rawkeys))) {
+            if ((errcode = doSwapIntentionDelRange(req, sdsdup(rawkeys[0]), rocksCalculateNextKey(rawkeys[0])))) {
                 goto end;
             }
+            data_dirty = 1;
         }
         /* rawkeys not moved, only rakeys[0] moved, free when done. */
         zfree(rawkeys);
@@ -737,7 +749,7 @@ static void executeSwapInRequest(swapRequest *req) {
         goto end;
     }
 
-    req->result = swapDataCreateOrMergeObject(data,decoded,req->datactx);
+    req->result = swapDataCreateOrMergeObject(data,decoded,req->datactx, data_dirty);
     DEBUG_MSGS_APPEND(req->msgs,"execswap-in-createormerge","result=%p",(void*)req->result);
 
 end:

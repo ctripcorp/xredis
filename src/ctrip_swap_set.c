@@ -154,11 +154,12 @@ int bigSetDecodeData(swapData *data_, int num, sds *rawkeys,
     return C_OK;
 }
 
-robj *bigSetCreateOrMergeObject(swapData *data_, robj *decoded, void *datactx_) {
+robj *bigSetCreateOrMergeObject(swapData *data_, robj *decoded, void *datactx_, int data_dirty) {
     robj *result;
     bigSetSwapData *data = (bigSetSwapData*)data_;
     bigSetDataCtx *datactx = datactx_;
     serverAssert(decoded == NULL || decoded->type == OBJ_SET);
+    datactx->swap_in_data_dirty = data_dirty;
 
     if (!data->value || !decoded) {
         /* decoded moved to exec again. */
@@ -259,7 +260,15 @@ int bigSetSwapAna(swapData *data_, int cmd_intention,
                 *intention = SWAP_NOP;
                 *intention_flags = 0;
             } else if (req->num_subkeys == 0) {
-                if (cmd_intention_flags == INTENTION_IN_DEL) {
+                if (cmd_intention_flags == INTENTION_IN_AND_DEL) {
+                    if (data->meta->len == 0) {
+                        *intention = SWAP_DEL;
+                        *intention_flags = INTENTION_DEL_ASYNC;
+                    } else {
+                        *intention = SWAP_IN;
+                        *intention_flags = INTENTION_IN_DEL;
+                    }
+                } else if (cmd_intention_flags == INTENTION_IN_DEL) {
                     /* DEL/GETDEL: Lazy delete current key. */
                     createFakeSetForDeleteIfNeeded(data);
                     *intention = SWAP_DEL;
@@ -340,14 +349,14 @@ int bigSetSwapAna(swapData *data_, int cmd_intention,
     return 0;
 }
 
-static robj *createSwapInObject(robj *newval, robj *evict) {
+static robj *createSwapInObject(robj *newval, robj *evict, int data_ditry) {
     robj *swapin = newval;
     serverAssert(newval && newval->type == OBJ_SET);
     serverAssert(evict && evict->type == OBJ_SET);
     incrRefCount(newval);
     swapin->lru = evict->lru;
     swapin->big = evict->big;
-    swapin->dirty = 0;
+    swapin->dirty = data_ditry;
     return swapin;
 }
 
@@ -364,17 +373,27 @@ int bigSetSwapIn(swapData *data_, robj *result, void *datactx_) {
     } else if (!data->value && result != NULL) {
         /* cold key swapped in fields */
         /* dup expire/meta satellites before evict deleted. */
-        meta = dupObjectMeta(data->meta);
-        meta->len += datactx->meta_len_delta;
-        serverAssert(meta->len >= 0);
         long long expire = getExpire(data->db,data->key);
-        robj *swapin = createSwapInObject(result,data->evict);
-        doSwapIn(data->db, data->key, swapin, expire, meta);
+        robj *swapin = createSwapInObject(result,data->evict,datactx->swap_in_data_dirty);
+        if (datactx->swap_in_data_dirty) {
+            serverAssert(meta->len + datactx->meta_len_delta == 0);
+            doSwapIn(data->db, data->key, swapin, expire, NULL);
+        } else {
+            meta = dupObjectMeta(data->meta);
+            meta->len += datactx->meta_len_delta;
+            serverAssert(meta->len >= 0);
+            doSwapIn(data->db, data->key, swapin, expire, meta);
+        }
     } else {
         /* if data.value exists, then we expect all fields merged already
          * and nothing need to be swapped in. */
         serverAssert(result == NULL);
         data->meta->len += datactx->meta_len_delta;
+        serverAssert(data->meta->len >= 0);
+        if (datactx->swap_in_data_dirty) {
+            serverAssert(data->meta->len == 0);
+            dbDeleteMeta(data->db, data->key);
+        }
     }
 
     return C_OK;
@@ -640,6 +659,7 @@ swapData *createBigSetSwapData(redisDb *db, robj *key, robj *value, robj *evict,
     datactx->meta_len_delta = 0;
     datactx->num = 0;
     datactx->subkeys = NULL;
+    datactx->swap_in_data_dirty = 0;
     if (pdatactx) *pdatactx = datactx;
 
     return (swapData*)data;
@@ -708,7 +728,7 @@ int swapDataBigSetTest(int argc, char **argv, int accurate) {
         test_assert(NULL != decoded);
         test_assert(2 == setTypeSize(decoded));
 
-        bigSetCreateOrMergeObject(set1_data, decoded, set1_ctx);
+        bigSetCreateOrMergeObject(set1_data, decoded, set1_ctx, 0);
         test_assert(originsize == setTypeSize(set1));
         test_assert(origin->encoding == set1->encoding);
         si = setTypeInitIterator(origin);
@@ -829,7 +849,8 @@ int swapDataBigSetTest(int argc, char **argv, int accurate) {
         data->value = s;
         data->evict = e;
         data->meta = m;
-        bigSetCreateOrMergeObject((swapData*)data,decoded,set1_ctx);
+        set1_ctx->meta_len_delta = 0;
+        bigSetCreateOrMergeObject((swapData*)data,decoded,set1_ctx,0);
         bigSetSwapIn((swapData*)data,NULL,set1_ctx);
         test_assert((m = lookupMeta(db,key1)) != NULL);
         test_assert((e = lookupEvictKey(db,key1)) == NULL);

@@ -244,9 +244,10 @@ int wholeKeySwapDel(swapData *data_, void *datactx, int async) {
 }
 
 /* decoded moved back by exec to wholekey then moved to exec again. */
-robj *wholeKeyCreateOrMergeObject(swapData *data, robj *decoded, void *datactx) {
+robj *wholeKeyCreateOrMergeObject(swapData *data, robj *decoded, void *datactx, int data_dirty) {
     UNUSED(data);
     UNUSED(datactx);
+    UNUSED(data_dirty);
     serverAssert(decoded);
     return decoded;
 }

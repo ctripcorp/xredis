@@ -125,9 +125,9 @@ inline int swapDataSwapDel(swapData *d, void *datactx, int async) {
  * - create new object: return newly created object.
  * - merge fields into robj: subvals merged into db.value, returns NULL */
 inline robj *swapDataCreateOrMergeObject(swapData *d, robj *decoded,
-        void *datactx) {
+        void *datactx, int data_dirty) {
     if (d->type->createOrMergeObject)
-        return d->type->createOrMergeObject(d,decoded,datactx);
+        return d->type->createOrMergeObject(d,decoded,datactx, data_dirty);
     else
         return NULL;
 }
