@@ -273,30 +273,15 @@ int getKeyRequestsSingleKeyWithSubkeys(struct redisCommand *cmd, robj **argv,
     return 0;
 }
 
-int getKeyRequestsMultiKeyWithSameSubkeys(struct redisCommand *cmd, robj **argv, int argc,
-        struct getKeyRequestsResult *result, int first_key, int last_key, int key_step,
-                int first_subkey, int last_subkey, int subkey_step) {
-    int i, j, keyslen, subkeyslen;
-    robj **keys, **subkeys;
-
-    keys = extractRequestArgs(argv, argc, first_key, last_key, key_step, &keyslen);
-    subkeys = extractRequestArgs(argv, argc, first_subkey, last_subkey, subkey_step, & subkeyslen);
-    getKeyRequestsPrepareResult(result,result->num+keyslen);
-
-    for (i = 0; i < keyslen; i++) {
-        robj *key = keys[i];
-        robj **subkeys_dup = subkeys;
-        incrRefCount(key);
-        for (j = 0; j < subkeyslen; j++) {
-            incrRefCount( subkeys[j]);
-        }
-        if (i >= 1) {
-            subkeys_dup = zmalloc(subkeyslen*sizeof(robj*));
-            memcpy(subkeys_dup, subkeys, subkeyslen*sizeof(robj*));
-        }
-        getKeyRequestsAppendResult(result,REQUEST_LEVEL_KEY,keys[i],subkeyslen,subkeys_dup,
-                                   cmd->intention,cmd->intention_flags,
-                                   KEYREQUESTS_DBID);
+int getKeyRequestsSinterstore(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result) {
+    getKeyRequestsPrepareResult(result, result->num + argc);
+    incrRefCount(argv[1]);
+    getKeyRequestsAppendResult(result,REQUEST_LEVEL_KEY,argv[1], 0, NULL,
+                               SWAP_IN, INTENTION_IN_AND_DEL,KEYREQUESTS_DBID);
+    for(int i = 2; i < argc; i++) {
+        incrRefCount(argv[i]);
+        getKeyRequestsAppendResult(result,REQUEST_LEVEL_KEY,argv[i], 0, NULL,
+                                   SWAP_IN,0,KEYREQUESTS_DBID);
     }
 
     return 0;
@@ -319,8 +304,24 @@ int getKeyRequestSmembers(struct redisCommand *cmd, robj **argv, int argc,
 
 int getKeyRequestSmove(struct redisCommand *cmd, robj **argv, int argc,
         struct getKeyRequestsResult *result) {
-    return getKeyRequestsMultiKeyWithSameSubkeys(cmd,argv,argc,result,1,2,1,
-                                                 3,3,1);
+    robj** subkeys;
+    getKeyRequestsPrepareResult(result, result->num + 2);
+
+    incrRefCount(argv[1]);
+    incrRefCount(argv[3]);
+    subkeys = zmalloc(sizeof(robj*));
+    subkeys[0] = argv[3];
+    getKeyRequestsAppendResult(result,REQUEST_LEVEL_KEY,argv[1], 1, subkeys,
+                               SWAP_IN, INTENTION_IN_DEL,KEYREQUESTS_DBID);
+
+    incrRefCount(argv[2]);
+    incrRefCount(argv[3]);
+    subkeys = zmalloc(sizeof(robj*));
+    subkeys[0] = argv[3];
+    getKeyRequestsAppendResult(result,REQUEST_LEVEL_KEY,argv[2], 1, subkeys,
+                               SWAP_IN, 0,KEYREQUESTS_DBID);
+
+    return 0;
 }
 
 #ifdef REDIS_TEST

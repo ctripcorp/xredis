@@ -393,7 +393,7 @@ struct redisCommand redisCommandTable[] = {
 
     {"spop",spopCommand,-2,
      "write random fast @set",
-     0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,NULL,NULL,SWAP_IN,INTENTION_IN_AND_DEL,1,1,1,0,0,0},
 
     {"srandmember",srandmemberCommand,-2,
      "read-only random @set",
@@ -405,7 +405,7 @@ struct redisCommand redisCommandTable[] = {
 
     {"sinterstore",sinterstoreCommand,-3,
      "write use-memory @set",
-     0,NULL,NULL,SWAP_IN,0,1,-1,1,0,0,0},
+     0,NULL,getKeyRequestsSinterstore,SWAP_IN,0,1,-1,1,0,0,0},
 
     {"sunion",sunionCommand,-2,
      "read-only to-sort @set",
@@ -413,7 +413,7 @@ struct redisCommand redisCommandTable[] = {
 
     {"sunionstore",sunionstoreCommand,-3,
      "write use-memory @set",
-     0,NULL,NULL,SWAP_IN,0,1,-1,1,0,0,0},
+     0,NULL,getKeyRequestsSunionstore,SWAP_IN,0,1,-1,1,0,0,0},
 
     {"sdiff",sdiffCommand,-2,
      "read-only to-sort @set",
@@ -421,7 +421,7 @@ struct redisCommand redisCommandTable[] = {
 
     {"sdiffstore",sdiffstoreCommand,-3,
      "write use-memory @set",
-     0,NULL,NULL,SWAP_IN,0,1,-1,1,0,0,0},
+     0,NULL,getKeyRequestsSdiffstore,SWAP_IN,0,1,-1,1,0,0,0},
 
     {"smembers",sinterCommand,2,
      "read-only to-sort @set",
@@ -6316,8 +6316,7 @@ struct redisTest {
     {"zmalloc", zmalloc_test},
     {"sds", sdsTest},
     {"dict", dictTest},
-    {"swap", swapTest},
-    {"mtest", mtest}
+    {"swap", swapTest}
 };
 redisTestProc *getTestProcByName(const char *name) {
     int numtests = sizeof(redisTests)/sizeof(struct redisTest);

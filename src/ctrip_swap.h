@@ -43,6 +43,8 @@
 #define INTENTION_IN_META (1<<1)
 /* Delete key in rocksdb without touching keyspace. */
 #define INTENTION_DEL_ASYNC (1<<2)
+/* Load key and elete key in rocksdb after right after swap in. */
+#define INTENTION_IN_AND_DEL (1<<3)
 
 
 static inline const char *requestLevelName(int level) {
@@ -85,6 +87,9 @@ int getKeyRequestsHmget(struct redisCommand *cmd, robj **argv, int argc, struct 
 int getKeyRequestsHlen(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 int getKeyRequestSmembers(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 int getKeyRequestSmove(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsSinterstore(struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+#define getKeyRequestsSdiffstore getKeyRequestsSinterstore
+#define getKeyRequestsSunionstore getKeyRequestsSinterstore
 
 #define MAX_KEYREQUESTS_BUFFER 128
 #define GET_KEYREQUESTS_RESULT_INIT { {{0}}, NULL, 0, MAX_KEYREQUESTS_BUFFER}
@@ -146,7 +151,7 @@ typedef struct swapDataType {
   int (*swapIn)(struct swapData *data, robj *result, void *datactx);
   int (*swapOut)(struct swapData *data, void *datactx);
   int (*swapDel)(struct swapData *data, void *datactx, int async);
-  robj *(*createOrMergeObject)(struct swapData *data, robj *decoded, void *datactx);
+  robj *(*createOrMergeObject)(struct swapData *data, robj *decoded, void *datactx, int data_dirty);
   int (*cleanObject)(struct swapData *data, void *datactx);
   void (*free)(struct swapData *data, void *datactx);
 } swapDataType;
@@ -158,7 +163,7 @@ int swapDataDecodeData(swapData *d, int num, sds *rawkeys, sds *rawvals, robj **
 int swapDataSwapIn(swapData *d, robj *result, void *datactx);
 int swapDataSwapOut(swapData *d, void *datactx);
 int swapDataSwapDel(swapData *d, void *datactx, int async);
-robj *swapDataCreateOrMergeObject(swapData *d, robj *decoded, void *datactx);
+robj *swapDataCreateOrMergeObject(swapData *d, robj *decoded, void *datactx, int data_dirty);
 int swapDataCleanObject(swapData *d, void *datactx);
 void swapDataFree(swapData *data, void *datactx);
 int dbAddEvictRDBLoad(redisDb* db, sds key, robj* evict);
@@ -310,6 +315,7 @@ typedef struct bigSetDataCtx {
     robj **subkeys;
     ssize_t meta_len_delta;
     objectMeta *new_meta; /* ref, will be moved to db.meta */
+    int swap_in_data_dirty;
 } bigSetDataCtx;
 
 void setTransformBig(robj *o, objectMeta *m);
