@@ -199,11 +199,7 @@ int rdbKeyDataInitSave(rdbKeyData *keydata, redisDb *db, decodeResult *decoded) 
              * rocksdb is obselete. e.g. deleted bighash fields. */
             return INIT_SAVE_SKIP;
         }
-        if (evict->type != OBJ_STRING && evict->type != OBJ_HASH) {
-            /* cold key, must be cold wholekey or bighash */
-            serverPanic("unsupported cold key type.");
-            return INIT_SAVE_ERR;
-        } else if (evict->type == OBJ_STRING) {
+        if (evict->type == OBJ_STRING) {
             serverAssert(meta == NULL);
             rdbKeyDataInitSaveWholeKey(keydata,value,evict,expire);
         } else if (evict->type == OBJ_HASH && evict->big == 0) {
@@ -211,13 +207,24 @@ int rdbKeyDataInitSave(rdbKeyData *keydata, redisDb *db, decodeResult *decoded) 
             if (decoded->enc_type != ENC_TYPE_HASH)
                 return INIT_SAVE_SKIP;
             rdbKeyDataInitSaveWholeKey(keydata,value,evict,expire);
-        } else { /* bighash */
+        } else if (evict->type == OBJ_HASH && evict->big == 1) { /* bighash */
             serverAssert(meta != NULL);
             if (decoded->enc_type != ENC_TYPE_HASH_SUB ||
                     decoded->rdbtype != RDB_TYPE_STRING) {
                 return INIT_SAVE_SKIP;
             }
             rdbKeyDataInitSaveBigHash(keydata,value,evict,meta,expire,keystr);
+        } else if (evict->type == OBJ_SET) {
+            if (evict->big) {
+                serverAssert(meta != NULL);
+                rdbKeyDataInitSaveBigSet(keydata,value,evict,meta,expire,keystr);
+            } else {
+                serverAssert(meta == NULL);
+                rdbKeyDataInitSaveWholeKey(keydata,value,evict,expire);
+            }
+        } else {
+            serverPanic("unsupported cold key type.");
+            return INIT_SAVE_ERR;
         }
     } else if (evict == NULL && value != NULL) {
         if (rocksGetObjectEncType(value) != enc_type) {
@@ -225,11 +232,13 @@ int rdbKeyDataInitSave(rdbKeyData *keydata, redisDb *db, decodeResult *decoded) 
         }
 
         if (meta && meta->len > 0) {
-            if (decoded->enc_type != ENC_TYPE_HASH_SUB ||
-                    decoded->rdbtype != RDB_TYPE_STRING) {
+            if (decoded->enc_type == ENC_TYPE_HASH_SUB && decoded->rdbtype == RDB_TYPE_STRING) {
+                rdbKeyDataInitSaveBigHash(keydata,value,evict,meta,expire,keystr);
+            } else if (decoded->enc_type == ENC_TYPE_SET_SUB) {
+                rdbKeyDataInitSaveBigSet(keydata,value,evict,meta,expire,keystr);
+            } else {
                 return INIT_SAVE_SKIP;
             }
-            rdbKeyDataInitSaveBigHash(keydata,value,evict,meta,expire,keystr);
         } else {
             /* hot key */
             return INIT_SAVE_SKIP;
@@ -694,6 +703,13 @@ int rdbLoadHashFieldsVerbatim(rio *rdb, unsigned long long len, sds *verbatim) {
     return 0;
 }
 
+int rdbLoadSetMembersVerbatim(rio *rdb, unsigned long long len, sds *verbatim) {
+    while (len--) {
+        if (rdbLoadStringVerbatim(rdb,verbatim)) return -1;
+    }
+    return 0;
+}
+
 /* return 1 if load not load finished (needs to continue load). */
 int rdbKeyLoad(struct rdbKeyData *keydata, rio *rdb, sds *rawkey, sds *rawval,
         int *error) {
@@ -735,15 +751,17 @@ void rdbKeyDataInitLoadKey(rdbKeyData *keydata, int rdbtype, sds key) {
 
 int rdbKeyDataInitLoad(rdbKeyData *keydata, rio *rdb, int rdbtype, sds key) {
     if (!rdbIsObjectType(rdbtype)) return RDB_LOAD_ERR_OTHER;
+
+    unsigned long long len;
     switch(rdbtype) {
     case RDB_TYPE_STRING:
     case RDB_TYPE_HASH_ZIPLIST:
+    case RDB_TYPE_SET_INTSET:
         rdbKeyDataInitLoadWholeKey(keydata,rdbtype,key);
         break;
     case RDB_TYPE_HASH:
         {
             int isencode;
-            unsigned long long len;
             sds hash_header = rdbVerbatimNew((unsigned char)rdbtype);
             /* nfield */
             if (rdbLoadLenVerbatim(rdb,&hash_header,&isencode,&len)) {
@@ -758,6 +776,24 @@ int rdbKeyDataInitLoad(rdbKeyData *keydata, rio *rdb, int rdbtype, sds key) {
                 rdbKeyDataInitLoadBigHash(keydata,rdbtype,key);
                 keydata->loadctx.bighash.hash_nfields = (int)len;
                 sdsfree(hash_header);
+            }
+        }
+        break;
+        case RDB_TYPE_SET:
+        {
+            sds set_header = rdbVerbatimNew((unsigned char)rdbtype);
+            if (rdbLoadLenVerbatim(rdb, &set_header, NULL, &len)) {
+                sdsfree(set_header);
+                return RDB_LOAD_ERR_OTHER;
+            }
+            if (len*DEFAULT_SET_FIELD_SIZE < server.swap_big_set_threshold) {
+                rdbKeyDataInitLoadWholeKey(keydata,rdbtype,key);
+                keydata->loadctx.wholekey.set_header = set_header;
+                keydata->loadctx.wholekey.set_size = (int)len;
+            } else {
+                rdbKeyDataInitLoadBigSet(keydata,rdbtype,key);
+                keydata->loadctx.bigset.set_size = (int)len;
+                sdsfree(set_header);
             }
         }
         break;

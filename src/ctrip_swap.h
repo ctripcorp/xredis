@@ -164,6 +164,7 @@ void swapDataFree(swapData *data, void *datactx);
 int dbAddEvictRDBLoad(redisDb* db, sds key, robj* evict);
 int rdbLoadStringVerbatim(rio *rdb, sds *verbatim);
 int rdbLoadHashFieldsVerbatim(rio *rdb, unsigned long long len, sds *verbatim);
+int rdbLoadSetMembersVerbatim(rio *rdb, unsigned long long len, sds *verbatim);
 
 /* Debug msgs */
 #ifdef SWAP_DEBUG
@@ -718,6 +719,7 @@ void evictStopLoading(int success);
 #define RDB_KEY_TYPE_WHOLEKEY 0
 #define RDB_KEY_TYPE_BIGHASH 1
 #define RDB_KEY_TYPE_MEMKEY 2
+#define RDB_KEY_TYPE_BIGSET 4
 
 typedef struct decodeResult {
     unsigned char enc_type;
@@ -758,6 +760,11 @@ typedef struct rdbKeyData {
             robj *key; /* own */
             int saved;
           } bighash;
+			struct {
+			  objectMeta *meta; /* ref */
+			  robj *key; /* own */
+			  int saved;
+			} bigset;
         };
     } savectx;
     struct {
@@ -773,6 +780,8 @@ typedef struct rdbKeyData {
             robj *evict; /* moved (to db.evict) */
             int hash_nfields; /* parsed hash nfields from header */
             sds hash_header; /* moved (to rdbLoadSwapData) */
+			sds set_header;
+			int set_size;
           } wholekey;
           struct {
             int hash_nfields;
@@ -780,6 +789,11 @@ typedef struct rdbKeyData {
             robj *evict; /* moved (to db.evict) */
             objectMeta *meta; /* moved (to db.meta) */
           } bighash;
+		  struct {
+			  int set_size;
+			  robj *evict; /* moved (to db.evict) */
+			  objectMeta *meta; /* moved (to db.meta) */
+		  } bigset;
         };
     } loadctx;
 } rdbKeyData;
@@ -807,6 +821,8 @@ int bighashSaveStart(rdbKeyData *keydata, rio *rdb);
 int bighashSave(rdbKeyData *keydata,  rio *rdb, decodeResult *d);
 int bighashSaveEnd(rdbKeyData *keydata, int save_result); 
 void bighashSaveDeinit(rdbKeyData *keydata);
+/* big set */
+void rdbKeyDataInitSaveBigSet(rdbKeyData *keydata, robj *value, robj *evict, objectMeta *meta, long long expire, sds keystr);
 
 static inline sds rdbVerbatimNew(unsigned char rdbtype) {
     return sdsnewlen(&rdbtype,1);
@@ -836,6 +852,8 @@ void rdbKeyDataInitLoadBigHash(rdbKeyData *keydata, int rdbtype, sds key);
 int bighashRdbLoad(struct rdbKeyData *keydata, rio *rdb, sds *rawkey, sds *rawval, int *error);
 int bighashRdbLoadDbAdd(struct rdbKeyData *keydata, redisDb *db);
 void bighashRdbLoadExpired(struct rdbKeyData *keydata);
+/* big set */
+void rdbKeyDataInitLoadBigSet(rdbKeyData *keydata, int rdbtype, sds key);
 
 
 /* --- Util --- */
