@@ -338,15 +338,33 @@ void rdbKeyDataInitLoadWholeKey(rdbKeyData *keydata, int rdbtype, sds key) {
 }
 
 sds empty_hash_ziplist_verbatim;
+sds empty_set_intset_enc16_verbatim;
+sds empty_set_intset_enc32_verbatim;
+sds empty_set_intset_enc64_verbatim;
 
 void initSwapWholeKey() {
     robj *emptyhash = createHashObject();
     empty_hash_ziplist_verbatim = rocksEncodeValRdb(emptyhash);
     decrRefCount(emptyhash);
+
+    robj *emptyintset = createIntsetObject();
+    ((intset*)emptyintset->ptr)->encoding = intrev32ifbe(sizeof(int16_t));
+    empty_set_intset_enc16_verbatim = rocksEncodeValRdb(emptyintset);
+    ((intset*)emptyintset->ptr)->encoding = intrev32ifbe(sizeof(int32_t));
+    empty_set_intset_enc32_verbatim = rocksEncodeValRdb(emptyintset);
+    ((intset*)emptyintset->ptr)->encoding = intrev32ifbe(sizeof(int64_t));
+    empty_set_intset_enc64_verbatim = rocksEncodeValRdb(emptyintset);
+    decrRefCount(emptyintset);
 }
 
 static inline int hashZiplistVerbatimIsEmpty(sds verbatim) {
     return !sdscmp(empty_hash_ziplist_verbatim, verbatim);
+}
+
+static inline int setIntsetVerbatimIsEmpty(sds verbatim) {
+    return !sdscmp(empty_set_intset_enc16_verbatim, verbatim)
+        && !sdscmp(empty_set_intset_enc32_verbatim, verbatim)
+        && !sdscmp(empty_set_intset_enc64_verbatim, verbatim);
 }
 
 int wholekeyRdbLoad(struct rdbKeyData *keydata, rio *rdb, sds *rawkey,
@@ -354,7 +372,9 @@ int wholekeyRdbLoad(struct rdbKeyData *keydata, rio *rdb, sds *rawkey,
     robj *evict = NULL;
     *error = RDB_LOAD_ERR_OTHER;
     int hash_nfields, rdbtype = keydata->loadctx.rdbtype;
+    int set_size;
     sds verbatim = NULL, key = keydata->loadctx.key;
+    unsigned long long strlen;
     switch (rdbtype) {
     case RDB_TYPE_STRING:
         verbatim = rdbVerbatimNew((unsigned char)rdbtype);
@@ -381,6 +401,25 @@ int wholekeyRdbLoad(struct rdbKeyData *keydata, rio *rdb, sds *rawkey,
             goto err;
         }
         evict = createObject(OBJ_HASH,NULL);
+        break;
+    case RDB_TYPE_SET:
+        verbatim = keydata->loadctx.wholekey.set_header;
+        set_size = keydata->loadctx.wholekey.set_size;
+        if (set_size == 0) {
+            *error = RDB_LOAD_ERR_EMPTY_KEY;
+            goto err;
+        }
+        if (rdbLoadSetMembersVerbatim(rdb,set_size,&verbatim)) goto err;
+        evict = createObject(OBJ_SET,NULL);
+        break;
+    case RDB_TYPE_SET_INTSET:
+        verbatim = rdbVerbatimNew((unsigned char)rdbtype);
+        if (rdbLoadStringVerbatim(rdb,&verbatim)) goto err;
+        if (setIntsetVerbatimIsEmpty(verbatim)) {
+            *error = RDB_LOAD_ERR_EMPTY_KEY;
+            goto err;
+        }
+        evict = createObject(OBJ_SET,NULL);
         break;
     default:
         serverPanic("unsupported rdbtype:%d", rdbtype);

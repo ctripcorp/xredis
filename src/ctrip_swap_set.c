@@ -170,7 +170,7 @@ robj *bigSetCreateOrMergeObject(swapData *data_, robj *decoded, void *datactx_) 
         si = setTypeInitIterator(decoded);
         while (NULL != (subkey = setTypeNextObject(si))) {
             int updated = setTypeAdd(data->value, subkey);
-            if (!updated) datactx->meta_len_delta--;
+            if (updated) datactx->meta_len_delta--;
             sdsfree(subkey);
         }
 
@@ -254,7 +254,7 @@ int bigSetSwapAna(swapData *data_, int cmd_intention,
             *intention_flags = 0;
             break;
         case SWAP_IN:
-            if (data->meta == NULL || data->meta->len == 0) {
+            if (data->meta == NULL) {
                 /* No need to swap in for pure hot key */
                 *intention = SWAP_NOP;
                 *intention_flags = 0;
@@ -460,16 +460,157 @@ swapDataType bigSetSwapDataType = {
     .free = freeBigSetSwapData,
 };
 
+int bigSetSaveStart(rdbKeyData *keydata, rio *rdb) {
+    robj *x;
+    robj *key = keydata->savectx.bigset.key;
+    size_t nfields = 0;
+    int ret = 0;
+
+    if (keydata->savectx.value)
+        x = keydata->savectx.value;
+    else
+        x = keydata->savectx.evict;
+
+    /* save header */
+    if (rdbSaveKeyHeader(rdb,key,x,RDB_TYPE_SET,
+                         keydata->savectx.expire) == -1)
+        return -1;
+
+    /* nfields */
+    if (keydata->savectx.value)
+        nfields += setTypeSize(keydata->savectx.value);
+    if (keydata->savectx.bigset.meta)
+        nfields += keydata->savectx.bigset.meta->len;
+    if (rdbSaveLen(rdb,nfields) == -1)
+        return -1;
+
+    if (!keydata->savectx.value)
+        return 0;
+
+    /* save fields from value (db.dict) */
+    setTypeIterator *si = setTypeInitIterator(keydata->savectx.value);
+    sds subkey;
+    while (NULL != (subkey = setTypeNextObject(si))) {
+        if (rdbSaveRawString(rdb,(unsigned char*)subkey,
+                             sdslen(subkey)) == -1) {
+            sdsfree(subkey);
+            ret = -1;
+            break;
+        }
+        sdsfree(subkey);
+    }
+    setTypeReleaseIterator(si);
+
+    return ret;
+}
+
+int bigSetSave(rdbKeyData *keydata, rio *rdb, decodeResult *decoded) {
+    robj *key = keydata->savectx.bigset.key;
+
+    serverAssert(!sdscmp(decoded->key, key->ptr));
+    if (decoded->enc_type != ENC_TYPE_SET_SUB) {
+        /* check failed, skip this key */
+        return 0;
+    }
+
+    if (keydata->savectx.value != NULL) {
+        if (setTypeIsMember(keydata->savectx.value,
+                           decoded->subkey)) {
+            /* already save in save_start, skip this subkey */
+            return 0;
+        }
+    }
+
+    if (rdbSaveRawString(rdb,(unsigned char*)decoded->subkey,
+                         sdslen(decoded->subkey)) == -1) {
+        return -1;
+    }
+
+    keydata->savectx.bigset.saved++;
+    return 0;
+}
+
+int bigSetSaveEnd(rdbKeyData *keydata, int save_result) {
+    objectMeta *meta = keydata->savectx.bigset.meta;
+    if (keydata->savectx.bigset.saved != meta->len) {
+        sds key  = keydata->savectx.bigset.key->ptr;
+        sds repr = sdscatrepr(sdsempty(), key, sdslen(key));
+        serverLog(LL_WARNING, "bigsetBigSave %s: saved(%d) != meta.len(%ld)",
+                  repr, keydata->savectx.bigset.saved, meta->len);
+        sdsfree(repr);
+        return -1;
+    }
+    return save_result;
+}
+
+void bigSetSaveDeinit(rdbKeyData *keydata) {
+    if (keydata->savectx.bigset.key) {
+        decrRefCount(keydata->savectx.bigset.key);
+        keydata->savectx.bigset.key = NULL;
+    }
+}
+
+int bigSetLoad(struct rdbKeyData *keydata, rio *rdb, sds *rawkey,
+                sds *rawval, int *error) {
+    sds subkey, key = keydata->loadctx.key;
+
+    *error = RDB_LOAD_ERR_OTHER;
+    if ((subkey = rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL)) == NULL) {
+        return 0;
+    }
+
+    *error = 0;
+    *rawkey = rocksEncodeSubkey(ENC_TYPE_SET_SUB,key,subkey);
+    *rawval = sdsempty();
+    sdsfree(subkey);
+    keydata->loadctx.bigset.meta->len++;
+    return keydata->loadctx.bigset.meta->len < keydata->loadctx.bigset.set_size;
+}
+
+int bigSetRdbLoadDbAdd(struct rdbKeyData *keydata, redisDb *db) {
+    robj keyobj;
+    sds key = keydata->loadctx.key;
+    initStaticStringObject(keyobj,key);
+    if (lookupKey(db,&keyobj,LOOKUP_NOTOUCH) || lookupEvictKey(db,&keyobj))
+        return 0;
+    dbDeleteMeta(db,&keyobj);
+    serverAssert(dbAddEvictRDBLoad(db,key,keydata->loadctx.bigset.evict));
+    dbAddMeta(db,&keyobj,keydata->loadctx.bigset.meta);
+    return 1;
+}
+
 rdbKeyType bigSetRdbType = {
-    .save_start = NULL,
-    .save = NULL,
-    .save_end = NULL,
-    .save_deinit = NULL,
-    .load = NULL,
+    .save_start = bigSetSaveStart,
+    .save = bigSetSave,
+    .save_end = bigSetSaveEnd,
+    .save_deinit = bigSetSaveDeinit,
+    .load = bigSetLoad,
     .load_end = NULL,
-    .load_dbadd = NULL,
+    .load_dbadd = bigSetRdbLoadDbAdd,
     .load_deinit = NULL,
 };
+
+void rdbKeyDataInitSaveBigSet(rdbKeyData *keydata, robj *value, robj *evict,
+                              objectMeta *meta, long long expire, sds keystr) {
+    rdbKeyDataInitSaveKey(keydata,value,evict,expire);
+    keydata->type = &bigSetRdbType;
+    keydata->savectx.type = RDB_KEY_TYPE_BIGSET;
+    keydata->savectx.bigset.meta = meta;
+    keydata->savectx.bigset.key = createStringObject(keystr,sdslen(keystr));
+    keydata->savectx.bigset.saved = 0;
+}
+
+void rdbKeyDataInitLoadBigSet(rdbKeyData *keydata, int rdbtype, sds key) {
+    robj *evict;
+    rdbKeyDataInitLoadKey(keydata,rdbtype,key);
+    keydata->type = &bigSetRdbType;
+    keydata->loadctx.type = RDB_KEY_TYPE_BIGSET;
+    keydata->loadctx.bigset.set_size = 0;
+    keydata->loadctx.bigset.meta = createObjectMeta(0);
+    evict = createObject(OBJ_SET,NULL);
+    evict->big = 1;
+    keydata->loadctx.bigset.evict = evict;
+}
 
 void setTransformBig(robj *o, objectMeta *m) {
     size_t set_size;
@@ -725,6 +866,78 @@ int swapDataBigSetTest(int argc, char **argv, int accurate) {
         test_assert(s->big && setTypeSize(s) == 4);
 
         freeBigSetSwapData(set1_data, set1_ctx);
+    }
+
+    TEST("bigset - rdbLoad & rdbSave") {
+        server.swap_big_set_threshold = 0;
+        int err = 0;
+		robj *myset = createSetObject();
+        sds rdbv1 = rocksEncodeValRdb(createStringObject("f1", 2));
+        sds rdbv2 = rocksEncodeValRdb(createStringObject("f2", 2));
+        sds rdbv3 = rocksEncodeValRdb(createStringObject("f3", 2));
+        sds rdbv4 = rocksEncodeValRdb(createStringObject("f4", 2));
+        /* rdbLoad */
+        rio sdsrdb;
+        sds rawval = rocksEncodeValRdb(set1);
+        rioInitWithBuffer(&sdsrdb,sdsnewlen(rawval+1,sdslen(rawval)-1));
+        rdbKeyData _keydata, *keydata = &_keydata;
+        rdbKeyDataInitLoad(keydata,&sdsrdb,rawval[0],key1->ptr);
+        sds subkey, subraw;
+        int cont;
+        cont = bigSetLoad(keydata,&sdsrdb,&subkey,&subraw,&err);
+        test_assert(cont == 1 && err == 0);
+        cont = bigSetLoad(keydata,&sdsrdb,&subkey,&subraw,&err);
+        test_assert(cont == 1 && err == 0);
+        cont = bigSetLoad(keydata,&sdsrdb,&subkey,&subraw,&err);
+        test_assert(cont == 1 && err == 0);
+        cont = bigSetLoad(keydata,&sdsrdb,&subkey,&subraw,&err);
+        test_assert(cont == 0 && err == 0);
+        test_assert(keydata->loadctx.bigset.meta->len == 4);
+        test_assert(keydata->loadctx.bigset.evict->type == OBJ_SET);
+
+        sds coldraw,warmraw,hotraw;
+        objectMeta *meta = createObjectMeta(2);
+
+        decodeResult _decoded_fx, *decoded_fx = &_decoded_fx;
+        decoded_fx->enc_type = ENC_TYPE_SET_SUB;
+        decoded_fx->key = key1->ptr;
+        decoded_fx->rdbtype = rdbv2[0];
+        decoded_fx->subkey = f2;
+        decoded_fx->rdbraw = sdsnewlen(rdbv2+1, sdslen(rdbv2)-1);
+
+        /* save cold */
+        rio rdbcold, rdbwarm, rdbhot;
+        rioInitWithBuffer(&rdbcold,sdsempty());
+        robj *evict = createObject(OBJ_SET,NULL);
+        rdbKeyDataInitSaveBigSet(keydata,NULL,evict,meta,-1,key1->ptr);
+        test_assert(rdbKeySaveStart(keydata,&rdbcold) == 0);
+        test_assert(rdbKeySave(keydata,&rdbcold,decoded_fx) == 0);
+        decoded_fx->subkey = f1, decoded_fx->rdbraw = sdsnewlen(rdbv1+1,sdslen(rdbv1)-1);
+        test_assert(rdbKeySave(keydata,&rdbcold,decoded_fx) == 0);
+        decoded_fx->key = key1->ptr;
+        coldraw = rdbcold.io.buffer.ptr;
+
+        /* save warm */
+        rioInitWithBuffer(&rdbwarm,sdsempty());
+        robj *value = createSetObject();
+        setTypeAdd(value,f2);
+        meta->len = 1;
+        rdbKeyDataInitSaveBigSet(keydata,value,evict,meta,-1,key1->ptr);
+        test_assert(rdbKeySaveStart(keydata,&rdbwarm) == 0);
+        test_assert(rdbKeySave(keydata,&rdbwarm,decoded_fx) == 0);
+        warmraw = rdbwarm.io.buffer.ptr;
+
+        /* save hot */
+        robj keyobj;
+        robj *hotset = createSetObject();
+        setTypeAdd(hotset,f1);
+        setTypeAdd(hotset,f2);
+        rioInitWithBuffer(&rdbhot,sdsempty());
+        initStaticStringObject(keyobj,key1->ptr);
+        test_assert(rdbSaveKeyValuePair(&rdbhot,&keyobj,hotset,-1) != -1);
+        hotraw = rdbhot.io.buffer.ptr;
+
+        test_assert(!sdscmp(hotraw,coldraw) && !sdscmp(hotraw,warmraw));
     }
 
     TEST("bigset - free") {

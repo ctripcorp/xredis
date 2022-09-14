@@ -128,7 +128,7 @@ void *rocksIterIOThreadMain(void *arg) {
             rawkey = rocksdb_iter_key(it->rocksdb_iter,&rklen);
             rawval = rocksdb_iter_value(it->rocksdb_iter,&rvlen);
             if (rvlen < ROCKS_VAL_TYPE_LEN) {
-                continue;
+                cur->type = 0;
             } else {
                 cur->type = rawval[0];
                 rawval++;

@@ -167,7 +167,14 @@ int rocksDecodeSubkey(const char *raw, size_t rawlen,
     raw += _klen;
     rawlen-= _klen;
 
-    if (rawlen <= 0) return -1;
+    if (rawlen < 0) return -1;
+    if (obj_type == OBJ_SET) {
+        if (rawlen == 0) {
+            raw = NULL;
+        }
+    } else if (rawlen == 0) {
+        return -1;
+    }
     if (sub) *sub = raw;
     if (slen) *slen = rawlen;
     return obj_type;
