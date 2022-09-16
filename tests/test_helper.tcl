@@ -34,9 +34,7 @@ set ::disk_tests {
     swap/unit/zset
     swap/integration/compact_range
     swap/integration/multi_bighash
-    swap/integration/concurrent
     swap/integration/expire_evict
-    swap/integration/pipeline
     swap/unit/keyspace
     swap/unit/dirty
     swap/unit/expire
@@ -104,7 +102,8 @@ set ::disk_tests {
     integration/redis-benchmark
     integration/rdb
     integration/psync2
-    
+    swap/integration/pipeline
+    swap/integration/concurrent
 }
 
 set ::all_tests {
