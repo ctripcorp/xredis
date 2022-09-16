@@ -387,7 +387,7 @@ struct redisCommand redisCommandTable[] = {
      "read-only fast @set",
      0,NULL,getKeyRequestSmembers,SWAP_IN,0,1,1,1,0,0,0},
 
-    {"scard",scardCommand,2,
+    {"scard",ctrip_scardCommand,2,
      "read-only fast @set",
      0,NULL,NULL,SWAP_IN,INTENTION_IN_META,1,1,1,0,0,0},
 
