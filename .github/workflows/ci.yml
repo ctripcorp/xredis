@@ -7,68 +7,61 @@ on:
     branches: [ xredis_2_ror ]
 
 jobs:
+   build:
+     strategy:
+       matrix:
+         platform: [ubuntu-latest]
+     runs-on: ${{ matrix.platform }}
+     steps:
+     - uses: actions/checkout@v2
+       with:
+         submodules: true
+     - name: cat rocksdb sha
+       run: (cd deps/rocksdb && git rev-parse HEAD > ../../rocksdb.sha)
+     - name: cache rocksdb
+       id: cache-rocksdb
+       uses: actions/cache@v3
+       env:
+         cache-name: cache-rocksdb
+       with:
+         path: deps/rocksdb
+         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('rocksdb.sha') }}
+     - name: build rocksdb
+       run: (cd deps && make -j8 rocksdb)
+     - name: make
+       run: |
+         sudo apt-get update
+         sudo apt-get -y install libsnappy-dev zlib1g-dev libstdc++6
+         make -j8
    unit:
+    needs: build
     strategy:
       matrix:
         platform: [ubuntu-latest]
     runs-on: ${{ matrix.platform }}
     steps:
-    - uses: actions/checkout@v2
-      with:
-          submodules: true
-    - name: cache rocksdb
-      id: cache-rocksdb
-      uses: actions/cache@v3
-      with:
-        path: deps/rocksdb
-        key: rocksdb
     - name: unit-test
-      run: |
-          sudo apt-get update
-          sudo apt-get -y install libsnappy-dev zlib1g-dev libstdc++6
-          make unit-test -j8
+      run: make unit-test -j8
    mem:
+    needs: build
     strategy:
       matrix:
         platform: [ubuntu-latest]
     runs-on: ${{ matrix.platform }}
     steps:
-    - uses: actions/checkout@v2
-      with:
-          submodules: true
-    - name: cache rocksdb
-      id: cache-rocksdb
-      uses: actions/cache@v3
-      with:
-        path: deps/rocksdb
-        key: rocksdb
-    - name: make
-      run: |
-          sudo apt-get update
-          sudo apt-get -y install libsnappy-dev zlib1g-dev libstdc++6
-          make -j8
+    - name: test
+      run: pwd
+    - name: test
+      run: cd .. && ls
     - name: make test
       run: make test
    swap:
+    needs: build
     strategy:
       matrix:
         platform: [ubuntu-latest]
     runs-on: ${{ matrix.platform }}
     steps:
-    - uses: actions/checkout@v2
-      with:
-          submodules: true
-    - name: cache rocksdb
-      id: cache-rocksdb
-      uses: actions/cache@v3
-      with:
-        path: deps/rocksdb
-        key: rocksdb
-    - name: make
-      run: |
-          sudo apt-get update
-          sudo apt-get -y install libsnappy-dev zlib1g-dev libstdc++6
-          make -j8
-    - name: make test
+    - name: make test-disk
       run: make test-disk
 
