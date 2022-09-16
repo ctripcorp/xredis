@@ -232,6 +232,18 @@ unsigned long setTypeSize(const robj *subject) {
     }
 }
 
+// count up members in memory and in disk
+unsigned long setTypeSizeDiskAndMem(const objectMeta *meta, const robj *subject) {
+    unsigned long disksize = meta ? meta->len : 0;
+    unsigned long memsize = subject ? setTypeSize(subject) : 0;
+    return memsize + disksize;
+}
+
+
+unsigned long ctrip_setTypeSize(redisDb *db, robj *key, const robj *subject) {
+    return setTypeSizeDiskAndMem(lookupMeta(db, key), subject);
+}
+
 /* Convert the set to specified encoding. The resulting dict (when converting
  * to a hash table) is presized to hold the number of elements in the original
  * set. */
@@ -317,7 +329,7 @@ void saddCommand(client *c) {
     }
     if (added) {
         signalModifiedKey(c,c->db,c->argv[1]);
-        notifyKeyspaceEventDirty(NOTIFY_SET,"sadd",c->argv[1],c->db->id,set,NULL);
+        notifyKeyspaceEvent(NOTIFY_SET,"sadd",c->argv[1],c->db->id);
     }
     server.dirty += added;
     addReplyLongLong(c,added);
@@ -338,7 +350,7 @@ void sremCommand(client *c) {
     for (j = 2; j < c->argc; j++) {
         if (setTypeRemove(set,c->argv[j]->ptr)) {
             deleted++;
-            if (setTypeSize(set) == 0 && setMetaLength(c->db,c->argv[1]) == 0) {
+            if (ctrip_setTypeSize(c->db, c->argv[1], set) == 0) {
                 dbDelete(c->db,c->argv[1]);
                 keyremoved = 1;
                 break;
@@ -347,12 +359,10 @@ void sremCommand(client *c) {
     }
     if (deleted) {
         signalModifiedKey(c,c->db,c->argv[1]);
-        if (keyremoved) {
-            notifyKeyspaceEvent(NOTIFY_SET,"srem",c->argv[1],c->db->id);
-            notifyKeyspaceEvent(NOTIFY_GENERIC,"del",c->argv[1],c->db->id);
-        } else {
-            notifyKeyspaceEventDirty(NOTIFY_SET, "srem", c->argv[1], c->db->id,set,NULL);
-        }
+        notifyKeyspaceEvent(NOTIFY_SET,"srem",c->argv[1],c->db->id);
+        if (keyremoved)
+            notifyKeyspaceEvent(NOTIFY_GENERIC,"del",c->argv[1],
+                                c->db->id);
         server.dirty += deleted;
     }
     addReplyLongLong(c,deleted);
@@ -387,10 +397,10 @@ void smoveCommand(client *c) {
         addReply(c,shared.czero);
         return;
     }
-    notifyKeyspaceEventDirty(NOTIFY_SET,"srem",c->argv[1],c->db->id,srcset,NULL);
+    notifyKeyspaceEvent(NOTIFY_SET,"srem",c->argv[1],c->db->id);
 
     /* Remove the src set from the database when empty */
-    if (setTypeSize(srcset) == 0 && setMetaLength(c->db,c->argv[1]) == 0) {
+    if (ctrip_setTypeSize(c->db, c->argv[1], srcset) == 0) {
         dbDelete(c->db,c->argv[1]);
         notifyKeyspaceEvent(NOTIFY_GENERIC,"del",c->argv[1],c->db->id);
     }
@@ -408,7 +418,7 @@ void smoveCommand(client *c) {
     if (setTypeAdd(dstset,ele->ptr)) {
         server.dirty++;
         signalModifiedKey(c,c->db,c->argv[2]);
-        notifyKeyspaceEventDirty(NOTIFY_SET,"sadd",c->argv[2],c->db->id,dstset,NULL);
+        notifyKeyspaceEvent(NOTIFY_SET,"sadd",c->argv[2],c->db->id);
     }
     addReply(c,shared.cone);
 }
@@ -446,16 +456,20 @@ void smismemberCommand(client *c) {
 
 void scardCommand(client *c) {
     robj *o;
-    objectMeta *m;
 
-    o = lookupKeyRead(c->db, c->argv[1]);
-    m = lookupMeta(c->db, c->argv[1]);
+    if ((o = lookupKeyReadOrReply(c,c->argv[1],shared.czero)) == NULL ||
+        checkType(c,o,OBJ_SET)) return;
+
+    addReplyLongLong(c,setTypeSize(o));
+}
+
+void ctrip_scardCommand(client *c) {
+    robj *o = lookupKeyRead(c->db, c->argv[1]);
+    objectMeta *m = lookupMeta(c->db, c->argv[1]);
+
     if (NULL != o && checkType(c,o,OBJ_SET)) return;
     else if (NULL != o || NULL != m) {
-        size_t len = 0;
-        if (o) len += setTypeSize(o);
-        if (m) len += m->len;
-        addReplyLongLong(c,len);
+        addReplyLongLong(c, setTypeSizeDiskAndMem(m, o));
     } else { // NULL == o && NULL == m
         SentReplyOnKeyMiss(c, shared.czero);
     }
@@ -653,7 +667,7 @@ void spopCommand(client *c) {
     decrRefCount(ele);
 
     /* Delete the set if it's empty */
-    if (setTypeSize(set) == 0 && setMetaLength(c->db,c->argv[1]) == 0) {
+    if (ctrip_setTypeSize(c->db, c->argv[1], set) == 0) {
         dbDelete(c->db,c->argv[1]);
         notifyKeyspaceEvent(NOTIFY_GENERIC,"del",c->argv[1],c->db->id);
     }
