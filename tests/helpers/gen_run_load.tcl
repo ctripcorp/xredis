@@ -27,6 +27,7 @@ proc gen_run_load {host port seconds counter tls db code} {
             set errcode [catch {uplevel 0 $code} result]
             if {$errcode == 1} {puts "$result"}
             if {[clock seconds]-$start_time > $seconds} {
+                puts "exec over"
                 exit 0
             }
         }
@@ -36,6 +37,8 @@ proc gen_run_load {host port seconds counter tls db code} {
             if {$errcode == 1} {puts "$result"}
             set counter [expr $counter - 1]
         }
+        puts "exec over"
+        exit 0
     }
     
 }
