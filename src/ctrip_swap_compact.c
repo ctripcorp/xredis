@@ -58,6 +58,11 @@ int setFilterState(filterState state) {
     return C_OK;
 }
 
+filterState getFilterState() {
+    filterState state;
+    atomicGet(filter_state, state);
+    return state;
+}
 
 static unsigned char metaVersionFilter(void* arg, int level, int cf, const char* rawkey,
                                    size_t rawkey_length,

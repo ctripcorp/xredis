@@ -206,6 +206,8 @@ start_server {tags {"introspection"}} {
             rocksdb.max_bytes_for_level_base
             rocksdb.data.max_bytes_for_level_base
             rocksdb.meta.max_bytes_for_level_base
+            rocksdb.max_background_jobs
+            rocksdb.max_subcompactions
             swap-scan-session-bits
             swap-cuckoo-filter-bit-per-key
             swap-cuckoo-filter-estimated-keys

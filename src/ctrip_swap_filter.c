@@ -56,7 +56,6 @@ void coldFilterInitCuckooFilter(coldFilter *filter) {
     }
 }
 
-
 void coldFilterDeinit(coldFilter *filter) {
     if (filter->absents) {
         lruCacheFree(filter->absents);

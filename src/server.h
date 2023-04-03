@@ -1822,6 +1822,7 @@ struct redisServer {
     int rocksdb_meta_max_write_buffer_number;
     int rocksdb_max_background_compactions;
     int rocksdb_max_background_flushes;
+    int rocksdb_max_background_jobs;
     int rocksdb_max_subcompactions;
     int rocksdb_data_block_size;
     int rocksdb_meta_block_size;

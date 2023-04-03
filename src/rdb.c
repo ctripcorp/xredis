@@ -2504,6 +2504,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
     char buf[1024];
     int error;
     long long empty_keys_skipped = 0, expired_keys_skipped = 0, keys_loaded = 0;
+    int reopen_filter = 0;
 
     rdb->update_cksum = rdbLoadProgressCallback;
     rdb->max_processing_chunk = server.loading_process_events_interval_bytes;
@@ -2525,6 +2526,10 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
     long long lru_idle = -1, lfu_freq = -1, expiretime = -1, now = mstime();
     long long lru_clock = LRU_CLOCK();
 
+    if (server.swap_mode != SWAP_MODE_MEMORY && getFilterState() == FILTER_STATE_OPEN) {
+        setFilterState(FILTER_STATE_CLOSE);
+        reopen_filter = 1;
+    }
     while(1) {
         sds key;
         robj *val = NULL;
@@ -2815,6 +2820,10 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
         lfu_freq = -1;
         lru_idle = -1;
     }
+    if (reopen_filter) {
+        setFilterState(FILTER_STATE_OPEN);
+    }
+
     /* Verify the checksum if RDB version is >= 5 */
     if (rdbver >= 5) {
         uint64_t cksum, expected = rdb->cksum;
@@ -2852,6 +2861,9 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
      * the RDB file from a socket during initial SYNC (diskless replica mode),
      * we'll report the error to the caller, so that we can retry. */
 eoferr:
+    if (reopen_filter) {
+        setFilterState(FILTER_STATE_OPEN);
+    }
     serverLog(LL_WARNING,
         "Short read or OOM loading DB. Unrecoverable error, aborting now.");
     rdbReportReadError("Unexpected EOF reading RDB file");

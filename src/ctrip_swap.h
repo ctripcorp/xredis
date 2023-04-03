@@ -1360,6 +1360,7 @@ typedef enum {
   FILTER_STATE_OPEN
 } filterState;
 int setFilterState(filterState state);
+filterState getFilterState();
 rocksdb_compactionfilter_t* createDataCfCompactionFilter();
 rocksdb_compactionfilter_t* createMetaCfCompactionFilter();
 rocksdb_compactionfilter_t* createScoreCfCompactionFilter();

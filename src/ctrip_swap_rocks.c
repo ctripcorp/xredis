@@ -82,9 +82,10 @@ int rocksInit() {
     rocksdb_options_set_max_bytes_for_level_base(rocks->db_opts, 256*MB);
     rocksdb_options_compaction_readahead_size(rocks->db_opts, 2*1024*1024); /* default 0 */
 
-    rocksdb_options_set_max_background_compactions(rocks->db_opts, server.rocksdb_max_background_compactions); /* default 1 */
+    rocksdb_options_set_max_background_jobs(rocks->db_opts, server.rocksdb_max_background_jobs); /* default 4 */
+    rocksdb_options_set_max_background_compactions(rocks->db_opts, server.rocksdb_max_background_compactions); /* default 4 */
     rocksdb_options_set_max_background_flushes(rocks->db_opts, server.rocksdb_max_background_flushes); /* default -1 */
-    rocksdb_options_set_max_subcompactions(rocks->db_opts, server.rocksdb_max_subcompactions); /* default 1 */
+    rocksdb_options_set_max_subcompactions(rocks->db_opts, server.rocksdb_max_subcompactions); /* default 4 */
     rocksdb_options_set_max_open_files(rocks->db_opts,server.rocksdb_max_open_files);
     rocksdb_options_set_enable_pipelined_write(rocks->db_opts,server.rocksdb_enable_pipelined_write);
 
