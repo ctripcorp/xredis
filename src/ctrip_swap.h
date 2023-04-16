@@ -1560,7 +1560,7 @@ void rocksReleaseIter(rocksIter *it);
 void rocksIterGetError(rocksIter *it, char **error);
 
 /* Rdb save */
-#define DEFAULT_STRING_SIZE 512 
+#define DEFAULT_STRING_SIZE 512
 #define DEFAULT_HASH_FIELD_COUNT 8
 #define DEFAULT_HASH_FIELD_SIZE 256
 #define DEFAULT_SET_MEMBER_COUNT 8
@@ -1910,6 +1910,7 @@ int swapHoldTest(int argc, char *argv[], int accurate);
 int swapAbsentTest(int argc, char *argv[], int accurate);
 int swapRIOTest(int argc, char *argv[], int accurate);
 int swapBatchTest(int argc, char *argv[], int accurate);
+int cuckooFilterTest(int argc, char *argv[], int accurate);
 
 int swapTest(int argc, char **argv, int accurate);
 
