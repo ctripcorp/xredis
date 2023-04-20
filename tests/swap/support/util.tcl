@@ -165,7 +165,7 @@ proc swap_data_comp {r1 r2} {
         set t [$r1 type {*}$key]
         set t2 [$r2 type {*}$key]
         if {$t != $t2} {
-            assert_failed "key '$key' type mismatch '$t' - '$t2'"
+            assert_failed "key '$key' type mismatch '$t' - '$t2'" ""
         }
         switch $t {
             {string} {

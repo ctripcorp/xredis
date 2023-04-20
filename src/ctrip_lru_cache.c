@@ -26,6 +26,7 @@
  */
 
 #include "ctrip_swap.h"
+#include "ctrip_lru_cache.h"
 
 /* extent list api so that list node re-allocate can be avoided. */
 void listUnlink(list *list, listNode *node) {
@@ -53,9 +54,8 @@ void listLinkHead(list *list, listNode *node) {
     list->len++;
 }
 
-/* absents cache is specilized version of lru cache which holds most
- * recently accessed keys that definitely not exists in rocksdb. */
-dictType absentsCacheDictType = {
+/* holds most recently accessed keys that definitely not exists in rocksdb. */
+dictType lruCacheDictType = {
     dictSdsHash,               /* hash function */
     NULL,                      /* key dup */
     NULL,                      /* val dup */
@@ -65,15 +65,15 @@ dictType absentsCacheDictType = {
     NULL                       /* allow to expand */
 };
 
-absentsCache *absentsCacheNew(size_t capacity) {
-    absentsCache *cache = zcalloc(sizeof(absentsCache));
+lruCache *lruCacheNew(size_t capacity) {
+    lruCache *cache = zcalloc(sizeof(lruCache));
     cache->capacity = capacity;
-    cache->map = dictCreate(&absentsCacheDictType,NULL);
+    cache->map = dictCreate(&lruCacheDictType,NULL);
     cache->list = listCreate();
     return cache;
 }
 
-void absentsCacheFree(absentsCache *cache) {
+void lruCacheFree(lruCache *cache) {
    if (cache == NULL) return;
    dictRelease(cache->map);
    cache->map = NULL;
@@ -82,7 +82,7 @@ void absentsCacheFree(absentsCache *cache) {
    zfree(cache);
 }
 
-static void absentsCacheTrim(absentsCache *cache) {
+static void lruCacheTrim(lruCache *cache) {
     while (listLength(cache->list) > cache->capacity) {
         listNode *ln = listLast(cache->list);
         serverAssert(dictDelete(cache->map,listNodeValue(ln)) == DICT_OK);
@@ -90,7 +90,7 @@ static void absentsCacheTrim(absentsCache *cache) {
     }
 }
 
-int absentsCachePut(absentsCache *cache, sds key) {
+int lruCachePut(lruCache *cache, sds key) {
     dictEntry *de;
     listNode *ln;
 
@@ -103,12 +103,12 @@ int absentsCachePut(absentsCache *cache, sds key) {
         sds dup = sdsdup(key);
         listAddNodeHead(cache->list,dup);
         dictAdd(cache->map,dup,listFirst(cache->list));
-        absentsCacheTrim(cache);
+        lruCacheTrim(cache);
         return 1;
     }
 }
 
-int absentsCacheDelete(absentsCache *cache, sds key) {
+int lruCacheDelete(lruCache *cache, sds key) {
     dictEntry *de;
     listNode *ln;
 
@@ -122,7 +122,7 @@ int absentsCacheDelete(absentsCache *cache, sds key) {
     }
 }
 
-int absentsCacheGet(absentsCache *cache, sds key) {
+int lruCacheGet(lruCache *cache, sds key) {
     dictEntry *de;
     listNode *ln;
 
@@ -136,14 +136,14 @@ int absentsCacheGet(absentsCache *cache, sds key) {
     }
 }
 
-void absentsCacheSetCapacity(absentsCache *cache, size_t capacity) {
+void lruCacheSetCapacity(lruCache *cache, size_t capacity) {
     cache->capacity = capacity;
-    absentsCacheTrim(cache);
+    lruCacheTrim(cache);
 }
 
 #ifdef REDIS_TEST
 
-static int absentsCacheExists(absentsCache *cache, sds key) {
+static int lruCacheExists(lruCache *cache, sds key) {
     return dictFind(cache->map,key) != NULL;
 }
 
@@ -184,46 +184,46 @@ int swapAbsentTest(int argc, char *argv[], int accurate) {
 
     TEST("absent: lru cache") {
         sds first = sdsnew("1"), second = sdsnew("2"), third = sdsnew("3"), fourth = sdsnew("4");
-        absentsCache *cache;
+        lruCache *cache;
 
-        cache = absentsCacheNew(1);
-        test_assert(!absentsCacheExists(cache,first));
-        absentsCachePut(cache,first);
-        test_assert(absentsCacheExists(cache,first));
-        absentsCachePut(cache,second);
-        test_assert(!absentsCacheExists(cache,first));
-        absentsCacheFree(cache);
+        cache = lruCacheNew(1);
+        test_assert(!lruCacheExists(cache,first));
+        lruCachePut(cache,first);
+        test_assert(lruCacheExists(cache,first));
+        lruCachePut(cache,second);
+        test_assert(!lruCacheExists(cache,first));
+        lruCacheFree(cache);
 
-        cache = absentsCacheNew(3);
-        absentsCachePut(cache,first);
-        absentsCachePut(cache,second);
-        absentsCachePut(cache,third);
-        absentsCachePut(cache,fourth);
-        test_assert(!absentsCacheExists(cache,first));
-        test_assert(absentsCacheExists(cache,second));
-        test_assert(absentsCacheExists(cache,third));
-        test_assert(absentsCacheExists(cache,fourth));
-        absentsCachePut(cache,first);
-        test_assert(absentsCacheExists(cache,first));
-        test_assert(!absentsCacheExists(cache,second));
-        test_assert(absentsCacheExists(cache,third));
-        test_assert(absentsCacheExists(cache,fourth));
+        cache = lruCacheNew(3);
+        lruCachePut(cache,first);
+        lruCachePut(cache,second);
+        lruCachePut(cache,third);
+        lruCachePut(cache,fourth);
+        test_assert(!lruCacheExists(cache,first));
+        test_assert(lruCacheExists(cache,second));
+        test_assert(lruCacheExists(cache,third));
+        test_assert(lruCacheExists(cache,fourth));
+        lruCachePut(cache,first);
+        test_assert(lruCacheExists(cache,first));
+        test_assert(!lruCacheExists(cache,second));
+        test_assert(lruCacheExists(cache,third));
+        test_assert(lruCacheExists(cache,fourth));
 
-        absentsCacheDelete(cache,second);
-        test_assert(!absentsCacheExists(cache,second));
+        lruCacheDelete(cache,second);
+        test_assert(!lruCacheExists(cache,second));
 
-        test_assert(absentsCacheGet(cache,second) == 0);
-        test_assert(absentsCacheGet(cache,third) == 1);
-        test_assert(absentsCacheGet(cache,first) == 1);
+        test_assert(lruCacheGet(cache,second) == 0);
+        test_assert(lruCacheGet(cache,third) == 1);
+        test_assert(lruCacheGet(cache,first) == 1);
 
         sdsfree(first), sdsfree(second), sdsfree(third), sdsfree(fourth);
         sds first2 = sdsnew("1"), fourth2 = sdsnew("4");
 
-        absentsCacheSetCapacity(cache, 1);
+        lruCacheSetCapacity(cache, 1);
         test_assert(cache->capacity == 1);
-        test_assert(absentsCacheExists(cache,first2));
-        test_assert(!absentsCacheExists(cache,fourth2));
-        absentsCacheFree(cache);
+        test_assert(lruCacheExists(cache,first2));
+        test_assert(!lruCacheExists(cache,fourth2));
+        lruCacheFree(cache);
         sdsfree(first2), sdsfree(fourth2);
     }
 

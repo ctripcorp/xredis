@@ -132,11 +132,13 @@ void trackSwapInstantaneousMetrics() {
     }
     trackSwapLockInstantaneousMetrics();
     trackSwapBatchInstantaneousMetrics();
+    trackSwapCuckooFilterInstantaneousMetrics();
 }
 
 sds genSwapInfoString(sds info) {
     info = genSwapStorageInfoString(info);
     info = genSwapHitInfoString(info);
+    info = genSwapCuckooFilterInfoString(info);
     info = genSwapBatchInfoString(info);
     info = genSwapExecInfoString(info);
     info = genSwapLockInfoString(info);
@@ -252,33 +254,37 @@ void resetStatsSwap() {
     }
     resetSwapLockInstantaneousMetrics();
     resetSwapBatchInstantaneousMetrics();
+    resetSwapCukooFilterInstantaneousMetrics();
 }
 
 void resetSwapHitStat() {
     atomicSet(server.swap_hit_stats->stat_swapin_attempt_count,0);
-    atomicSet(server.swap_hit_stats->stat_swapin_not_found_cachehit_count,0);
-    atomicSet(server.swap_hit_stats->stat_swapin_not_found_cachemiss_count,0);
+    atomicSet(server.swap_hit_stats->stat_swapin_not_found_coldfilter_cuckoofilter_filt_count,0);
+    atomicSet(server.swap_hit_stats->stat_swapin_not_found_coldfilter_absentcache_filt_count,0);
+    atomicSet(server.swap_hit_stats->stat_swapin_not_found_coldfilter_miss_count,0);
     atomicSet(server.swap_hit_stats->stat_swapin_no_io_count,0);
     atomicSet(server.swap_hit_stats->stat_swapin_data_not_found_count,0);
 }
 
 sds genSwapHitInfoString(sds info) {
-    double memory_hit_perc = 0, keyspace_hit_perc = 0, notfound_cachehit_perc = 0;
-    long long attempt, noio, notfound_cachemiss, notfound_cachehit, notfound, data_notfound;
+    double memory_hit_perc = 0, keyspace_hit_perc = 0, notfound_coldfilter_filt_perc = 0;
+    long long attempt, noio, notfound_coldfilter_miss, notfound_absentcache_filt,
+         notfound_cuckoofilter_filt, notfound, data_notfound;
 
     atomicGet(server.swap_hit_stats->stat_swapin_attempt_count,attempt);
     atomicGet(server.swap_hit_stats->stat_swapin_no_io_count,noio);
-    atomicGet(server.swap_hit_stats->stat_swapin_not_found_cachemiss_count,notfound_cachemiss);
-    atomicGet(server.swap_hit_stats->stat_swapin_not_found_cachehit_count,notfound_cachehit);
+    atomicGet(server.swap_hit_stats->stat_swapin_not_found_coldfilter_miss_count,notfound_coldfilter_miss);
+    atomicGet(server.swap_hit_stats->stat_swapin_not_found_coldfilter_cuckoofilter_filt_count,notfound_cuckoofilter_filt);
+    atomicGet(server.swap_hit_stats->stat_swapin_not_found_coldfilter_absentcache_filt_count,notfound_absentcache_filt);
     atomicGet(server.swap_hit_stats->stat_swapin_data_not_found_count,data_notfound);
-    notfound = notfound_cachehit + notfound_cachemiss;
+    notfound = notfound_absentcache_filt + notfound_cuckoofilter_filt + notfound_coldfilter_miss;
 
     if (attempt) {
         memory_hit_perc = ((double)noio/attempt)*100;
         keyspace_hit_perc = ((double)(attempt - notfound)/attempt)*100;
     }
     if (notfound) {
-        notfound_cachehit_perc = ((double)notfound_cachehit/notfound)*100;
+        notfound_coldfilter_filt_perc = ((double)(notfound_absentcache_filt+notfound_absentcache_filt)/notfound)*100;
     }
 
     info = sdscatprintf(info,
@@ -287,13 +293,16 @@ sds genSwapHitInfoString(sds info) {
             "swap_swapin_no_io_count:%lld\r\n"
             "swap_swapin_memory_hit_perc:%.2f%%\r\n"
             "swap_swapin_keyspace_hit_perc:%.2f%%\r\n"
-            "swap_swapin_not_found_cachehit:%lld\r\n"
-            "swap_swapin_not_found_cachemiss:%lld\r\n"
-            "swap_swapin_not_found_cachehit_perc:%.2f%%\r\n"
+            "swap_swapin_not_found_coldfilter_cuckoofilter_filt_count:%lld\r\n"
+            "swap_swapin_not_found_coldfilter_absentcache_filt_count:%lld\r\n"
+            "swap_swapin_not_found_coldfilter_miss:%lld\r\n"
+            "swap_swapin_not_found_coldfilter_filt_perc:%.2f%%\r\n"
             "swap_swapin_data_not_found_count:%lld\r\n",
             attempt,notfound,noio,memory_hit_perc,keyspace_hit_perc,
-            notfound_cachehit, notfound_cachemiss, notfound_cachehit_perc,
+            notfound_cuckoofilter_filt, notfound_absentcache_filt,
+            notfound_coldfilter_miss, notfound_coldfilter_filt_perc,
             data_notfound);
+
     return info;
 }
 

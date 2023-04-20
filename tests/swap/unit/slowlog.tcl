@@ -1,4 +1,4 @@
-start_server {tags {"swap.slowlog"} overrides {slowlog-log-slower-than 0}} {
+start_server {tags {"swap.slowlog"} overrides {slowlog-log-slower-than 0 swap-cuckoo-filter-enabled no}} {
     proc format_command {args} {
         set cmd "*[llength $args]\r\n"
         foreach a $args {
@@ -129,7 +129,7 @@ start_server {tags {"swap.slowlog"} overrides {slowlog-log-slower-than 0}} {
 
     test {ctrip.slowlog - slave slow log} {
         r flushall
-        start_server {tags {"swap.slowlog_slave"} overrides {slowlog-log-slower-than 0}} {
+        start_server {tags {"swap.slowlog_slave"} overrides {slowlog-log-slower-than 0 swap-cuckoo-filter-enabled no}} {
             r config set swap-debug-trace-latency yes
             r slaveof [srv -1 host] [srv -1 port]
             wait_for_condition 20 50 {

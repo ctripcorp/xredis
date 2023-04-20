@@ -40,7 +40,7 @@
 #define CUCKOO_FILTER_MAX_ITERATION 500
 #define CUCKOO_FILTER_TAGS_PER_BUCKET  4
 #define CUCKOO_FILTER_BUCKETS_EXPANSION 4
-#define CUCKOO_FILTER_MAX_TABLES 8
+#define CUCKOO_FILTER_MAX_TABLES 4
 #define CUCKOO_TAG_NULL 0
 #define CUCKOO_FILTER_TABLE_MIN_BUCKETS  16
 
@@ -50,7 +50,7 @@
 #define CUCKOO_FILTER_BITS_PER_TAG_32 3
 #define CUCKOO_FILTER_BITS_PER_TAG_TYPES 4
 
-typedef uint64_t (*cuckoo_hash_fn)(const char *key, size_t klen);
+typedef uint64_t (*cuckoo_hash_fn)(const void *key, int klen);
 
 typedef struct cuckooVictimCache {
   int used;
@@ -71,6 +71,7 @@ typedef struct cuckooFilterStat {
   size_t ntags;
   size_t used_memory;
   size_t ntables;
+  double load_factor;
   double load_factors[CUCKOO_FILTER_MAX_TABLES];
 } cuckooFilterStat;
 
@@ -94,5 +95,7 @@ int cuckooFilterContains(cuckooFilter *filter, const char *key, size_t klen);
 int cuckooFilterDelete(cuckooFilter *filter, const char *key, size_t klen);
 /* Get filter stats. */
 void cuckooFilterGetStat(cuckooFilter *filter, cuckooFilterStat *stat);
+/* Get filter used memory */
+size_t cuckooFilterUsedMemory(cuckooFilter *filter);
 
 #endif

@@ -66,7 +66,7 @@ void swapRequestUpdateStatsSwapInNotFound(swapRequest *req) {
     /* key confirmed not exists, no need to execute swap request. */
     serverAssert(!swapDataAlreadySetup(req->data));
     if (isSwapHitStatKeyRequest(req->key_request)) {
-        atomicIncr(server.swap_hit_stats->stat_swapin_not_found_cachemiss_count,1);
+        atomicIncr(server.swap_hit_stats->stat_swapin_not_found_coldfilter_miss_count,1);
     }
 }
 
@@ -150,8 +150,7 @@ void swapRequestMerge(swapRequest *req) {
     case SWAP_NOP:
         /* No swap for req if meta not found. */
         if (!swapDataAlreadySetup(data)) {
-            if (data->db->swap_absent_cache)
-                absentsCachePut(data->db->swap_absent_cache,data->key->ptr);
+            coldFilterKeyNotFound(data->db->cold_filter,data->key->ptr);
         }
 
         break;

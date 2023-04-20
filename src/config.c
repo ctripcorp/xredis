@@ -139,6 +139,14 @@ configEnum rocksdb_compression_enum[] = {
     {"zlib", rocksdb_zlib_compression},
     {NULL, 0}
 };
+
+configEnum cuckoo_filter_bit_type_enum[] = {
+    {"8", CUCKOO_FILTER_BITS_PER_TAG_8},
+    {"12", CUCKOO_FILTER_BITS_PER_TAG_12},
+    {"16", CUCKOO_FILTER_BITS_PER_TAG_16},
+    {"32", CUCKOO_FILTER_BITS_PER_TAG_32},
+    {NULL, 0}
+};
 /*-----------------------------------------------------------------------------
  * Ctrip Config file name-value maps.
  *----------------------------------------------------------------------------*/
@@ -2377,6 +2385,25 @@ static int updateGtidEnabled(int val, int prev, const char **err) {
     return 1;
 }
 
+static int updateSwapCuckooFilterEnabled(int val, int prev, const char **err) {
+    UNUSED(err);
+    if (prev != val) {
+        if (val) {
+            serverLog(LL_WARNING, "swap cuckoo filter can't be enable dynamically.");
+            return 0;
+        } else {
+            for (int i = 0; i < server.dbnum; i++) {
+                redisDb *db = server.db+i;
+                if (db->cold_filter->filter == NULL) continue;
+                cuckooFilterFree(db->cold_filter->filter);
+                db->cold_filter->filter = NULL;
+            }
+            serverLog(LL_WARNING, "swap cuckoo filter disabled.");
+        }
+    }
+    return 1;
+}
+
 static int updateSwapAbsentCacheEnabled(int val, int prev, const char **err) {
     UNUSED(err);
     if (prev != val) {
@@ -2384,16 +2411,16 @@ static int updateSwapAbsentCacheEnabled(int val, int prev, const char **err) {
             serverLog(LL_WARNING, "absent cache enabled with capacity(%llu).", server.swap_absent_cache_capacity);
             for (int i = 0; i < server.dbnum; i++) {
                 redisDb *db = server.db+i;
-                serverAssert(db->swap_absent_cache == NULL);
-                db->swap_absent_cache = absentsCacheNew(server.swap_absent_cache_capacity);
+                serverAssert(db->cold_filter->absents == NULL);
+                db->cold_filter->absents = lruCacheNew(server.swap_absent_cache_capacity);
             }
         } else {
             serverLog(LL_WARNING, "absent cache disabled.");
             for (int i = 0; i < server.dbnum; i++) {
                 redisDb *db = server.db+i;
-                serverAssert(db->swap_absent_cache != NULL);
-                absentsCacheFree(db->swap_absent_cache);
-                db->swap_absent_cache = NULL;
+                serverAssert(db->cold_filter->absents != NULL);
+                lruCacheFree(db->cold_filter->absents);
+                db->cold_filter->absents = NULL;
             }
         }
     }
@@ -2428,8 +2455,8 @@ static int updateSwapAbsentCacheCapacity(long long val, long long prev, const ch
     if (val) {
         for (int i = 0; i < server.dbnum; i++) {
             redisDb *db = server.db+i;
-            if (db->swap_absent_cache)
-                absentsCacheSetCapacity(db->swap_absent_cache, val);
+            if (db->cold_filter->absents)
+                lruCacheSetCapacity(db->cold_filter->absents, val);
         }
     }
     return 1;
@@ -2665,6 +2692,7 @@ standardConfig configs[] = {
     createBoolConfig("replica-announced", NULL, MODIFIABLE_CONFIG, server.replica_announced, 1, NULL, NULL),
     createBoolConfig("slave-repl-all", NULL, MODIFIABLE_CONFIG, server.repl_slave_repl_all, 0, NULL, NULL),
     createBoolConfig("swap-debug-trace-latency", NULL, MODIFIABLE_CONFIG, server.swap_debug_trace_latency, 0, NULL, NULL),
+    createBoolConfig("swap-cuckoo-filter-enabled", NULL, MODIFIABLE_CONFIG, server.swap_cuckoo_filter_enabled, 1, NULL, updateSwapCuckooFilterEnabled),
     createBoolConfig("swap-absent-cache-enabled", NULL, MODIFIABLE_CONFIG, server.swap_absent_cache_enabled, 1, NULL, updateSwapAbsentCacheEnabled),
     createBoolConfig("rocksdb.data.cache_index_and_filter_blocks", "rocksdb.cache_index_and_filter_blocks", IMMUTABLE_CONFIG, server.rocksdb_data_cache_index_and_filter_blocks, 0, NULL, NULL),
     createBoolConfig("rocksdb.meta.cache_index_and_filter_blocks", NULL, IMMUTABLE_CONFIG, server.rocksdb_meta_cache_index_and_filter_blocks, 0, NULL, NULL),
@@ -2708,6 +2736,7 @@ standardConfig configs[] = {
     createEnumConfig("swap-mode", NULL, IMMUTABLE_CONFIG, swap_mode_enum, server.swap_mode, SWAP_MODE_MEMORY, isValidSwapMode, NULL),
     createEnumConfig("rocksdb.data.compression","rocksdb.compression", IMMUTABLE_CONFIG, rocksdb_compression_enum, server.rocksdb_data_compression, rocksdb_snappy_compression, NULL, NULL),
     createEnumConfig("rocksdb.meta.compression", NULL, IMMUTABLE_CONFIG, rocksdb_compression_enum, server.rocksdb_meta_compression, rocksdb_snappy_compression, NULL, NULL),
+    createEnumConfig("swap-cuckoo-filter-bit-per-key", NULL, IMMUTABLE_CONFIG, cuckoo_filter_bit_type_enum, server.swap_cuckoo_filter_bit_type, CUCKOO_FILTER_BITS_PER_TAG_8, NULL, NULL),
 
     /* Integer configs */
     createIntConfig("databases", NULL, IMMUTABLE_CONFIG, 1, INT_MAX, server.dbnum, 16, INTEGER_CONFIG, NULL, NULL),
@@ -2798,6 +2827,7 @@ standardConfig configs[] = {
     createULongLongConfig("swap-inprogress-memory-stop", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.swap_inprogress_memory_stop, 128*1024*1024, MEMORY_CONFIG, NULL, NULL), /* Default: 128mb */
     createULongLongConfig("swap-evict-step-max-memory", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.swap_evict_step_max_memory, 1*1024*1024, MEMORY_CONFIG, NULL, NULL), /* Default: 1mb */
     createULongLongConfig("swap-repl-max-rocksdb-read-bps", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.swap_repl_max_rocksdb_read_bps, 0, MEMORY_CONFIG, NULL, NULL), /* Default: unlimited */
+    createULongLongConfig("swap-cuckoo-filter-estimated-keys", NULL, IMMUTABLE_CONFIG, 1, LLONG_MAX, server.swap_cuckoo_filter_estimated_keys, 32000000, INTEGER_CONFIG, NULL, NULL), /* Default: 32M */
     createULongLongConfig("swap-absent-cache-capacity", NULL, MODIFIABLE_CONFIG, 1, LLONG_MAX, server.swap_absent_cache_capacity, 64*1024, INTEGER_CONFIG, NULL, updateSwapAbsentCacheCapacity), /* Default: 64k */
     createULongLongConfig("rocksdb.data.block_cache_size", "rocksdb.block_cache_size", IMMUTABLE_CONFIG, 0, ULLONG_MAX, server.rocksdb_data_block_cache_size, 8*1024*1024, MEMORY_CONFIG, NULL, NULL),
     createULongLongConfig("rocksdb.meta.block_cache_size", NULL, IMMUTABLE_CONFIG, 0, ULLONG_MAX, server.rocksdb_meta_block_cache_size, 512*1024*1024, MEMORY_CONFIG, NULL, NULL),

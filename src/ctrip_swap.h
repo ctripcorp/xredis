@@ -32,6 +32,8 @@
 #include "server.h"
 #include <rocksdb/c.h>
 #include "atomicvar.h"
+#include "ctrip_lru_cache.h"
+#include "ctrip_cuckoo_filter.h"
 
 #define IN        /* Input parameter */
 #define OUT       /* Output parameter */
@@ -1431,6 +1433,10 @@ void dictObjectDestructor(void *privdata, void *val);
 #define SWAP_BATCH_STATS_METRIC_SUBMIT_BATCH 1
 #define SWAP_BATCH_STATS_METRIC_COUNT 2
 
+#define SWAP_FILTER_STATS_METRIC_LOOKUP 0
+#define SWAP_FILTER_STATS_METRIC_FALSE_POSITIVE 1
+#define SWAP_FILTER_STATS_METRIC_COUNT 2
+
 #define SWAP_SWAP_STATS_METRIC_COUNT (SWAP_STAT_METRIC_SIZE*SWAP_TYPES)
 #define SWAP_RIO_STATS_METRIC_COUNT (SWAP_STAT_METRIC_SIZE*ROCKS_TYPES)
 #define SWAP_COMPACTION_FILTER_STATS_METRIC_COUNT (COMPACTION_FILTER_METRIC_SIZE*CF_COUNT)
@@ -1444,8 +1450,9 @@ void dictObjectDestructor(void *privdata, void *val);
 #define SWAP_DEBUG_STATS_METRIC_OFFSET (SWAP_COMPACTION_FILTER_STATS_METRIC_OFFSET+SWAP_COMPACTION_FILTER_STATS_METRIC_COUNT)
 #define SWAP_LOCK_STATS_METRIC_OFFSET (SWAP_DEBUG_STATS_METRIC_OFFSET+SWAP_DEBUG_STATS_METRIC_COUNT)
 #define SWAP_BATCH_STATS_METRIC_OFFSET (SWAP_LOCK_STATS_METRIC_OFFSET+SWAP_LOCK_STATS_METRIC_COUNT)
+#define SWAP_FILTER_STATS_METRIC_OFFSET (SWAP_BATCH_STATS_METRIC_OFFSET+SWAP_BATCH_STATS_METRIC_COUNT)
 
-#define SWAP_STATS_METRIC_COUNT (SWAP_SWAP_STATS_METRIC_COUNT+SWAP_RIO_STATS_METRIC_COUNT+SWAP_COMPACTION_FILTER_STATS_METRIC_COUNT+SWAP_DEBUG_STATS_METRIC_COUNT+SWAP_LOCK_STATS_METRIC_COUNT+SWAP_BATCH_STATS_METRIC_COUNT)
+#define SWAP_STATS_METRIC_COUNT (SWAP_SWAP_STATS_METRIC_COUNT+SWAP_RIO_STATS_METRIC_COUNT+SWAP_COMPACTION_FILTER_STATS_METRIC_COUNT+SWAP_DEBUG_STATS_METRIC_COUNT+SWAP_LOCK_STATS_METRIC_COUNT+SWAP_BATCH_STATS_METRIC_COUNT+SWAP_FILTER_STATS_METRIC_COUNT)
 
 typedef struct swapStat {
     const char *name;
@@ -1469,8 +1476,9 @@ typedef struct compactionFilterStat {
 
 typedef struct swapHitStat {
     redisAtomic long long stat_swapin_attempt_count;
-    redisAtomic long long stat_swapin_not_found_cachemiss_count;
-    redisAtomic long long stat_swapin_not_found_cachehit_count;
+    redisAtomic long long stat_swapin_not_found_coldfilter_cuckoofilter_filt_count;
+    redisAtomic long long stat_swapin_not_found_coldfilter_absentcache_filt_count;
+    redisAtomic long long stat_swapin_not_found_coldfilter_miss_count;
     redisAtomic long long stat_swapin_no_io_count;
     redisAtomic long long stat_swapin_data_not_found_count;
 } swapHitStat;
@@ -1722,19 +1730,38 @@ void listLoadInit(rdbKeyLoadData *load);
 void zsetLoadInit(rdbKeyLoadData *load);
 int rdbLoadLenVerbatim(rio *rdb, sds *verbatim, int *isencoded, unsigned long long *lenptr);
 
-/* absent keys cache */
-typedef struct absentsCache {
-  size_t capacity;
-  dict *map;
-  list *list;
-} absentsCache;
+/* cold keys filter */
+#define COLDFILTER_FILT_BY_CUCKOO_FILTER 1
+#define COLDFILTER_FILT_BY_ABSENT_CACHE 2
 
-absentsCache *absentsCacheNew(size_t capacity);
-void absentsCacheFree(absentsCache *cache);
-int absentsCachePut(absentsCache *cache, sds key);
-int absentsCacheGet(absentsCache *cache, sds key);
-int absentsCacheDelete(absentsCache *cache, sds key);
-void absentsCacheSetCapacity(absentsCache *cache, size_t capacity);
+typedef struct swapCuckooFilterStat {
+  long long lookup_count;
+  long long false_positive_count;
+} swapCuckooFilterStat;
+
+void swapCuckooFilterStatInit(swapCuckooFilterStat *stat);
+void swapCuckooFilterStatDeinit(swapCuckooFilterStat *stat);
+void trackSwapCuckooFilterInstantaneousMetrics();
+void resetSwapCukooFilterInstantaneousMetrics();
+sds genSwapCuckooFilterInfoString(sds info);
+
+typedef struct coldFilter {
+  lruCache *absents;
+  cuckooFilter *filter;
+  swapCuckooFilterStat filter_stat;
+} coldFilter;
+
+coldFilter *coldFilterCreate();
+void coldFilterDestroy(coldFilter *filter);
+void coldFilterInit(coldFilter *filter);
+void coldFilterDeinit(coldFilter *filter);
+void coldFilterReset(coldFilter *filter);
+void coldFilterAddKey(coldFilter *filter, sds key);
+void coldFilterDeleteKey(coldFilter *filter, sds key);
+void coldFilterKeyNotFound(coldFilter *filter, sds key);
+/* cold filter */
+int coldFilterMayContainKey(coldFilter *filter, sds key, int *filt_by);
+size_t coldFiltersUsedMemory(); /* cuckoo filter not counted in maxmemory */
 
 /* Util */
 #define ROCKS_KEY_FLAG_NONE 0x0

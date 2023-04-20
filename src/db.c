@@ -425,16 +425,7 @@ long long emptyDbStructure(redisDb *dbarray, int dbnum, int async,
         dbarray[j].expires_cursor = 0;
         dbarray[j].cold_keys = 0;
         scanExpireEmpty(dbarray[j].scan_expire);
-
-
-        if (dbarray[j].swap_absent_cache) {
-            absentsCacheFree(dbarray[j].swap_absent_cache);
-            dbarray[j].swap_absent_cache = NULL;
-        }
-        if (server.swap_absent_cache_enabled) {
-            dbarray[j].swap_absent_cache =
-                absentsCacheNew(server.swap_absent_cache_capacity);
-        }
+        coldFilterReset(dbarray[j].cold_filter);
     }
 
     return removed;
@@ -522,12 +513,7 @@ dbBackup *backupDb(void) {
         server.db[i].dict = dictCreate(&dbDictType,NULL);
         server.db[i].expires = dictCreate(&dbExpiresDictType,NULL);
         server.db[i].meta = dictCreate(&objectMetaDictType,NULL);
-
-        server.db[i].swap_absent_cache = NULL;
-        if (server.swap_absent_cache_enabled) {
-            server.db[i].swap_absent_cache =
-                absentsCacheNew(server.swap_absent_cache_capacity);
-        }
+        server.db[i].cold_filter = coldFilterCreate();
     }
 
     /* Backup cluster slots to keys map if enable cluster. */
@@ -558,11 +544,7 @@ void discardDbBackup(dbBackup *buckup, int flags, void(callback)(void*)) {
         dictRelease(buckup->dbarray[i].dict);
         dictRelease(buckup->dbarray[i].expires);
         dictRelease(buckup->dbarray[i].meta);
-
-        if (buckup->dbarray[i].swap_absent_cache) {
-            absentsCacheFree(buckup->dbarray[i].swap_absent_cache);
-            buckup->dbarray[i].swap_absent_cache = NULL;
-        }
+        coldFilterDeinit(buckup->dbarray[i].cold_filter);
     }
 
     /* Release slots to keys map backup if enable cluster. */
@@ -590,10 +572,7 @@ void restoreDbBackup(dbBackup *buckup) {
         dictRelease(server.db[i].dict);
         dictRelease(server.db[i].expires);
         dictRelease(server.db[i].meta);
-        if (server.db[i].swap_absent_cache) {
-            absentsCacheFree(server.db[i].swap_absent_cache);
-            server.db[i].swap_absent_cache = NULL;
-        }
+        coldFilterDeinit(server.db[i].cold_filter);
         server.db[i] = buckup->dbarray[i];
     }
 
@@ -1488,14 +1467,14 @@ int dbSwapDatabases(int id1, int id2) {
     db1->avg_ttl = db2->avg_ttl;
     db1->expires_cursor = db2->expires_cursor;
     db1->meta = db2->meta;
-    db1->swap_absent_cache = db2->swap_absent_cache;
+    db1->cold_filter = db2->cold_filter;
 
     db2->dict = aux.dict;
     db2->expires = aux.expires;
     db2->avg_ttl = aux.avg_ttl;
     db2->expires_cursor = aux.expires_cursor;
     db2->meta = aux.meta;
-    db2->swap_absent_cache = aux.swap_absent_cache;
+    db2->cold_filter = aux.cold_filter;
 
     /* Now we need to handle clients blocked on lists: as an effect
      * of swapping the two DBs, a client that was waiting for list

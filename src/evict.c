@@ -325,7 +325,7 @@ unsigned long LFUDecrAndReturn(robj *o) {
 }
 
 static size_t getUsedMemory() {
-    return zmalloc_used_memory() - server.swap_inprogress_memory;
+    return zmalloc_used_memory() - server.swap_inprogress_memory - coldFiltersUsedMemory();
 }
 
 static int updateEvictionSwapRateLimitState() {

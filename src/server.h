@@ -142,7 +142,7 @@ typedef long long ustime_t; /* microsecond time type. */
 #define STATS_METRIC_NET_INPUT 1    /* Bytes read to network .*/
 #define STATS_METRIC_NET_OUTPUT 2   /* Bytes written to network. */
 #define STATS_METRIC_COUNT_MEM 3
-#define STATS_METRIC_COUNT_SWAP 70 /* define directly here to avoid dependcy cycle, will be checked later. */
+#define STATS_METRIC_COUNT_SWAP 72 /* define directly here to avoid dependcy cycle, will be checked later. */
 #define STATS_METRIC_COUNT (STATS_METRIC_COUNT_SWAP + STATS_METRIC_COUNT_MEM)
 
 /* Protocol and I/O related defines */
@@ -749,13 +749,13 @@ typedef struct redisDb {
     unsigned long expires_cursor; /* Cursor of the active expire cycle. */
     list *defrag_later;         /* List of key names to attempt to defrag one by one, gradually. */
     /* swap */
-    dict *meta;                 /* meta for rocksdb subkeys of big object . */
+    dict *meta;                 /* meta for rocksdb subkeys of big object. */
     dict *hold_keys;            /* holded keys. */
     list *evict_asap;           /* keys to be evicted asap. */
-    long long cold_keys;        /* # of cold keys */
+    long long cold_keys;        /* # of cold keys. */
     sds randomkey_nextseek;     /* nextseek for randomkey command */
     struct scanExpire *scan_expire; /* scan expire related */
-    struct absentsCache *swap_absent_cache;
+    struct coldFilter *cold_filter; /* cold keys filter: absent cache & cuckoo filter. */
 } redisDb;
 
 /* Declare database backup that include redis main DBs and slots to keys map.
@@ -1852,6 +1852,11 @@ struct redisServer {
     /* absent cache */
     int swap_absent_cache_enabled;
     unsigned long long swap_absent_cache_capacity;
+
+    /* cuckoo filter */
+    int swap_cuckoo_filter_enabled;
+    int swap_cuckoo_filter_bit_type;
+    unsigned long long swap_cuckoo_filter_estimated_keys;
 
     /* swap batch */
     struct swapBatchCtx *swap_batch_ctx;

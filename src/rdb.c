@@ -2715,6 +2715,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
             int swap_load_error = ctripRdbLoadObject(type,rdb,db,key,
                     expiretime,now,keydata);
             if (swap_load_error == 0) {
+                coldFilterAddKey(db->cold_filter,key);
                 db->cold_keys++;
                 error = 0;
             } else if (swap_load_error == SWAP_ERR_RDB_LOAD_UNSUPPORTED) {

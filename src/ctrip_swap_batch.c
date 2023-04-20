@@ -263,6 +263,10 @@ static void swapBatchCtxStatInit(swapBatchCtxStat *batch_stat) {
     for (int i = 0 ; i < SWAP_BATCH_FLUSH_TYPES; i++) {
         batch_stat->submit_batch_flush[i] = 0;
     }
+    batch_stat->stats_metric_idx_request =
+        SWAP_BATCH_STATS_METRIC_OFFSET+SWAP_BATCH_STATS_METRIC_SUBMIT_REQUEST;
+    batch_stat->stats_metric_idx_batch =
+        SWAP_BATCH_STATS_METRIC_OFFSET+SWAP_BATCH_STATS_METRIC_SUBMIT_BATCH;
 }
 
 void trackSwapBatchInstantaneousMetrics() {
@@ -271,10 +275,6 @@ void trackSwapBatchInstantaneousMetrics() {
             batch_stat->submit_request_count);
     trackInstantaneousMetric(batch_stat->stats_metric_idx_batch,
             batch_stat->submit_batch_count);
-    batch_stat->stats_metric_idx_request =
-        SWAP_BATCH_STATS_METRIC_OFFSET+SWAP_BATCH_STATS_METRIC_SUBMIT_REQUEST;
-    batch_stat->stats_metric_idx_batch =
-        SWAP_BATCH_STATS_METRIC_OFFSET+SWAP_BATCH_STATS_METRIC_SUBMIT_BATCH;
 }
 
 void resetSwapBatchInstantaneousMetrics(void) {

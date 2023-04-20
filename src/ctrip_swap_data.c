@@ -305,17 +305,18 @@ void swapDataTurnWarmOrHot(swapData *data) {
         setExpire(NULL,data->db,data->key,data->expire);
     }
     data->db->cold_keys--;
+    coldFilterDeleteKey(data->db->cold_filter,data->key->ptr);
 }
 
 void swapDataTurnCold(swapData *data) {
+    coldFilterAddKey(data->db->cold_filter,data->key->ptr);
     data->db->cold_keys++;
-    if (data->db->swap_absent_cache)
-        absentsCacheDelete(data->db->swap_absent_cache,data->key->ptr);
 }
 
 void swapDataTurnDeleted(swapData *data, int del_skip) {
     if (swapDataIsCold(data)) {
         data->db->cold_keys--;
+        coldFilterDeleteKey(data->db->cold_filter,data->key->ptr);
     } else {
         /* rocks-meta already deleted, only need to delete object_meta
          * from keyspace. */

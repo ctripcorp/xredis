@@ -326,7 +326,8 @@ int keyExpiredAndShouldDelete(redisDb *db, robj *key) {
 #define NOSWAP_REASON_NOTKEYLEVEL 2
 #define NOSWAP_REASON_KEYNOTSUPPORT 3
 #define NOSWAP_REASON_SWAPANADECIDED 4
-#define NOSWAP_REASON_ABSENTCACHEHIT 5
+#define NOSWAP_REASON_FILT_BY_CUCKOOFILTER 5
+#define NOSWAP_REASON_FILT_BY_ABSENTCACHE 6
 #define NOSWAP_REASON_UNEXPECTED 100
 
 void keyRequestProceed(void *lock, int flush, redisDb *db, robj *key,
@@ -389,10 +390,13 @@ void keyRequestProceed(void *lock, int flush, redisDb *db, robj *key,
     }
 
     if (value == NULL) {
-        if (db->swap_absent_cache &&
-                absentsCacheGet(db->swap_absent_cache,key->ptr)) {
+        int filt_by;
+        if (!coldFilterMayContainKey(db->cold_filter,key->ptr,&filt_by)) {
             reason = "key is absent";
-            reason_num = NOSWAP_REASON_ABSENTCACHEHIT;
+            if (filt_by == COLDFILTER_FILT_BY_CUCKOO_FILTER)
+                reason_num = NOSWAP_REASON_FILT_BY_CUCKOOFILTER;
+            else
+                reason_num = NOSWAP_REASON_FILT_BY_ABSENTCACHE;
             goto noswap;
         } else {
             req = swapMetaRequestNew(ctx->key_request,
@@ -452,8 +456,10 @@ noswap:
     if (isSwapHitStatKeyRequest(ctx->key_request)) {
         if (reason_num == NOSWAP_REASON_SWAPANADECIDED)
             atomicIncr(server.swap_hit_stats->stat_swapin_no_io_count,1);
-        if (reason_num == NOSWAP_REASON_ABSENTCACHEHIT)
-            atomicIncr(server.swap_hit_stats->stat_swapin_not_found_cachehit_count,1);
+        if (reason_num == NOSWAP_REASON_FILT_BY_CUCKOOFILTER)
+            atomicIncr(server.swap_hit_stats->stat_swapin_not_found_coldfilter_cuckoofilter_filt_count,1);
+        if (reason_num == NOSWAP_REASON_FILT_BY_ABSENTCACHE)
+            atomicIncr(server.swap_hit_stats->stat_swapin_not_found_coldfilter_absentcache_filt_count,1);
     }
 
     /* noswap is kinda swapfinished. */
@@ -642,11 +648,7 @@ void swapInit() {
 
     for (i = 0; i < server.dbnum; i++) {
         redisDb *db = server.db+i;
-        if (server.swap_absent_cache_enabled) {
-            db->swap_absent_cache = absentsCacheNew(server.swap_absent_cache_capacity);
-        } else {
-            db->swap_absent_cache = NULL;
-        }
+        db->cold_filter = coldFilterCreate();
     }
 
     server.swap_batch_ctx = swapBatchCtxNew();
@@ -685,7 +687,7 @@ int initTestRedisDb() {
         server.db[j].cold_keys = 0;
         server.db[j].randomkey_nextseek = NULL;
         server.db[j].scan_expire = scanExpireCreate();
-        server.db[j].swap_absent_cache = NULL;
+        server.db[j].cold_filter = coldFilterCreate(server.db+j);
         server.db[j].expires_cursor = 0;
         server.db[j].id = j;
         server.db[j].avg_ttl = 0;
