@@ -544,7 +544,7 @@ void discardDbBackup(dbBackup *buckup, int flags, void(callback)(void*)) {
         dictRelease(buckup->dbarray[i].dict);
         dictRelease(buckup->dbarray[i].expires);
         dictRelease(buckup->dbarray[i].meta);
-        coldFilterDeinit(buckup->dbarray[i].cold_filter);
+        coldFilterDestroy(buckup->dbarray[i].cold_filter);
     }
 
     /* Release slots to keys map backup if enable cluster. */

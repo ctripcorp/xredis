@@ -31,11 +31,14 @@
 static sds debugRioGet(int cf, sds rawkey) {
     sds rawval;
     RIO _rio, *rio = &_rio;
-    int cfs[1] = {cf};
-    sds rawkeys[1] = {rawkey};
+    int *cfs = zmalloc(1*sizeof(int));
+    sds *rawkeys = zmalloc(1*sizeof(sds));
+    cfs[0] = cf;
+    rawkeys[0] = sdsdup(rawkey);
     RIOInitGet(rio,1,cfs,rawkeys);
     RIODo(rio);
-    rawval = rio->get.rawvals[0];
+    rawval = rio->get.rawvals[0] ? sdsdup(rio->get.rawvals[0]) : NULL;
+    RIODeinit(rio);
     return rawval;
 }
 

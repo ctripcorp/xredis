@@ -669,7 +669,7 @@ void RIOBatchDo(RIOBatch *rios) {
 
     if (server.swap_debug_rio_error > 0) {
         server.swap_debug_rio_error--;
-        RIOBatchSetError(rios,SWAP_ERR_RIO_FAIL,sdsnew("rio mock error"));
+        RIOBatchSetError(rios,SWAP_ERR_RIO_FAIL,"rio mock error");
         goto end;
     }
 
