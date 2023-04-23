@@ -232,6 +232,7 @@ void swapExecBatchPrepareRIOBatch(swapExecBatch *exec_batch, RIOBatch *rios) {
                 serverAssert(start == NULL);
             }
             RIOInitIterate(rio,cf,flags,start,end,limit);
+            if (req->intention_flags & SWAP_EXEC_OOM_CHECK) rio->iterate.flags |= ROCKS_ITERATE_OOM_CHECK;
             break;
         case ROCKS_PUT:
             if ((errcode = swapDataEncodeData(req->data,req->intention,
@@ -404,7 +405,10 @@ static void swapExecBatchExecuteIntentionDel(swapExecBatch *exec_batch,
             continue;
         }
 
-        if (merged_is_hots[i]) {
+        if (merged_is_hots[i] || req->intention_flags & SWAP_EXEC_FORCE_HOT) {
+            if (!merged_is_hots[i]) {
+                serverLog(LL_WARNING, "[rocks] force del meta, key:%s", (char*)req->data->key->ptr);
+            }
             req->data->del_meta = 1;
             req->data->persistence_deleted = 1;
         }
@@ -432,7 +436,6 @@ void swapExecBatchExecuteIn(swapExecBatch *exec_batch) {
         swapRequest *req = exec_batch->reqs[i];
         RIO *rio = rios->rios+i;
         if (swapRequestGetError(req)) continue;
-
         if (action == ROCKS_GET) {
             if ((errcode = swapDataDecodeData(req->data,rio->get.numkeys,
                             rio->get.cfs,rio->get.rawkeys,rio->get.rawvals,

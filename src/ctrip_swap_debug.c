@@ -114,7 +114,7 @@ void swapCommand(client *c) {
 "    Get raw value from rocksdb.",
 "RIO-SCAN meta|data <prefix>",
 "    Scan rocksdb with prefix.",
-"RIO-ERROR <count>",
+"RIO-ERROR <count> [ACTION name]",
 "    Make next count rio return error.",
 "RESET-STATS",
 "    Reset swap stats.",
@@ -246,14 +246,28 @@ NULL
             addReplyBulkSds(c,repr);
         }
         RIODeinit(rio);
-    } else if (!strcasecmp(c->argv[1]->ptr,"rio-error") && c->argc == 3) {
+    } else if (!strcasecmp(c->argv[1]->ptr,"rio-error") && c->argc >= 3) {
         long long count;
+        int action = 0;
         if (getLongLongFromObjectOrReply(c,c->argv[2],&count,NULL))
             return;
+        if (c->argc > 3) {
+            if (c->argc == 5 && !strcasecmp(c->argv[3]->ptr,"action")) {
+                action = rocksActionFromName(c->argv[4]->ptr);
+                if (action == -1) {
+                    addReplyError(c,"rio-error invalid action");
+                    return;
+                }
+            } else {
+                addReplyError(c,"rio-error invalid arg");
+                return;
+            }
+        }
         if (count > INT_MAX || count < 0) {
             addReplyError(c,"rio-error count invalid");
         } else {
             server.swap_debug_rio_error = (int)count;
+            server.swap_debug_rio_error_action = action;
             addReply(c,shared.ok);
         }
     } else if (!strcasecmp(c->argv[1]->ptr,"reset-stats") && c->argc == 2) {

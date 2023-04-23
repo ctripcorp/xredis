@@ -206,6 +206,14 @@ static void RIODoDel(RIO *rio) {
     rocksdb_writebatch_destroy(wb);
 }
 
+static inline int rioMayOOM(unsigned long long mem_allocated) {
+    if (server.maxmemory == 0) return 0;
+    size_t mem_used = ctrip_getUsedMemory();
+    /* expect  total_mem_used < [100 + (swap_maxmemory_oom_percentage - 100)*3/4]*maxmemory/100 */
+    unsigned long long mem_limit = (25 + server.swap_maxmemory_oom_percentage*3/4)*server.maxmemory/100;
+    return mem_used + mem_allocated >= mem_limit;
+}
+
 static void RIODoIterate(RIO *rio) {
     size_t numkeys = 0;
     char *err = NULL;
@@ -220,6 +228,7 @@ static void RIODoIterate(RIO *rio) {
     int high_bound_exclude = rio->iterate.flags & ROCKS_ITERATE_HIGH_BOUND_EXCLUDE;
     int next_seek = rio->iterate.flags & ROCKS_ITERATE_CONTINUOUSLY_SEEK;
     int disable_cache = rio->iterate.flags & ROCKS_ITERATE_DISABLE_CACHE;
+    int oom_check = rio->iterate.flags & ROCKS_ITERATE_OOM_CHECK;
 
     size_t numalloc = ROCKS_ITERATE_NO_LIMIT == limit ? RIO_ITERATE_NUMKEYS_ALLOC_INIT : limit;
     numalloc = numalloc > RIO_ITERATE_NUMKEYS_ALLOC_LINER ? RIO_ITERATE_NUMKEYS_ALLOC_LINER : numalloc;
@@ -227,6 +236,7 @@ static void RIODoIterate(RIO *rio) {
     sds *rawvals = zmalloc(numalloc*sizeof(sds));
 
     size_t klen, vlen;
+    unsigned long long mem_allocated = 0;
     const char *rawkey, *rawval;
     size_t start_len = start ? sdslen(start) : 0, end_len = end ? sdslen(end) : 0;
 
@@ -258,6 +268,12 @@ static void RIODoIterate(RIO *rio) {
     size_t bound_len = reverse ? start_len : end_len;
     int bound_exclude = reverse ? low_bound_exclude : high_bound_exclude;
     while (rocksdb_iter_valid(iter) && (limit == ROCKS_ITERATE_NO_LIMIT || numkeys < limit)) {
+        if (oom_check && numkeys % 512 == 0 && rioMayOOM(mem_allocated)) {
+            RIOSetError(rio,SWAP_ERR_RIO_ITER_FAIL,NULL);
+            serverLog(LL_WARNING,"[rocks] do rocksdb iterate failed: may OOM");
+            goto end;
+        }
+
         rawkey = rocksdb_iter_key(iter, &klen);
         if (bound) {
             int cmp_result = memcmp(rawkey, bound, MIN(bound_len, klen));
@@ -282,6 +298,8 @@ static void RIODoIterate(RIO *rio) {
         }
         rawkeys[numkeys - 1] = sdsnewlen(rawkey, klen);
         rawvals[numkeys - 1] = sdsnewlen(rawval, vlen);
+        mem_allocated += klen;
+        mem_allocated += vlen;
 
         if (reverse) rocksdb_iter_prev(iter);
         else rocksdb_iter_next(iter);
@@ -389,9 +407,11 @@ void RIODo(RIO *rio) {
         usleep(server.swap_debug_rio_delay_micro);
 
     if (server.swap_debug_rio_error > 0) {
-        server.swap_debug_rio_error--;
-        RIOSetError(rio,SWAP_ERR_RIO_FAIL,sdsnew("rio mock error"));
-        goto end;
+        if (!server.swap_debug_rio_error_action || rio->action == server.swap_debug_rio_error_action) {
+            server.swap_debug_rio_error--;
+            RIOSetError(rio,SWAP_ERR_RIO_FAIL,sdsnew("rio mock error"));
+            goto end;
+        }
     }
 
     switch (rio->action) {
@@ -668,9 +688,11 @@ void RIOBatchDo(RIOBatch *rios) {
         usleep(server.swap_debug_rio_delay_micro);
 
     if (server.swap_debug_rio_error > 0) {
-        server.swap_debug_rio_error--;
-        RIOBatchSetError(rios,SWAP_ERR_RIO_FAIL,"rio mock error");
-        goto end;
+        if (!server.swap_debug_rio_error_action || rios->action == server.swap_debug_rio_error_action) {
+            server.swap_debug_rio_error--;
+            RIOBatchSetError(rios,SWAP_ERR_RIO_FAIL,"rio mock error");
+            goto end;
+        }
     }
 
     switch (rios->action) {

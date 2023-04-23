@@ -59,6 +59,23 @@ proc object_is_warm {r key} {
     }
 }
 
+proc object_is_hot {r key} {
+    set str [$r swap object $key]
+    if { [swap_object_property $str value at] != "" && [swap_object_property $str cold_meta object_type] == ""} {
+        set _ 1
+    } else {
+        set _ 0
+    }
+}
+
+proc wait_key_hot {r key} {
+    wait_for_condition 50 40 {
+        [object_is_hot $r $key]
+    } else {
+        fail "wait $key hot failed."
+    }
+}
+
 proc wait_key_cold {r key} {
     wait_for_condition 50 40 {
         [object_is_cold $r $key]

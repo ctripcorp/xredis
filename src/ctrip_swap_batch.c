@@ -258,6 +258,10 @@ void swapRequestBatchProcess(swapRequestBatch *reqs) {
 
 /* swapBatchCtx: currently acummulated requests about to submit in batch. */
 static void swapBatchCtxStatInit(swapBatchCtxStat *batch_stat) {
+    batch_stat->stats_metric_idx_request =
+            SWAP_BATCH_STATS_METRIC_OFFSET+SWAP_BATCH_STATS_METRIC_SUBMIT_REQUEST;
+    batch_stat->stats_metric_idx_batch =
+            SWAP_BATCH_STATS_METRIC_OFFSET+SWAP_BATCH_STATS_METRIC_SUBMIT_BATCH;
     batch_stat->submit_batch_count = 0;
     batch_stat->submit_request_count = 0;
     for (int i = 0 ; i < SWAP_BATCH_FLUSH_TYPES; i++) {
