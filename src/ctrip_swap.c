@@ -587,6 +587,7 @@ void swapInit() {
     swapInitVersion();
 
     server.swap_evict_inprogress_count = 0;
+    server.swap_load_inprogress_count = 0;
 
     server.evict_clients = zmalloc(server.dbnum*sizeof(client*));
     for (i = 0; i < server.dbnum; i++) {
@@ -595,6 +596,15 @@ void swapInit() {
         c->db = server.db+i;
         c->client_hold_mode = CLIENT_HOLD_MODE_EVICT;
         server.evict_clients[i] = c;
+    }
+
+    server.load_clients = zmalloc(server.dbnum*sizeof(client*));
+    for (i = 0; i < server.dbnum; i++) {
+        client *c = createClient(NULL);
+        c->cmd = lookupCommandByCString("SWAP.LOAD");
+        c->db = server.db+i;
+        c->client_hold_mode = CLIENT_HOLD_MODE_EVICT;
+        server.load_clients[i] = c;
     }
 
     server.expire_clients = zmalloc(server.dbnum*sizeof(client*));

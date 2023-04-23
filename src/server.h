@@ -1747,6 +1747,7 @@ struct redisServer {
     client **expire_clients; /* array of rocks expire clients (one for each db). */
     client **scan_expire_clients; /* array of expire scan clients (one for each db). */
     client **ttl_clients; /* array of expire scan clients (one for each db). */
+    client **load_clients;
     client *mutex_client; /* exec op needed global swap lock */
     struct rorStat *ror_stats;
     struct swapHitStat *swap_hit_stats;
@@ -1769,7 +1770,9 @@ struct redisServer {
     int swap_debug_before_exec_swap_delay_micro; /* sleep swap_debug_before_exec_swap_delay microsencods before exec swap request */
     int swap_debug_init_rocksdb_delay_micro; /* sleep swap_debug_init_rocksdb_delay microsencods before init rocksdb */
     int swap_debug_rio_error; /* mock rio error */
+    int swap_debug_rio_error_action;
     int swap_debug_trace_latency;
+    int swap_debug_bgsave_metalen_addition;
 
     /* repl swap */
     int repl_workers;   /* num of repl worker clients */
@@ -1779,6 +1782,9 @@ struct redisServer {
     /* rdb swap */
     int ps_parallism_rdb;  /* parallel swap parallelism for rdb save & load. */
     struct ctripRdbLoadCtx *rdb_load_ctx; /* parallel swap for rdb load */
+    int swap_bgsave_fix_metalen_mismatch;
+    int swap_child_err_pipe[2];
+    size_t swap_child_err_nread;
     /* request wait */
     struct swapLock *swap_lock;
     /* big object */
@@ -1793,6 +1799,9 @@ struct redisServer {
     int swap_evict_inprogress_limit;
     int swap_evict_inprogress_growth_rate;
     int swap_evict_inprogress_count;
+    int swap_load_inprogress_count;
+    int swap_load_paused;
+    size_t swap_load_err_cnt;
     /* scan session */
     struct swapScanSessions *swap_scan_sessions;
     int swap_scan_session_bits;
@@ -2524,7 +2533,6 @@ int restartServer(int flags, mstime_t delay);
 /* accept ignore */
 void ctrip_ignoreAcceptEvent();
 void ctrip_resetAcceptIgnore();
-void ctrip_initMonitorPort();
 void acceptMonitorHandler(aeEventLoop *el, int fd, void *privdata, int mask);
 
 /* Set data type */

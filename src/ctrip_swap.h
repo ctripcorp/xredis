@@ -71,9 +71,13 @@ extern const char *swap_cf_names[CF_COUNT];
  * before submitExpireClientRequest and should not skip expire even
  * if current role is slave. */
 #define SWAP_EXPIRE_FORCE (1U<<7)
+#define SWAP_IN_FORCE_HOT (1U<<8)
+#define SWAP_OOM_SENSITIVE (1U<<9)
 
 /* Delete rocksdb data key */
 #define SWAP_EXEC_IN_DEL (1U<<0)
+#define SWAP_EXEC_FORCE_HOT (1U<<1)
+#define SWAP_EXEC_OOM_CHECK (1U<<2)
 
 /* Don't delete key in keyspace when swap (Delete key in rocksdb) finish. */
 #define SWAP_FIN_DEL_SKIP (1U<<8)
@@ -1028,6 +1032,17 @@ static inline const char *rocksActionName(int action) {
 #define SWAP_DEBUG_NOTIFY_QUEUE_HANDLE_TIME 4
 #define SWAP_DEBUG_INFO_TYPE            5
 
+static inline int rocksActionFromName(const char* name) {
+    const char *actions[] = {"NOP", "GET", "PUT", "DEL", "WRITE", "MULTIGET", "ITERATE"};
+    for (int i = 0; (size_t)i < sizeof(actions); i++) {
+        if (!strcasecmp(name,actions[i])) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
 static inline const char *swapDebugName(int type) {
     const char *name = "?";
     const char *names[] = {"LOCK_WAIT", "SWAP_QUEUE_WAIT", "NOTIFY_QUEUE_WAIT", "NOTIFT_QUEUE_HANDLES", "NOTIFT_QUEUE_HANDLE_TIME"};
@@ -1070,6 +1085,7 @@ typedef struct RIO {
 #define ROCKS_ITERATE_LOW_BOUND_EXCLUDE (1<<2)
 #define ROCKS_ITERATE_HIGH_BOUND_EXCLUDE (1<<3)
 #define ROCKS_ITERATE_DISABLE_CACHE (1<<4)
+#define ROCKS_ITERATE_OOM_CHECK (1<<5)
 
 void RIOInitGet(RIO *rio, int numkeys, int *cfs, sds *rawkeys);
 void RIOInitPut(RIO *rio, int numkeys, int *cfs, sds *rawkeys, sds *rawvals);
@@ -1324,6 +1340,7 @@ int tryEvictKey(redisDb *db, robj *key, int *evict_result);
 void tryEvictKeyAsapLater(redisDb *db, robj *key);
 void swapEvictCommand(client *c);
 void swapDebugEvictKeys();
+int swapEvictInprogressLimit(size_t mem_tofree);
 
 /* Expire */
 int submitExpireClientRequest(client *c, robj *key, int force);
@@ -1596,6 +1613,18 @@ void rocksIterGetError(rocksIter *it, char **error);
 #define DEFAULT_ZSET_MEMBER_COUNT 16
 #define DEFAULT_ZSET_MEMBER_SIZE 128
 
+typedef enum swapRdbSaveErrType {
+    SAVE_ERR_NONE,
+    SAVE_ERR_META_LEN_MISMATCH,
+    SAVE_ERR_UNRECOVERABLE
+} swapRdbSaveErrType;
+
+void openSwapChildErrPipe(void);
+void closeSwapChildErrPipe(void);
+void sendSwapChildErr(swapRdbSaveErrType err_type, int dbid, sds key);
+void receiveSwapChildErrs(void);
+void swapLoadCommand(client *c);
+
 /* result that decoded from current rocksIter value */
 typedef struct decodedResult {
   int cf;
@@ -1810,6 +1839,10 @@ size_t coldFiltersUsedMemory(); /* cuckoo filter not counted in maxmemory */
 void coldFilterSubkeyAdded(coldFilter *filter, sds key);
 void coldFilterSubkeyNotFound(coldFilter *filter, sds key, sds subkey);
 int coldFilterMayContainSubkey(coldFilter *filter, sds key, sds subkey);
+/* used memory in disk swap mode */
+static inline size_t ctrip_getUsedMemory() {
+    return zmalloc_used_memory() - server.swap_inprogress_memory - coldFiltersUsedMemory();
+}
 
 /* Util */
 #define ROCKS_KEY_FLAG_NONE 0x0

@@ -1334,6 +1334,9 @@ int listSwapAna(swapData *data, int thd, struct keyRequest *req,
                 *intention = SWAP_IN;
                 *intention_flags = SWAP_EXEC_IN_DEL;
                 datactx->swap_meta = NULL;
+                if (cmd_intention_flags & SWAP_IN_FORCE_HOT) {
+                    *intention_flags |= SWAP_EXEC_FORCE_HOT;
+                }
             }
         } else { /* list range requests */
             listMeta *req_meta, *list_meta, *swap_meta;
@@ -1368,6 +1371,9 @@ int listSwapAna(swapData *data, int thd, struct keyRequest *req,
             }
             datactx->swap_meta = swap_meta;
             listMetaFree(req_meta);
+        }
+        if (cmd_intention_flags & SWAP_OOM_SENSITIVE) {
+            *intention_flags |= SWAP_EXEC_OOM_CHECK;
         }
         break;
     case SWAP_OUT:
@@ -2084,20 +2090,21 @@ int listSave(rdbKeySaveData *save, rio *rdb, decodedData *decoded) {
 int listSaveEnd(rdbKeySaveData *save, rio *rdb, int save_result) {
     listMeta *meta = objectMetaGetPtr(save->object_meta);
     long meta_len = listMetaLength(meta,SEGMENT_TYPE_BOTH);
+    long expected = meta_len + server.swap_debug_bgsave_metalen_addition;
 
     if (save_result != -1) {
         /* save tail hot elements */
         listSaveHotElementsUntill(save,rdb,LIST_MAX_INDEX);
     }
 
-    if (save->saved != meta_len) {
+    if (save->saved != expected) {
         sds key  = save->key->ptr;
         sds repr = sdscatrepr(sdsempty(), key, sdslen(key));
         serverLog(LL_WARNING,
                 "listSave %s: saved(%d) != listmeta.len(%ld)",
-                repr, save->saved, meta_len);
+                repr, save->saved, expected);
         sdsfree(repr);
-        return -1;
+        return SAVE_ERR_META_LEN_MISMATCH;
     }
 
     return save_result;

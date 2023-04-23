@@ -1123,6 +1123,10 @@ struct redisCommand redisCommandTable[] = {
 	 "read-only fast",
      0,NULL,getKeyRequestsNone,SWAP_OUT,0,1,-1,1,0,0,0},
 
+     {"swap.load",swapLoadCommand,-2,
+      "read-only fast",
+      0,NULL,getKeyRequestsNone,SWAP_IN,SWAP_IN_FORCE_HOT,1,-1,1,0,0,0},
+
 	{"swap.expired",swapExpiredCommand,1,
 	 "write fast @keyspace",
 	 0,NULL,getKeyRequestsNone,SWAP_NOP,0,1,-1,1,0,0,0},
@@ -1720,8 +1724,10 @@ void resetChildState() {
     server.stat_current_save_keys_processed = 0;
     server.stat_module_progress = 0;
     server.stat_current_save_keys_total = 0;
+    server.swap_load_paused = 0;
     updateDictResizePolicy();
     closeChildInfoPipe();
+    closeSwapChildErrPipe();
     moduleFireServerEvent(REDISMODULE_EVENT_FORK_CHILD,
                           REDISMODULE_SUBEVENT_FORK_CHILD_DIED,
                           NULL);
@@ -2072,6 +2078,7 @@ void checkChildrenDone(void) {
                 exit(1);
             }
             if (!bysignal && exitcode == 0) receiveChildInfo();
+            receiveSwapChildErrs();
             rocksReleaseSnapshot();
             rocksReleaseCheckpoint();
             resetChildState();
@@ -2265,6 +2272,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     if (hasActiveChildProcess() || ldbPendingChildren())
     {
         run_with_period(1000) receiveChildInfo();
+        run_with_period(1000) receiveSwapChildErrs();
         checkChildrenDone();
     } else {
         /* If there is not a background saving/rewrite in progress check if
@@ -2876,7 +2884,10 @@ void initServerConfig(void) {
     server.swap_debug_before_exec_swap_delay_micro = 0;
     server.swap_debug_init_rocksdb_delay_micro = 0;
     server.swap_debug_rio_error = 0;
+    server.swap_debug_rio_error_action = 0;
     server.swap_debug_trace_latency = 0;
+    server.swap_bgsave_fix_metalen_mismatch = 0;
+    server.swap_debug_bgsave_metalen_addition = 0;
 
     /* Failover related */
     server.failover_end_time = 0;
@@ -3554,6 +3565,8 @@ void initServer(void) {
     server.swap_inprogress_count = 0;
     server.swap_inprogress_memory = 0;
     server.swap_error_count = 0;
+    server.swap_load_paused = 0;
+    server.swap_load_err_cnt = 0;
 
     /* Create the timer callback, this is our way to process many background
      * operations incrementally, like clients timeout, eviction of unaccessed
@@ -6242,6 +6255,7 @@ int redisFork(int purpose) {
             return -1;
 
         openChildInfoPipe();
+        openSwapChildErrPipe();
     }
 
     int childpid;
@@ -6259,7 +6273,10 @@ int redisFork(int purpose) {
         server.stat_fork_rate = (double) zmalloc_used_memory() * 1000000 / server.stat_fork_time / (1024*1024*1024); /* GB per second. */
         latencyAddSampleIfNeeded("fork",server.stat_fork_time/1000);
         if (childpid == -1) {
-            if (isMutuallyExclusiveChildType(purpose)) closeChildInfoPipe();
+            if (isMutuallyExclusiveChildType(purpose)) {
+                closeChildInfoPipe();
+                closeSwapChildErrPipe();
+            }
             return -1;
         }
 

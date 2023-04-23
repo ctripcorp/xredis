@@ -408,6 +408,7 @@ int rdbSaveRocksIterDecode(rocksIter *it, decodedResult *decoded,
 int rdbSaveRocks(rio *rdb, int *error, redisDb *db, int rdbflags) {
     rocksIter *it = NULL;
     sds errstr = NULL;
+    int recoverable_err = 0;
     rdbSaveRocksStats _stats = {0}, *stats = &_stats;
     decodedResult  _cur, *cur = &_cur, _next, *next = &_next;
     decodedResultInit(cur);
@@ -526,7 +527,14 @@ int rdbSaveRocks(rio *rdb, int *error, redisDb *db, int rdbflags) {
 
 saveend:
         /* call save_end if save_start called, no matter error or not. */
-        if (rdbKeySaveEnd(save,rdb,save_result) == -1) {
+        save_result = rdbKeySaveEnd(save,rdb,save_result);
+        if (save_result == SAVE_ERR_NONE) {
+            stats->save_ok++;
+        } else if (server.swap_bgsave_fix_metalen_mismatch && save_result > SAVE_ERR_NONE && save_result < SAVE_ERR_UNRECOVERABLE) {
+            /* try to fix err while swap_bgsave_robust set */
+            sendSwapChildErr(save_result, db->id, save->key->ptr);
+            recoverable_err++;
+        } else {
             if (errstr == NULL) {
                 errstr = sdscatfmt(sdsempty(),"Save key end failed: %s",
                         strerror(errno));
@@ -536,9 +544,15 @@ saveend:
         }
 
         rdbKeySaveDataDeinit(save);
-        stats->save_ok++;
         rdbSaveProgress(rdb,rdbflags);
     };
+
+    if (recoverable_err > 0) {
+        if (errstr == NULL) {
+            errstr = sdscatfmt(sdsempty(),"recoverable err: %i, try later",recoverable_err);
+        }
+        goto err;
+    }
 
     sds stats_dump = rdbSaveRocksStatsDump(stats);
     serverLog(LL_NOTICE,"Rdb save keys from rocksdb finished: %s",stats_dump);

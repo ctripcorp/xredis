@@ -324,10 +324,6 @@ unsigned long LFUDecrAndReturn(robj *o) {
     return counter;
 }
 
-static size_t getUsedMemory() {
-    return zmalloc_used_memory() - server.swap_inprogress_memory - coldFiltersUsedMemory();
-}
-
 static int updateEvictionSwapRateLimitState() {
     static int isEvictionSwapPaused = 0;
     int eviction_swap_pause = swapRateLimitState() == SWAP_RL_STOP;
@@ -335,7 +331,7 @@ static int updateEvictionSwapRateLimitState() {
         isEvictionSwapPaused = eviction_swap_pause;
         serverLog(LL_NOTICE, "[ratelimit] Eviction %s: redis_mem(%ld) swap_mem(%ld)",
                 eviction_swap_pause ? "paused" : "resumed",
-				getUsedMemory(), server.swap_inprogress_memory);
+                ctrip_getUsedMemory(), server.swap_inprogress_memory);
     }
     return isEvictionSwapPaused;
 }
@@ -392,7 +388,7 @@ int getMaxmemoryState(size_t *total, size_t *logical, size_t *tofree, float *lev
 
     /* Check if we are over the memory usage limit. If we are not, no need
      * to subtract the slaves output buffers. We can just return ASAP. */
-    mem_reported = getUsedMemory();
+    mem_reported = ctrip_getUsedMemory();
     if (total) *total = mem_reported;
 
     /* We may return ASAP if there is no need to compute the level. */
@@ -501,16 +497,20 @@ static unsigned long evictionTimeLimitUs() {
     return ULONG_MAX;   /* No limit to eviction time */
 }
 
-static inline int reachedSwapEvictInprogressLimit(size_t mem_tofree) {
-    /* Disabled if swap-evict-inprogress-limit is -1 */
-    if (server.swap_evict_inprogress_limit < 0) return 0;
-
-    /* Base inprogress limit is threads num, increase one every 10MB */
+inline int swapEvictInprogressLimit(size_t mem_tofree) {
+    /* Base inprogress limit is threads num, increase one every n MB */
     int inprogress_limit = server.swap_threads_num + mem_tofree/(server.swap_evict_inprogress_growth_rate);
 
     if (inprogress_limit > server.swap_evict_inprogress_limit)
         inprogress_limit = server.swap_evict_inprogress_limit;
+    return inprogress_limit;
+}
 
+static inline int reachedSwapEvictInprogressLimit(size_t mem_tofree) {
+    /* Disabled if swap-evict-inprogress-limit is -1 */
+    if (server.swap_evict_inprogress_limit < 0) return 0;
+
+    int inprogress_limit = swapEvictInprogressLimit(mem_tofree);
     return server.swap_evict_inprogress_count >= inprogress_limit;
 }
 

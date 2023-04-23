@@ -78,7 +78,8 @@ int zsetSwapAna(swapData *data, int thd, struct keyRequest *req,
                 *intention = SWAP_DEL;
                 *intention_flags = SWAP_FIN_DEL_SKIP;
             }  else if (cmd_intention_flags == SWAP_IN_DEL
-                || cmd_intention_flags & SWAP_IN_OVERWRITE) {
+                || cmd_intention_flags & SWAP_IN_OVERWRITE
+                || cmd_intention_flags & SWAP_IN_FORCE_HOT) {
                 objectMeta *meta = swapDataObjectMeta(data);
                 if (meta->len == 0) {
                     *intention = SWAP_DEL;
@@ -86,7 +87,10 @@ int zsetSwapAna(swapData *data, int thd, struct keyRequest *req,
                 } else {
                     *intention = SWAP_IN;
                     *intention_flags = SWAP_EXEC_IN_DEL;
-                } 
+                }
+                if (cmd_intention_flags & SWAP_IN_FORCE_HOT) {
+                    *intention_flags |= SWAP_EXEC_FORCE_HOT;
+                }
             } else if (swapDataIsHot(data)) {
                 /* No need to do swap for hot key(execept for SWAP_IN_DEl). */
                 *intention = SWAP_NOP;
@@ -141,6 +145,10 @@ int zsetSwapAna(swapData *data, int thd, struct keyRequest *req,
                 *intention = datactx->bdc.num > 0 ? SWAP_IN : SWAP_NOP;
                 *intention_flags = 0;
             }
+        }
+
+        if (cmd_intention_flags & SWAP_OOM_SENSITIVE) {
+            *intention_flags |= SWAP_EXEC_OOM_CHECK;
         }
         break;
     case SWAP_OUT:
@@ -929,15 +937,16 @@ int zsetSave(rdbKeySaveData *save, rio *rdb, decodedData *decoded) {
 
 int zsetSaveEnd(rdbKeySaveData *save, rio *rdb, int save_result) {
     objectMeta *object_meta = save->object_meta;
+    long expected = object_meta->len + server.swap_debug_bgsave_metalen_addition;
     UNUSED(rdb);
-    if (save->saved != object_meta->len) {
+    if (save->saved != expected) {
         sds key  = save->key->ptr;
         sds repr = sdscatrepr(sdsempty(), key, sdslen(key));
         serverLog(LL_WARNING,
                 "zsetSave %s: saved(%d) != object_meta.len(%ld)",
-                repr, save->saved, (ssize_t)object_meta->len);
+                repr, save->saved, expected);
         sdsfree(repr);
-        return -1;
+        return SAVE_ERR_META_LEN_MISMATCH;
     }
     return save_result;
 }
