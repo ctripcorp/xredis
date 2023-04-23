@@ -33,6 +33,7 @@ void *swapThreadMain (void *arg) {
 
     snprintf(thdname, sizeof(thdname), "swap_thd_%d", thread->id);
     redis_set_thread_title(thdname);
+    atomicIncr(server.swap_threads_initialized, 1);
     listIter li;
     listNode *ln;
     list *processing_reqs;

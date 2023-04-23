@@ -51,6 +51,7 @@
 #include <lua.h>
 #include <signal.h>
 
+
 #ifdef HAVE_LIBSYSTEMD
 #include <systemd/sd-daemon.h>
 #endif
@@ -1857,6 +1858,10 @@ struct redisServer {
     int swap_cuckoo_filter_enabled;
     int swap_cuckoo_filter_bit_type;
     unsigned long long swap_cuckoo_filter_estimated_keys;
+
+    /* swap_cpu_usage */
+    redisAtomic int swap_threads_initialized;
+    struct swapThreadCpuUsage *swap_cpu_usage;
 
     /* swap batch */
     struct swapBatchCtx *swap_batch_ctx;

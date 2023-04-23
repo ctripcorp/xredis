@@ -36,6 +36,7 @@
 #include "atomicvar.h"
 #include "mt19937-64.h"
 
+#include "ctrip_swap.h"
 #include <time.h>
 #include <signal.h>
 #include <sys/wait.h>
@@ -2156,6 +2157,10 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     UNUSED(eventLoop);
     UNUSED(id);
     UNUSED(clientData);
+
+    run_with_period(1500){
+        swapThreadCpuUsageUpdate(server.swap_cpu_usage);
+    }
 
     /* Software watchdog: deliver the SIGALRM that will reach the signal
      * handler if we don't return here fast enough. */
@@ -4584,6 +4589,9 @@ void closeListeningSockets(int unlink_unix_socket) {
 }
 
 int prepareForShutdown(int flags) {
+
+    swapThreadCpuUsageFree(server.swap_cpu_usage);
+     
     /* When SHUTDOWN is called while the server is loading a dataset in
      * memory we need to make sure no attempt is performed to save
      * the dataset on shutdown (otherwise it could overwrite the current DB
@@ -5575,6 +5583,7 @@ sds genRedisInfoString(const char *section) {
             (long)m_ru.ru_stime.tv_sec, (long)m_ru.ru_stime.tv_usec,
             (long)m_ru.ru_utime.tv_sec, (long)m_ru.ru_utime.tv_usec);
 #endif  /* RUSAGE_THREAD */
+        info = genRedisThreadCpuUsageInfoString(info, server.swap_cpu_usage);
     }
 
     /* Modules */
