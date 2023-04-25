@@ -20,4 +20,15 @@ start_server {tags {"swap-scripting"}} {
         assert_equal {k1 2} [r hgetall h2]
         assert_equal {k1 1} [r hgetall h3]
     }
+
+	test "evalsha - del cold key" {
+        r hmset h5 f1 v1 f2 v2
+        wait_key_cold r h5
+        assert_equal 1 [r exists h5]
+        wait_key_cold r h5
+        set script_sha [r script load {return redis.call('DEL', KEYS[1])}]
+        r evalsha $script_sha 1 h5
+        assert_equal 0 [r exists h5]
+    }
+
 }

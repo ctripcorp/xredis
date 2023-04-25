@@ -925,7 +925,7 @@ struct redisCommand redisCommandTable[] = {
 
     {"evalsha",evalShaCommand,-3,
      "no-script no-monitor may-replicate @scripting",
-     0,evalGetKeys,NULL,SWAP_IN,0,0,0,0,0,0,0},
+     0,evalGetKeys,NULL,SWAP_IN,SWAP_IN_DEL,0,0,0,0,0,0},
 
     {"slowlog",slowlogCommand,-2,
      "admin random ok-loading ok-stale",
