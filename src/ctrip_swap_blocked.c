@@ -34,6 +34,7 @@ typedef struct swapUnblockedKeyChain  {
     int keyrequests_count;
     dict* keys;
     long long swap_err_count;
+    list* swap_data_wrong_type_keys;
 } swapUnblockedKeyChain ;
 
 #define waitIoDictType  objectKeyPointerValueDictType
@@ -51,6 +52,7 @@ swapUnblockedKeyChain* createSwapUnblockedKeyChain(redisDb* db, robj* key) {
     chain->keyrequests_count = 0;
     chain->swap_err_count = 0;
     chain->keys = dictCreate(&waitIoDictType, NULL);
+    chain->swap_data_wrong_type_keys = listCreate();
     return chain;
 }
 
@@ -62,6 +64,9 @@ void releaseSwapUnblockedKeyChain(void* val) {
     }
     if (chain->keys) {
         dictRelease(chain->keys);
+    }
+    if (chain->swap_data_wrong_type_keys) {
+        listRelease(chain->swap_data_wrong_type_keys);
     }
     zfree(chain);
 }
@@ -116,7 +121,7 @@ void findSwapBlockedListKeyChain(redisDb* db, robj* key, dict* key_sets) {
 
 }
 
-void handleBlockedOnListKey(redisDb* db, robj* key) {
+void handleBlockedOnListKey(redisDb* db, robj* key, list* swap_wrong_type_keys) {
     robj *o = lookupKeyWrite(db, key);
     if (o == NULL || o->type != OBJ_LIST) {
         return;
@@ -125,13 +130,13 @@ void handleBlockedOnListKey(redisDb* db, robj* key) {
         .db = db,
         .key = key
     };
-    serveClientsBlockedOnListKey(o, &rl);
+    serveClientsBlockedOnListKey(o, &rl, swap_wrong_type_keys);
 }
 
-void continueServeClientsBlockedOnListKeys(redisDb* db, robj* key) {
+void continueServeClientsBlockedOnListKeys(redisDb* db, robj* key, list* swap_wrong_type_keys) {
     list* _ready_keys = server.ready_keys;
     server.ready_keys = listCreate();
-    handleBlockedOnListKey(db, key);
+    handleBlockedOnListKey(db, key, swap_wrong_type_keys);
 
     handleClientsBlockedOnKeys();
     serverAssert(listLength(server.ready_keys) == 0);
@@ -144,7 +149,12 @@ void blockedOnListKeyClientKeyRequestFinished(client *c, swapCtx *ctx) {
     dictIterator* di = NULL;
     dictEntry *de = NULL;
     if (ctx->errcode != 0) {
-        chain->swap_err_count++;
+        if (ctx->errcode == SWAP_ERR_DATA_WRONG_TYPE_ERROR) {
+            serverAssert(ctx->key_request[0].key != NULL);
+            chain->swap_data_wrong_type_keys = listAddNodeTail(chain->swap_data_wrong_type_keys, ctx->key_request[0].key);
+        } else {
+            chain->swap_err_count++;
+        }
     } else {
         keyRequestBeforeCall(c, ctx);
     }
@@ -159,7 +169,7 @@ void blockedOnListKeyClientKeyRequestFinished(client *c, swapCtx *ctx) {
             server.swap_dependency_block_ctx->swap_retry_count++;
             signalKeyAsReady(chain->db, chain->key, OBJ_LIST);
         } else {
-            continueServeClientsBlockedOnListKeys(chain->db, chain->key);
+            continueServeClientsBlockedOnListKeys(chain->db, chain->key, chain->swap_data_wrong_type_keys);
         }
         di = dictGetIterator(chain->keys);
         while ((de = dictNext(di)) != NULL) {
@@ -214,7 +224,7 @@ int serveClientsBlockedOnListKeyWithoutTargetKey(robj *o, readyList *rl) {
                 elapsedStart(&replyTimer);
                 if (serveClientBlockedOnList(receiver,
                     rl->key,dstkey,rl->db,value,
-                    wherefrom, whereto) == C_ERR)
+                    wherefrom, whereto, NULL) == C_ERR)
                 {
                     /* If we failed serving the client we need
                      * to also undo the POP operation. */
@@ -250,7 +260,7 @@ void submitSwapBlockedClientRequest(client* c, readyList *rl, dict* key_sets) {
     while (NULL != (de = dictNext(di))) {
         robj* rkey = dictGetKey(de);
         incrRefCount(rkey);
-        getKeyRequestsSwapBlockedLmove(dbid, SWAP_IN, 0, 
+        getKeyRequestsSwapBlockedLmove(dbid, SWAP_IN, c->cmd->intention_flags, CMD_CATEGORY_LIST,
             rkey, &result, -1, 
             -1, 1, -1, -1);
     }
@@ -268,7 +278,7 @@ void submitSwapBlockedClientRequest(client* c, readyList *rl, dict* key_sets) {
  * data to fetch (the key is ready). */
 void swapServeClientsBlockedOnListKey(robj *o, readyList *rl) {
     if (server.swap_mode == SWAP_MODE_MEMORY) {
-        serveClientsBlockedOnListKey(o, rl);
+        serveClientsBlockedOnListKey(o, rl, NULL);
         return;
     }
     /* We serve clients in the same order they blocked for

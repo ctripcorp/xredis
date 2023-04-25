@@ -40,6 +40,15 @@ int zsetSwapAna(swapData *data, int thd, struct keyRequest *req,
     zsetDataCtx *datactx = datactx_;
     int cmd_intention = req->cmd_intention;
     uint32_t cmd_intention_flags = req->cmd_intention_flags;
+    if (!(req->cmd_flags & CMD_CATEGORY_SORTEDSET
+        || req->cmd_flags & CMD_CATEGORY_GEO
+        || req->cmd_flags & CMD_CATEGORY_KEYSPACE
+        || req->cmd_flags & CMD_CATEGORY_TRANSACTION
+        || req->cmd_flags & CMD_CATEGORY_SCRIPTING
+        || cmd_intention_flags & SWAP_IN_CHECK_EXISTS
+        || cmd_intention_flags & SWAP_IN_OVERWRITE)) {
+        return SWAP_ERR_DATA_WRONG_TYPE_ERROR;
+    }
 
     switch (cmd_intention) {
     case SWAP_NOP:

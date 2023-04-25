@@ -2731,7 +2731,7 @@ void handleClientsBlockedOnKeys(void);
 void signalKeyAsReady(redisDb *db, robj *key, int type);
 void blockForKeys(client *c, int btype, robj **keys, int numkeys, mstime_t timeout, robj *target, struct listPos *listpos, streamID *ids);
 void updateStatsOnUnblock(client *c, long blocked_us, long reply_us);
-void serveClientsBlockedOnListKey(robj *o, readyList *rl);
+void serveClientsBlockedOnListKey(robj *o, readyList *rl, list* swap_wrong_type_error_keys);
 
 /* timeout.c -- Blocked clients timeout and connections timeout. */
 void addClientToTimeoutTable(client *c);

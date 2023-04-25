@@ -66,7 +66,7 @@
 #include "monotonic.h"
 #include "ctrip_swap.h"
 
-int serveClientBlockedOnList(client *receiver, robj *key, robj *dstkey, redisDb *db, robj *value, int wherefrom, int whereto);
+int serveClientBlockedOnList(client *receiver, robj *key, robj *dstkey, redisDb *db, robj *value, int wherefrom, int whereto, list* swap_wrong_type_error_keys);
 int getListPositionFromObjectOrReply(client *c, robj *arg, int *position);
 
 /* This structure represents the blocked key information that we store
@@ -265,7 +265,7 @@ void disconnectAllBlockedClients(void) {
 /* Helper function for handleClientsBlockedOnKeys(). This function is called
  * when there may be clients blocked on a list key, and there may be new
  * data to fetch (the key is ready). */
-void serveClientsBlockedOnListKey(robj *o, readyList *rl) {
+void serveClientsBlockedOnListKey(robj *o, readyList *rl, list* swap_wrong_type_error_keys) {
     /* We serve clients in the same order they blocked for
      * this key, from the first blocked to the last. */
     dictEntry *de = dictFind(rl->db->blocking_keys,rl->key);
@@ -299,7 +299,7 @@ void serveClientsBlockedOnListKey(robj *o, readyList *rl) {
                 elapsedStart(&replyTimer);
                 if (serveClientBlockedOnList(receiver,
                     rl->key,dstkey,rl->db,value,
-                    wherefrom, whereto) == C_ERR)
+                    wherefrom, whereto, swap_wrong_type_error_keys) == C_ERR)
                 {
                     /* If we failed serving the client we need
                      * to also undo the POP operation. */

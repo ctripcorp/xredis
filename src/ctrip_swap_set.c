@@ -40,9 +40,16 @@ int setSwapAna(swapData *data, int thd, struct keyRequest *req,
     setDataCtx *datactx = datactx_;
     int cmd_intention = req->cmd_intention;
     uint32_t cmd_intention_flags = req->cmd_intention_flags;
-
-    serverAssert(req->type == KEYREQUEST_TYPE_SUBKEY);
-    serverAssert(req->b.num_subkeys >= 0);
+    if (!(req->cmd_flags & CMD_CATEGORY_SET 
+        || req->cmd_flags & CMD_CATEGORY_KEYSPACE
+        || req->cmd_flags & CMD_CATEGORY_TRANSACTION
+        || req->cmd_flags & CMD_CATEGORY_SCRIPTING
+        || cmd_intention_flags & SWAP_IN_CHECK_EXISTS
+        || cmd_intention_flags & SWAP_IN_OVERWRITE)) {
+        return SWAP_ERR_DATA_WRONG_TYPE_ERROR;
+    }
+    // serverAssert(req->type == KEYREQUEST_TYPE_SUBKEY);
+    // serverAssert(req->b.num_subkeys >= 0);
 
     switch (cmd_intention) {
         case SWAP_NOP:

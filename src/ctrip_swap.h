@@ -165,6 +165,7 @@ typedef struct keyRequest{
   int level;
   int cmd_intention;
   int cmd_intention_flags;
+  uint64_t cmd_flags; 
   int type;
   int deferred;
   robj *key;
@@ -280,11 +281,11 @@ typedef struct getKeyRequestsResult {
 } getKeyRequestsResult;
 
 void getKeyRequestsPrepareResult(getKeyRequestsResult *result, int numswaps);
-void getKeyRequestsAppendSubkeyResult(getKeyRequestsResult *result, int level, MOVE robj *key, int num_subkeys, MOVE robj **subkeys, int cmd_intention, int cmd_intention_flags, int dbid);
+void getKeyRequestsAppendSubkeyResult(getKeyRequestsResult *result, int level, MOVE robj *key, int num_subkeys, MOVE robj **subkeys, int cmd_intention, int cmd_intention_flags, uint64_t cmd_flags, int dbid);
 void getKeyRequestsFreeResult(getKeyRequestsResult *result);
 void getKeyRequestsAttachSwapTrace(getKeyRequestsResult * result, swapCmdTrace *swap_cmd, int from_include, int to_exclude);
 
-void getKeyRequestsAppendRangeResult(getKeyRequestsResult *result, int level, MOVE robj *key, int arg_rewrite0, int arg_rewrite1, int num_ranges, MOVE range *ranges, int cmd_intention, int cmd_intention_flags, int dbid);
+void getKeyRequestsAppendRangeResult(getKeyRequestsResult *result, int level, MOVE robj *key, int arg_rewrite0, int arg_rewrite1, int num_ranges, MOVE range *ranges, int cmd_intention, int cmd_intention_flags, uint64_t cmd_flags, int dbid);
 
 #define setObjectDirty(o) do { \
     if (o) o->dirty = 1; \
@@ -558,6 +559,7 @@ void swapDebugMsgsDump(swapDebugMsgs *msgs);
 #define SWAP_ERR_DATA_FIN_FAIL -203
 #define SWAP_ERR_DATA_UNEXPECTED_INTENTION -204
 #define SWAP_ERR_DATA_DECODE_META_FAILED -205
+#define SWAP_ERR_DATA_WRONG_TYPE_ERROR -206
 #define SWAP_ERR_EXEC_FAIL -300
 #define SWAP_ERR_EXEC_UNEXPECTED_ACTION -302
 #define SWAP_ERR_EXEC_UNEXPECTED_UTIL -303
@@ -1970,10 +1972,10 @@ typedef struct swapUnblockCtx  {
 swapUnblockCtx* createSwapUnblockCtx();
 void releaseSwapUnblockCtx(swapUnblockCtx* block);
 void swapServeClientsBlockedOnListKey(robj *o, readyList *rl);
-int getKeyRequestsSwapBlockedLmove(int dbid, int intention, int intention_flags, 
+int getKeyRequestsSwapBlockedLmove(int dbid, int intention, int intention_flags, uint64_t cmd_flags,
             robj *key, struct getKeyRequestsResult *result, int arg_rewrite0, 
             int arg_rewrite1, int num_ranges, ...);
-int serveClientBlockedOnList(client *receiver, robj *key, robj *dstkey, redisDb *db, robj *value, int wherefrom, int whereto);
+int serveClientBlockedOnList(client *receiver, robj *key, robj *dstkey, redisDb *db, robj *value, int wherefrom, int whereto,list* swap_wrong_type_error_keys);
 void incrSwapUnBlockCtxVersion();
 #ifndef __APPLE__
 typedef struct swapThreadCpuUsage{

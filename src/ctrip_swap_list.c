@@ -1291,6 +1291,14 @@ int listSwapAna(swapData *data, int thd, struct keyRequest *req,
     uint32_t cmd_intention_flags = req->cmd_intention_flags;
     UNUSED(thd);
 
+        if (!(req->cmd_flags & CMD_CATEGORY_LIST
+        || req->cmd_flags & CMD_CATEGORY_KEYSPACE
+        || req->cmd_flags & CMD_CATEGORY_TRANSACTION
+        || req->cmd_flags & CMD_CATEGORY_SCRIPTING
+        || cmd_intention_flags & SWAP_IN_CHECK_EXISTS
+        || cmd_intention_flags & SWAP_IN_OVERWRITE)) {
+        return SWAP_ERR_DATA_WRONG_TYPE_ERROR;
+    }
     switch (cmd_intention) {
     case SWAP_NOP:
         *intention = SWAP_NOP;

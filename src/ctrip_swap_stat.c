@@ -193,7 +193,8 @@ struct swapThreadCpuUsage *swapThreadCpuUsageNew(){
     swapThreadCpuUsage *cpu_usage = zmalloc(sizeof(swapThreadCpuUsage));
     cpu_usage->pid = getpid();
     cpu_usage->hertz = sysconf(_SC_CLK_TCK);
-
+    cpu_usage->swap_thread_ticks_save = NULL;
+    cpu_usage->swap_tids = NULL;
     if(swapThreadcpuUsageGetUptime(&(cpu_usage->uptime_save))) return cpu_usage;
     cpu_usage->swap_thread_ticks_save = zmalloc(server.total_swap_threads_num * sizeof(double));
     cpu_usage->swap_tids = zmalloc(server.total_swap_threads_num * sizeof(int));

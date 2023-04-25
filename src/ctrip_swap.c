@@ -236,6 +236,9 @@ void replySwapFailed(client *c) {
         rejectCommandFormat(c,
                 "Swap failed: cursor not match (restart scan with cursor 0 when failed)");
         break;
+    case SWAP_ERR_DATA_WRONG_TYPE_ERROR:
+        addReplyErrorObject(c,shared.wrongtypeerr);
+        break;
     default:
         rejectCommandFormat(c,"Swap failed (code=%d)",c->swap_errcode);
         break;
@@ -332,7 +335,7 @@ int keyExpiredAndShouldDelete(redisDb *db, robj *key) {
 
 void keyRequestProceed(void *lock, int flush, redisDb *db, robj *key,
         client *c, void *pd) {
-    int reason_num = 0, retval = 0, swap_intention;
+    int reason_num = 0, retval = 0, swap_intention, errcode;
     void *datactx = NULL;
     swapData *data = NULL;
     swapCtx *ctx = pd;
@@ -427,11 +430,19 @@ void keyRequestProceed(void *lock, int flush, redisDb *db, robj *key,
     swapDataSetObjectMeta(data,object_meta);
 
 allset:
-    if (swapDataAna(data,SWAP_ANA_THD_MAIN,ctx->key_request,
-                &swap_intention,&swap_intention_flags,datactx)) {
-        ctx->errcode = SWAP_ERR_DATA_ANA_FAIL;
-        reason = "swap ana failed";
-        reason_num = NOSWAP_REASON_UNEXPECTED;
+    
+    if ((errcode = swapDataAna(data,SWAP_ANA_THD_MAIN,ctx->key_request,&swap_intention,
+                &swap_intention_flags,datactx))) {
+        if (errcode == SWAP_ERR_DATA_WRONG_TYPE_ERROR) {
+            ctx->errcode = errcode;
+            reason = "swap data type error";
+            reason_num = NOSWAP_REASON_UNEXPECTED;
+        } else {
+            ctx->errcode = SWAP_ERR_DATA_ANA_FAIL;
+            reason = "swap ana failed";
+            reason_num = NOSWAP_REASON_UNEXPECTED;
+        }
+        
         goto noswap;
     }
 
@@ -539,7 +550,7 @@ int lockGlobalAndExec(clientKeyRequestFinished locked_op, uint64_t exclude_mark)
     getKeyRequestsResult result = GET_KEYREQUESTS_RESULT_INIT;
     getKeyRequestsPrepareResult(&result,1);
     getKeyRequestsAppendSubkeyResult(&result,REQUEST_LEVEL_SVR,NULL,0,NULL,
-                               c->cmd->intention,c->cmd->intention_flags,c->db->id);
+                               c->cmd->intention,c->cmd->intention_flags,c->cmd->flags,c->db->id);
     submitClientKeyRequests(c,&result,locked_op,NULL);
     releaseKeyRequests(&result);
     getKeyRequestsFreeResult(&result);

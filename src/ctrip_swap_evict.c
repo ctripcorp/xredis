@@ -46,7 +46,7 @@ int submitEvictClientRequest(client *c, robj *key) {
     getKeyRequestsPrepareResult(&result,1);
     incrRefCount(key);
     getKeyRequestsAppendSubkeyResult(&result,REQUEST_LEVEL_KEY,key,0,NULL,
-            c->cmd->intention,c->cmd->intention_flags,c->db->id);
+            c->cmd->intention,c->cmd->intention_flags,c->cmd->flags,c->db->id);
     c->keyrequests_count++;
     submitDeferredClientKeyRequests(c,&result,evictClientKeyRequestFinished,NULL);
     releaseKeyRequests(&result);

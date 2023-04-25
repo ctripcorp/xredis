@@ -216,7 +216,7 @@ struct redisCommand redisCommandTable[] = {
 
     {"setnx",setnxCommand,3,
      "write use-memory fast @string",
-     0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,NULL,NULL,SWAP_IN,SWAP_IN_CHECK_EXISTS,1,1,1,0,0,0},
 
     {"setex",setexCommand,4,
      "write use-memory @string",
@@ -284,7 +284,7 @@ struct redisCommand redisCommandTable[] = {
 
     {"mget",mgetCommand,-2,
      "read-only fast @string",
-     0,NULL,NULL,SWAP_IN,0,1,-1,1,0,0,0},
+     0,NULL,NULL,SWAP_IN,SWAP_IN_CHECK_EXISTS,1,-1,1,0,0,0},
 
     {"rpush",rpushCommand,-3,
      "write use-memory fast @list",
@@ -1120,7 +1120,7 @@ struct redisCommand redisCommandTable[] = {
     /* evict command used by shared fake to identify swap does
      * not need any swap before command proc, but triggers swap in proc. */
 	{"swap.evict",swapEvictCommand,-2,
-	 "read-only fast",
+	 "read-only fast @keyspace",
      0,NULL,getKeyRequestsNone,SWAP_OUT,0,1,-1,1,0,0,0},
 
      {"swap.load",swapLoadCommand,-2,
@@ -1160,7 +1160,7 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"ctrip.merge", ctripMergeCommand, -4,
-     "write use-memory ",
+     "write use-memory @keyspace",
      0,NULL,NULL,SWAP_IN,SWAP_IN_OVERWRITE,1,1,1,0,0,0},
 
     {"ctrip.merge_end", ctripMergeEndCommand, -2,
@@ -1168,7 +1168,7 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"ctrip.get_robj", gtidGetRobjCommand, 2, 
-     "read-only fast no-script", 
+     "read-only fast no-script @keyspace", 
      0, NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"gtidx", gtidxCommand, -2,

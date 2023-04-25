@@ -906,7 +906,7 @@ void rpoplpushCommand(client *c) {
  * should be undone as the client was not served: This only happens for
  * BLMOVE that fails to push the value to the destination key as it is
  * of the wrong type. */
-int serveClientBlockedOnList(client *receiver, robj *key, robj *dstkey, redisDb *db, robj *value, int wherefrom, int whereto)
+int serveClientBlockedOnList(client *receiver, robj *key, robj *dstkey, redisDb *db, robj *value, int wherefrom, int whereto, list* swap_wrong_type_error_keys)
 {
     robj *argv[5];
 
@@ -929,6 +929,10 @@ int serveClientBlockedOnList(client *receiver, robj *key, robj *dstkey, redisDb 
         notifyKeyspaceEvent(NOTIFY_LIST,event,key,receiver->db->id);
     } else {
         /* BLMOVE */
+        if (swap_wrong_type_error_keys != NULL && listSearchKey(swap_wrong_type_error_keys, dstkey) != NULL) {
+            addReplyErrorObject(receiver,shared.wrongtypeerr);
+            return C_ERR;
+        }
         robj *dstobj =
             lookupKeyWrite(receiver->db,dstkey);
         if (!(dstobj &&
