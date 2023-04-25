@@ -1860,9 +1860,11 @@ struct redisServer {
     int swap_cuckoo_filter_bit_type;
     unsigned long long swap_cuckoo_filter_estimated_keys;
 
+#ifndef __APPLE__
     /* swap_cpu_usage */
     redisAtomic int swap_threads_initialized;
     struct swapThreadCpuUsage *swap_cpu_usage;
+#endif
 
     /* swap batch */
     struct swapBatchCtx *swap_batch_ctx;

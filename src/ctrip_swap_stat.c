@@ -87,10 +87,12 @@ void initStatsSwap() {
     }
 
     server.swap_hit_stats = zcalloc(sizeof(swapHitStat));
-
+#ifndef __APPLE__
     server.swap_cpu_usage = swapThreadCpuUsageNew();
+#endif
 }
 
+#ifndef __APPLE__
 static int swapThreadcpuUsageGetUptime(double *uptime) {
     FILE *file = fopen("/proc/uptime", "r");
     if (!file) {
@@ -274,6 +276,7 @@ sds genRedisThreadCpuUsageInfoString(sds info, swapThreadCpuUsage *cpu_usage){
                         cpu_usage->other_threads_cpu_usage * 100);
     return info;
 }
+#endif
 
 void trackSwapInstantaneousMetrics() {
     int i;

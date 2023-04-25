@@ -1891,7 +1891,7 @@ int getKeyRequestsSwapBlockedLmove(int dbid, int intention, int intention_flags,
             int arg_rewrite1, int num_ranges, ...);
 int serveClientBlockedOnList(client *receiver, robj *key, robj *dstkey, redisDb *db, robj *value, int wherefrom, int whereto);
 void incrSwapUnBlockCtxVersion();
-
+#ifndef __APPLE__
 typedef struct swapThreadCpuUsage{
     /* CPU usage Cacluation */
     double main_thread_cpu_usage;
@@ -1914,7 +1914,7 @@ void swapThreadCpuUsageUpdate(swapThreadCpuUsage *cpu_usage);
 void swapThreadCpuUsageFree(swapThreadCpuUsage *cpu_usage);
 struct swapThreadCpuUsage *swapThreadCpuUsageNew();
 sds genRedisThreadCpuUsageInfoString(sds info, swapThreadCpuUsage *cpu_usage);
-
+#endif
 #ifdef REDIS_TEST
 
 #define TEST(name) printf("test — %s\n", name);

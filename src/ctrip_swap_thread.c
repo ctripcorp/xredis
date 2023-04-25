@@ -33,7 +33,9 @@ void *swapThreadMain (void *arg) {
 
     snprintf(thdname, sizeof(thdname), "swap_thd_%d", thread->id);
     redis_set_thread_title(thdname);
+#ifndef __APPLE__
     atomicIncr(server.swap_threads_initialized, 1);
+#endif
     listIter li;
     listNode *ln;
     list *processing_reqs;
