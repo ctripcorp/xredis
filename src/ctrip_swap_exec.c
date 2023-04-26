@@ -257,6 +257,7 @@ void swapExecBatchPrepareRIOBatch(swapExecBatch *exec_batch, RIOBatch *rios) {
 
 static
 void swapExecBatchDoRIOBatch(swapExecBatch *exec_batch, RIOBatch *rios) {
+    if (rios->count == 0) return;
     RIOBatchDo(rios);
     for (size_t i = 0; i < exec_batch->count; i++) {
         int errcode = 0;
@@ -390,7 +391,7 @@ static void swapExecBatchExecuteIntentionDel(swapExecBatch *exec_batch,
         RIOInitDel(aux_rio,aux_numkeys,aux_cfs,aux_rawkeys);
     }
 
-    RIOBatchDo(aux_rios);
+    if (aux_rios->count > 0) RIOBatchDo(aux_rios);
 
     size_t aux_idx = 0;
     for (size_t i = 0; i < exec_batch->count; i++) {

@@ -267,6 +267,9 @@ int rdbKeySaveDataInit(rdbKeySaveData *save, redisDb *db, decodedResult *dr) {
         /* skip orphan (sub)data keys: note that meta key is prefix of data
          * subkey, so rocksIter always start init with meta key, except for
          * orphan (sub)data key. */
+#ifdef ROCKS_DEBUG
+        serverLog(LL_WARNING,"rdbKeySaveDataInit: key(%s) not meta, skipped",dr->key);
+#endif
         return INIT_SAVE_SKIP;
     }
 
@@ -275,6 +278,9 @@ int rdbKeySaveDataInit(rdbKeySaveData *save, redisDb *db, decodedResult *dr) {
     object_meta = lookupMeta(db,key);
 
     if (keyIsHot(object_meta,value)) { /* hot */
+#ifdef ROCKS_DEBUG
+        serverLog(LL_WARNING,"rdbKeySaveDataInit: key(%s) is hot, skipped",dr->key);
+#endif
         decrRefCount(key);
         return INIT_SAVE_SKIP;
     } else if (value) { /* warm */
@@ -342,6 +348,16 @@ int rdbSaveRocksIterDecode(rocksIter *it, decodedResult *decoded,
     unsigned char rdbtype;
 
     rocksIterCfKeyTypeValue(it,&cf,&rawkey,&rdbtype,&rawval);
+
+#ifdef ROCKS_DEBUG
+    sds repr = sdsnew("rdbSaveRocksIter: ");
+    repr = sdscatprintf(repr,"[%s] (",swapGetCFName(cf));
+    repr = sdscatrepr(repr,rawkey,sdslen(rawkey));
+    repr = sdscatprintf(repr, ") => (%d) (",rdbtype);
+    repr = sdscatrepr(repr,rawval,sdslen(rawval));
+    repr = sdscat(repr, ")");
+    serverLog(LL_NOTICE, "%s", repr);
+#endif
 
     /* rawkey,rawval moved from rocksIter to decoded if decode ok. */
     switch (cf) {

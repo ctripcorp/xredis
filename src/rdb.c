@@ -1297,7 +1297,17 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi) {
             initStaticStringObject(key,keystr);
             /* cold or warm bighash will be saved later in rdbSaveRocks. */
             object_meta = lookupMeta(db,&key);
-            if (!keyIsHot(object_meta,o)) continue;
+            if (!keyIsHot(object_meta,o)) {
+#ifdef ROCKS_DEBUG
+                serverLog(LL_NOTICE, "[rdbSaveRio] key(%s) not hot: skipped.",keystr);
+#endif
+                continue;
+            } else {
+#ifdef ROCKS_DEBUG
+                serverLog(LL_NOTICE, "[rdbSaveRio] key(%s) saved as hot.",keystr);
+#endif
+
+            }
 
             expire = getExpire(db,&key);
             if (rdbSaveKeyValuePair(rdb,&key,o,expire) == -1) goto werr;

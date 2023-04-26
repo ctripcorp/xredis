@@ -541,6 +541,15 @@ NULL
          * it back. */
         if (save) {
             rdbSaveInfo rsi, *rsiptr;
+
+            /* debug reload is executed without global lock, there might be
+             * inprogress request which could result in in keys not save
+             * consistent. e.g. if hot hash swap out in flight, hash object
+             * is cleaned by swapDataCleanObject, but keyspace (db.dict &
+             * db.meta) not yet modified, then hash will be considered hot
+             * and saved as hot (empty hash). */
+            asyncCompleteQueueDrain(-1);
+
             rsiptr = rdbPopulateSaveInfo(&rsi);
             if (rdbSave(server.rdb_filename,rsiptr) != C_OK) {
                 addReplyErrorObject(c,shared.err);
