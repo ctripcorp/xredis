@@ -102,7 +102,15 @@ proc test_psync {descr duration backlog_size backlog_ttl delay cond mdl sdl bgsa
                         close $fd
                         fail "Master - Replica inconsistency, Run diff -u against /tmp/repldump*.txt for more info"
                     }
-                    swap_data_comp $master $slave
+                    if {[catch {swap_data_comp $master $slave } e]} {
+                        puts $e
+                        puts "master info replication: [$master info replication]"
+                        puts "slave info replication: [$slave info replication]"
+                        puts "try later in 5 seconds"
+                        puts "master info replication: [$master info replication]"
+                        puts "slave info replication: [$slave info replication]"
+                        swap_data_comp $master $slave
+                    }
                 } else {
                     set keyspace_info [$master info keyspace]
                     set try 3

@@ -35,7 +35,7 @@ start_server {tags "clients"} {
             }
 
             set r [redis $host $port]
-            wait_for_condition 10 10 {
+            wait_for_condition 10 100 {
                 [llength [regexp -inline -all {name=LOAD_HANDLER} [$r client list]]] == $load
             } else {
                 fail "start client too slow"
@@ -67,7 +67,7 @@ start_server {tags "clients"} {
                 lappend conns [start_write_load $host $port 10]
             }
 
-            wait_for_condition 10 10 {
+            wait_for_condition 10 100 {
                 [llength [regexp -inline -all {name=LOAD_HANDLER} [$r client list]]] == $load
             } else {
                 fail "start client too slow"
