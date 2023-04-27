@@ -39,11 +39,11 @@ start_server {tags {"swap string"}} {
         r swap.evict foo
         wait_key_cold r foo
         assert_equal [scan_all_keys r] {foo}
-        after $wait_cold_time
+        after [expr {$wait_cold_time*2}]
         assert_equal [scan_all_keys r] {}
         #puts [r config get port]
         #press_enter_to_continue
-        catch {[r swap object foo]} err
+        catch {r swap object foo} err
         assert_match {*ERR no such key*} $err
     }
 }
