@@ -60,6 +60,7 @@ typedef struct listMetaIterator {
     int segidx; /* current segment index */
     int segtype; /* current segment type */
     int segtypes; /* segment type type, SEGMENT_TYPE_BOTH iterates all ridx. */
+    int direction; /* LIST_HEAD or LIST_TAIL */
     listMeta *meta; /* ref to meta */
 } listMetaIterator;
 
@@ -69,42 +70,53 @@ static inline long listGetInitialRidx(long index) {
     return index + LIST_INITIAL_INDEX;
 }
 
+static inline long listGetIdxFromRidx(long ridx) {
+    return ridx - LIST_INITIAL_INDEX;
+}
+
 static inline int segmentTypeMatch(int segtypes, int segtype) {
     return segtype == segtypes || segtypes == SEGMENT_TYPE_BOTH;
 }
 
-void listMetaIteratorInitWithType(listMetaIterator *iter, listMeta *meta, int segtypes) {
-    int segidx = 0;
+void listMetaIteratorInitWithType(listMetaIterator *iter, listMeta *meta,
+        int segtypes, int direction) {
+    int segidx;
     segment *seg;
 
     iter->meta = meta;
     iter->segtypes = segtypes;
+    iter->direction = direction;
 
     if (meta->len <= 0) {
         iter->ridx = LIST_META_ITER_FINISHED;
         return;
     }
-    
+
     serverAssert(meta->num > 0);
 
+    segidx = direction == LIST_TAIL ? 0 : meta->num-1;
     /* skip leading empty segments or unmatched */
-    while (segidx < meta->num) {
+    while ((direction == LIST_TAIL && segidx < meta->num) ||
+            (direction == LIST_HEAD && segidx >= 0)) {
         seg = meta->segments + segidx;
         if (seg->len > 0 && segmentTypeMatch(segtypes,seg->type)) {
             iter->segidx = segidx;
-            iter->ridx = seg->index;
+            iter->ridx = direction == LIST_TAIL ? seg->index : seg->index+seg->len-1;
             iter->segtype = seg->type;
             break;
         } else {
-            segidx++;
+            direction == LIST_TAIL ? segidx++ : segidx--;
         }
     }
-    if (segidx == meta->num)
+    if ((direction == LIST_TAIL && segidx >= meta->num) ||
+        (direction == LIST_HEAD && segidx < 0)) {
         iter->ridx = LIST_META_ITER_FINISHED;
+    }
 }
 
-void listMetaIteratorInit(listMetaIterator *iter, listMeta *meta) {
-    listMetaIteratorInitWithType(iter,meta,SEGMENT_TYPE_BOTH);
+void listMetaIteratorInit(listMetaIterator *iter, listMeta *meta,
+        int direction) {
+    listMetaIteratorInitWithType(iter,meta,SEGMENT_TYPE_BOTH,direction);
 }
 
 void listMetaIteratorDeinit(listMetaIterator *iter) {
@@ -117,22 +129,26 @@ int listMetaIterFinished(listMetaIterator *iter) {
 
 void listMetaIterNext(listMetaIterator *iter) {
     int segidx = iter->segidx;
+    int direction = iter->direction;
     segment *seg = NULL;
 
     if (listMetaIterFinished(iter)) return;
 
-    iter->ridx++;
+    direction == LIST_TAIL ? iter->ridx++ : iter->ridx--;
 
     /* current segment is ok */
     seg = iter->meta->segments + segidx;
-    if (iter->ridx < seg->index + seg->len) return;
+    if ((direction == LIST_TAIL && iter->ridx < seg->index + seg->len) ||
+        (direction == LIST_HEAD && iter->ridx >= seg->index))
+         return;
 
     /* current segment iter finished, find next valid segment. */
     while (1) {
-        segidx++;
+        direction == LIST_TAIL ? segidx++ : segidx--;
 
         /* can't find any valid segment. */
-        if (segidx >= iter->meta->num) {
+        if ((direction == LIST_TAIL && segidx >= iter->meta->num) ||
+            (direction == LIST_HEAD && segidx < 0)) {
             iter->ridx = LIST_META_ITER_FINISHED;
             break;
         }
@@ -147,7 +163,7 @@ void listMetaIterNext(listMetaIterator *iter) {
 
         /* candidate is confirmed valid by now. */
         iter->segidx = segidx;
-        iter->ridx = seg->index;
+        iter->ridx = direction == LIST_TAIL ? seg->index : seg->index+seg->len-1;
         iter->segtype = seg->type;
         break;
     }
@@ -225,7 +241,7 @@ end:
 #define LITS_META_STRICT_SENSABLE_RIDX_MIN  (LONG_MAX>>2)
 #define LITS_META_STRICT_SENSABLE_RIDX_MAX  ((LONG_MAX>>2) + (LONG_MAX>>1))
 
-/* List meta segments are constinuous, req meta aren't . */ 
+/* List meta segments are constinuous, req meta aren't . */
 int listMetaIsValid(listMeta *list_meta, int strict) {
     segment *seg;
     long i, expected_len = 0, next_index = -1;
@@ -239,7 +255,7 @@ int listMetaIsValid(listMeta *list_meta, int strict) {
         if (seg->len < 0) return 0;
         if (seg->len == 0 && noempty) return 0;
         if (ridx && (seg->index < LITS_META_STRICT_SENSABLE_RIDX_MIN || seg->index > LITS_META_STRICT_SENSABLE_RIDX_MAX)) return 0;
-        if (next_index == -1 || 
+        if (next_index == -1 ||
                 (continuous && next_index == seg->index) ||
                 next_index <= seg->index) {
             next_index = seg->index + seg->len;
@@ -282,7 +298,7 @@ static int listMetaAppendSegment_(listMeta *list_meta, int type, long index,
             if (last->index + last->len > index) return -1;
         }
 
-        /* merge if continuous. */ 
+        /* merge if continuous. */
         if (last->index + last->len == index &&
                 last->type == type) {
             last->len += len;
@@ -292,7 +308,7 @@ static int listMetaAppendSegment_(listMeta *list_meta, int type, long index,
     }
 
     listMetaMakeRoomFor(list_meta,list_meta->num+1);
-   
+
     cur = list_meta->segments + list_meta->num++;
     cur->index = index;
     cur->len = len;
@@ -367,7 +383,7 @@ void listMetaSearchOverlaps(listMeta *list_meta, segment *seg,
     *right = l;
 }
 
-static int insegment(segment *seg, long index) {
+static inline int insegment(segment *seg, long index) {
     return seg->index <= index && index < seg->index + seg->len;
 }
 
@@ -399,7 +415,7 @@ listMeta *listMetaCalculateSwapInMeta(listMeta *list_meta, listMeta *req_meta) {
                 continue;
 
             /* if list cold segment is not much bigger than request segment,
-             * then swapin the whole segment to reduce list segments */ 
+             * then swapin the whole segment to reduce list segments */
             if (req_seg->index - list_seg->index <= SEGMENT_MAX_PADDING) {
                 left_index = list_seg->index;
             } else {
@@ -423,53 +439,53 @@ listMeta *listMetaCalculateSwapInMeta(listMeta *list_meta, listMeta *req_meta) {
     return swap_meta;
 }
 
-/* Swap out from middle to boundry (boundray are accessed more frequent) */
+#define LIST_SWPOUT_OFFSET 32
+long listMetaLength(listMeta *list_meta, int type);
+
+/* Swap out from LIST_SWPOUT_OFFSET (boundray are accessed more frequent) */
 listMeta *listMetaCalculateSwapOutMeta(listMeta *list_meta) {
     listMeta *swap_meta = listMetaCreate();
-    long max_eles;
-    int l = (list_meta->num-1)/2, r = l+1, x, select_right;
+    long max_eles, maxskip, nhot;
+    int x = 0;
 
     max_eles = server.swap_evict_step_max_memory/DEFAULT_LIST_ELE_SIZE;
     if (max_eles > server.swap_evict_step_max_subkeys)
         max_eles = server.swap_evict_step_max_subkeys;
 
-    while (max_eles > 0 && (l >= 0 || r < list_meta->num)) {
+    nhot = listMetaLength(list_meta,SEGMENT_TYPE_HOT);
+    if (nhot <= max_eles) {
+        maxskip = 0;
+    } else if (nhot < max_eles + 2*LIST_SWPOUT_OFFSET) {
+        maxskip = (nhot-max_eles)/2;
+    } else {
+        maxskip = LIST_SWPOUT_OFFSET;
+    }
+
+    for (x = 0; x < list_meta->num && max_eles > 0; x++) {
+        segment *seg = list_meta->segments + x;
         long index, len;
-        segment *seg;
 
-        if (r >= list_meta->num) {
-            x = l--;
-            select_right = 0;
-        } else if (l < 0) {
-            x = r++;
-            select_right = 1;
-        } else if (l+1 > list_meta->num - r) {
-            x = l--;
-            select_right = 0;
-        } else {
-            x = r++;
-            select_right = 1;
-        }
-
-        seg = list_meta->segments + x;
         if (seg->type == SEGMENT_TYPE_COLD)
             continue;
 
-        len = seg->len <= max_eles ? seg->len : max_eles;
-        max_eles -= len;
-
-        if (select_right) {
-            index = seg->index;
+        if (x == 0 && maxskip > 0) {
+            /* reserve some elements if first segment is hot */
+            long skip = maxskip < seg->len ? maxskip : seg->len;
+            index = seg->index + skip;
+            len = seg->len - skip;
         } else {
-            index = seg->index + seg->len - len;
+            index = seg->index;
+            len = seg->len;
         }
 
-        listMetaAppendSegmentWithoutCheck(swap_meta,SEGMENT_TYPE_COLD,index,len);
-    }
+        if (len > max_eles) len = max_eles;
 
-    /* By now, segments are ordered in zig-zag style, sort to normalize it. */
-    qsort(swap_meta->segments,swap_meta->num,sizeof(segment),
-            sortSegmentByIndex);
+        if (len > 0) {
+            max_eles -= len;
+            listMetaAppendSegmentWithoutCheck(swap_meta,
+                    SEGMENT_TYPE_COLD,index,len);
+        }
+    }
 
     listMetaDefrag(swap_meta);
 
@@ -564,8 +580,6 @@ listMeta *listMetaAlign(listMeta *main, listMeta *delta) {
 static int listMetaUpdate(listMeta *list_meta, long index, int type) {
     segment *cur, *prev, *next;
     int l, r, m;
-
-    serverAssert(listMetaIsValid(list_meta,LIST_META_STRICT_CONTINOUS));
 
     l = 0, r = list_meta->num;
     while (l < r) {
@@ -765,6 +779,24 @@ sds listMetaDump(sds result, listMeta *lm) {
     return result;
 }
 
+long listMetaGetMeanRidx(listMeta *list_meta, int segtypes) {
+    long idx_sum = 0, len = 0;
+
+    for (int i = 0; i < list_meta->num; i++) {
+        segment *seg = list_meta->segments+i;
+        long idx = listGetIdxFromRidx(seg->index);
+
+        if (!segmentTypeMatch(segtypes,seg->type)) continue;
+
+        idx_sum += (idx*2+seg->len-1)*seg->len/2;
+        len += seg->len;
+    }
+
+    idx_sum = len > 0 ? idx_sum/len : 0;
+
+    return listGetInitialRidx(idx_sum);
+}
+
 /* Meta list */
 typedef struct metaList {
     listMeta *meta;
@@ -777,13 +809,13 @@ typedef struct metaListIterator {
     listTypeEntry list_entry[1];
 } metaListIterator;
 
-void metaListIterInit(metaListIterator *iter, metaList *ml) {
-    listMetaIteratorInitWithType(iter->meta_iter,ml->meta,SEGMENT_TYPE_HOT);
-    iter->list_iter = listTypeInitIterator(ml->list,0,LIST_TAIL);
+static inline void metaListIterInit(metaListIterator *iter, metaList *ml, int direction) {
+    listMetaIteratorInitWithType(iter->meta_iter,ml->meta,SEGMENT_TYPE_HOT,direction);
+    iter->list_iter = listTypeInitIterator(ml->list,direction == LIST_HEAD ? -1 : 0,direction);
     listTypeNext(iter->list_iter,iter->list_entry);
 }
 
-void metaListIterDeinit(metaListIterator *iter) {
+static inline void metaListIterDeinit(metaListIterator *iter) {
     if (iter->list_iter) {
         listTypeReleaseIterator(iter->list_iter);
         iter->list_iter = NULL;
@@ -791,21 +823,21 @@ void metaListIterDeinit(metaListIterator *iter) {
     listMetaIteratorDeinit(iter->meta_iter);
 }
 
-void metaListIterNext(metaListIterator *iter) {
+static inline void metaListIterNext(metaListIterator *iter) {
     listTypeNext(iter->list_iter,iter->list_entry);
     listMetaIterNext(iter->meta_iter);
 }
 
-long metaListIterCur(metaListIterator *iter, int *segtype, robj **value) {
+static inline long metaListIterCur(metaListIterator *iter, int *segtype, robj **value) {
     if (value) *value = listTypeGet(iter->list_entry);
     return listMetaIterCur(iter->meta_iter,segtype);
 }
 
-int metaListIterFinished(metaListIterator *iter) {
+static inline int metaListIterFinished(metaListIterator *iter) {
     return listMetaIterFinished(iter->meta_iter);
 }
 
-int metaListIsValid(metaList *ml, int strict) {
+static inline int metaListIsValid(metaList *ml, int strict) {
     if (!listMetaIsValid(ml->meta,strict)) return 0;
     return (long)listTypeLength(ml->list) <= ml->meta->len;
 }
@@ -839,7 +871,7 @@ void metaListDestroy(metaList *ml) {
 
 sds metaListDump(sds result, metaList *ml) {
     metaListIterator iter;
-    metaListIterInit(&iter,ml);
+    metaListIterInit(&iter,ml,LIST_TAIL);
     result = sdscatprintf(result,"(len=%ld,list=[",listTypeLength(ml->list));
     while (!metaListIterFinished(&iter)) {
         int segtype;
@@ -891,28 +923,38 @@ long metaListLen(metaList *ml, int type) {
     }
 }
 
-int metaListInsert(metaList *main, long ridx, robj *value) {
-    int insert = 0, segtype;
+int metaListInsert(metaList *main, int direction, long ridx, robj *value) {
+    int insert = 0, segtype, where;
     metaListIterator iter;
 
-    metaListIterInit(&iter,main);
+    metaListIterInit(&iter,main,direction);
     while (!metaListIterFinished(&iter)) {
         long curidx = metaListIterCur(&iter,&segtype,NULL);
         /* ridx is hot, not inserted */
         if (curidx == ridx) break;
-        if (curidx > ridx) {
-            insert = 1;
-            break;
+
+        if (direction == LIST_TAIL) {
+            if (curidx > ridx) {
+                insert = 1, where = LIST_HEAD;
+                break;
+            }
+        } else {
+            if (curidx < ridx) {
+                insert = 1, where = LIST_TAIL;
+                break;
+            }
         }
+
         metaListIterNext(&iter);
     }
 
     if (insert) {
         listMetaUpdate(main->meta,ridx,SEGMENT_TYPE_HOT);
-        listTypeInsert(iter.list_entry,value,LIST_HEAD);
+        listTypeInsert(iter.list_entry,value,where);
     } else if (metaListIterFinished(&iter)) {
+        where = direction == LIST_TAIL ? LIST_HEAD : LIST_TAIL;
         listMetaUpdate(main->meta,ridx,SEGMENT_TYPE_HOT);
-        listTypePush(main->list,value,LIST_TAIL);
+        listTypePush(main->list,value,where);
         insert = 1;
     }
 
@@ -921,18 +963,21 @@ int metaListInsert(metaList *main, long ridx, robj *value) {
     return insert;
 }
 
-int metaListDelete(metaList *main, long ridx) {
+int metaListDelete(metaList *main, int direction, long ridx) {
     int delete = 0, segtype;
     metaListIterator iter;
 
-    metaListIterInit(&iter,main);
+    metaListIterInit(&iter,main,direction);
     while (!metaListIterFinished(&iter)) {
         long curidx = metaListIterCur(&iter,&segtype,NULL);
         if (curidx == ridx) {
             delete = 1;
             break;
         }
-        if (curidx > ridx) break;
+        if ((direction == LIST_TAIL && curidx > ridx) ||
+            (direction == LIST_HEAD && curidx < ridx)) {
+            break;
+        }
         metaListIterNext(&iter);
     }
 
@@ -946,9 +991,10 @@ int metaListDelete(metaList *main, long ridx) {
 }
 
 long metaListMerge(metaList *main, metaList *delta) {
-    long merged = 0, ridx;
+    long merged = 0, ridx, main_mean_ridx, delta_mean_ridx;
     int segtype;
     metaListIterator delta_iter;
+    int delta_direction, main_direction;
 
     serverAssert(metaListIsValid(main,LIST_META_STRICT_NOEMPTY|LIST_META_STRICT_CONTINOUS));
     serverAssert(metaListIsValid(delta,0));
@@ -960,7 +1006,7 @@ long metaListMerge(metaList *main, metaList *delta) {
         delta->meta = listMetaAlign(main->meta, orig_delta_meta);
         listMetaFree(orig_delta_meta);
         metaListSwap(main,delta);
-        
+
 #ifdef SWAP_LIST_DEBUG
         sds main_dump = listMetaDump(sdsempty(),main->meta);
         sds delta_dump = listMetaDump(sdsempty(),delta->meta);
@@ -971,17 +1017,26 @@ long metaListMerge(metaList *main, metaList *delta) {
 #endif
     }
 
-    metaListIterInit(&delta_iter,delta);
+    main_mean_ridx = listMetaGetMeanRidx(main->meta,SEGMENT_TYPE_HOT);
+    delta_mean_ridx = listMetaGetMeanRidx(delta->meta,SEGMENT_TYPE_HOT);
+
+    /* Choose delta iter direction so that previously merged elements will
+     * not be traversed again */
+    delta_direction = delta_mean_ridx < main_mean_ridx ? LIST_HEAD : LIST_TAIL;
+
+    metaListIterInit(&delta_iter,delta,delta_direction);
     while (!metaListIterFinished(&delta_iter)) {
         robj *ele;
 
         ridx = metaListIterCur(&delta_iter,&segtype,&ele);
         serverAssert(segtype == SEGMENT_TYPE_HOT);
-        merged += metaListInsert(main,ridx,ele);
+        /* Choose main iter direction to traverse less elements. */
+        main_direction = ridx < main_mean_ridx ? LIST_TAIL : LIST_HEAD;
+        merged += metaListInsert(main,main_direction,ridx,ele);
         metaListIterNext(&delta_iter);
 
 #ifdef SWAP_LIST_DEBUG
-        sds ele_dump = ele->encoding == OBJ_ENCODING_INT ? 
+        sds ele_dump = ele->encoding == OBJ_ENCODING_INT ?
             sdsfromlonglong((long)ele->ptr) : sdsdup(ele->ptr);
         sds main_dump = listMetaDump(sdsempty(),main->meta);
         sds delta_dump = listMetaDump(sdsempty(),delta->meta);
@@ -1002,12 +1057,18 @@ long metaListMerge(metaList *main, metaList *delta) {
 }
 
 int metaListSelect(metaList *main, listMeta *delta, selectElementCallback cb, void *pd) {
-    long selected = 0;
+    long selected = 0, main_mean_ridx, delta_mean_ridx;
     metaListIterator main_iter;
     listMetaIterator delta_iter;
+    int direction;
 
-    metaListIterInit(&main_iter,main);
-    listMetaIteratorInit(&delta_iter,delta);
+    main_mean_ridx = listMetaGetMeanRidx(main->meta,SEGMENT_TYPE_HOT);
+    delta_mean_ridx = listMetaGetMeanRidx(delta,SEGMENT_TYPE_COLD);
+
+    direction = delta_mean_ridx <= main_mean_ridx ? LIST_TAIL : LIST_HEAD;
+
+    metaListIterInit(&main_iter,main,direction);
+    listMetaIteratorInit(&delta_iter,delta,direction);
 
     while (!listMetaIterFinished(&delta_iter) && !metaListIterFinished(&main_iter)) {
         int delta_type, main_type;
@@ -1019,7 +1080,8 @@ int metaListSelect(metaList *main, listMeta *delta, selectElementCallback cb, vo
         main_ridx = metaListIterCur(&main_iter,&main_type,NULL);
         serverAssert(main_type == SEGMENT_TYPE_HOT);
 
-        if (delta_ridx < main_ridx) {
+        if ((direction == LIST_TAIL && delta_ridx < main_ridx) ||
+            (direction == LIST_HEAD && delta_ridx > main_ridx)) {
             listMetaIterNext(&delta_iter);
         } else if (delta_ridx == main_ridx) {
             robj *ele = NULL;
@@ -1039,15 +1101,22 @@ int metaListSelect(metaList *main, listMeta *delta, selectElementCallback cb, vo
 }
 
 int metaListExclude(metaList *main, listMeta *delta) {
-    long excluded = 0;
+    long excluded = 0, main_mean_ridx, delta_mean_ridx;
     listMetaIterator delta_iter;
+    int main_direction, delta_direction;
 
-    listMetaIteratorInit(&delta_iter, delta);
+    main_mean_ridx = listMetaGetMeanRidx(main->meta,SEGMENT_TYPE_HOT);
+    delta_mean_ridx = listMetaGetMeanRidx(delta,SEGMENT_TYPE_HOT);
+
+    delta_direction = delta_mean_ridx < main_mean_ridx ? LIST_TAIL : LIST_HEAD;
+
+    listMetaIteratorInit(&delta_iter,delta,delta_direction);
     while (!listMetaIterFinished(&delta_iter)) {
         int segtype;
         long ridx = listMetaIterCur(&delta_iter,&segtype);
         serverAssert(segtype == SEGMENT_TYPE_COLD);
-        excluded += metaListDelete(main,ridx);
+        main_direction = ridx < main_mean_ridx ? LIST_TAIL : LIST_HEAD;
+        excluded += metaListDelete(main,main_direction,ridx);
         listMetaIterNext(&delta_iter);
 
 #ifdef SWAP_LIST_DEBUG
@@ -1119,7 +1188,7 @@ static listMeta *decodeListMeta(const char *extend, size_t extlen) {
 
     if (extlen != lm->num * (sizeof(segtype) + sizeof(ridx) + sizeof(len)))
         goto err;
-    
+
     listMetaMakeRoomFor(lm,lm->num);
 
     for (int i = 0; i < lm->num; i++) {
@@ -1413,7 +1482,7 @@ int listEncodeKeys(swapData *data, int intention, void *datactx_,
     cfs = zmalloc(sizeof(int)*swap_meta->len);
     rawkeys = zmalloc(sizeof(sds)*swap_meta->len);
 
-    listMetaIteratorInitWithType(&iter,swap_meta,SEGMENT_TYPE_HOT);
+    listMetaIteratorInitWithType(&iter,swap_meta,SEGMENT_TYPE_HOT,LIST_TAIL);
     while (!listMetaIterFinished(&iter)) {
         long ridx = listMetaIterCur(&iter,NULL);
         cfs[neles] = DATA_CF;
@@ -1719,7 +1788,7 @@ void argRewritesFree(argRewrites *arg_rewrites) {
 void clientArgRewritesRestore(client *c) {
     for (int i = 0; i < c->swap_arg_rewrites->num; i++) {
         argRewrite *rewrite = c->swap_arg_rewrites->rewrites+i;
-        int mstate_idx = rewrite->arg_req.mstate_idx, arg_idx = rewrite->arg_req.arg_idx; 
+        int mstate_idx = rewrite->arg_req.mstate_idx, arg_idx = rewrite->arg_req.arg_idx;
         if (mstate_idx < 0) {
             serverAssert(arg_idx < c->argc);
             decrRefCount(c->argv[arg_idx]);
@@ -1900,10 +1969,10 @@ static inline listMeta *lookupListMeta(redisDb *db, robj *key) {
 
 void ctripListTypePush(robj *subject, robj *value, int where, redisDb *db, robj *key) {
     listTypePush(subject,value,where);
-    if (server.swap_mode == SWAP_MODE_MEMORY) return; 
+    if (server.swap_mode == SWAP_MODE_MEMORY) return;
     long head = where == LIST_HEAD ? 1 : 0;
     long tail = where == LIST_TAIL ? 1 : 0;
-    listMeta *meta = lookupListMeta(db,key); 
+    listMeta *meta = lookupListMeta(db,key);
     if (meta) listMetaExtend(meta,head,tail);
 }
 
@@ -1912,14 +1981,14 @@ robj *ctripListTypePop(robj *subject, int where, redisDb *db, robj *key) {
     if (server.swap_mode == SWAP_MODE_MEMORY) return val;
     long head = where == LIST_HEAD ? -1 : 0;
     long tail = where == LIST_TAIL ? -1 : 0;
-    listMeta *meta = lookupListMeta(db,key); 
+    listMeta *meta = lookupListMeta(db,key);
     if (meta) listMetaExtend(meta,head,tail);
     return val;
 }
 
 void ctripListMetaDelRange(redisDb *db, robj *key, long ltrim, long rtrim) {
     if (server.swap_mode == SWAP_MODE_MEMORY) return;
-    listMeta *meta = lookupListMeta(db,key); 
+    listMeta *meta = lookupListMeta(db,key);
     if (meta) listMetaExtend(meta,-ltrim,-rtrim);
 }
 
@@ -1934,7 +2003,7 @@ void *listSaveIterCreate(objectMeta *object_meta, robj *list) {
     metaList main = {meta, list};
     serverAssert(list != NULL);
     serverAssert((long)listTypeLength(list) == listMetaLength(meta,SEGMENT_TYPE_HOT));
-    metaListIterInit(iter,&main);
+    metaListIterInit(iter,&main,LIST_TAIL);
     return iter;
 }
 
@@ -1997,7 +2066,7 @@ int listSave(rdbKeySaveData *save, rio *rdb, decodedData *decoded) {
         /* check failed, skip this key */
         return 0;
     }
-    
+
     /* save elements in prior to current saving ridx in memlist */
     ridx = listDecodeRidx(decoded->subkey,sdslen(decoded->subkey));
     listSaveHotElementsUntill(save,rdb,ridx);
@@ -2158,7 +2227,7 @@ int listLoadWithValue(struct rdbKeyLoadData *load, rio *rdb, int *cf,
     listTypeEntry entry;
     robj *ele;
     long ridx;
-    
+
     UNUSED(rdb);
 
     serverAssert(listTypeNext(load->iter,&entry));
@@ -2267,7 +2336,7 @@ void metaListPopulateList(metaList *ml) {
     long ridx;
     listMetaIterator iter;
 
-    listMetaIteratorInit(&iter,ml->meta);
+    listMetaIteratorInit(&iter,ml->meta,LIST_TAIL);
     while (!listMetaIterFinished(&iter)) {
         ridx = listMetaIterCur(&iter,&segtype);
         if (segtype == SEGMENT_TYPE_HOT) {
@@ -2332,19 +2401,22 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
     TEST("list-meta: iterator") {
         listMetaIterator iter;
         listMeta *lm = listMetaCreate();
-        listMetaIteratorInit(&iter,lm);
+        listMetaIteratorInit(&iter,lm,LIST_TAIL);
         test_assert(listMetaIterFinished(&iter));
         listMetaIteratorDeinit(&iter);
         listMetaAppendSegmentWithoutCheck(lm,SEGMENT_TYPE_HOT,0,0);
         listMetaAppendSegmentWithoutCheck(lm,SEGMENT_TYPE_HOT,0,0);
-        listMetaIteratorInit(&iter,lm);
+        listMetaIteratorInit(&iter,lm,LIST_TAIL);
+        test_assert(listMetaIterFinished(&iter));
+        listMetaIteratorDeinit(&iter);
+        listMetaIteratorInit(&iter,lm,LIST_HEAD);
         test_assert(listMetaIterFinished(&iter));
         listMetaIteratorDeinit(&iter);
         listMetaAppendSegmentWithoutCheck(lm,SEGMENT_TYPE_HOT,0,2);
         listMetaAppendSegmentWithoutCheck(lm,SEGMENT_TYPE_COLD,2,2);
         listMetaAppendSegmentWithoutCheck(lm,SEGMENT_TYPE_HOT,4,0);
         listMetaAppendSegmentWithoutCheck(lm,SEGMENT_TYPE_COLD,4,1);
-        listMetaIteratorInit(&iter,lm);
+        listMetaIteratorInit(&iter,lm,LIST_TAIL);
         test_assert(!listMetaIterFinished(&iter) && listMetaIterCur(&iter,NULL) == 0);
         listMetaIterNext(&iter);
         test_assert(!listMetaIterFinished(&iter) && listMetaIterCur(&iter,NULL) == 1);
@@ -2354,6 +2426,19 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         test_assert(!listMetaIterFinished(&iter) && listMetaIterCur(&iter,NULL) == 3);
         listMetaIterNext(&iter);
         test_assert(!listMetaIterFinished(&iter) && listMetaIterCur(&iter,NULL) == 4);
+        listMetaIterNext(&iter);
+        test_assert(listMetaIterFinished(&iter));
+        listMetaIteratorDeinit(&iter);
+        listMetaIteratorInit(&iter,lm,LIST_HEAD);
+        test_assert(!listMetaIterFinished(&iter) && listMetaIterCur(&iter,NULL) == 4);
+        listMetaIterNext(&iter);
+        test_assert(!listMetaIterFinished(&iter) && listMetaIterCur(&iter,NULL) == 3);
+        listMetaIterNext(&iter);
+        test_assert(!listMetaIterFinished(&iter) && listMetaIterCur(&iter,NULL) == 2);
+        listMetaIterNext(&iter);
+        test_assert(!listMetaIterFinished(&iter) && listMetaIterCur(&iter,NULL) == 1);
+        listMetaIterNext(&iter);
+        test_assert(!listMetaIterFinished(&iter) && listMetaIterCur(&iter,NULL) == 0);
         listMetaIterNext(&iter);
         test_assert(listMetaIterFinished(&iter));
         listMetaIteratorDeinit(&iter);
@@ -2415,15 +2500,15 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         qm = listMetaNormalizeFromRequest(0,2,ltrim2,4);
         test_assert(listMetaIsValid(qm,0));
         test_assert(qm->num == 2 && qm->len == 4);
-        test_assert(qm->segments[0].index == 0 && qm->segments[0].len == 2); 
-        test_assert(qm->segments[1].index == 2 && qm->segments[0].len == 2); 
+        test_assert(qm->segments[0].index == 0 && qm->segments[0].len == 2);
+        test_assert(qm->segments[1].index == 2 && qm->segments[0].len == 2);
         listMetaFree(qm);
 
         range within_range[2] = { {0,1},{-5,-4}};
         qm = listMetaNormalizeFromRequest(0,2,within_range,4);
         test_assert(qm->num == 2 && qm->len == 3);
-        test_assert(qm->segments[0].index == 0 && qm->segments[0].len == 2); 
-        test_assert(qm->segments[1].index == 0 && qm->segments[1].len == 1); 
+        test_assert(qm->segments[0].index == 0 && qm->segments[0].len == 2);
+        test_assert(qm->segments[1].index == 0 && qm->segments[1].len == 1);
         listMetaFree(qm);
 
         range exceed_range[2] = { {0,1},{-5,-5}};
@@ -2523,7 +2608,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         /* complex */
         listMetaReset(lm);
         listMetaPush6Seg(lm);
-        
+
         range req1[1] = {{15,44}};
         qm = listMetaNormalizeFromRequest(0,1,req1,60);
         sm = listMetaCalculateSwapInMeta(lm,qm);
@@ -2552,7 +2637,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         server.swap_evict_step_max_subkeys = 5;
         sm = listMetaCalculateSwapOutMeta(lm);
         test_assert(sm->num == 1 && sm->len == 5);
-        test_assert(sm->segments[0].index == 5 && sm->segments[0].len == 5);
+        test_assert(sm->segments[0].index == 2 && sm->segments[0].len == 5);
         listMetaFree(sm);
 
         server.swap_evict_step_max_subkeys = 20;
@@ -2572,9 +2657,10 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
 
         server.swap_evict_step_max_subkeys = 15;
         sm = listMetaCalculateSwapOutMeta(lm);
-        test_assert(sm->num == 2 && sm->len == 15);
-        test_assert(sm->segments[0].index == 20 && sm->segments[0].len == 10);
-        test_assert(sm->segments[1].index == 40 && sm->segments[1].len == 5);
+        test_assert(sm->num == 3 && sm->len == 15);
+        test_assert(sm->segments[0].index == 7 && sm->segments[0].len == 3);
+        test_assert(sm->segments[1].index == 20 && sm->segments[1].len == 10);
+        test_assert(sm->segments[2].index == 40 && sm->segments[2].len == 2);
         listMetaFree(sm);
 
         server.swap_evict_step_max_subkeys = 40;
@@ -2592,6 +2678,17 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         test_assert(listMetaGetMidx(lm,20) == 10);
         test_assert(listMetaGetMidx(lm,45) == 25);
         test_assert(listMetaGetMidx(lm,55) == 30);
+        listMetaFree(lm);
+    }
+
+    TEST("list-meta: get mean ridx") {
+        listMeta *lm = listMetaCreate();
+        listMetaAppendSegment(lm,SEGMENT_TYPE_HOT,listGetInitialRidx(0),10);
+        listMetaAppendSegment(lm,SEGMENT_TYPE_COLD,listGetInitialRidx(10),10);
+        listMetaAppendSegment(lm,SEGMENT_TYPE_HOT,listGetInitialRidx(20),10);
+        test_assert(listMetaGetMeanRidx(lm,SEGMENT_TYPE_COLD) == listGetInitialRidx(14));
+        test_assert(listMetaGetMeanRidx(lm,SEGMENT_TYPE_HOT) == listGetInitialRidx(14));
+        test_assert(listMetaGetMeanRidx(lm,SEGMENT_TYPE_BOTH) == listGetInitialRidx(14));
         listMetaFree(lm);
     }
 
@@ -2685,7 +2782,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         metaList *main = metaListBuild(meta,list);
 
         metaListPush6Seg(main);
-        
+
         /* skip if overlaps with main hot */
         range req1[1] = { {5,5} };
         listMeta *meta1 = listMetaNormalizeFromRequest(0,1,req1,60);
@@ -2747,7 +2844,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         metaList *main = metaListBuild(meta,list);
 
         metaListPush6Seg(main);
-        
+
         /* skip if overlaps with main cold */
         range req1[1] = { {10,11} };
         listMeta *meta1 = listMetaNormalizeFromRequest(0,1,req1,60);
@@ -3006,7 +3103,7 @@ int swapListDataTest(int argc, char *argv[], int accurate) {
         listMeta *purelm = listMetaCreate();
         listMetaAppendSegment(purelm,SEGMENT_TYPE_HOT,0,3);
         objectMeta *puremeta = createListObjectMeta(0,purelm);
-        swapDataSetNewObjectMeta(puredata,puremeta);  
+        swapDataSetNewObjectMeta(puredata,puremeta);
         swap_meta = listMetaCreate();
         listMetaAppendSegment(swap_meta,SEGMENT_TYPE_COLD,1,2);
         purectx->swap_meta = swap_meta;
@@ -3041,7 +3138,7 @@ int swapListDataTest(int argc, char *argv[], int accurate) {
         value = lookupKey(db,coldkey,LOOKUP_NOTOUCH);
         test_assert(value != NULL && listTypeLength(value) == 1);
         object_meta = lookupMeta(db,coldkey);
-        test_assert(object_meta != NULL && 
+        test_assert(object_meta != NULL &&
                 listMetaLength(objectMetaGetPtr(object_meta),SEGMENT_TYPE_BOTH) == 3 &&
                 listMetaLength(objectMetaGetPtr(object_meta),SEGMENT_TYPE_HOT) == 1);
 
@@ -3072,7 +3169,7 @@ int swapListDataTest(int argc, char *argv[], int accurate) {
         listMeta *purelm = listMetaCreate();
         listMetaAppendSegment(purelm,SEGMENT_TYPE_HOT,0,3);
         objectMeta *puremeta = createListObjectMeta(0,purelm);
-        swapDataSetNewObjectMeta(puredata,puremeta);  
+        swapDataSetNewObjectMeta(puredata,puremeta);
         swap_meta = listMetaCreate();
         listMetaAppendSegment(swap_meta,SEGMENT_TYPE_COLD,0,3);
         purectx->swap_meta = swap_meta;
@@ -3094,7 +3191,7 @@ int swapListDataTest(int argc, char *argv[], int accurate) {
         value = lookupKey(db,coldkey,LOOKUP_NOTOUCH);
         test_assert(value != NULL && listTypeLength(value) == 3);
         object_meta = lookupMeta(db,coldkey);
-        test_assert(object_meta != NULL && 
+        test_assert(object_meta != NULL &&
                 listMetaLength(objectMetaGetPtr(object_meta),SEGMENT_TYPE_BOTH) == 3 &&
                 listMetaLength(objectMetaGetPtr(object_meta),SEGMENT_TYPE_HOT) == 3);
         test_assert(keyIsHot(object_meta,value));
@@ -3214,6 +3311,7 @@ int swapListDataTest(int argc, char *argv[], int accurate) {
         dbDelete(db,key);
         swapDataFree(data,datactx);
         decrRefCount(key);
+        // freeClient(c);
     }
 
     TEST("list - rdbLoad & rdbSave hot") {
