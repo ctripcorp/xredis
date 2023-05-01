@@ -35,6 +35,8 @@
 void dbSetDirty(redisDb *db, robj *key) {
     robj *o = lookupKey(db,key,LOOKUP_NOTOUCH);
     if (o) setObjectDirty(o);
+    if (server.swap_persist_enabled)
+        swapPersistCtxAddKey(server.swap_persist_ctx,db,key);
 }
 
 int objectIsDirty(robj *o) {

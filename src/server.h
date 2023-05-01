@@ -1879,6 +1879,10 @@ struct redisServer {
     /* swap batch */
     struct swapBatchCtx *swap_batch_ctx;
     swapBatchLimitsConfig swap_batch_limits[SWAP_TYPES_FORWARD];
+
+    /* swap persist */
+    int swap_persist_enabled;
+    struct swapPersistCtx *swap_persist_ctx;
 };
 
 #define MAX_KEYS_BUFFER 256

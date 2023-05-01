@@ -1343,6 +1343,22 @@ void swapEvictCommand(client *c);
 void swapDebugEvictKeys();
 int swapEvictInprogressLimit(size_t mem_tofree);
 
+#define SWAP_PERSIST_VERSION_NO      0
+#define SWAP_PERSIST_VERSION_INITIAL 1
+
+typedef struct swapPersistCtx {
+  uint64_t version;
+  lruCache **keys; /* one for each db */
+} swapPersistCtx;
+
+swapPersistCtx *swapPersistCtxNew();
+void swapPersistCtxFree(swapPersistCtx *ctx);
+size_t swapPersistCtxKeysCount(swapPersistCtx *ctx);
+size_t swapPersistCtxUsedMemory(swapPersistCtx *ctx);
+void swapPersistCtxAddKey(swapPersistCtx *ctx, redisDb *db, robj *key);
+void swapPersistCtxPersistKeys(swapPersistCtx *ctx);
+sds genSwapPersistInfoString(sds info);
+
 /* Expire */
 int submitExpireClientRequest(client *c, robj *key, int force);
 
@@ -1613,6 +1629,7 @@ void rocksIterGetError(rocksIter *it, char **error);
 #define DEFAULT_LIST_ELE_SIZE 128
 #define DEFAULT_ZSET_MEMBER_COUNT 16
 #define DEFAULT_ZSET_MEMBER_SIZE 128
+#define DEFAULT_KEY_SIZE 48
 
 typedef enum swapRdbSaveErrType {
     SAVE_ERR_NONE,
@@ -1842,7 +1859,9 @@ void coldFilterSubkeyNotFound(coldFilter *filter, sds key, sds subkey);
 int coldFilterMayContainSubkey(coldFilter *filter, sds key, sds subkey);
 /* used memory in disk swap mode */
 static inline size_t ctrip_getUsedMemory() {
-    return zmalloc_used_memory() - server.swap_inprogress_memory - coldFiltersUsedMemory();
+    return zmalloc_used_memory() - server.swap_inprogress_memory
+      - coldFiltersUsedMemory()
+      - swapPersistCtxUsedMemory(server.swap_persist_ctx);
 }
 
 /* Util */

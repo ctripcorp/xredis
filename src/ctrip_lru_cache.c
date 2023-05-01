@@ -28,6 +28,20 @@
 #include "ctrip_swap.h"
 #include "ctrip_lru_cache.h"
 
+#define LRU_CACHE_LOOKUP_NOTOUCH 1
+
+kvpCacheEntry *kvpCacheEntryNew(listNode *ln, void *val) {
+    kvpCacheEntry *e = zmalloc(sizeof(kvpCacheEntry));
+    e->ln = ln;
+    e->val = val;
+    return e;
+}
+
+void kvpCacheEntryFree(void *privdata, void *val) {
+    UNUSED(privdata);
+    if (val != NULL) zfree(val);
+}
+
 /* extent list api so that list node re-allocate can be avoided. */
 void listUnlink(list *list, listNode *node) {
     if (node->prev)
@@ -55,7 +69,7 @@ void listLinkHead(list *list, listNode *node) {
 }
 
 /* holds most recently accessed keys that definitely not exists in rocksdb. */
-dictType lruCacheDictType = {
+dictType keyCacheDictType = {
     dictSdsHash,               /* hash function */
     NULL,                      /* key dup */
     NULL,                      /* val dup */
@@ -65,11 +79,26 @@ dictType lruCacheDictType = {
     NULL                       /* allow to expand */
 };
 
-lruCache *lruCacheNew(size_t capacity) {
+dictType kvpCacheDictType = {
+    dictSdsHash,               /* hash function */
+    NULL,                      /* key dup */
+    NULL,                      /* val dup */
+    dictSdsKeyCompare,         /* key compare */
+    dictSdsDestructor,         /* key destructor */
+    kvpCacheEntryFree,         /* val destructor */
+    NULL                       /* allow to expand */
+};
+
+lruCache *lruCacheNew(int mode, size_t capacity) {
     lruCache *cache = zcalloc(sizeof(lruCache));
     cache->capacity = capacity;
-    cache->map = dictCreate(&lruCacheDictType,NULL);
     cache->list = listCreate();
+    cache->mode = mode;
+    if (mode == LRU_CACHE_TYPE_KEY) {
+        cache->map = dictCreate(&keyCacheDictType,NULL);
+    } else {
+        cache->map = dictCreate(&kvpCacheDictType,NULL);
+    }
     return cache;
 }
 
@@ -90,19 +119,33 @@ static void lruCacheTrim(lruCache *cache) {
     }
 }
 
-int lruCachePut(lruCache *cache, sds key) {
+int lruCachePut(lruCache *cache, sds key, void *val, void **oval) {
     dictEntry *de;
     listNode *ln;
 
     if ((de = dictFind(cache->map,key))) {
-        ln = dictGetVal(de);
+        if (cache->mode == LRU_CACHE_TYPE_KEY) {
+            ln = dictGetVal(de);
+        } else {
+            kvpCacheEntry *entry = dictGetVal(de);
+            ln = entry->ln;
+            if (oval) *oval = entry->val;
+            entry->val = val;
+        }
         listUnlink(cache->list,ln);
         listLinkHead(cache->list,ln);
         return 0;
     } else {
         sds dup = sdsdup(key);
         listAddNodeHead(cache->list,dup);
-        dictAdd(cache->map,dup,listFirst(cache->list));
+        ln = listFirst(cache->list);
+        if (cache->mode == LRU_CACHE_TYPE_KEY) {
+            dictAdd(cache->map,dup,ln);
+        } else {
+            kvpCacheEntry *entry = kvpCacheEntryNew(ln,val);
+            dictAdd(cache->map,dup,entry);
+            if (oval) *oval = NULL;
+        }
         lruCacheTrim(cache);
         return 1;
     }
@@ -113,7 +156,12 @@ int lruCacheDelete(lruCache *cache, sds key) {
     listNode *ln;
 
     if ((de = dictUnlink(cache->map,key))) {
-        ln = dictGetVal(de);
+        if (cache->mode == LRU_CACHE_TYPE_KEY) {
+            ln = dictGetVal(de);
+        } else {
+            kvpCacheEntry *entry = dictGetVal(de);
+            ln = entry->ln;
+        }
         listDelNode(cache->list,ln);
         dictFreeUnlinkedEntry(cache->map,de);
         return 1;
@@ -122,23 +170,65 @@ int lruCacheDelete(lruCache *cache, sds key) {
     }
 }
 
-int lruCacheGet(lruCache *cache, sds key) {
+static int lruCacheLookup_(lruCache *cache, int flags, sds key, void **pval) {
     dictEntry *de;
     listNode *ln;
 
     if ((de = dictFind(cache->map,key))) {
-        ln = dictGetVal(de);
-        listUnlink(cache->list,ln);
-        listLinkHead(cache->list,ln);
+        if (cache->mode == LRU_CACHE_TYPE_KEY) {
+            ln = dictGetVal(de);
+        } else {
+            kvpCacheEntry *entry = dictGetVal(de);
+            ln = entry->ln;
+            if (pval) *pval = entry->val;
+        }
+        if (!(flags & LRU_CACHE_LOOKUP_NOTOUCH)) {
+            listUnlink(cache->list,ln);
+            listLinkHead(cache->list,ln);
+        }
         return 1;
     } else {
         return 0;
     }
 }
 
+int lruCacheGet(lruCache *cache, sds key, void **pval) {
+    return lruCacheLookup_(cache,0,key,pval);
+}
+
+int lruCacheLookup(lruCache *cache, sds key, void **pval) {
+    return lruCacheLookup_(cache,LRU_CACHE_LOOKUP_NOTOUCH,key,pval);
+}
+
 void lruCacheSetCapacity(lruCache *cache, size_t capacity) {
     cache->capacity = capacity;
     lruCacheTrim(cache);
+}
+
+size_t lruCacheCount(lruCache *cache) {
+    return listLength(cache->list);
+}
+
+lruCacheIter *lruCacheGetIterator(lruCache *cache, int direction) {
+    lruCacheIter *iter = zmalloc(sizeof(lruCacheIter));
+    iter->li = listGetIterator(cache->list,direction);
+    iter->cache = cache;
+    return iter;
+}
+
+int lruCacheIterNext(lruCacheIter *iter) {
+    iter->ln = listNext(iter->li);
+    return iter->ln != NULL;
+}
+
+sds lruCacheIterKey(lruCacheIter *iter) {
+    return listNodeValue(iter->ln);
+}
+
+void *lruCacheIterVal(lruCacheIter *iter) {
+    sds key = lruCacheIterKey(iter);
+    kvpCacheEntry *e = dictFetchValue(iter->cache->map,key);
+    return e->val;
 }
 
 #ifdef REDIS_TEST
@@ -153,7 +243,7 @@ int lruCacheTest(int argc, char *argv[], int accurate) {
     UNUSED(accurate);
     int error = 0;
 
-    TEST("absent: list link & unlink") {
+    TEST("list link & unlink") {
         listNode *ln;
         list *l = listCreate();
 
@@ -182,28 +272,28 @@ int lruCacheTest(int argc, char *argv[], int accurate) {
         listRelease(l);
     }
 
-    TEST("absent: lru cache") {
+    TEST("lru key cache") {
         sds first = sdsnew("1"), second = sdsnew("2"), third = sdsnew("3"), fourth = sdsnew("4");
         lruCache *cache;
 
-        cache = lruCacheNew(1);
+        cache = lruKeyCacheNew(1);
         test_assert(!lruCacheExists(cache,first));
-        lruCachePut(cache,first);
+        lruKeyCachePut(cache,first);
         test_assert(lruCacheExists(cache,first));
-        lruCachePut(cache,second);
+        lruKeyCachePut(cache,second);
         test_assert(!lruCacheExists(cache,first));
         lruCacheFree(cache);
 
-        cache = lruCacheNew(3);
-        lruCachePut(cache,first);
-        lruCachePut(cache,second);
-        lruCachePut(cache,third);
-        lruCachePut(cache,fourth);
+        cache = lruKeyCacheNew(3);
+        lruKeyCachePut(cache,first);
+        lruKeyCachePut(cache,second);
+        lruKeyCachePut(cache,third);
+        lruKeyCachePut(cache,fourth);
         test_assert(!lruCacheExists(cache,first));
         test_assert(lruCacheExists(cache,second));
         test_assert(lruCacheExists(cache,third));
         test_assert(lruCacheExists(cache,fourth));
-        lruCachePut(cache,first);
+        lruKeyCachePut(cache,first);
         test_assert(lruCacheExists(cache,first));
         test_assert(!lruCacheExists(cache,second));
         test_assert(lruCacheExists(cache,third));
@@ -212,9 +302,74 @@ int lruCacheTest(int argc, char *argv[], int accurate) {
         lruCacheDelete(cache,second);
         test_assert(!lruCacheExists(cache,second));
 
-        test_assert(lruCacheGet(cache,second) == 0);
-        test_assert(lruCacheGet(cache,third) == 1);
-        test_assert(lruCacheGet(cache,first) == 1);
+        test_assert(lruKeyCacheGet(cache,second) == 0);
+        test_assert(lruKeyCacheGet(cache,third) == 1);
+        test_assert(lruKeyCacheGet(cache,first) == 1);
+
+        sdsfree(first), sdsfree(second), sdsfree(third), sdsfree(fourth);
+        sds first2 = sdsnew("1"), fourth2 = sdsnew("4");
+
+        lruCacheSetCapacity(cache, 1);
+        test_assert(cache->capacity == 1);
+        test_assert(lruCacheExists(cache,first2));
+        test_assert(!lruCacheExists(cache,fourth2));
+        lruCacheFree(cache);
+        sdsfree(first2), sdsfree(fourth2);
+    }
+
+    TEST("lru kvp cache") {
+        sds first = sdsnew("1"), second = sdsnew("2"), third = sdsnew("3"), fourth = sdsnew("4");
+        lruCache *cache;
+        lruCacheIter *iter;
+        int oval;
+
+        cache = lruCacheNew(LRU_CACHE_TYPE_KVP,1);
+        test_assert(!lruCacheExists(cache,first));
+        lruCachePut(cache,first,(void*)1,NULL);
+        test_assert(lruCacheExists(cache,first));
+        lruCachePut(cache,second,(void*)2,NULL);
+        test_assert(!lruCacheExists(cache,first));
+        lruCacheFree(cache);
+
+        cache = lruCacheNew(LRU_CACHE_TYPE_KVP,3);
+        lruCachePut(cache,first,(void*)1,NULL);
+        lruCachePut(cache,second,(void*)2,NULL);
+        lruCachePut(cache,third,(void*)3,NULL);
+        lruCachePut(cache,fourth,(void*)4,NULL);
+        test_assert(!lruCacheExists(cache,first));
+        test_assert(lruCacheExists(cache,second));
+        test_assert(lruCacheExists(cache,third));
+        test_assert(lruCacheExists(cache,fourth));
+        lruCachePut(cache,first,(void*)1,NULL);
+        test_assert(lruCacheExists(cache,first));
+        test_assert(!lruCacheExists(cache,second));
+        test_assert(lruCacheExists(cache,third));
+        test_assert(lruCacheExists(cache,fourth));
+        test_assert(lruCacheGet(cache,fourth,(void**)&oval) && oval == 4);
+
+        lruCacheDelete(cache,second);
+        test_assert(!lruCacheExists(cache,second));
+
+        /* 3-1-4 */
+        test_assert(lruCacheLookup(cache,fourth,(void**)&oval) && oval == 4);
+        test_assert(lruCacheLookup(cache,first,(void**)&oval) && oval == 1);
+        test_assert(lruCacheLookup(cache,third,(void**)&oval) && oval == 3);
+
+        iter = lruCacheGetIterator(cache,LRU_CAHCHE_ITER_FROM_OLDEST);
+        test_assert(lruCacheIterNext(iter));
+        test_assert(strcmp(lruCacheIterKey(iter),"3") == 0);
+        test_assert(lruCacheIterVal(iter) == (void*)3);
+        test_assert(lruCacheIterNext(iter));
+        test_assert(strcmp(lruCacheIterKey(iter),"1") == 0);
+        test_assert(lruCacheIterVal(iter) == (void*)1);
+        test_assert(lruCacheIterNext(iter));
+        test_assert(strcmp(lruCacheIterKey(iter),"4") == 0);
+        test_assert(lruCacheIterVal(iter) == (void*)4);
+        test_assert(!lruCacheIterNext(iter));
+
+        test_assert(lruCacheGet(cache,second,(void**)&oval) == 0);
+        test_assert(lruCacheGet(cache,third,(void**)&oval) == 1 && oval == 3);
+        test_assert(lruCacheGet(cache,first,(void**)&oval) == 1 && oval == 1);
 
         sdsfree(first), sdsfree(second), sdsfree(third), sdsfree(fourth);
         sds first2 = sdsnew("1"), fourth2 = sdsnew("4");

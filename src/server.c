@@ -2514,6 +2514,9 @@ void beforeSleep(struct aeEventLoop *eventLoop) {
     /* submit buffered swap request in current batch */
     swapBatchCtxFlush(server.swap_batch_ctx,SWAP_BATCH_FLUSH_BEFORE_SLEEP);
 
+    /* persist keys if swap persist enabled. */
+    if (server.swap_persist_enabled) swapPersistCtxPersistKeys(server.swap_persist_ctx);
+
     /* Handle precise timeouts of blocked clients. */
     handleBlockedClientsTimeout();
 

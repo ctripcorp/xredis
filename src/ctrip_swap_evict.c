@@ -28,27 +28,39 @@
 
 #include "ctrip_swap.h"
 
+void swapPersistKeyRequestFinished(swapPersistCtx *ctx, int dbid, robj *key,
+        uint64_t persist_version);
+
 void evictClientKeyRequestFinished(client *c, swapCtx *ctx) {
     UNUSED(ctx);
     robj *key = ctx->key_request->key;
+    int dbid = ctx->key_request->dbid;
+    uint64_t persist_version = (uint64_t)ctx->pd;
+
     if (ctx->errcode) clientSwapError(c,ctx->errcode);
     incrRefCount(key);
     c->keyrequests_count--;
     serverAssert(c->client_hold_mode == CLIENT_HOLD_MODE_EVICT);
+
+    if (persist_version != SWAP_PERSIST_VERSION_NO) {
+        swapPersistKeyRequestFinished(server.swap_persist_ctx,
+                dbid,key,persist_version);
+    }
+
     clientReleaseLocks(c,ctx);
     decrRefCount(key);
 
     server.swap_evict_inprogress_count--;
 }
 
-int submitEvictClientRequest(client *c, robj *key) {
+int submitEvictClientRequest(client *c, robj *key, uint64_t persist_version) {
     getKeyRequestsResult result = GET_KEYREQUESTS_RESULT_INIT;
     getKeyRequestsPrepareResult(&result,1);
     incrRefCount(key);
     getKeyRequestsAppendSubkeyResult(&result,REQUEST_LEVEL_KEY,key,0,NULL,
             c->cmd->intention,c->cmd->intention_flags,c->db->id);
     c->keyrequests_count++;
-    submitDeferredClientKeyRequests(c,&result,evictClientKeyRequestFinished,NULL);
+    submitDeferredClientKeyRequests(c,&result,evictClientKeyRequestFinished,(void*)persist_version);
     releaseKeyRequests(&result);
     getKeyRequestsFreeResult(&result);
 
@@ -73,7 +85,7 @@ int tryEvictKey(redisDb *db, robj *key, int *evict_result) {
 
     dirty = o->dirty;
     old_keyrequests_count = evict_client->keyrequests_count;
-    submitEvictClientRequest(evict_client,key);
+    submitEvictClientRequest(evict_client,key,SWAP_PERSIST_VERSION_NO);
     /* Evit request finished right away, no swap triggered. */
     if (evict_client->keyrequests_count == old_keyrequests_count) {
         if (dirty) {
@@ -170,47 +182,13 @@ void debugSwapOutCommand(client *c) {
             decrRefCount(k);
         }
         dictReleaseIterator(di);
-    } else {    
+    } else {
         for (i = 1; i < c->argc; i++) {
             evict_result = 0;
             nevict += tryEvictKey(c->db, c->argv[i], &evict_result);
             serverLog(LL_NOTICE, "debug swapout %s: %s.", (sds)c->argv[i]->ptr, evictResultToString(evict_result));
-        }   
+        }
     }
     addReplyLongLong(c, nevict);
 }
-
-#ifdef REDIS_TEST
-
-void initServerConfig(void);
-int swapHoldTest(int argc, char *argv[], int accurate) {
-    UNUSED(argc);
-    UNUSED(argv);
-    UNUSED(accurate);
-
-    int error = 0;
-    client *c;
-    robj *key1, *key2;
-
-    TEST("hold: init") {
-        initServerConfig();
-        ACLInit();
-        server.hz = 10;
-        c = createClient(NULL);
-        initTestRedisDb();
-        selectDb(c,0);
-
-        key1 = createStringObject("key1",4);
-        key2 = createStringObject("key2",4);
-    }
-
-    TEST("hold: deinit") {
-        decrRefCount(key1);
-        decrRefCount(key2);
-    }
-
-    return error;
-}
-
-#endif
 

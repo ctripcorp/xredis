@@ -98,6 +98,7 @@ void ctrip_setObjDirtyIfNeeded(int type, robj *key, int dbid) {
     robj* o = lookupKey(&server.db[dbid], key, LOOKUP_NOTOUCH);
     if (NULL != o) {
         setObjectDirty(o);
+        if (server.swap_persist_enabled) swapPersistCtxAddKey(server.swap_persist_ctx,&server.db[dbid],key);
     }
 }
 
@@ -158,7 +159,11 @@ void notifyKeyspaceEventDirty(int type, char *event, robj *key, int dbid, ...) {
     va_list ap;
 
     va_start(ap, dbid);
-    while ((o = va_arg(ap, robj*))) setObjectDirty(o);
+    while ((o = va_arg(ap, robj*))) {
+        setObjectDirty(o);
+        if (server.swap_persist_enabled)
+            swapPersistCtxAddKey(server.swap_persist_ctx,server.db+dbid,key);
+    }
     va_end(ap);
 
     notifyKeyspaceEvent(type,event,key,dbid);

@@ -662,6 +662,11 @@ void swapInit() {
     }
 
     server.swap_batch_ctx = swapBatchCtxNew();
+
+    if (server.swap_persist_enabled)
+        server.swap_persist_ctx = swapPersistCtxNew();
+    else
+        server.swap_persist_ctx = NULL;
 }
 
 
@@ -724,6 +729,7 @@ int clearTestRedisServer() {
 int swapTest(int argc, char **argv, int accurate) {
   int result = 0;
 
+<<<<<<< HEAD
   result += swapLockTest(argc, argv, accurate);
   result += swapLockReentrantTest(argc, argv, accurate);
   result += swapLockProceedTest(argc, argv, accurate);
@@ -744,7 +750,6 @@ int swapTest(int argc, char **argv, int accurate) {
   result += swapListMetaTest(argc, argv, accurate);
   result += swapListDataTest(argc, argv, accurate);
   result += swapListUtilsTest(argc, argv, accurate);
-  result += swapHoldTest(argc, argv, accurate);
   result += lruCacheTest(argc, argv, accurate);
   result += swapAbsentTest(argc, argv, accurate);
   result += swapRIOTest(argc, argv, accurate);

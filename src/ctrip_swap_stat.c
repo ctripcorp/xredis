@@ -340,6 +340,7 @@ sds genSwapInfoString(sds info) {
     info = genSwapThreadInfoString(info);
     info = genSwapScanSessionStatString(info);
     info = genSwapUnblockInfoString(info);
+    info = genSwapPersistInfoString(info);
     return info;
 }
 

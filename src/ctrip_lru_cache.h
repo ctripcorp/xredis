@@ -32,17 +32,54 @@
 #include "adlist.h"
 #include "sds.h"
 
+#define LRU_CACHE_TYPE_KEY 0
+#define LRU_CACHE_TYPE_KVP 1
+
+/* key cache value is ln, while kvp cache contains both ln and val */
+typedef struct kvpCacheEntry {
+    listNode *ln;
+    void *val;
+} kvpCacheEntry;
+
 typedef struct lruCache {
   size_t capacity;
   dict *map;
   list *list;
+  int mode;
 } lruCache;
 
-lruCache *lruCacheNew(size_t capacity);
+lruCache *lruCacheNew(int type, size_t capacity);
+static inline lruCache *lruKeyCacheNew(size_t capacity) {
+  return lruCacheNew(LRU_CACHE_TYPE_KEY,capacity);
+}
 void lruCacheFree(lruCache *cache);
-int lruCachePut(lruCache *cache, sds key);
-int lruCacheGet(lruCache *cache, sds key);
+int lruCachePut(lruCache *cache, sds key, void *val, void **oval);
+static inline int lruKeyCachePut(lruCache *cache, sds key) {
+  return lruCachePut(cache,key,NULL,NULL);
+}
+int lruCacheGet(lruCache *cache, sds key, void **pval);
+static inline int lruKeyCacheGet(lruCache *cache, sds key) {
+  return lruCacheGet(cache,key,NULL);
+}
+/* get without changing lru order. */
+int lruCacheLookup(lruCache *cache, sds key, void **pval);
 int lruCacheDelete(lruCache *cache, sds key);
 void lruCacheSetCapacity(lruCache *cache, size_t capacity);
+size_t lruCacheCount(lruCache *cache);
+
+#define LRU_CAHCHE_ITER_FROM_OLDEST LIST_TAIL
+#define LRU_CAHCHE_ITER_FROM_NEWEST LIST_HEAD
+
+typedef struct lruCacheIter {
+  lruCache *cache;
+  listIter *li;
+  listNode *ln;
+} lruCacheIter;
+
+lruCacheIter *lruCacheGetIterator(lruCache *cache, int direction);
+void lruCacheReleaseIterator(lruCacheIter *iter);
+int lruCacheIterNext(lruCacheIter *iter);
+sds lruCacheIterKey(lruCacheIter *iter);
+void *lruCacheIterVal(lruCacheIter *iter);
 
 #endif
