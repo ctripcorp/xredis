@@ -143,3 +143,63 @@ sds genSwapPersistInfoString(sds info) {
     }
     return info;
 }
+
+/* scan meta cf to rebuild cold_keys/cold_filter & fix keys */
+int tryLoadKey(redisDb *db, robj *key, int oom_sensitive);
+void loadDataFromRocksdb() {
+    struct rocks *rocks = server.rocks;
+    rocksdb_iterator_t *meta_iter = rocksdb_create_iterator_cf(
+            rocks->db, rocks->ropts,rocks->cf_handles[META_CF]);
+
+    for (int i = 0; i < server.dbnum; i++) {
+        redisDb *db = server.db+i;
+        sds meta_start_key = rocksEncodeDbRangeStartKey(db->id);
+        sds meta_end_key = rocksEncodeDbRangeEndKey(db->id);
+
+        rocksdb_iter_seek(meta_iter,meta_start_key,sdslen(meta_start_key));
+
+        while (rocksdb_iter_valid(meta_iter)) {
+            int dbid;
+            const char *rawkey, *key;
+            size_t rklen, klen, minlen;
+            robj *keyobj = NULL;
+
+            rawkey = rocksdb_iter_key(meta_iter,&rklen);
+
+            minlen = rklen < sdslen(meta_end_key) ? rklen : sdslen(meta_end_key);
+            if (memcmp(meta_end_key,rawkey,minlen) > 0) break; /* dbid switched */
+
+            rocksDecodeMetaKey(rawkey,rklen,&dbid,&key,&klen);
+
+            keyobj = createStringObject(key,klen);
+
+            tryLoadKey(db,keyobj,0);
+            db->cold_keys++;
+            coldFilterAddKey(db->cold_filter,keyobj->ptr);
+
+            rocksdb_iter_next(meta_iter);
+        }
+
+        sdsfree(meta_start_key);
+        sdsfree(meta_end_key);
+    }
+}
+
+static int keyspaceIsEmpty() {
+    for (int i = 0; i < server.dbnum; i++) {
+        redisDb *db = server.db+i;
+        if (ctripDbSize(db)) return 0;
+    }
+    return 1;
+}
+
+void loadDataFromDisk(void);
+void ctripLoadDataFromDisk(void) {
+    if (server.swap_mode != SWAP_MODE_MEMORY &&
+            server.swap_persist_enabled) {
+        loadDataFromRocksdb();
+    }
+
+    if (keyspaceIsEmpty()) loadDataFromDisk();
+}
+

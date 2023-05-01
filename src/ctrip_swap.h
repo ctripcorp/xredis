@@ -1358,6 +1358,7 @@ size_t swapPersistCtxUsedMemory(swapPersistCtx *ctx);
 void swapPersistCtxAddKey(swapPersistCtx *ctx, redisDb *db, robj *key);
 void swapPersistCtxPersistKeys(swapPersistCtx *ctx);
 sds genSwapPersistInfoString(sds info);
+void ctripLoadDataFromDisk(void);
 
 /* Expire */
 int submitExpireClientRequest(client *c, robj *key, int force);
