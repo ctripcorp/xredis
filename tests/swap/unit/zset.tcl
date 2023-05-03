@@ -1956,3 +1956,51 @@ start_server {} {
         r zrangebyscore myzset 2 20
     }
 }
+
+start_server {tags {"zsetConvert bug ziplist"}} {
+    set ziplist_client [srv 0 client]
+    set ziplist_host [srv 0 host]
+    set ziplist_port [srv 0 port]
+    $ziplist_client config set zset-max-ziplist-entries 256
+    $ziplist_client config set zset-max-ziplist-value 64
+    $ziplist_client config set swap-debug-evict-keys 0
+    start_server {tags {"zsetConvert bug skiplist"}} {
+        
+        set skiplist_client [srv 0 client]
+        set skiplist_host [srv 0 host]
+        set skiplist_port [srv 0 port]
+        $skiplist_client config set swap-debug-evict-keys 0
+        $skiplist_client config set zset-max-ziplist-entries 0
+        $skiplist_client config set zset-max-ziplist-value 0
+
+        proc write_data_and_slaveof_master {elements master_encoding master_client slave_client master_host master_port} {
+            $master_client del zscoretest
+            set aux {}
+            for {set i 0} {$i < $elements} {incr i} {
+                set score [expr rand()]
+                lappend aux $score
+                $master_client zadd zscoretest $score $i
+            }
+            set dbg [$master_client debug object zscoretest]
+            assert_match "* encoding:$master_encoding *" $dbg
+            for {set i 0} {$i < $elements} {incr i} {
+                assert_equal [lindex $aux $i] [$master_client zscore zscoretest $i]
+            }
+            $slave_client slaveof $master_host $master_port
+            wait_for_sync $slave_client
+            # set dbg [$slave_client debug object zscoretest]
+            # assert_match "* encoding:$master_encoding *" $dbg
+            for {set i 0} {$i < $elements} {incr i} {
+                assert_equal [lindex $aux $i] [$slave_client zscore zscoretest $i]
+            }
+            $slave_client slaveof no one
+        }
+        test "swap master(ziplist)-slave(skiplist)" {
+            write_data_and_slaveof_master 128 ziplist $ziplist_client $skiplist_client $ziplist_host $ziplist_port
+        }
+        test "swap master(skiplist)-slave(ziplist)" {
+            write_data_and_slaveof_master 128 skiplist $skiplist_client $ziplist_client $skiplist_host $skiplist_port
+        }
+    }
+    
+}

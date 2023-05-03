@@ -1032,8 +1032,10 @@ void freeZsetIter(struct ziplistIterator* iter) {
 void zsetLoadStartZip(struct rdbKeyLoadData *load, rio *rdb, int *cf,
         sds *rawkey, sds *rawval, int *error) {
     sds extend = NULL;
-
+    size_t old_zset_max_ziplist_entries = server.zset_max_ziplist_entries;
+    server.zset_max_ziplist_entries = SIZE_MAX;
     load->value = rdbLoadObject(load->rdbtype,rdb,load->key,error);
+    server.zset_max_ziplist_entries = old_zset_max_ziplist_entries;
     if (load->value == NULL) return;
 
     if (load->value->type != OBJ_ZSET) {
