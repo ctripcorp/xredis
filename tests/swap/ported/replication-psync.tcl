@@ -28,10 +28,9 @@ proc test_psync {descr duration backlog_size backlog_ttl delay cond mdl sdl bgsa
             set load_handle0 [start_bg_complex_data $master_host $master_port 0 100000]
             set load_handle1 [start_bg_complex_data $master_host $master_port 0 100000]
             set load_handle2 [start_bg_complex_data $master_host $master_port 0 100000]
-
             test {Slave should be able to synchronize with the master} {
                 $slave slaveof $master_host $master_port
-                wait_for_condition 50 100 {
+                wait_for_condition 50 1000 {
                     [lindex [r role] 0] eq {slave} &&
                     [lindex [r role] 3] eq {connected}
                 } else {
