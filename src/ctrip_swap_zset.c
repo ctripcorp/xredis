@@ -1375,6 +1375,7 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
         cold_kr1->dbid = db->id;
 
         // swap nop
+        kr1->cmd_flags = CMD_CATEGORY_SORTEDSET;
         kr1->cmd_intention = SWAP_NOP;
         kr1->cmd_intention_flags = 0;
         zsetSwapAna(zset1_data,0,kr1,&intention,&intention_flags,zset1_ctx);

@@ -1251,7 +1251,7 @@ int swapCmdTest(int argc, char *argv[], int accurate) {
         test_assert(result.num == 3);
         test_assert(!strcmp(result.key_requests[0].key->ptr, "K1"));
         test_assert(result.key_requests[0].cmd_intention == SWAP_IN);
-        test_assert(result.key_requests[0].cmd_intention_flags == 0);
+        test_assert(result.key_requests[0].cmd_intention_flags == SWAP_IN_CHECK_EXISTS);
         test_assert(!strcmp(result.key_requests[1].key->ptr, "K2"));
         test_assert(!strcmp(result.key_requests[2].key->ptr, "K1"));
         releaseKeyRequests(&result);
@@ -1317,12 +1317,12 @@ int swapCmdTest(int argc, char *argv[], int accurate) {
         test_assert(!strcmp(result.key_requests[0].key->ptr, "KEY1"));
         test_assert(result.key_requests[0].b.subkeys == NULL);
         test_assert(result.key_requests[0].cmd_intention == SWAP_IN);
-        test_assert(result.key_requests[0].cmd_intention_flags == 0);
+        test_assert(result.key_requests[0].cmd_intention_flags == SWAP_IN_CHECK_EXISTS);
         test_assert(result.key_requests[0].dbid == 1);
         test_assert(!strcmp(result.key_requests[1].key->ptr, "KEY2"));
         test_assert(result.key_requests[1].b.subkeys == NULL);
         test_assert(result.key_requests[1].cmd_intention == SWAP_IN);
-        test_assert(result.key_requests[1].cmd_intention_flags == 0);
+        test_assert(result.key_requests[1].cmd_intention_flags == SWAP_IN_CHECK_EXISTS);
         test_assert(result.key_requests[1].dbid == 1);
         test_assert(!strcmp(result.key_requests[2].key->ptr, "HASH"));
         test_assert(!strcmp(result.key_requests[2].b.subkeys[0]->ptr, "F1"));
@@ -1374,12 +1374,12 @@ int swapCmdTest(int argc, char *argv[], int accurate) {
         test_assert(!strcmp(result.key_requests[0].key->ptr, "KEY1"));
         test_assert(result.key_requests[0].b.subkeys == NULL);
         test_assert(result.key_requests[0].cmd_intention == SWAP_IN);
-        test_assert(result.key_requests[0].cmd_intention_flags == 0);
+        test_assert(result.key_requests[0].cmd_intention_flags == SWAP_IN_CHECK_EXISTS);
         test_assert(result.key_requests[0].dbid == 10);
         test_assert(!strcmp(result.key_requests[1].key->ptr, "KEY2"));
         test_assert(result.key_requests[1].b.subkeys == NULL);
         test_assert(result.key_requests[1].cmd_intention == SWAP_IN);
-        test_assert(result.key_requests[1].cmd_intention_flags == 0);
+        test_assert(result.key_requests[1].cmd_intention_flags == SWAP_IN_CHECK_EXISTS);
         test_assert(result.key_requests[1].dbid == 10);
 
         test_assert(!strcmp(result.key_requests[2].key->ptr, "LIST"));
@@ -1394,12 +1394,12 @@ int swapCmdTest(int argc, char *argv[], int accurate) {
         test_assert(!strcmp(result.key_requests[3].key->ptr, "KEY1"));
         test_assert(result.key_requests[3].b.subkeys == NULL);
         test_assert(result.key_requests[3].cmd_intention == SWAP_IN);
-        test_assert(result.key_requests[3].cmd_intention_flags == 0);
+        test_assert(result.key_requests[3].cmd_intention_flags == SWAP_IN_CHECK_EXISTS);
         test_assert(result.key_requests[3].dbid == 2);
         test_assert(!strcmp(result.key_requests[4].key->ptr, "KEY2"));
         test_assert(result.key_requests[4].b.subkeys == NULL);
         test_assert(result.key_requests[4].cmd_intention == SWAP_IN);
-        test_assert(result.key_requests[4].cmd_intention_flags == 0);
+        test_assert(result.key_requests[4].cmd_intention_flags == SWAP_IN_CHECK_EXISTS);
         test_assert(result.key_requests[4].dbid == 2);
 
         test_assert(!strcmp(result.key_requests[5].key->ptr, "HASH"));

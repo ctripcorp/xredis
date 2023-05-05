@@ -389,6 +389,7 @@ int wholeKeySwapAna_(swapData *data_,
     req->b.num_subkeys = 0;
     req->key = createStringObject("key1",4);
     req->b.subkeys = NULL;
+    req->cmd_flags = CMD_CATEGORY_STRING;
     req->cmd_intention = cmd_intention;
     req->cmd_intention_flags = cmd_intention_flags;
     retval = wholeKeySwapAna(data_,0,req,intention,intention_flags,datactx);
@@ -412,6 +413,7 @@ int swapDataWholeKeyTest(int argc, char **argv, int accurate) {
         int intention;
         uint32_t intention_flags;
         wholeKeySwapAna_(data, SWAP_NOP, 0, &intention, &intention_flags, ctx);
+        printf("%d\n", intention);
         test_assert(intention == SWAP_NOP);
         wholeKeySwapAna_(data, SWAP_IN, 0, &intention, &intention_flags, ctx);
         test_assert(intention == SWAP_NOP);

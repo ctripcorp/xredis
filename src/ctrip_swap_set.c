@@ -827,6 +827,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         cold_kr1->dbid = db->id;
 
         // swap nop
+        kr1->cmd_flags = CMD_CATEGORY_SET;
         kr1->cmd_intention = SWAP_NOP;
         kr1->cmd_intention_flags = 0;
         setSwapAna(set1_data,0,kr1,&intention,&intention_flags,set1_ctx);

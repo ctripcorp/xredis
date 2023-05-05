@@ -3041,6 +3041,7 @@ int swapListDataTest(int argc, char *argv[], int accurate) {
         full->start = 0, full->end = 3;
         kr->level = REQUEST_LEVEL_KEY, kr->dbid = 0;
         /* nop: pure/hot/in.meta warm/... */
+        kr->cmd_flags = CMD_CATEGORY_LIST;
         kr->cmd_intention = SWAP_IN, kr->cmd_intention_flags = 0, kr->key = purekey, kr->l.num_ranges = 1, kr->l.ranges = full;
         swapDataAna(puredata,0,kr,&intention,&intention_flags,puredatactx);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
