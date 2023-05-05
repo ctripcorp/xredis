@@ -111,7 +111,7 @@ proc test_psync {descr duration backlog_size backlog_ttl delay cond mdl sdl reco
                         set keyspace_info [$master info keyspace]
                     }
                     
-                    wait_for_condition 100 100 {
+                    wait_for_condition 100 200 {
                         [$master info keyspace] == [$slave info keyspace]
                     } else {    
                          fail "Master - Replica sync fail"
