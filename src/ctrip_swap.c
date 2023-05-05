@@ -735,6 +735,7 @@ int swapTest(int argc, char **argv, int accurate) {
   result += swapListDataTest(argc, argv, accurate);
   result += swapListUtilsTest(argc, argv, accurate);
   result += swapHoldTest(argc, argv, accurate);
+  result += lruCacheTest(argc, argv, accurate);
   result += swapAbsentTest(argc, argv, accurate);
   result += swapRIOTest(argc, argv, accurate);
   result += swapBatchTest(argc, argv, accurate);

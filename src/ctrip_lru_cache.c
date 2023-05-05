@@ -147,7 +147,7 @@ static int lruCacheExists(lruCache *cache, sds key) {
     return dictFind(cache->map,key) != NULL;
 }
 
-int swapAbsentTest(int argc, char *argv[], int accurate) {
+int lruCacheTest(int argc, char *argv[], int accurate) {
     UNUSED(argc);
     UNUSED(argv);
     UNUSED(accurate);

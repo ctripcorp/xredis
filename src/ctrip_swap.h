@@ -1731,6 +1731,37 @@ void listLoadInit(rdbKeyLoadData *load);
 void zsetLoadInit(rdbKeyLoadData *load);
 int rdbLoadLenVerbatim(rio *rdb, sds *verbatim, int *isencoded, unsigned long long *lenptr);
 
+/* absent cache */
+#define ABSENT_CACHE_FLAGS_DISABLE_SUBKEY (1ULL << 0)
+
+typedef struct absentKeyMapEntry {
+  dict *subkeys;
+  listNode *ln;
+} absentKeyMapEntry;
+
+typedef struct absentListEntry {
+  sds key; /* ref */
+  sds subkey; /* ref */
+} absentListEntry;
+
+typedef struct absentCache {
+  uint64_t disable_subkey:1;
+  uint64_t reserved:63;
+  size_t capacity;
+  dict *map;
+  list *list;
+} absentCache;
+
+absentCache *absentCacheNew(uint64_t flags, size_t capacity);
+void absentCacheFree(absentCache *absent);
+int absentCacheDelete(absentCache *absent, sds key);
+int absentCachePutKey(absentCache *absent, sds key);
+int absentCachePutSubkey(absentCache *absent, sds key, sds subkey);
+int absentCacheGetKey(absentCache *absent, sds key);
+int absentCacheGetSubkey(absentCache *absent, sds key, sds subkey);
+void absentCacheSetCapacity(absentCache *absent, size_t capacity);
+
+
 /* cold keys filter */
 #define COLDFILTER_FILT_BY_CUCKOO_FILTER 1
 #define COLDFILTER_FILT_BY_ABSENT_CACHE 2
@@ -1959,6 +1990,7 @@ int swapListDataTest(int argc, char *argv[], int accurate);
 int swapListUtilsTest(int argc, char *argv[], int accurate);
 int swapHoldTest(int argc, char *argv[], int accurate);
 int swapAbsentTest(int argc, char *argv[], int accurate);
+int lruCacheTest(int argc, char *argv[], int accurate);
 int swapRIOTest(int argc, char *argv[], int accurate);
 int swapBatchTest(int argc, char *argv[], int accurate);
 int cuckooFilterTest(int argc, char *argv[], int accurate);
