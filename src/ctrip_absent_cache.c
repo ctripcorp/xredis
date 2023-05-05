@@ -86,9 +86,10 @@ dictType absentSubkeyDictType = {
     NULL                       /* allow to expand */
 };
 
-absentCache *absentCacheNew(uint64_t flags, size_t capacity) {
+absentCache *absentCacheNew(size_t capacity) {
     absentCache *absent = zmalloc(sizeof(absentCache));
-    if (flags & ABSENT_CACHE_FLAGS_DISABLE_SUBKEY) absent->disable_subkey = 1;
+    absent->disable_subkey = 0;
+    absent->reserved = 0;
     absent->capacity = capacity;
     absent->map = dictCreate(&absentKeyDictType,NULL);
     absent->list = listCreate();
@@ -263,6 +264,14 @@ void absentCacheSetCapacity(absentCache *absent, size_t capacity) {
     absentCacheTrim(absent);
 }
 
+void absentCacheDisableSubkey(absentCache *absent) {
+    absent->disable_subkey = 1;
+}
+
+void absentCacheEnableSubkey(absentCache *absent) {
+    absent->disable_subkey = 0;
+}
+
 #ifdef REDIS_TEST
 
 static int absentCacheExistsKey(absentCache *absent, sds key) {
@@ -285,7 +294,7 @@ int swapAbsentTest(int argc, char *argv[], int accurate) {
             third = sdsnew("3"), fourth = sdsnew("4");
         absentCache *absent;
 
-        absent = absentCacheNew(0,1);
+        absent = absentCacheNew(1);
         test_assert(!absentCacheExistsKey(absent,first));
         absentCachePutKey(absent,first);
         test_assert(absentCacheExistsKey(absent,first));
@@ -293,7 +302,7 @@ int swapAbsentTest(int argc, char *argv[], int accurate) {
         test_assert(!absentCacheExistsKey(absent,first));
         absentCacheFree(absent);
 
-        absent = absentCacheNew(0,3);
+        absent = absentCacheNew(3);
         absentCachePutKey(absent,first);
         absentCachePutKey(absent,second);
         absentCachePutKey(absent,third);
@@ -331,7 +340,7 @@ int swapAbsentTest(int argc, char *argv[], int accurate) {
         sds first = sdsnew("1"), second = sdsnew("2");
         absentCache *absent;
 
-        absent = absentCacheNew(0,1);
+        absent = absentCacheNew(1);
         test_assert(!absentCacheExistsSubkey(absent,key1,first));
         absentCachePutSubkey(absent,key1,first);
         test_assert(absentCacheExistsSubkey(absent,key1,first));
@@ -342,7 +351,7 @@ int swapAbsentTest(int argc, char *argv[], int accurate) {
         test_assert(absentCacheExistsSubkey(absent,key2,first));
         absentCacheFree(absent);
 
-        absent = absentCacheNew(0,3);
+        absent = absentCacheNew(3);
         absentCachePutSubkey(absent,key1,first);
         absentCachePutSubkey(absent,key1,second);
         absentCachePutSubkey(absent,key2,first);
@@ -374,7 +383,7 @@ int swapAbsentTest(int argc, char *argv[], int accurate) {
         sds first = sdsnew("1"), second = sdsnew("2");
         absentCache *absent;
 
-        absent = absentCacheNew(0,4);
+        absent = absentCacheNew(4);
         test_assert(absentCachePutKey(absent,key1));
         test_assert(absentCachePutSubkey(absent,key1,first));
         test_assert(absentCachePutSubkey(absent,key2,first));

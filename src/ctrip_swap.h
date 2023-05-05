@@ -1732,8 +1732,6 @@ void zsetLoadInit(rdbKeyLoadData *load);
 int rdbLoadLenVerbatim(rio *rdb, sds *verbatim, int *isencoded, unsigned long long *lenptr);
 
 /* absent cache */
-#define ABSENT_CACHE_FLAGS_DISABLE_SUBKEY (1ULL << 0)
-
 typedef struct absentKeyMapEntry {
   dict *subkeys;
   listNode *ln;
@@ -1752,8 +1750,10 @@ typedef struct absentCache {
   list *list;
 } absentCache;
 
-absentCache *absentCacheNew(uint64_t flags, size_t capacity);
+absentCache *absentCacheNew(size_t capacity);
 void absentCacheFree(absentCache *absent);
+void absentCacheDisableSubkey(absentCache *absent);
+void absentCacheEnableSubkey(absentCache *absent);
 int absentCacheDelete(absentCache *absent, sds key);
 int absentCachePutKey(absentCache *absent, sds key);
 int absentCachePutSubkey(absentCache *absent, sds key, sds subkey);
@@ -1778,7 +1778,7 @@ void resetSwapCukooFilterInstantaneousMetrics();
 sds genSwapCuckooFilterInfoString(sds info);
 
 typedef struct coldFilter {
-  lruCache *absents;
+  absentCache *absents;
   cuckooFilter *filter;
   swapCuckooFilterStat filter_stat;
 } coldFilter;
@@ -1791,9 +1791,12 @@ void coldFilterReset(coldFilter *filter);
 void coldFilterAddKey(coldFilter *filter, sds key);
 void coldFilterDeleteKey(coldFilter *filter, sds key);
 void coldFilterKeyNotFound(coldFilter *filter, sds key);
-/* cold filter */
 int coldFilterMayContainKey(coldFilter *filter, sds key, int *filt_by);
 size_t coldFiltersUsedMemory(); /* cuckoo filter not counted in maxmemory */
+
+void coldFilterSubkeyAdded(coldFilter *filter, sds key);
+void coldFilterSubkeyNotFound(coldFilter *filter, sds key, sds subkey);
+void coldFilterMayContainSubkey(coldFilter *filter, sds key, sds subkey);
 
 /* Util */
 #define ROCKS_KEY_FLAG_NONE 0x0

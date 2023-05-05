@@ -1853,6 +1853,7 @@ struct redisServer {
 
     /* absent cache */
     int swap_absent_cache_enabled;
+    int swap_absent_cache_include_subkey;
     unsigned long long swap_absent_cache_capacity;
 
     /* cuckoo filter */

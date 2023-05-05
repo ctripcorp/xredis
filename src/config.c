@@ -2412,15 +2412,37 @@ static int updateSwapAbsentCacheEnabled(int val, int prev, const char **err) {
             for (int i = 0; i < server.dbnum; i++) {
                 redisDb *db = server.db+i;
                 serverAssert(db->cold_filter->absents == NULL);
-                db->cold_filter->absents = lruCacheNew(server.swap_absent_cache_capacity);
+                db->cold_filter->absents = absentCacheNew(server.swap_absent_cache_capacity);
             }
         } else {
             serverLog(LL_WARNING, "absent cache disabled.");
             for (int i = 0; i < server.dbnum; i++) {
                 redisDb *db = server.db+i;
                 serverAssert(db->cold_filter->absents != NULL);
-                lruCacheFree(db->cold_filter->absents);
+                absentCacheFree(db->cold_filter->absents);
                 db->cold_filter->absents = NULL;
+            }
+        }
+    }
+    return 1;
+}
+
+static int updateSwapAbsentCacheIncludeSubkey(int val, int prev, const char **err) {
+    UNUSED(err);
+    if (prev != val) {
+        if (val) {
+            for (int i = 0; i < server.dbnum; i++) {
+                redisDb *db = server.db+i;
+                if (db->cold_filter->absents) {
+                   absentCacheDisableSubkey(db->cold_filter->absents);
+                }
+            }
+        } else {
+            for (int i = 0; i < server.dbnum; i++) {
+                redisDb *db = server.db+i;
+                if (db->cold_filter->absents) {
+                   absentCacheEnableSubkey(db->cold_filter->absents);
+                }
             }
         }
     }
@@ -2456,7 +2478,7 @@ static int updateSwapAbsentCacheCapacity(long long val, long long prev, const ch
         for (int i = 0; i < server.dbnum; i++) {
             redisDb *db = server.db+i;
             if (db->cold_filter->absents)
-                lruCacheSetCapacity(db->cold_filter->absents, val);
+                absentCacheSetCapacity(db->cold_filter->absents, val);
         }
     }
     return 1;
@@ -2694,6 +2716,7 @@ standardConfig configs[] = {
     createBoolConfig("swap-debug-trace-latency", NULL, MODIFIABLE_CONFIG, server.swap_debug_trace_latency, 0, NULL, NULL),
     createBoolConfig("swap-cuckoo-filter-enabled", NULL, MODIFIABLE_CONFIG, server.swap_cuckoo_filter_enabled, 1, NULL, updateSwapCuckooFilterEnabled),
     createBoolConfig("swap-absent-cache-enabled", NULL, MODIFIABLE_CONFIG, server.swap_absent_cache_enabled, 1, NULL, updateSwapAbsentCacheEnabled),
+    createBoolConfig("swap-absent-cache-include-subkey", NULL, MODIFIABLE_CONFIG, server.swap_absent_cache_include_subkey, 1, NULL, updateSwapAbsentCacheIncludeSubkey),
     createBoolConfig("rocksdb.data.cache_index_and_filter_blocks", "rocksdb.cache_index_and_filter_blocks", IMMUTABLE_CONFIG, server.rocksdb_data_cache_index_and_filter_blocks, 0, NULL, NULL),
     createBoolConfig("rocksdb.meta.cache_index_and_filter_blocks", NULL, IMMUTABLE_CONFIG, server.rocksdb_meta_cache_index_and_filter_blocks, 0, NULL, NULL),
     createBoolConfig("rocksdb.enable_pipelined_write", NULL, IMMUTABLE_CONFIG, server.rocksdb_enable_pipelined_write, 0, NULL, NULL),

@@ -42,7 +42,7 @@ static void coldFilterDisableCuckooFilters() {
 static inline
 void coldFilterInitAbsentCache(coldFilter *filter) {
     if (server.swap_absent_cache_enabled) {
-        filter->absents = lruCacheNew(server.swap_absent_cache_capacity);
+        filter->absents = absentCacheNew(server.swap_absent_cache_capacity);
     }
 }
 
@@ -58,7 +58,7 @@ void coldFilterInitCuckooFilter(coldFilter *filter) {
 
 void coldFilterDeinit(coldFilter *filter) {
     if (filter->absents) {
-        lruCacheFree(filter->absents);
+        absentCacheFree(filter->absents);
         filter->absents = NULL;
     }
     if (filter->filter) {
@@ -101,7 +101,7 @@ void coldFilterAddKey(coldFilter *filter, sds key) {
         }
     }
 
-    if (filter->absents) lruCacheDelete(filter->absents,key);
+    if (filter->absents) absentCacheDelete(filter->absents,key);
 }
 
 void coldFilterDeleteKey(coldFilter *filter, sds key) {
@@ -111,7 +111,7 @@ void coldFilterDeleteKey(coldFilter *filter, sds key) {
 }
 
 void coldFilterKeyNotFound(coldFilter *filter, sds key) {
-    if (filter->absents) lruCachePut(filter->absents,key);
+    if (filter->absents) absentCachePutKey(filter->absents,key);
     if (filter->filter) filter->filter_stat.false_positive_count++;
 }
 
@@ -127,7 +127,7 @@ int coldFilterMayContainKey(coldFilter *filter, sds key, int *filt_by) {
         }
     }
 
-    if (filter->absents && lruCacheGet(filter->absents,key)) {
+    if (filter->absents && absentCacheGetKey(filter->absents,key)) {
         *filt_by = COLDFILTER_FILT_BY_ABSENT_CACHE;
         return 0;
     }
