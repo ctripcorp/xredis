@@ -75,7 +75,7 @@ int swapDataKeyRequestFinished(swapData *data) {
 /* Main/swap-thread: analyze data and command intention & request to decide
  * final swap intention. e.g. command might want SWAP_IN but data not
  * evicted, then intention is decided as NOP. */
-int swapDataAna(swapData *d, struct keyRequest *key_request,
+int swapDataAna(swapData *d, int thd, struct keyRequest *key_request,
         int *intention, uint32_t *intention_flags, void *datactx) {
     int retval = 0;
 
@@ -93,7 +93,7 @@ int swapDataAna(swapData *d, struct keyRequest *key_request,
     }
 
     if (d->type->swapAna) {
-        retval = d->type->swapAna(d,key_request,intention,
+        retval = d->type->swapAna(d,thd,key_request,intention,
                 intention_flags,datactx);
 
         if ((*intention_flags & SWAP_FIN_DEL_SKIP) ||
@@ -358,7 +358,7 @@ int swapDataTest(int argc, char *argv[], int accurate) {
         test_assert(!swapDataAlreadySetup(data));
         swapDataSetupMeta(data,OBJ_STRING,0/*expired*/,&datactx);
         test_assert(swapDataAlreadySetup(data));
-        swapDataAna(data,key_request,&intention,&intention_flags,datactx);
+        swapDataAna(data,0,key_request,&intention,&intention_flags,datactx);
         test_assert(intention == SWAP_DEL);
         test_assert(intention_flags == 0);
         test_assert(data->propagate_expire == 1);
@@ -377,7 +377,7 @@ int swapDataTest(int argc, char *argv[], int accurate) {
 
         data = createSwapData(db,key1,val1);
         swapDataSetupMeta(data,OBJ_STRING,-1,&datactx);
-        swapDataAna(data,key_request,&intention,&intention_flags,datactx);
+        swapDataAna(data,0,key_request,&intention,&intention_flags,datactx);
         test_assert(intention == SWAP_DEL);
         test_assert(intention_flags == SWAP_FIN_DEL_SKIP);
         test_assert(data->set_dirty == 1);

@@ -135,6 +135,25 @@ int coldFilterMayContainKey(coldFilter *filter, sds key, int *filt_by) {
     return 1;
 }
 
+/* Invalidate key from absent cache when subkey added to rocksdb so that
+ * we don't need to save evicted subkeys (cant maintain absent cache
+ * from swap thread) and delete every subkey in main thread.  */
+void coldFilterSubkeyAdded(coldFilter *filter, sds key) {
+    if (filter->absents) absentCacheDelete(filter->absents,key);
+}
+
+void coldFilterSubkeyNotFound(coldFilter *filter, sds key, sds subkey) {
+    if (filter->absents) absentCachePutSubkey(filter->absents,key,subkey);
+}
+
+int coldFilterMayContainSubkey(coldFilter *filter, sds key, sds subkey) {
+    if (filter->absents) {
+        return absentCacheGetSubkey(filter->absents,key,subkey);
+    } else {
+        return 1;
+    }
+}
+
 /* cuckoo filter not counted in maxmemory */
 size_t coldFiltersUsedMemory() {
     size_t used_memory = 0;

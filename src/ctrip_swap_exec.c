@@ -654,7 +654,7 @@ void swapExecBatchPreprocess(swapExecBatch *meta_batch) {
 
         swapCtxSetSwapData(req->swap_ctx,req->data,req->datactx);
 
-        if ((errcode = swapDataAna(req->data,req->key_request,
+        if ((errcode = swapDataAna(req->data,SWAP_ANA_THD_SWAP,req->key_request,
                         &intention,&intention_flags,req->datactx))) {
             swapRequestSetError(req, errcode);
             continue;

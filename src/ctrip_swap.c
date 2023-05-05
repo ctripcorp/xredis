@@ -427,8 +427,8 @@ void keyRequestProceed(void *lock, int flush, redisDb *db, robj *key,
     swapDataSetObjectMeta(data,object_meta);
 
 allset:
-    if (swapDataAna(data,ctx->key_request,&swap_intention,
-                &swap_intention_flags,datactx)) {
+    if (swapDataAna(data,SWAP_ANA_THD_MAIN,ctx->key_request,
+                &swap_intention,&swap_intention_flags,datactx)) {
         ctx->errcode = SWAP_ERR_DATA_ANA_FAIL;
         reason = "swap ana failed";
         reason_num = NOSWAP_REASON_UNEXPECTED;

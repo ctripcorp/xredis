@@ -35,7 +35,7 @@ static void createFakeHashForDeleteIfCold(swapData *data) {
 	}
 }
 
-int hashSwapAna(swapData *data, struct keyRequest *req,
+int hashSwapAna(swapData *data, int thd, struct keyRequest *req,
         int *intention, uint32_t *intention_flags, void *datactx_) {
     hashDataCtx *datactx = datactx_;
     int cmd_intention = req->cmd_intention;
@@ -838,29 +838,29 @@ int swapDataHashTest(int argc, char **argv, int accurate) {
     TEST("hash - swapAna") {
         /* nop: NOP/IN_META/IN_DEL/IN hot/OUT cold... */
         kr1->cmd_intention = SWAP_NOP, kr1->cmd_intention_flags = 0;
-        swapDataAna(hash1_data,kr1,&intention,&intention_flags,hash1_ctx);
+        swapDataAna(hash1_data,0,kr1,&intention,&intention_flags,hash1_ctx);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
         kr1->cmd_intention = SWAP_IN, kr1->cmd_intention_flags = SWAP_IN_META;
-        swapDataAna(hash1_data,kr1,&intention,&intention_flags,hash1_ctx);
+        swapDataAna(hash1_data,0,kr1,&intention,&intention_flags,hash1_ctx);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
         kr1->cmd_intention = SWAP_IN, kr1->cmd_intention_flags = SWAP_IN_DEL;
-        swapDataAna(hash1_data,kr1,&intention,&intention_flags,hash1_ctx);
+        swapDataAna(hash1_data,0,kr1,&intention,&intention_flags,hash1_ctx);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
         kr1->cmd_intention = SWAP_IN, kr1->cmd_intention_flags = 0;
-        swapDataAna(hash1_data,kr1,&intention,&intention_flags,hash1_ctx);
+        swapDataAna(hash1_data,0,kr1,&intention,&intention_flags,hash1_ctx);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
         kr1->cmd_intention = SWAP_IN, kr1->cmd_intention_flags = 0;
-        swapDataAna(hash1_data,kr1,&intention,&intention_flags,hash1_ctx);
+        swapDataAna(hash1_data,0,kr1,&intention,&intention_flags,hash1_ctx);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
         cold_kr1->cmd_intention = SWAP_OUT, cold_kr1->cmd_intention_flags = 0;
-        swapDataAna(cold1_data,cold_kr1,&intention,&intention_flags,cold1_ctx);
+        swapDataAna(cold1_data,0,cold_kr1,&intention,&intention_flags,cold1_ctx);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
         cold_kr1->cmd_intention = SWAP_DEL, cold_kr1->cmd_intention_flags = 0;
-        swapDataAna(cold1_data,cold_kr1,&intention,&intention_flags,cold1_ctx);
+        swapDataAna(cold1_data,0,cold_kr1,&intention,&intention_flags,cold1_ctx);
         test_assert(intention == SWAP_DEL && intention_flags == 0);
         /* in: entire or with subkeys */
         cold_kr1->cmd_intention = SWAP_IN, cold_kr1->cmd_intention_flags = 0;
-        swapDataAna(cold1_data,cold_kr1,&intention,&intention_flags,cold1_ctx);
+        swapDataAna(cold1_data,0,cold_kr1,&intention,&intention_flags,cold1_ctx);
         test_assert(intention == SWAP_IN && intention_flags == 0);
         test_assert(cold1_ctx->ctx.num == 0 && cold1_ctx->ctx.subkeys == NULL);
         subkeys1[0] = createStringObject(f1,sdslen(f1));
@@ -868,14 +868,14 @@ int swapDataHashTest(int argc, char **argv, int accurate) {
         cold_kr1->b.num_subkeys = 2;
         cold_kr1->b.subkeys = subkeys1;
         cold_kr1->cmd_intention = SWAP_IN, cold_kr1->cmd_intention_flags = 0;
-        swapDataAna(cold1_data,cold_kr1,&intention,&intention_flags,cold1_ctx);
+        swapDataAna(cold1_data,0,cold_kr1,&intention,&intention_flags,cold1_ctx);
         test_assert(intention == SWAP_IN && intention_flags == 0);
         test_assert(cold1_ctx->ctx.num == 2 && cold1_ctx->ctx.subkeys != NULL);
         /* out: evict by small steps */
         kr1->b.num_subkeys = 0;
         kr1->b.subkeys = NULL;
         kr1->cmd_intention = SWAP_OUT, kr1->cmd_intention_flags = 0;
-        swapDataAna(hash1_data,kr1,&intention,&intention_flags,hash1_ctx);
+        swapDataAna(hash1_data,0,kr1,&intention,&intention_flags,hash1_ctx);
         test_assert(intention == SWAP_OUT && intention_flags == 0);
         test_assert(cold1_ctx->ctx.num == SWAP_EVICT_STEP && cold1_ctx->ctx.subkeys != NULL);
     }
@@ -891,7 +891,7 @@ int swapDataHashTest(int argc, char **argv, int accurate) {
         zfree(hash1_ctx->ctx.subkeys), hash1_ctx->ctx.subkeys = NULL;
         hash1_ctx->ctx.num = 0;
         hash1_data_->d.object_meta = createHashObjectMeta(0,1);
-        swapDataAna(hash1_data,kr1,&intention,&intention_flags,hash1_ctx);
+        swapDataAna(hash1_data,0,kr1,&intention,&intention_flags,hash1_ctx);
         test_assert(intention == SWAP_OUT && intention_flags == 0);
         test_assert(hash1_ctx->ctx.num == (int)hashTypeLength(hash1_data_->d.value));
         serverAssert(hash1_ctx->ctx.subkeys != NULL);

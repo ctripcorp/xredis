@@ -369,6 +369,8 @@ static inline int swapObjectMetaIsHot(swapObjectMeta *som) {
 
 
 /* Data */
+#define SWAP_ANA_THD_MAIN 0
+#define SWAP_ANA_THD_SWAP 1
 
 /* SwapData represents key state when swap start. It is stable during
  * key swapping, misc dynamic data are save in dataCtx. */
@@ -397,7 +399,7 @@ typedef struct swapData {
  * dataCtx: dynamic data when swapping.  */
 typedef struct swapDataType {
   char *name;
-  int (*swapAna)(struct swapData *data, struct keyRequest *key_request, OUT int *intention, OUT uint32_t *intention_flags, void *datactx);
+  int (*swapAna)(struct swapData *data, int thd, struct keyRequest *key_request, OUT int *intention, OUT uint32_t *intention_flags, void *datactx);
   int (*swapAnaAction)(struct swapData *data, int intention, void *datactx, OUT int *action);
   int (*encodeKeys)(struct swapData *data, int intention, void *datactx, OUT int *num, OUT int **cfs, OUT sds **rawkeys);
   int (*encodeRange)(struct swapData *data, int intention, void *datactx, OUT int *limit, OUT uint32_t *flags, OUT int *cf, OUT sds *start, OUT sds *end);
@@ -418,7 +420,7 @@ swapData *createSwapData(redisDb *db, robj *key, robj *value);
 int swapDataSetupMeta(swapData *d, int object_type, long long expire, OUT void **datactx);
 int swapDataAlreadySetup(swapData *d);
 void swapDataMarkPropagateExpire(swapData *data);
-int swapDataAna(swapData *d, struct keyRequest *key_request, int *intention, uint32_t *intention_flag, void *datactx);
+int swapDataAna(swapData *d, int thd, struct keyRequest *key_request, int *intention, uint32_t *intention_flag, void *datactx);
 int swapDataSwapAnaAction(swapData *data, int intention, void *datactx_, int *action);
 sds swapDataEncodeMetaKey(swapData *d);
 sds swapDataEncodeMetaVal(swapData *d);
@@ -1796,7 +1798,7 @@ size_t coldFiltersUsedMemory(); /* cuckoo filter not counted in maxmemory */
 
 void coldFilterSubkeyAdded(coldFilter *filter, sds key);
 void coldFilterSubkeyNotFound(coldFilter *filter, sds key, sds subkey);
-void coldFilterMayContainSubkey(coldFilter *filter, sds key, sds subkey);
+int coldFilterMayContainSubkey(coldFilter *filter, sds key, sds subkey);
 
 /* Util */
 #define ROCKS_KEY_FLAG_NONE 0x0

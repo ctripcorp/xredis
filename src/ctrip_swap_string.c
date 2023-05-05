@@ -42,7 +42,7 @@ objectMetaType wholekeyObjectMetaType = {
 };
 
 /* ------------------- whole key swap data ----------------------------- */
-int wholeKeySwapAna(swapData *data, struct keyRequest *req,
+int wholeKeySwapAna(swapData *data, int thd, struct keyRequest *req,
         int *intention, uint32_t *intention_flags, void *datactx) {
     int cmd_intention = req->cmd_intention;
     uint32_t cmd_intention_flags = req->cmd_intention_flags;
@@ -380,7 +380,7 @@ int wholeKeySwapAna_(swapData *data_,
     req->b.subkeys = NULL;
     req->cmd_intention = cmd_intention;
     req->cmd_intention_flags = cmd_intention_flags;
-    retval = wholeKeySwapAna(data_,req,intention,intention_flags,datactx);
+    retval = wholeKeySwapAna(data_,0,req,intention,intention_flags,datactx);
     decrRefCount(req->key);
     return retval;
 }

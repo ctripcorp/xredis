@@ -35,7 +35,7 @@ static void createFakeSetForDeleteIfCold(swapData *data) {
     }
 }
 
-int setSwapAna(swapData *data, struct keyRequest *req,
+int setSwapAna(swapData *data, int thd, struct keyRequest *req,
                 int *intention, uint32_t *intention_flags, void *datactx_) {
     setDataCtx *datactx = datactx_;
     int cmd_intention = req->cmd_intention;
@@ -809,7 +809,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         // swap nop
         kr1->cmd_intention = SWAP_NOP;
         kr1->cmd_intention_flags = 0;
-        setSwapAna(set1_data,kr1,&intention,&intention_flags,set1_ctx);
+        setSwapAna(set1_data,0,kr1,&intention,&intention_flags,set1_ctx);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
 
         // swap in while no persisted data
@@ -817,7 +817,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         kr1->cmd_intention_flags = 0;
         set1_data->object_meta = NULL;
         set1_data->cold_meta = NULL;
-        setSwapAna(set1_data,kr1,&intention,&intention_flags,set1_ctx);
+        setSwapAna(set1_data,0,kr1,&intention,&intention_flags,set1_ctx);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
 
         // swap in meta
@@ -827,7 +827,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         set1_data->object_meta = NULL;
         set1_data->cold_meta = set1_meta;
         set1_meta->len=4;
-        setSwapAna(set1_data,kr1,&intention,&intention_flags,set1_ctx);
+        setSwapAna(set1_data,0,kr1,&intention,&intention_flags,set1_ctx);
         test_assert(intention == SWAP_IN && intention_flags == 0);
         test_assert(set1_ctx->ctx.num > 0);
 
@@ -835,7 +835,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         kr1->cmd_intention = SWAP_IN;
         kr1->cmd_intention_flags = SWAP_IN_DEL_MOCK_VALUE;
         set1_data->value = set1;
-        setSwapAna(set1_data, kr1, &intention, &intention_flags, set1_ctx);
+        setSwapAna(set1_data,0,kr1, &intention, &intention_flags, set1_ctx);
         test_assert(intention == SWAP_DEL && intention_flags == SWAP_FIN_DEL_SKIP);
 
         // swap in del - all subkeys in memory
@@ -845,12 +845,12 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         set1_data->object_meta = NULL;
         set1_data->cold_meta = set1_meta;
         set1_meta->len = 0;
-        setSwapAna(set1_data,kr1,&intention,&intention_flags,set1_ctx);
+        setSwapAna(set1_data,0,kr1,&intention,&intention_flags,set1_ctx);
         test_assert(intention == SWAP_DEL && intention_flags == SWAP_FIN_DEL_SKIP);
 
         // swap in del - not all subkeys in memory
         set1_meta->len = 4;
-        setSwapAna(set1_data,kr1,&intention,&intention_flags,set1_ctx);
+        setSwapAna(set1_data,0,kr1,&intention,&intention_flags,set1_ctx);
         test_assert(intention == SWAP_IN && intention_flags == SWAP_EXEC_IN_DEL);
 
         // swap in whole key
@@ -858,7 +858,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         kr1->cmd_intention_flags = 0;
         set1_data->value = NULL;
         set1_meta->len = 4;
-        setSwapAna(set1_data,kr1,&intention,&intention_flags,set1_ctx);
+        setSwapAna(set1_data,0,kr1,&intention,&intention_flags,set1_ctx);
         test_assert(intention == SWAP_IN && intention_flags == 0);
 
         // swap in with subkeys - swap in del
@@ -866,7 +866,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         kr1->b.subkeys = mockSubKeys(2, sdsdup(f1), sdsdup(f2));
         kr1->cmd_intention = SWAP_IN;
         kr1->cmd_intention_flags = SWAP_IN_DEL;
-        setSwapAna(set1_data,kr1,&intention,&intention_flags,set1_ctx);
+        setSwapAna(set1_data,0,kr1,&intention,&intention_flags,set1_ctx);
         test_assert(intention == SWAP_IN && intention_flags == SWAP_EXEC_IN_DEL);
         test_assert(set1_ctx->ctx.num == 2);
 
@@ -874,7 +874,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         kr1->cmd_intention = SWAP_IN;
         kr1->cmd_intention_flags = 0;
         set1_data->value = set1;
-        setSwapAna(set1_data,kr1,&intention,&intention_flags,set1_ctx);
+        setSwapAna(set1_data,0,kr1,&intention,&intention_flags,set1_ctx);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
         test_assert(set1_ctx->ctx.num == 0);
 
@@ -882,7 +882,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         kr1->cmd_intention = SWAP_IN;
         kr1->cmd_intention_flags = 0;
         kr1->b.subkeys = mockSubKeys(2, sdsnew("new1"), sdsnew("new2"));
-        setSwapAna(set1_data,kr1,&intention,&intention_flags,set1_ctx);
+        setSwapAna(set1_data,0,kr1,&intention,&intention_flags,set1_ctx);
         test_assert(intention == SWAP_IN && intention_flags == 0);
         test_assert(set1_ctx->ctx.num == 2);
 
@@ -890,7 +890,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         set1_data->value = NULL;
         kr1->cmd_intention = SWAP_OUT;
         kr1->cmd_intention_flags = 0;
-        setSwapAna(set1_data,kr1,&intention,&intention_flags,set1_ctx);
+        setSwapAna(set1_data,0,kr1,&intention,&intention_flags,set1_ctx);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
 
         // swap out - first swap out
@@ -900,7 +900,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         set1_data->cold_meta = NULL;
         set1_data->new_meta = NULL;
         set1_ctx->ctx.num = 0;
-        setSwapAna(set1_data,kr1,&intention,&intention_flags,set1_ctx);
+        setSwapAna(set1_data,0,kr1,&intention,&intention_flags,set1_ctx);
         test_assert(intention == SWAP_OUT && intention_flags == 0);
         test_assert(4 == set1_ctx->ctx.num);
         test_assert(NULL != set1_data->new_meta);
@@ -911,7 +911,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         set1_data->object_meta = createSetObjectMeta(0,0);
         set1_data->new_meta = NULL;
         int expectColdKey = db->cold_keys + 1;
-        setSwapAna(set1_data,kr1,&intention,&intention_flags,set1_ctx);
+        setSwapAna(set1_data,0,kr1,&intention,&intention_flags,set1_ctx);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
         test_assert(0 == setTypeSize(set1));
         test_assert(4 == set1_data->object_meta->len);
@@ -927,7 +927,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         // swap del
         kr1->cmd_intention = SWAP_DEL;
         kr1->cmd_intention_flags = 0;
-        setSwapAna(set1_data,kr1,&intention,&intention_flags,set1_ctx);
+        setSwapAna(set1_data,0,kr1,&intention,&intention_flags,set1_ctx);
         test_assert(intention == SWAP_DEL && intention_flags == 0);
 
         freeSetSwapData(set1_data, set1_ctx);

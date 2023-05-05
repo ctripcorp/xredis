@@ -583,9 +583,9 @@ void rdbLoadSwapDataFree(swapData *data_, void *datactx) {
     zfree(data);
 }
 
-int rdbLoadSwapAna(swapData *data, struct keyRequest *req,
+int rdbLoadSwapAna(swapData *data, int thd, struct keyRequest *req,
         int *intention, uint32_t *intention_flags, void *datactx) {
-    UNUSED(data), UNUSED(req), UNUSED(intention_flags), UNUSED(datactx);
+    UNUSED(data), UNUSED(thd), UNUSED(req), UNUSED(intention_flags), UNUSED(datactx);
     *intention = SWAP_OUT;
     *intention_flags = 0;
     return 0;

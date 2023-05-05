@@ -1284,7 +1284,7 @@ static void swapDataInitMetaList(swapData *data, metaList *ml) {
  * (never both), because otherwise frequently used lpop(rpop) commands
  * have to issue swap to delete pushed elements, which introduces io
  * latency. so if a list is hot, there are no elements in rocksdb. */
-int listSwapAna(swapData *data, struct keyRequest *req,
+int listSwapAna(swapData *data, int thd, struct keyRequest *req,
         int *intention, uint32_t *intention_flags, void *datactx_) {
     listDataCtx *datactx = datactx_;
     int cmd_intention = req->cmd_intention;
@@ -3026,37 +3026,37 @@ int swapListDataTest(int argc, char *argv[], int accurate) {
         kr->level = REQUEST_LEVEL_KEY, kr->dbid = 0;
         /* nop: pure/hot/in.meta warm/... */
         kr->cmd_intention = SWAP_IN, kr->cmd_intention_flags = 0, kr->key = purekey, kr->l.num_ranges = 1, kr->l.ranges = full;
-        swapDataAna(puredata,kr,&intention,&intention_flags,puredatactx);
+        swapDataAna(puredata,0,kr,&intention,&intention_flags,puredatactx);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
         kr->cmd_intention = SWAP_IN, kr->cmd_intention_flags = 0, kr->key = hotkey, kr->l.num_ranges = 1, kr->l.ranges = full;
-        swapDataAna(hotdata,kr,&intention,&intention_flags,hotdatactx);
+        swapDataAna(hotdata,0,kr,&intention,&intention_flags,hotdatactx);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
         kr->cmd_intention = SWAP_IN, kr->cmd_intention_flags = SWAP_IN_META, kr->key = warmkey, kr->l.num_ranges = 0, kr->l.ranges = NULL;
-        swapDataAna(warmdata,kr,&intention,&intention_flags,warmdatactx);
+        swapDataAna(warmdata,0,kr,&intention,&intention_flags,warmdatactx);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
         /* in: in warm/in.meta cold/... */
         kr->cmd_intention = SWAP_IN, kr->cmd_intention_flags = 0, kr->key = warmkey, kr->l.num_ranges = 0, kr->l.ranges = NULL;
-        swapDataAna(warmdata,kr,&intention,&intention_flags,warmdatactx);
+        swapDataAna(warmdata,0,kr,&intention,&intention_flags,warmdatactx);
         test_assert(intention == SWAP_IN && intention_flags == SWAP_IN_DEL);
         listDataCtx *warmctx = warmdatactx;
         test_assert(warmctx->swap_meta == NULL/*swap whole key*/);
         kr->cmd_intention = SWAP_IN, kr->cmd_intention_flags = SWAP_IN_META, kr->key = coldkey, kr->l.num_ranges = 0, kr->l.ranges = NULL;
-        swapDataAna(colddata,kr,&intention,&intention_flags,colddatactx);
+        swapDataAna(colddata,0,kr,&intention,&intention_flags,colddatactx);
         test_assert(intention == SWAP_IN && intention_flags == SWAP_IN_DEL);
         listDataCtx *coldctx = colddatactx;
         test_assert(coldctx->swap_meta->len == 1 && coldctx->swap_meta->segments[0].len == 1);
         /* out: out by small steps  */
         kr->cmd_intention = SWAP_OUT, kr->cmd_intention_flags = 0, kr->key = purekey, kr->l.num_ranges = 0, kr->l.ranges = NULL;
-        swapDataAna(puredata,kr,&intention,&intention_flags,puredatactx);
+        swapDataAna(puredata,0,kr,&intention,&intention_flags,puredatactx);
         test_assert(intention == SWAP_OUT && intention_flags == 0);
         listDataCtx *purectx = puredatactx;
         test_assert(purectx->swap_meta->len == 3 && purectx->swap_meta->segments[0].len == 3);
         /* del: in.mock cold/del cold */
         kr->cmd_intention = SWAP_IN, kr->cmd_intention_flags = SWAP_IN_DEL_MOCK_VALUE, kr->key = coldkey, kr->l.num_ranges = 0, kr->l.ranges = NULL;
-        swapDataAna(colddata,kr,&intention,&intention_flags,colddatactx);
+        swapDataAna(colddata,0,kr,&intention,&intention_flags,colddatactx);
         test_assert(intention == SWAP_DEL && intention_flags == SWAP_FIN_DEL_SKIP);
         kr->cmd_intention = SWAP_DEL, kr->cmd_intention_flags = 0, kr->key = coldkey, kr->l.num_ranges = 0, kr->l.ranges = NULL;
-        swapDataAna(colddata,kr,&intention,&intention_flags,colddatactx);
+        swapDataAna(colddata,0,kr,&intention,&intention_flags,colddatactx);
         test_assert(intention == SWAP_DEL && intention_flags == 0);
 
         zfree(full);
