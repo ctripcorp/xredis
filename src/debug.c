@@ -537,18 +537,18 @@ NULL
             }
         }
 
+        /* debug reload is executed without global lock, there might be
+         * inprogress request which could result in in keys not save
+         * consistent. e.g. if hot hash swap out in flight, hash object
+         * is cleaned by swapDataCleanObject, but keyspace (db.dict &
+         * db.meta) not yet modified, then hash will be considered hot
+         * and saved as hot (empty hash). */
+        asyncCompleteQueueDrain(-1);
+
         /* The default behavior is to save the RDB file before loading
          * it back. */
         if (save) {
             rdbSaveInfo rsi, *rsiptr;
-
-            /* debug reload is executed without global lock, there might be
-             * inprogress request which could result in in keys not save
-             * consistent. e.g. if hot hash swap out in flight, hash object
-             * is cleaned by swapDataCleanObject, but keyspace (db.dict &
-             * db.meta) not yet modified, then hash will be considered hot
-             * and saved as hot (empty hash). */
-            asyncCompleteQueueDrain(-1);
 
             rsiptr = rdbPopulateSaveInfo(&rsi);
             if (rdbSave(server.rdb_filename,rsiptr) != C_OK) {
@@ -714,6 +714,9 @@ NULL
         /* DEBUG DIGEST (form without keys specified) */
         unsigned char digest[20];
         sds d = sdsempty();
+
+        /* wait untill keyspace stable */
+        asyncCompleteQueueDrain(-1);
 
         computeDatasetDigest(digest);
         for (int i = 0; i < 20; i++) d = sdscatprintf(d, "%02x",digest[i]);
