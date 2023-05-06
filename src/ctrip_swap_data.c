@@ -42,6 +42,12 @@ int swapDataAlreadySetup(swapData *data) {
     return data->type != NULL;
 }
 
+int swapDataMayContainSubkey(swapData *data, int thd, robj *subkey) {
+    /* To avoid lock, only main thread access absent cache. */
+    if (thd != SWAP_ANA_THD_MAIN) return 1;
+    return coldFilterMayContainSubkey(data->db->cold_filter,data->key->ptr,subkey->ptr);
+}
+
 void swapDataMarkPropagateExpire(swapData *data) {
     data->propagate_expire = 1;
 }
@@ -210,6 +216,39 @@ int swapDataObjectMergedIsHot(swapData *d, void *result, void *datactx) {
     return keyIsHot(object_meta,value);
 }
 
+swapDataAbsentSubkey *swapDataAbsentSubkeyNew() {
+    swapDataAbsentSubkey *absent = zmalloc(sizeof(swapDataAbsentSubkey));
+    absent->subkeys = zmalloc(sizeof(sds)*SWAP_DATA_ABSENT_SUBKEYS_INIT);
+    absent->count = 0;
+    absent->capacity = SWAP_DATA_ABSENT_SUBKEYS_INIT;
+    return absent;
+}
+
+void swapDataAbsentSubkeyPush(swapDataAbsentSubkey *absent, sds subkey) {
+    if (absent->count == absent->capacity) {
+        if (absent->capacity >= SWAP_DATA_ABSENT_SUBKEYS_LINEAR)
+            absent->capacity += SWAP_DATA_ABSENT_SUBKEYS_LINEAR;
+        else
+            absent->capacity *= 2;
+
+        absent->subkeys = zrealloc(absent->subkeys,absent->capacity*sizeof(sds));
+    }
+
+    absent->subkeys[absent->count++] = subkey;
+}
+
+void swapDataAbsentSubkeyFree(swapDataAbsentSubkey *absent) {
+    if (absent == NULL) return;
+    if (absent->subkeys) {
+        for (size_t i = 0; i < absent->count; i++) {
+            sdsfree(absent->subkeys[i]);
+        }
+        zfree(absent->subkeys);
+        absent->subkeys = NULL;
+    }
+    zfree(absent);
+}
+
 inline void swapDataFree(swapData *d, void *datactx) {
     /* free extend */
     if (d->type && d->type->free) d->type->free(d,datactx);
@@ -218,6 +257,7 @@ inline void swapDataFree(swapData *d, void *datactx) {
     if (d->new_meta) freeObjectMeta(d->new_meta);
     if (d->key) decrRefCount(d->key);
     if (d->value) decrRefCount(d->value);
+    if (d->absent) swapDataAbsentSubkeyFree(d->absent);
     zfree(d);
 }
 
@@ -326,6 +366,48 @@ void swapDataTurnDeleted(swapData *data, int del_skip) {
     }
 }
 
+/* Save absent subkeys when in swap thread, which will be merged into cold
+ * filter when callback in main thread. */
+void swapDataRetainAbsentSubkeys(swapData *data, int num, int *cfs,
+        sds *rawkeys, sds *rawvals) {
+    uint64_t version = swapDataObjectVersion(data);
+
+    /* string dont have subkey */
+    if (version <= 0) return;
+
+    for (int i = 0; i < num; i++) {
+        int dbid;
+        const char *keystr, *subkeystr;
+        size_t klen, slen;
+        uint64_t subkey_version;
+        sds absent_subkey;
+
+        if (cfs[i] != DATA_CF) continue;
+        if (rawvals[i] != NULL) continue;
+        if (rocksDecodeDataKey(rawkeys[i],sdslen(rawkeys[i]),
+                    &dbid,&keystr,&klen,&subkey_version,&subkeystr,&slen) < 0) {
+            continue;
+        }
+        if (subkey_version != version) continue;
+
+        absent_subkey = sdsnewlen(subkeystr,slen);
+
+        if (data->absent == NULL)
+            data->absent = swapDataAbsentSubkeyNew();
+
+        swapDataAbsentSubkeyPush(data->absent,absent_subkey);
+    }
+}
+
+void swapDataMergeAbsentSubkey(swapData *data) {
+    swapDataAbsentSubkey *absent = data->absent;
+    if (absent == NULL) return;
+    for (size_t i = 0; i < absent->count; i++) {
+        sds key = data->key->ptr;
+        sds subkey = absent->subkeys[i];
+        coldFilterSubkeyNotFound(data->db->cold_filter,key,subkey);
+    }
+}
 
 #ifdef REDIS_TEST
 int swapDataTest(int argc, char *argv[], int accurate) {

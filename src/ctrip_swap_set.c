@@ -98,10 +98,12 @@ int setSwapAna(swapData *data, int thd, struct keyRequest *req,
                      * need to do ROCKS_DEL on those fields. */
                     for (int i = 0; i < req->b.num_subkeys; i++) {
                         robj *subkey = req->b.subkeys[i];
-                        incrRefCount(subkey);
-                        datactx->ctx.subkeys[datactx->ctx.num++] = subkey;
+                        if (swapDataMayContainSubkey(data,thd,subkey->ptr)) {
+                            incrRefCount(subkey);
+                            datactx->ctx.subkeys[datactx->ctx.num++] = subkey;
+                        }
                     }
-                    *intention = SWAP_IN;
+                    *intention = datactx->ctx.num > 0 ? SWAP_IN : SWAP_NOP;
                     *intention_flags = SWAP_EXEC_IN_DEL;
                 } else if (meta->len == 0) {
                     *intention = SWAP_NOP;
@@ -112,8 +114,10 @@ int setSwapAna(swapData *data, int thd, struct keyRequest *req,
                     for (int i = 0; i < req->b.num_subkeys; i++) {
                         robj *subkey = req->b.subkeys[i];
                         if (data->value == NULL || !setTypeIsMember(data->value, subkey->ptr)) {
-                            incrRefCount(subkey);
-                            datactx->ctx.subkeys[datactx->ctx.num++] = subkey;
+                            if (swapDataMayContainSubkey(data,thd,subkey->ptr)) {
+                                incrRefCount(subkey);
+                                datactx->ctx.subkeys[datactx->ctx.num++] = subkey;
+                            }
                         }
                     }
                     *intention = datactx->ctx.num > 0 ? SWAP_IN : SWAP_NOP;

@@ -99,8 +99,10 @@ int hashSwapAna(swapData *data, int thd, struct keyRequest *req,
                 if (cmd_intention_flags == SWAP_IN_DEL ||
                         data->value == NULL ||
                         !hashTypeExists(data->value,subkey->ptr)) {
-                    incrRefCount(subkey);
-                    datactx->ctx.subkeys[datactx->ctx.num++] = subkey;
+                    if (swapDataMayContainSubkey(data,thd,subkey)) {
+                        incrRefCount(subkey);
+                        datactx->ctx.subkeys[datactx->ctx.num++] = subkey;
+                    }
                 }
             }
 
@@ -162,7 +164,7 @@ int hashSwapAna(swapData *data, int thd, struct keyRequest *req,
                     swapDataTurnCold(data);
                 }
                 swapDataSwapOut(data,datactx,NULL);
-                
+
                 *intention = SWAP_NOP;
                 *intention_flags = 0;
             } else {

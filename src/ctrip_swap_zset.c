@@ -115,10 +115,12 @@ int zsetSwapAna(swapData *data, int thd, struct keyRequest *req,
                     * need to do ROCKS_DEL on those fields. */
                 for (int i = 0; i < req->b.num_subkeys; i++) {
                     robj *subkey = req->b.subkeys[i];
-                    incrRefCount(subkey);
-                    datactx->bdc.subkeys[datactx->bdc.num++] = subkey;
+                    if (swapDataMayContainSubkey(data,thd,subkey)) {
+                        incrRefCount(subkey);
+                        datactx->bdc.subkeys[datactx->bdc.num++] = subkey;
+                    }
                 }
-                *intention = SWAP_IN;
+                *intention = datactx->bdc.num > 0 ? SWAP_IN : SWAP_NOP;
                 *intention_flags = SWAP_EXEC_IN_DEL;
             } else if (meta->len == 0) {
                 *intention = SWAP_NOP;
@@ -130,8 +132,10 @@ int zsetSwapAna(swapData *data, int thd, struct keyRequest *req,
                     robj *subkey = req->b.subkeys[i];
                     double score;
                     if (data->value == NULL || zsetScore(data->value, subkey->ptr, &score) == C_ERR) {
-                        incrRefCount(subkey);
-                        datactx->bdc.subkeys[datactx->bdc.num++] = subkey;
+                        if (swapDataMayContainSubkey(data,thd,subkey)) {
+                            incrRefCount(subkey);
+                            datactx->bdc.subkeys[datactx->bdc.num++] = subkey;
+                        }
                     }
                 }
                 *intention = datactx->bdc.num > 0 ? SWAP_IN : SWAP_NOP;

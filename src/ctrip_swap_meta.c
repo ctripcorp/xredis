@@ -326,7 +326,7 @@ int setupMetaScanDataCtx4ScanExpire(metaScanDataCtx *datactx, client *c) {
 /* MetaScan */
 int metaScanSwapAna(swapData *data, int thd, struct keyRequest *req,
         int *intention, uint32_t *intention_flags, void *datactx_) {
-    UNUSED(data),UNUSED(req);
+    UNUSED(data),UNUSED(req),UNUSED(thd);
     metaScanDataCtx *datactx = datactx_;
     metaScanDataCtxSwapAna(datactx,intention,intention_flags);
     return 0;

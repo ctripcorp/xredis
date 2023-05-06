@@ -139,16 +139,24 @@ int coldFilterMayContainKey(coldFilter *filter, sds key, int *filt_by) {
  * we don't need to save evicted subkeys (cant maintain absent cache
  * from swap thread) and delete every subkey in main thread.  */
 void coldFilterSubkeyAdded(coldFilter *filter, sds key) {
-    if (filter->absents) absentCacheDelete(filter->absents,key);
+    if (server.swap_absent_cache_include_subkey && filter->absents)
+        absentCacheDelete(filter->absents,key);
 }
 
 void coldFilterSubkeyNotFound(coldFilter *filter, sds key, sds subkey) {
-    if (filter->absents) absentCachePutSubkey(filter->absents,key,subkey);
+    if (server.swap_absent_cache_include_subkey && filter->absents)
+        absentCachePutSubkey(filter->absents,key,subkey);
 }
 
 int coldFilterMayContainSubkey(coldFilter *filter, sds key, sds subkey) {
-    if (filter->absents) {
-        return absentCacheGetSubkey(filter->absents,key,subkey);
+    if (server.swap_absent_cache_include_subkey && filter->absents) {
+        atomicIncr(server.swap_hit_stats->stat_absent_subkey_query_count,1);
+        if (absentCacheGetSubkey(filter->absents,key,subkey)) {
+            atomicIncr(server.swap_hit_stats->stat_absent_subkey_filt_count,1);
+            return 0;
+        } else {
+            return 1;
+        }
     } else {
         return 1;
     }

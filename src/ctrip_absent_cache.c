@@ -88,8 +88,6 @@ dictType absentSubkeyDictType = {
 
 absentCache *absentCacheNew(size_t capacity) {
     absentCache *absent = zmalloc(sizeof(absentCache));
-    absent->disable_subkey = 0;
-    absent->reserved = 0;
     absent->capacity = capacity;
     absent->map = dictCreate(&absentKeyDictType,NULL);
     absent->list = listCreate();
@@ -204,8 +202,6 @@ int absentCachePutSubkey(absentCache *absent, sds key_, sds subkey_) {
 
     serverAssert(key_ && subkey_);
 
-    if (absent->disable_subkey) return 0;
-
     if (!(de = dictFind(absent->map,key_))) {
         key = sdsdup(key_);
         subkey = sdsdup(subkey_);
@@ -250,7 +246,6 @@ int absentCacheGetKey(absentCache *absent, sds key) {
 int absentCacheGetSubkey(absentCache *absent, sds key, sds subkey) {
     listNode *ln;
     absentKeyMapEntry *me;
-    if (absent->disable_subkey) return 0;
     me = dictFetchValue(absent->map,key);
     if (me == NULL || me->subkeys == NULL) return 0;
     if ((ln = dictFetchValue(me->subkeys,subkey)) == NULL) return 0;
@@ -262,14 +257,6 @@ int absentCacheGetSubkey(absentCache *absent, sds key, sds subkey) {
 void absentCacheSetCapacity(absentCache *absent, size_t capacity) {
     absent->capacity = capacity;
     absentCacheTrim(absent);
-}
-
-void absentCacheDisableSubkey(absentCache *absent) {
-    absent->disable_subkey = 1;
-}
-
-void absentCacheEnableSubkey(absentCache *absent) {
-    absent->disable_subkey = 0;
 }
 
 #ifdef REDIS_TEST

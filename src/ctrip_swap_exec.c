@@ -160,12 +160,15 @@ void swapRequestMerge(swapRequest *req) {
             if (swapDataIsCold(data) && req->result) {
                 swapDataTurnWarmOrHot(data);
             }
+            swapDataMergeAbsentSubkey(data);
         }
         break;
     case SWAP_OUT:
         retval = swapDataSwapOut(data,datactx,&swap_out_completely);
         if (!swapDataIsCold(data) && swap_out_completely) {
             swapDataTurnCold(data);
+        } else {
+            coldFilterSubkeyAdded(data->db->cold_filter,data->key->ptr);
         }
         break;
     case SWAP_DEL:
@@ -441,6 +444,8 @@ void swapExecBatchExecuteIn(swapExecBatch *exec_batch) {
                 swapRequestSetError(req,errcode);
                 continue;
             }
+            swapDataRetainAbsentSubkeys(req->data,rio->get.numkeys,
+                    rio->get.cfs,rio->get.rawkeys,rio->get.rawvals);
         } else { /* ROCKS_ITERATE */
             int *tmpcfs = zmalloc(sizeof(int)*rio->iterate.numkeys);
 

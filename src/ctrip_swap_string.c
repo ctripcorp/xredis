@@ -83,6 +83,7 @@ int wholeKeySwapAna(swapData *data, int thd, struct keyRequest *req,
                 *intention = SWAP_OUT;
                 *intention_flags = 0;
             } else {
+                serverAssert(thd == SWAP_ANA_THD_MAIN);
                 /* Not dirty: swapout right away without swap. */
                 swapDataTurnCold(data);
                 swapDataSwapOut(data, NULL,NULL);

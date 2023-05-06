@@ -369,6 +369,15 @@ static inline int swapObjectMetaIsHot(swapObjectMeta *som) {
 
 
 /* Data */
+#define SWAP_DATA_ABSENT_SUBKEYS_INIT 4
+#define SWAP_DATA_ABSENT_SUBKEYS_LINEAR 1024
+
+typedef struct swapDataAbsentSubkey {
+  size_t count;
+  size_t capacity;
+  sds *subkeys;
+} swapDataAbsentSubkey;
+
 #define SWAP_ANA_THD_MAIN 0
 #define SWAP_ANA_THD_SWAP 1
 
@@ -391,6 +400,7 @@ typedef struct swapData {
   unsigned persistence_deleted:1;
   unsigned reserved:28;
   sds nextseek; /* own, moved from exec */
+  swapDataAbsentSubkey *absent;
   void *extends[2];
 } swapData;
 
@@ -439,6 +449,9 @@ int swapDataKeyRequestFinished(swapData *data);
 char swapDataGetObjectAbbrev(robj *value);
 void swapDataFree(swapData *data, void *datactx);
 int swapDataMergedIsHot(swapData *d, void *result, void *datactx);
+void swapDataRetainAbsentSubkeys(swapData *data, int num, int *cfs, sds *rawkeys, sds *rawvals);
+void swapDataMergeAbsentSubkey(swapData *data);
+int swapDataMayContainSubkey(swapData *data, int thd, robj *subkey);
 
 static inline void swapDataSetObjectMeta(swapData *d, objectMeta *object_meta) {
     d->object_meta = object_meta;
@@ -1484,6 +1497,8 @@ typedef struct swapHitStat {
     redisAtomic long long stat_swapin_not_found_coldfilter_miss_count;
     redisAtomic long long stat_swapin_no_io_count;
     redisAtomic long long stat_swapin_data_not_found_count;
+    redisAtomic long long stat_absent_subkey_query_count;
+    redisAtomic long long stat_absent_subkey_filt_count;
 } swapHitStat;
 
 static inline int isSwapHitStatKeyRequest(keyRequest *kr) {
@@ -1745,8 +1760,6 @@ typedef struct absentListEntry {
 } absentListEntry;
 
 typedef struct absentCache {
-  uint64_t disable_subkey:1;
-  uint64_t reserved:63;
   size_t capacity;
   dict *map;
   list *list;
@@ -1754,8 +1767,6 @@ typedef struct absentCache {
 
 absentCache *absentCacheNew(size_t capacity);
 void absentCacheFree(absentCache *absent);
-void absentCacheDisableSubkey(absentCache *absent);
-void absentCacheEnableSubkey(absentCache *absent);
 int absentCacheDelete(absentCache *absent, sds key);
 int absentCachePutKey(absentCache *absent, sds key);
 int absentCachePutSubkey(absentCache *absent, sds key, sds subkey);

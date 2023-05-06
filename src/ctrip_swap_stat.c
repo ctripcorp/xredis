@@ -458,12 +458,15 @@ void resetSwapHitStat() {
     atomicSet(server.swap_hit_stats->stat_swapin_not_found_coldfilter_miss_count,0);
     atomicSet(server.swap_hit_stats->stat_swapin_no_io_count,0);
     atomicSet(server.swap_hit_stats->stat_swapin_data_not_found_count,0);
+    atomicSet(server.swap_hit_stats->stat_absent_subkey_query_count,0);
+    atomicSet(server.swap_hit_stats->stat_absent_subkey_filt_count,0);
 }
 
 sds genSwapHitInfoString(sds info) {
     double memory_hit_perc = 0, keyspace_hit_perc = 0, notfound_coldfilter_filt_perc = 0;
     long long attempt, noio, notfound_coldfilter_miss, notfound_absentcache_filt,
-         notfound_cuckoofilter_filt, notfound, data_notfound;
+         notfound_cuckoofilter_filt, notfound, data_notfound,
+         absent_subkey_query, absent_subkey_filt;
 
     atomicGet(server.swap_hit_stats->stat_swapin_attempt_count,attempt);
     atomicGet(server.swap_hit_stats->stat_swapin_no_io_count,noio);
@@ -471,6 +474,9 @@ sds genSwapHitInfoString(sds info) {
     atomicGet(server.swap_hit_stats->stat_swapin_not_found_coldfilter_cuckoofilter_filt_count,notfound_cuckoofilter_filt);
     atomicGet(server.swap_hit_stats->stat_swapin_not_found_coldfilter_absentcache_filt_count,notfound_absentcache_filt);
     atomicGet(server.swap_hit_stats->stat_swapin_data_not_found_count,data_notfound);
+    atomicGet(server.swap_hit_stats->stat_absent_subkey_query_count,absent_subkey_query);
+    atomicGet(server.swap_hit_stats->stat_absent_subkey_filt_count,absent_subkey_filt);
+
     notfound = notfound_absentcache_filt + notfound_cuckoofilter_filt + notfound_coldfilter_miss;
 
     if (attempt) {
@@ -491,11 +497,13 @@ sds genSwapHitInfoString(sds info) {
             "swap_swapin_not_found_coldfilter_absentcache_filt_count:%lld\r\n"
             "swap_swapin_not_found_coldfilter_miss:%lld\r\n"
             "swap_swapin_not_found_coldfilter_filt_perc:%.2f%%\r\n"
-            "swap_swapin_data_not_found_count:%lld\r\n",
+            "swap_swapin_data_not_found_count:%lld\r\n"
+            "swap_absent_subkey_query_count:%lld\r\n"
+            "swap_absent_subkey_filt_count:%lld\r\n",
             attempt,notfound,noio,memory_hit_perc,keyspace_hit_perc,
             notfound_cuckoofilter_filt, notfound_absentcache_filt,
             notfound_coldfilter_miss, notfound_coldfilter_filt_perc,
-            data_notfound);
+            data_notfound,absent_subkey_query,absent_subkey_filt);
 
     return info;
 }

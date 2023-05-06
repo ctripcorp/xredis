@@ -1289,6 +1289,7 @@ int listSwapAna(swapData *data, int thd, struct keyRequest *req,
     listDataCtx *datactx = datactx_;
     int cmd_intention = req->cmd_intention;
     uint32_t cmd_intention_flags = req->cmd_intention_flags;
+    UNUSED(thd);
 
     switch (cmd_intention) {
     case SWAP_NOP:
