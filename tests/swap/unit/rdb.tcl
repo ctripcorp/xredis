@@ -59,6 +59,7 @@ start_server {overrides {save ""} tags {"swap" "rdb"}} {
             r hmset warm b b 2 2
             r hmset cold a a b b 1 1 2 2 
             r swap.evict cold
+            wait_key_cold r cold
             assert_equal [object_meta_len r hot] 0
             assert_equal [object_meta_len r warm] 2
             assert_equal [object_meta_len r cold] 4

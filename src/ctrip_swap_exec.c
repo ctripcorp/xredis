@@ -165,10 +165,12 @@ void swapRequestMerge(swapRequest *req) {
         break;
     case SWAP_OUT:
         retval = swapDataSwapOut(data,datactx,&swap_out_completely);
-        if (!swapDataIsCold(data) && swap_out_completely) {
-            swapDataTurnCold(data);
-        } else {
-            coldFilterSubkeyAdded(data->db->cold_filter,data->key->ptr);
+        if (!swapDataIsCold(data)) {
+            if (swap_out_completely) {
+                swapDataTurnCold(data);
+            } else {
+                coldFilterSubkeyAdded(data->db->cold_filter,data->key->ptr);
+            }
         }
         break;
     case SWAP_DEL:

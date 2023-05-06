@@ -98,7 +98,7 @@ int setSwapAna(swapData *data, int thd, struct keyRequest *req,
                      * need to do ROCKS_DEL on those fields. */
                     for (int i = 0; i < req->b.num_subkeys; i++) {
                         robj *subkey = req->b.subkeys[i];
-                        if (swapDataMayContainSubkey(data,thd,subkey->ptr)) {
+                        if (swapDataMayContainSubkey(data,thd,subkey)) {
                             incrRefCount(subkey);
                             datactx->ctx.subkeys[datactx->ctx.num++] = subkey;
                         }
@@ -114,7 +114,7 @@ int setSwapAna(swapData *data, int thd, struct keyRequest *req,
                     for (int i = 0; i < req->b.num_subkeys; i++) {
                         robj *subkey = req->b.subkeys[i];
                         if (data->value == NULL || !setTypeIsMember(data->value, subkey->ptr)) {
-                            if (swapDataMayContainSubkey(data,thd,subkey->ptr)) {
+                            if (swapDataMayContainSubkey(data,thd,subkey)) {
                                 incrRefCount(subkey);
                                 datactx->ctx.subkeys[datactx->ctx.num++] = subkey;
                             }
