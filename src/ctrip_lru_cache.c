@@ -216,6 +216,15 @@ lruCacheIter *lruCacheGetIterator(lruCache *cache, int direction) {
     return iter;
 }
 
+void lruCacheReleaseIterator(lruCacheIter *iter) {
+    if (iter == NULL) return;
+    if (iter->li) {
+        listReleaseIterator(iter->li);
+        iter->li = NULL;
+    }
+    zfree(iter);
+}
+
 int lruCacheIterNext(lruCacheIter *iter) {
     iter->ln = listNext(iter->li);
     return iter->ln != NULL;
@@ -366,6 +375,7 @@ int lruCacheTest(int argc, char *argv[], int accurate) {
         test_assert(strcmp(lruCacheIterKey(iter),"4") == 0);
         test_assert(lruCacheIterVal(iter) == (void*)4);
         test_assert(!lruCacheIterNext(iter));
+        lruCacheReleaseIterator(iter);
 
         test_assert(lruCacheGet(cache,second,(void**)&oval) == 0);
         test_assert(lruCacheGet(cache,third,(void**)&oval) == 1 && oval == 3);

@@ -127,7 +127,9 @@ void swapPersistCtxPersistKeys(swapPersistCtx *ctx) {
             robj *key = createStringObject(keyptr,sdslen(keyptr));
             uint64_t persist_version = (uint64_t)lruCacheIterVal(iter);
             tryPersistKey(db,key,persist_version);
+            decrRefCount(key);
         }
+        lruCacheReleaseIterator(iter);
     }
 }
 
@@ -178,6 +180,8 @@ void loadDataFromRocksdb() {
             db->cold_keys++;
             coldFilterAddKey(db->cold_filter,keyobj->ptr);
 
+            decrRefCount(keyobj);
+
             rocksdb_iter_next(meta_iter);
         }
 
@@ -191,6 +195,8 @@ void loadDataFromRocksdb() {
                     i,db->cold_keys,elapsed);
         }
     }
+
+    rocksdb_iter_destroy(meta_iter);
 }
 
 static int keyspaceIsEmpty() {
