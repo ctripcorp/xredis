@@ -72,7 +72,7 @@ extern const char *swap_cf_names[CF_COUNT];
  * if current role is slave. */
 #define SWAP_EXPIRE_FORCE (1U<<7)
 #define SWAP_IN_FORCE_HOT (1U<<8)
-#define SWAP_OOM_SENSITIVE (1U<<9)
+#define SWAP_OOM_CHECK (1U<<9)
 
 /* Delete rocksdb data key */
 #define SWAP_EXEC_IN_DEL (1U<<0)
@@ -570,6 +570,7 @@ void swapDebugMsgsDump(swapDebugMsgs *msgs);
 #define SWAP_ERR_RIO_PUT_FAIL -502
 #define SWAP_ERR_RIO_DEL_FAIL -503
 #define SWAP_ERR_RIO_ITER_FAIL -504
+#define SWAP_ERR_RIO_OOM      -505
 
 struct swapCtx;
 
@@ -1076,6 +1077,7 @@ typedef struct RIO {
 	};
   sds err;
   int errcode;
+  int oom_check;
   void *privdata;
 } RIO;
 
@@ -1085,7 +1087,6 @@ typedef struct RIO {
 #define ROCKS_ITERATE_LOW_BOUND_EXCLUDE (1<<2)
 #define ROCKS_ITERATE_HIGH_BOUND_EXCLUDE (1<<3)
 #define ROCKS_ITERATE_DISABLE_CACHE (1<<4)
-#define ROCKS_ITERATE_OOM_CHECK (1<<5)
 
 void RIOInitGet(RIO *rio, int numkeys, int *cfs, sds *rawkeys);
 void RIOInitPut(RIO *rio, int numkeys, int *cfs, sds *rawkeys, sds *rawvals);

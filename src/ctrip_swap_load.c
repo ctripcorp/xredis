@@ -54,7 +54,7 @@ void loadClientKeyRequestFinished(client *c, swapCtx *ctx) {
 int submitLoadClientRequest(client *c, robj *key, int oom_sensitive) {
     getKeyRequestsResult result = GET_KEYREQUESTS_RESULT_INIT;
     int flags = (int)c->cmd->intention_flags;
-    if (oom_sensitive) flags |= SWAP_OOM_SENSITIVE;
+    if (oom_sensitive) flags |= SWAP_OOM_CHECK;
     getKeyRequestsPrepareResult(&result,1);
     incrRefCount(key);
     getKeyRequestsAppendSubkeyResult(&result,REQUEST_LEVEL_KEY,key,0,NULL,

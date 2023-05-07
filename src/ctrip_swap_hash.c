@@ -117,7 +117,7 @@ int hashSwapAna(swapData *data, int thd, struct keyRequest *req,
                 *intention_flags = 0;
         }
 
-        if (cmd_intention_flags & SWAP_OOM_SENSITIVE) {
+        if (cmd_intention_flags & SWAP_OOM_CHECK) {
             *intention_flags |= SWAP_EXEC_OOM_CHECK;
         }
         break;

@@ -33,6 +33,14 @@
 
 #define MIN(a,b) ((a) > (b) ? (b): (a))
 
+static inline int rioMayOOM(unsigned long long mem_allocated) {
+    if (server.maxmemory == 0) return 0;
+    size_t mem_used = ctrip_getUsedMemory();
+    /* expect  total_mem_used < [100 + (swap_maxmemory_oom_percentage - 100)*3/4]*maxmemory/100 */
+    unsigned long long mem_limit = (25 + server.swap_maxmemory_oom_percentage*3/4)*server.maxmemory/100;
+    return mem_used + mem_allocated >= mem_limit;
+}
+
 static inline void RIOInitGeneric(RIO *rio, int action, int numkeys,
         int *cfs, sds *rawkeys, sds *rawvals) {
     rio->action = action;
@@ -43,6 +51,7 @@ static inline void RIOInitGeneric(RIO *rio, int action, int numkeys,
     rio->generic.notfound = 0;
     rio->err = NULL;
     rio->errcode = 0;
+    rio->oom_check = 0;
 }
 
 void RIOInitGet(RIO *rio, int numkeys, int *cfs, sds *rawkeys) {
@@ -70,6 +79,7 @@ void RIOInitIterate(RIO *rio, int cf, uint32_t flags, sds start, sds end, size_t
     rio->iterate.nextseek = NULL;
     rio->err = NULL;
     rio->errcode = 0;
+    rio->oom_check = 0;
 }
 
 void RIODeinit(RIO *rio) {
@@ -141,6 +151,17 @@ void RIODoGet(RIO *rio) {
             (const char**)keys_list, (const size_t*)keys_list_sizes,
             values_list, values_list_sizes, errs);
 
+    if (rio->oom_check) {
+        size_t payload_size = 0;
+        for (i = 0; i < rio->get.numkeys; i++) payload_size += values_list_sizes[i];
+        if (rioMayOOM(payload_size)) {
+            RIOSetError(rio,SWAP_ERR_RIO_OOM,sdsnew("rio get oom"));
+            serverLog(LL_WARNING,"[rocks] do rocksdb get failed: may OOM");
+            for (i = 0; i < rio->get.numkeys; i++) zlibc_free(values_list[i]);
+            goto end;
+        }
+    }
+
     rio->get.rawvals = zmalloc(rio->get.numkeys*sizeof(sds));
     for (i = 0; i < rio->get.numkeys; i++) {
         if (values_list[i] == NULL) {
@@ -161,6 +182,7 @@ void RIODoGet(RIO *rio) {
         }
     }
 
+end:
     zfree(cfs_list);
     zfree(keys_list);
     zfree(values_list);
@@ -206,14 +228,6 @@ static void RIODoDel(RIO *rio) {
     rocksdb_writebatch_destroy(wb);
 }
 
-static inline int rioMayOOM(unsigned long long mem_allocated) {
-    if (server.maxmemory == 0) return 0;
-    size_t mem_used = ctrip_getUsedMemory();
-    /* expect  total_mem_used < [100 + (swap_maxmemory_oom_percentage - 100)*3/4]*maxmemory/100 */
-    unsigned long long mem_limit = (25 + server.swap_maxmemory_oom_percentage*3/4)*server.maxmemory/100;
-    return mem_used + mem_allocated >= mem_limit;
-}
-
 static void RIODoIterate(RIO *rio) {
     size_t numkeys = 0;
     char *err = NULL;
@@ -228,7 +242,6 @@ static void RIODoIterate(RIO *rio) {
     int high_bound_exclude = rio->iterate.flags & ROCKS_ITERATE_HIGH_BOUND_EXCLUDE;
     int next_seek = rio->iterate.flags & ROCKS_ITERATE_CONTINUOUSLY_SEEK;
     int disable_cache = rio->iterate.flags & ROCKS_ITERATE_DISABLE_CACHE;
-    int oom_check = rio->iterate.flags & ROCKS_ITERATE_OOM_CHECK;
 
     size_t numalloc = ROCKS_ITERATE_NO_LIMIT == limit ? RIO_ITERATE_NUMKEYS_ALLOC_INIT : limit;
     numalloc = numalloc > RIO_ITERATE_NUMKEYS_ALLOC_LINER ? RIO_ITERATE_NUMKEYS_ALLOC_LINER : numalloc;
@@ -268,8 +281,8 @@ static void RIODoIterate(RIO *rio) {
     size_t bound_len = reverse ? start_len : end_len;
     int bound_exclude = reverse ? low_bound_exclude : high_bound_exclude;
     while (rocksdb_iter_valid(iter) && (limit == ROCKS_ITERATE_NO_LIMIT || numkeys < limit)) {
-        if (oom_check && numkeys % 512 == 0 && rioMayOOM(mem_allocated)) {
-            RIOSetError(rio,SWAP_ERR_RIO_ITER_FAIL,NULL);
+        if (rio->oom_check && numkeys % 512 == 0 && rioMayOOM(mem_allocated)) {
+            RIOSetError(rio,SWAP_ERR_RIO_OOM,sdsnew("rio iterate oom"));
             serverLog(LL_WARNING,"[rocks] do rocksdb iterate failed: may OOM");
             goto end;
         }
@@ -567,6 +580,19 @@ void RIOBatchDoGet(RIOBatch *rios) {
     x = 0;
     for (size_t i = 0; i < rios->count; i++) {
         rio = rios->rios+i;
+
+        if (rio->oom_check) {
+            size_t payload_size = 0, tmpx = x;
+            for (int j = 0; j < rio->get.numkeys; j++)
+                payload_size += values_list_sizes[tmpx++];
+            if (rioMayOOM(payload_size)) {
+                RIOSetError(rio,SWAP_ERR_RIO_OOM,sdsnew("rio batch get oom"));
+                serverLog(LL_WARNING,"[rocks] do rocksdb batch get failed: may OOM");
+                for (int j = 0; j < rio->get.numkeys; j++) zlibc_free(values_list[x++]);
+                continue;
+            }
+        }
+
         rio->get.rawvals = zmalloc(rio->get.numkeys*sizeof(sds));
         for (int j = 0; j < rio->get.numkeys; j++) {
             if (values_list[x] == NULL) {

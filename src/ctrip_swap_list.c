@@ -1372,7 +1372,7 @@ int listSwapAna(swapData *data, int thd, struct keyRequest *req,
             datactx->swap_meta = swap_meta;
             listMetaFree(req_meta);
         }
-        if (cmd_intention_flags & SWAP_OOM_SENSITIVE) {
+        if (cmd_intention_flags & SWAP_OOM_CHECK) {
             *intention_flags |= SWAP_EXEC_OOM_CHECK;
         }
         break;
