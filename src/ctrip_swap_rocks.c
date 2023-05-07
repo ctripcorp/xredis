@@ -207,7 +207,6 @@ int rocksInit() {
     rocksdb_options_set_block_based_table_factory(rocks->cf_opts[META_CF], rocks->block_opts[META_CF]);
     rocksdb_options_set_compaction_filter(rocks->cf_opts[META_CF], rocks->cf_compaction_filters[META_CF]);
 
-    setFilterState(FILTER_STATE_OPEN);
     rocks->db = rocksdb_open_column_families(rocks->db_opts, dir, CF_COUNT,
             swap_cf_names, (const rocksdb_options_t *const *)rocks->cf_opts,
             rocks->cf_handles, errs);

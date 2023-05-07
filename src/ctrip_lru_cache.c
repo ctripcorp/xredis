@@ -321,7 +321,7 @@ int lruCacheTest(int argc, char *argv[], int accurate) {
         sds first = sdsnew("1"), second = sdsnew("2"), third = sdsnew("3"), fourth = sdsnew("4");
         lruCache *cache;
         lruCacheIter *iter;
-        int oval;
+        long oval;
 
         cache = lruCacheNew(LRU_CACHE_TYPE_KVP,1);
         test_assert(!lruCacheExists(cache,first));

@@ -145,7 +145,6 @@ sds genSwapPersistInfoString(sds info) {
 }
 
 /* scan meta cf to rebuild cold_keys/cold_filter & fix keys */
-int tryLoadKey(redisDb *db, robj *key, int oom_sensitive);
 void loadDataFromRocksdb() {
     struct rocks *rocks = server.rocks;
     rocksdb_iterator_t *meta_iter = rocksdb_create_iterator_cf(
@@ -156,6 +155,7 @@ void loadDataFromRocksdb() {
         sds meta_start_key = rocksEncodeDbRangeStartKey(db->id);
         sds meta_end_key = rocksEncodeDbRangeEndKey(db->id);
 
+        long long start_time = ustime();
         rocksdb_iter_seek(meta_iter,meta_start_key,sdslen(meta_start_key));
 
         while (rocksdb_iter_valid(meta_iter)) {
@@ -167,13 +167,14 @@ void loadDataFromRocksdb() {
             rawkey = rocksdb_iter_key(meta_iter,&rklen);
 
             minlen = rklen < sdslen(meta_end_key) ? rklen : sdslen(meta_end_key);
-            if (memcmp(meta_end_key,rawkey,minlen) > 0) break; /* dbid switched */
+            if (memcmp(rawkey,meta_end_key,minlen) >= 0) break; /* dbid switched */
 
             rocksDecodeMetaKey(rawkey,rklen,&dbid,&key,&klen);
 
             keyobj = createStringObject(key,klen);
 
             tryLoadKey(db,keyobj,0);
+
             db->cold_keys++;
             coldFilterAddKey(db->cold_filter,keyobj->ptr);
 
@@ -182,6 +183,13 @@ void loadDataFromRocksdb() {
 
         sdsfree(meta_start_key);
         sdsfree(meta_end_key);
+
+        if (db->cold_keys) {
+            double elapsed = (double)(ustime() - start_time)/1000000;
+            serverLog(LL_NOTICE,
+                    "[persist] db-%d loaded %lld keys from rocksdb in %.2f seconds.",
+                    i,db->cold_keys,elapsed);
+        }
     }
 }
 
@@ -199,6 +207,8 @@ void ctripLoadDataFromDisk(void) {
             server.swap_persist_enabled) {
         loadDataFromRocksdb();
     }
+
+    setFilterState(FILTER_STATE_OPEN);
 
     if (keyspaceIsEmpty()) loadDataFromDisk();
 }

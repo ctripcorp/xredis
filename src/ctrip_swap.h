@@ -1643,6 +1643,7 @@ void closeSwapChildErrPipe(void);
 void sendSwapChildErr(swapRdbSaveErrType err_type, int dbid, sds key);
 void receiveSwapChildErrs(void);
 void swapLoadCommand(client *c);
+int tryLoadKey(redisDb *db, robj *key, int oom_sensitive);
 
 /* result that decoded from current rocksIter value */
 typedef struct decodedResult {
