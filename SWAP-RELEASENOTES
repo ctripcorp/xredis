@@ -1,4 +1,23 @@
 ================================================================================
+ror-1.1.0 Released Wed May 10 16:37:14 CST 2023
+================================================================================
+* [opt] batch swap request to reduce main thread and swap thread cpu usage.
+* [opt] add cuckoo filter to avoid (almost) IO if key not found.
+* [opt] disable compaction filter to speed up rdb load.
+* [new] info add main thread, swap thread cpu usage fields.
+* [fix] evalsha not swap_in_del, master dbsize may less than slave.
+* [fix] debug reload/debug digest do not wait for in-flight swap to finish,
+        rdb might saved inconsistent.
+* [opt] opt rpop/evict big list performance by choosing reasonable iter direction.
+* [fix] zset might convert to skiplist if master slave use different zset config.
+* [opt] cache hot absent subkey to avoid IO when accessing absent subkeys.
+* [new] optionally fix metalen mismatch when bgsave.
+* [new] gradually evict to avoid from causing latency spike if maxmemory set
+        to lower value manually.
+* [fix] zrangebyscore command on hash structure cause crash (command type not
+        not match data type).
+
+================================================================================
 ror-1.0.6 Released Wed Mar 15 16:37:14 CST 2023
 ================================================================================
 * [opt] cache hot absent keys to avoid IO when accessing absent keys.
