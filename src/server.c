@@ -825,7 +825,7 @@ struct redisCommand redisCommandTable[] = {
 
     {"debug",debugCommand,-2,
      "admin no-script ok-loading ok-stale",
-     0,debugGetKeys,NULL,SWAP_IN,0,0,0,0,0,0,0},
+     0,debugGetKeys,getKeyRequestsDebug,SWAP_IN,0,0,0,0,0,0,0},
 
     {"config",configCommand,-2,
      "admin ok-loading ok-stale no-script",
@@ -4600,9 +4600,6 @@ void closeListeningSockets(int unlink_unix_socket) {
 }
 
 int prepareForShutdown(int flags) {
-#ifndef __APPLE__
-    swapThreadCpuUsageFree(server.swap_cpu_usage);
-#endif
     /* When SHUTDOWN is called while the server is loading a dataset in
      * memory we need to make sure no attempt is performed to save
      * the dataset on shutdown (otherwise it could overwrite the current DB

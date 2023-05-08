@@ -147,7 +147,7 @@ start_server {tags {"repl"}} {
             set result [$master spop myset $count]
 
             wait_for_condition 50 100 {
-                [$master debug digest] eq [$slave debug digest]
+                [$master debug digest-value myset] eq [$slave debug digest-value myset]
             } else {
                 fail "SPOP replication inconsistency"
             }

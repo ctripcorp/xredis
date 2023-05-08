@@ -572,7 +572,7 @@ void restoreDbBackup(dbBackup *buckup) {
         dictRelease(server.db[i].dict);
         dictRelease(server.db[i].expires);
         dictRelease(server.db[i].meta);
-        coldFilterDeinit(server.db[i].cold_filter);
+        coldFilterDestroy(server.db[i].cold_filter);
         server.db[i] = buckup->dbarray[i];
     }
 

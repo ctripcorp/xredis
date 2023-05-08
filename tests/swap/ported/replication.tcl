@@ -138,8 +138,9 @@ start_server {tags {"repl"}} {
                     $rd blmove a b $wherefrom $whereto 5
                     r lpush a foo
                     wait_for_condition 50 100 {
-                        [$A debug digest] eq [$B debug digest]
+                        [$A debug digest-value a] eq [$B debug digest-value a] && [$A debug digest-value b] eq [$B debug digest-value b]
                     } else {
+                        puts "A.a:[$A debug digest-value a], B.a:[$B debug digest-value a], A.b:[$A debug digest-value b] B.b:[$B debug digest-value b]"
                         fail "Master and replica have different digest: [$A debug digest] VS [$B debug digest]"
                     }
                     assert_match {*calls=1,*} [cmdrstat lmove $A]

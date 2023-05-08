@@ -22,7 +22,7 @@ proc test_psync {descr duration backlog_size backlog_ttl delay cond mdl sdl bgsa
             $master config set repl-backlog-ttl $backlog_ttl
             $master config set repl-diskless-sync $mdl
             $master config set repl-diskless-sync-delay 1
-            $master config set swap-debug-swapout-notify-delay-micro 100000
+            $master config set swap-debug-swapout-notify-delay-micro 10000
             $slave config set repl-diskless-load $sdl
 
             set load_handle0 [start_bg_complex_data $master_host $master_port 0 100000]
@@ -146,6 +146,7 @@ proc test_psync {descr duration backlog_size backlog_ttl delay cond mdl sdl bgsa
                 }
                 assert {[$master dbsize] > 0}
                 eval $cond
+                after 1000; # wait a bit to aovid the listMetaCreate leak false alarm.
             }
         }
     }

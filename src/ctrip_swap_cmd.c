@@ -1074,6 +1074,42 @@ int getKeyRequestsGtidAuto(int dbid, struct redisCommand *cmd, robj **argv,
     return C_OK;
 }
 
+int getKeyRequestsDebug(int dbid, struct redisCommand *cmd, robj **argv,
+        int argc, struct getKeyRequestsResult *result) {
+    robj *key;
+    if (!strcasecmp(argv[1]->ptr,"reload") ||
+            !strcasecmp(argv[1]->ptr,"loadaof") ||
+            !strcasecmp(argv[1]->ptr,"digest") ||
+            !strcasecmp(argv[1]->ptr,"change-repl-id")) {
+        return getKeyRequestsGlobal(dbid,cmd,argv,argc,result);
+    } else if (argc == 3 && (!strcasecmp(argv[1]->ptr,"object") ||
+                !strcasecmp(argv[1]->ptr, "ziplist") ||
+                !strcasecmp(argv[1]->ptr, "sdslen"))) {
+        key = argv[2];
+        incrRefCount(key);
+        getKeyRequestsAppendSubkeyResult(result,REQUEST_LEVEL_KEY,key,0,NULL,
+                cmd->intention,cmd->intention_flags,dbid);
+        return 0;
+    } else if (argc >= 3 && (!strcasecmp(argv[1]->ptr,"mallctl") ||
+                !strcasecmp(argv[1]->ptr,"mallctl-str"))) {
+        key = argv[2];
+        incrRefCount(key);
+        getKeyRequestsAppendSubkeyResult(result,REQUEST_LEVEL_KEY,key,0,NULL,
+                cmd->intention,cmd->intention_flags,dbid);
+        return 0;
+    } else if (argc >= 3 && !strcasecmp(argv[1]->ptr,"digest-value")) {
+        for (int i = 2; i < argc; i++) {
+            key = argv[i];
+            incrRefCount(key);
+            getKeyRequestsAppendSubkeyResult(result,REQUEST_LEVEL_KEY,key,0,NULL,
+                    cmd->intention,cmd->intention_flags,dbid);
+        }
+        return 0;
+    } else {
+        return getKeyRequestsNone(dbid,cmd,argv,argc,result);
+    }
+}
+
 #ifdef REDIS_TEST
 
 void rewriteResetClientCommandCString(client *c, int argc, ...) {
@@ -1457,6 +1493,41 @@ int swapCmdTest(int argc, char *argv[], int accurate) {
         test_assert(result.key_requests[9].dbid == 4);
         test_assert(result.key_requests[9].list_arg_rewrite[0].mstate_idx == 8);
         test_assert(result.key_requests[9].list_arg_rewrite[0].arg_idx == 4);
+
+        releaseKeyRequests(&result);
+        getKeyRequestsFreeResult(&result);
+        discardTransaction(c);
+    }
+
+    TEST("cmd: debug") {
+        getKeyRequestsResult result = GET_KEYREQUESTS_RESULT_INIT;
+        selectDb(c,0);
+
+        c->flags |= CLIENT_MULTI;
+        rewriteResetClientCommandCString(c,3,"DEBUG","OBJECT","KEY1");
+        queueMultiCommand(c);
+        rewriteResetClientCommandCString(c,2,"DEBUG","RELOAD");
+        queueMultiCommand(c);
+        rewriteResetClientCommandCString(c,2,"DEBUG","DIGEST");
+        queueMultiCommand(c);
+        rewriteResetClientCommandCString(c,4,"DEBUG","DIGEST-VALUE","KEY2","KEY3");
+        queueMultiCommand(c);
+        rewriteResetClientCommandCString(c,3,"DEBUG","SLEEP","5");
+        queueMultiCommand(c);
+        rewriteResetClientCommandCString(c,1,"EXEC");
+
+        getKeyRequests(c,&result);
+
+        test_assert(result.num == 5);
+        test_assert(!strcmp(result.key_requests[0].key->ptr,"KEY1"));
+        test_assert(result.key_requests[1].level == REQUEST_LEVEL_SVR && result.key_requests[1].key == NULL);
+        test_assert(result.key_requests[2].level == REQUEST_LEVEL_SVR && result.key_requests[2].key == NULL);
+        test_assert(!strcmp(result.key_requests[3].key->ptr,"KEY2"));
+        test_assert(result.key_requests[3].cmd_intention == SWAP_IN);
+        test_assert(result.key_requests[3].cmd_intention_flags == 0);
+        test_assert(!strcmp(result.key_requests[4].key->ptr,"KEY3"));
+        test_assert(result.key_requests[4].cmd_intention == SWAP_IN);
+        test_assert(result.key_requests[4].cmd_intention_flags == 0);
 
         releaseKeyRequests(&result);
         getKeyRequestsFreeResult(&result);
