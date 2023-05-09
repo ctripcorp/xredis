@@ -1086,21 +1086,21 @@ int getKeyRequestsDebug(int dbid, struct redisCommand *cmd, robj **argv,
         key = argv[2];
         incrRefCount(key);
         getKeyRequestsAppendSubkeyResult(result,REQUEST_LEVEL_KEY,key,0,NULL,
-                cmd->intention,cmd->intention_flags,dbid);
+                cmd->intention,cmd->intention_flags,cmd->flags,dbid);
         return 0;
     } else if (argc >= 3 && (!strcasecmp(argv[1]->ptr,"mallctl") ||
                 !strcasecmp(argv[1]->ptr,"mallctl-str"))) {
         key = argv[2];
         incrRefCount(key);
         getKeyRequestsAppendSubkeyResult(result,REQUEST_LEVEL_KEY,key,0,NULL,
-                cmd->intention,cmd->intention_flags,dbid);
+                cmd->intention,cmd->intention_flags,cmd->flags,dbid);
         return 0;
     } else if (argc >= 3 && !strcasecmp(argv[1]->ptr,"digest-value")) {
         for (int i = 2; i < argc; i++) {
             key = argv[i];
             incrRefCount(key);
             getKeyRequestsAppendSubkeyResult(result,REQUEST_LEVEL_KEY,key,0,NULL,
-                    cmd->intention,cmd->intention_flags,dbid);
+                    cmd->intention,cmd->intention_flags,cmd->flags, dbid);
         }
         return 0;
     } else {
