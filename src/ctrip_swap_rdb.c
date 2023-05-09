@@ -980,7 +980,6 @@ int ctripRdbLoadObject(int rdbtype, rio *rdb, redisDb *db, sds key,
                     expiretime,now))) {
         return error;
     }
-    serverLog(LL_WARNING, "load %s", key);
     rdbKeyLoadStart(load,rdb,&cf,&rawkey,&rawval,&error);
     if (error) return error;
     if (rawkey) {

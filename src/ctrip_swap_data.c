@@ -99,6 +99,10 @@ int swapDataAna(swapData *d, int thd, struct keyRequest *key_request,
     }
 
     if (d->type->swapAna) {
+        if (!(key_request->cmd_flags & CMD_SWAP_DATATYPE_KEYSPACE
+            || key_request->cmd_flags & d->type->cmd_swap_flags))  {
+            return SWAP_ERR_DATA_WRONG_TYPE_ERROR;
+        }
         retval = d->type->swapAna(d,thd,key_request,intention,
                 intention_flags,datactx);
 

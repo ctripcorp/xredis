@@ -2050,9 +2050,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int *error) {
                 }
 
                 if (zsetLength(o) > server.zset_max_ziplist_entries) {
-                    serverLog(LL_WARNING, "zsetConvert start");
                     zsetConvert(o,OBJ_ENCODING_SKIPLIST);
-                    serverLog(LL_WARNING, "zsetConvert end");
                 }
                 break;
             case RDB_TYPE_HASH_ZIPLIST:

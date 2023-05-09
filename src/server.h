@@ -221,10 +221,19 @@ extern int configOOMScoreAdjValuesDefaults[CONFIG_OOM_COUNT];
 #define CMD_CATEGORY_TRANSACTION (1ULL<<38)
 #define CMD_CATEGORY_SCRIPTING (1ULL<<39)
 
-/* Command flags that describe cmd swap action. */
-#define CMD_SWAP_GET (1ULL<<40)        /* Cmd require swap get if key absent. */
-#define CMD_SWAP_PUT (1ULL<<41)        /* Cmd require swap put if key present. */
-#define CMD_SWAP_DEL (1ULL<<42)        /* Cmd require swap del. */
+// /* Command flags that describe cmd swap action. */
+// #define CMD_SWAP_GET (1ULL<<40)        /* Cmd require swap get if key absent. */
+// #define CMD_SWAP_PUT (1ULL<<41)        /* Cmd require swap put if key present. */
+// #define CMD_SWAP_DEL (1ULL<<42)        /* Cmd require swap del. */
+
+/* swap datatype flags*/
+#define CMD_SWAP_DATATYPE_KEYSPACE (1ULL<<40)
+#define CMD_SWAP_DATATYPE_STRING (1ULL<<41)
+#define CMD_SWAP_DATATYPE_HASH (1ULL<<42)
+#define CMD_SWAP_DATATYPE_SET (1ULL<<43)
+#define CMD_SWAP_DATATYPE_ZSET (1ULL<<44)
+#define CMD_SWAP_DATATYPE_LIST (1ULL<<45)
+
 
 /* AOF states */
 #define AOF_OFF 0             /* AOF is off */

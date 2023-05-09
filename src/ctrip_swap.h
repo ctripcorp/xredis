@@ -73,7 +73,6 @@ extern const char *swap_cf_names[CF_COUNT];
 #define SWAP_EXPIRE_FORCE (1U<<7)
 #define SWAP_IN_FORCE_HOT (1U<<8)
 #define SWAP_OOM_CHECK (1U<<9)
-
 /* Delete rocksdb data key */
 #define SWAP_EXEC_IN_DEL (1U<<0)
 #define SWAP_EXEC_FORCE_HOT (1U<<1)
@@ -414,7 +413,8 @@ typedef struct swapData {
  * swapData: key state when swap start.
  * dataCtx: dynamic data when swapping.  */
 typedef struct swapDataType {
-  char *name;
+  char* name;
+  uint64_t cmd_swap_flags;
   int (*swapAna)(struct swapData *data, int thd, struct keyRequest *key_request, OUT int *intention, OUT uint32_t *intention_flags, void *datactx);
   int (*swapAnaAction)(struct swapData *data, int intention, void *datactx, OUT int *action);
   int (*encodeKeys)(struct swapData *data, int intention, void *datactx, OUT int *num, OUT int **cfs, OUT sds **rawkeys);
@@ -1892,6 +1892,8 @@ const char *strObjectType(int type);
 int timestampIsExpired(mstime_t expire);
 size_t ctripDbSize(redisDb *db);
 long get_dir_size(char *dirname);
+
+uint64_t SwapCommandDataTypeFlagByName(const char *name);
 
 static inline void clientSwapError(client *c, int swap_errcode) {
   if (c && swap_errcode) {

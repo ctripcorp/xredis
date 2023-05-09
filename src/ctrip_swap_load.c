@@ -58,7 +58,7 @@ int submitLoadClientRequest(client *c, robj *key, int oom_sensitive) {
     getKeyRequestsPrepareResult(&result,1);
     incrRefCount(key);
     getKeyRequestsAppendSubkeyResult(&result,REQUEST_LEVEL_KEY,key,0,NULL,
-                                     c->cmd->intention,flags,c->db->id);
+                                     c->cmd->intention,flags,c->cmd->flags,c->db->id);
     c->keyrequests_count++;
     submitDeferredClientKeyRequests(c,&result,loadClientKeyRequestFinished,NULL);
     releaseKeyRequests(&result);

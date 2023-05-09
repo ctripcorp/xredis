@@ -774,7 +774,7 @@ int swapExecTest(int argc, char *argv[], int accurate) {
     TEST("exec: swap-in cold string") {
         /* rely on val1 swap out to rocksdb by previous case */
         swapData *data = createSwapData(db,key1,NULL);
-        key1_req->cmd_flags = CMD_CATEGORY_STRING;
+        key1_req->cmd_flags = CMD_SWAP_DATATYPE_STRING;
         key1_req->cmd_intention = SWAP_IN;
         key1_req->cmd_intention_flags = 0;
         swapRequest *req = swapRequestNew(key1_req,-1,-1,ctx,data,NULL,NULL,NULL,NULL,NULL);

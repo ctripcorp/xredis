@@ -28,6 +28,29 @@
 
 #include "ctrip_swap.h"
 #include <math.h>
+
+struct SwapDataTypeItem {
+    const char *name;
+    uint64_t flag;
+} SwapCommandDataTypes[] = {
+    {"swap_keyspace", CMD_SWAP_DATATYPE_KEYSPACE},
+    {"swap_string", CMD_SWAP_DATATYPE_STRING},
+    {"swap_hash", CMD_SWAP_DATATYPE_HASH},
+    {"swap_set", CMD_SWAP_DATATYPE_SET},
+    {"swap_zset", CMD_SWAP_DATATYPE_ZSET},
+    {"swap_list", CMD_SWAP_DATATYPE_LIST},
+    {NULL,0} /* Terminator. */
+};
+/* Given the category name the command returns the corresponding flag, or
+ * zero if there is no match. */
+uint64_t SwapCommandDataTypeFlagByName(const char *name) {
+    for (int j = 0; SwapCommandDataTypes[j].flag != 0; j++) {
+        if (!strcasecmp(name,SwapCommandDataTypes[j].name)) {
+            return SwapCommandDataTypes[j].flag;
+        }
+    }
+    return 0; /* No match. */
+}
 /* ----------------------------- swaps result ----------------------------- */
 /* Prepare the getKeyRequestsResult struct to hold numswaps, either by using
  * the pre-allocated swaps or by allocating a new array on the heap.
@@ -457,13 +480,16 @@ int getKeyRequestsOneDestKeyMultiSrcKeys(int dbid, struct redisCommand *cmd, rob
     if (last_src_key < 0) last_src_key += argc;
     getKeyRequestsPrepareResult(result, result->num + 1 + last_src_key - first_src_key + 1);
 
-    incrRefCount(argv[dest_key_Index]);
-    getKeyRequestsAppendSubkeyResult(result,REQUEST_LEVEL_KEY,argv[dest_key_Index], 0, NULL,
-                               SWAP_IN, SWAP_IN_DEL,cmd->flags | CMD_CATEGORY_KEYSPACE, dbid);
+    if (dest_key_Index > 0 && dest_key_Index < argc) {
+        incrRefCount(argv[dest_key_Index]);
+        getKeyRequestsAppendSubkeyResult(result,REQUEST_LEVEL_KEY,argv[dest_key_Index], 0, NULL,
+                               SWAP_IN, SWAP_IN_DEL,cmd->flags | CMD_SWAP_DATATYPE_KEYSPACE, dbid);
+    } 
+    
     for(int i = first_src_key; i <= last_src_key; i++) {
         incrRefCount(argv[i]);
         getKeyRequestsAppendSubkeyResult(result,REQUEST_LEVEL_KEY,argv[i], 0, NULL,
-                                   SWAP_IN,0, cmd->flags | CMD_CATEGORY_KEYSPACE , dbid);
+                                   SWAP_IN,0, cmd->flags , dbid);
     }
 
     return 0;
@@ -477,7 +503,6 @@ int getKeyRequestsBitop(int dbid, struct redisCommand *cmd, robj **argv,
 int getKeyRequestsSort(int dbid, struct redisCommand *cmd, robj **argv,
         int argc, struct getKeyRequestsResult *result) {
     int i, j;
-    robj *storekey = NULL;
 
     UNUSED(cmd);
 
@@ -490,13 +515,13 @@ int getKeyRequestsSort(int dbid, struct redisCommand *cmd, robj **argv,
             {"by", 1},
             {NULL, 0} /* End of elements. */
     };
-
+    int storekeyIndex = -1;
     for (i = 2; i < argc; i++) {
         if (!strcasecmp(argv[i]->ptr,"store") && i+1 < argc) {
             /* we don't break after store key found to be sure
              * to process the *last* "STORE" option if multiple
              * ones are provided. This is same behavior as SORT. */
-            storekey = argv[i+1];
+            storekeyIndex = i+1;
         }
         for (j = 0; skiplist[j].name != NULL; j++) {
             if (!strcasecmp(argv[i]->ptr,skiplist[j].name)) {
@@ -506,17 +531,7 @@ int getKeyRequestsSort(int dbid, struct redisCommand *cmd, robj **argv,
         }
     }
 
-    getKeyRequestsPrepareResult(result,result->num + (storekey ? 2 : 1));
-    incrRefCount(argv[1]);
-    getKeyRequestsAppendSubkeyResult(result,REQUEST_LEVEL_KEY,argv[1],0,NULL,
-                               SWAP_IN, 0, cmd->flags, dbid);
-    if (storekey) {
-        incrRefCount(storekey);
-        getKeyRequestsAppendSubkeyResult(result,REQUEST_LEVEL_KEY,storekey,0,NULL,
-                                   SWAP_IN, SWAP_IN_DEL, cmd->flags | CMD_CATEGORY_KEYSPACE, dbid);
-    }
-
-    return C_OK;
+    return getKeyRequestsOneDestKeyMultiSrcKeys(dbid, cmd, argv, argc, result, storekeyIndex, 1, 1);
 }
 
 int getKeyRequestsZunionInterDiffGeneric(int dbid, struct redisCommand *cmd, robj **argv, int argc,
@@ -751,7 +766,7 @@ int getKeyRequestsRpoplpush(int dbid, struct redisCommand *cmd, robj **argv,
         int argc, struct getKeyRequestsResult *result) {
     getKeyRequestsSingleKeyWithRanges(dbid,cmd,argv,argc,
             result,1,-1,-1,1/*num_ranges*/,-1,-1); /* source */
-    getKeyRequestsSingleKey(result,argv[2],SWAP_IN,SWAP_IN_META | SWAP_IN_CHECK_EXISTS,cmd->flags,dbid);
+    getKeyRequestsSingleKey(result,argv[2],SWAP_IN,SWAP_IN_META,cmd->flags | CMD_SWAP_DATATYPE_KEYSPACE,dbid);
     return 0;
 }
 
@@ -855,13 +870,7 @@ int getKeyRequestsZpopMax(int dbid, struct redisCommand *cmd, robj **argv, int a
 }
 
 int getKeyRequestsZrangestore(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result) {
-    UNUSED(cmd), UNUSED(argc);
-    getKeyRequestsPrepareResult(result,result->num+ 2);
-    incrRefCount(argv[1]);
-    getKeyRequestsAppendSubkeyResult(result, REQUEST_LEVEL_KEY, argv[1], 0, NULL, SWAP_IN, SWAP_IN_DEL, cmd->flags | CMD_CATEGORY_KEYSPACE, dbid);
-    incrRefCount(argv[2]);
-    getKeyRequestsAppendSubkeyResult(result, REQUEST_LEVEL_KEY, argv[2], 0, NULL, SWAP_IN, 0, cmd->flags, dbid);
-    return C_OK;
+    return getKeyRequestsOneDestKeyMultiSrcKeys(dbid, cmd, argv, argc, result, 1, 2, 2);
 }
 
 
@@ -999,36 +1008,21 @@ int getKeyRequestsGeoHash(int dbid, struct redisCommand *cmd, robj **argv, int a
 }
 
 int getKeyRequestsGeoRadius(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result) {
-    robj* storekey = NULL;
-    UNUSED(cmd);
+    int storekeyIndex = -1;
     for(int i =0; i < argc; i++) {
         if (!strcasecmp(argv[i]->ptr, "store") && (i+1) < argc) {
-            storekey = argv[i+1];
+            storekeyIndex = i+1;
             i++;
         } else if(!strcasecmp(argv[i]->ptr, "storedist") && (i+1) < argc) {
-            storekey = argv[i+1];
+            storekeyIndex = i+1;
             i++;
         }
     }
-    getKeyRequestsPrepareResult(result,result->num+ 2);
-    incrRefCount(argv[1]);
-    getKeyRequestsAppendSubkeyResult(result, REQUEST_LEVEL_KEY, argv[1], 0, NULL, SWAP_IN, 0, cmd->flags, dbid);
-    if (storekey != NULL) {
-        incrRefCount(storekey);
-        getKeyRequestsAppendSubkeyResult(result, REQUEST_LEVEL_KEY, storekey, 0, NULL, SWAP_IN, SWAP_IN_DEL, cmd->flags, dbid);
-    }
-    return C_OK;
+    return getKeyRequestsOneDestKeyMultiSrcKeys(dbid, cmd, argv, argc, result, storekeyIndex, 1, 1);
 }
 
 int getKeyRequestsGeoSearchStore(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result) {
-    UNUSED(cmd), UNUSED(argc);
-    getKeyRequestsPrepareResult(result,result->num+ 2);
-    incrRefCount(argv[1]);
-    getKeyRequestsAppendSubkeyResult(result, REQUEST_LEVEL_KEY, argv[1], 0, NULL, SWAP_IN, SWAP_IN_DEL, cmd->flags | CMD_CATEGORY_KEYSPACE, dbid);
-    
-    incrRefCount(argv[2]);
-    getKeyRequestsAppendSubkeyResult(result, REQUEST_LEVEL_KEY, argv[2], 0, NULL, SWAP_IN, 0, cmd->flags, dbid);
-    return C_OK;
+    return getKeyRequestsOneDestKeyMultiSrcKeys(dbid, cmd, argv, argc, result, 1, 2, 2);
 }
 
 static inline void getKeyRequestsGtidArgRewriteAdjust(
@@ -1251,7 +1245,7 @@ int swapCmdTest(int argc, char *argv[], int accurate) {
         test_assert(result.num == 3);
         test_assert(!strcmp(result.key_requests[0].key->ptr, "K1"));
         test_assert(result.key_requests[0].cmd_intention == SWAP_IN);
-        test_assert(result.key_requests[0].cmd_intention_flags == SWAP_IN_CHECK_EXISTS);
+        test_assert(result.key_requests[0].cmd_intention_flags == 0);
         test_assert(!strcmp(result.key_requests[1].key->ptr, "K2"));
         test_assert(!strcmp(result.key_requests[2].key->ptr, "K1"));
         releaseKeyRequests(&result);
@@ -1317,12 +1311,12 @@ int swapCmdTest(int argc, char *argv[], int accurate) {
         test_assert(!strcmp(result.key_requests[0].key->ptr, "KEY1"));
         test_assert(result.key_requests[0].b.subkeys == NULL);
         test_assert(result.key_requests[0].cmd_intention == SWAP_IN);
-        test_assert(result.key_requests[0].cmd_intention_flags == SWAP_IN_CHECK_EXISTS);
+        test_assert(result.key_requests[0].cmd_intention_flags == 0);
         test_assert(result.key_requests[0].dbid == 1);
         test_assert(!strcmp(result.key_requests[1].key->ptr, "KEY2"));
         test_assert(result.key_requests[1].b.subkeys == NULL);
         test_assert(result.key_requests[1].cmd_intention == SWAP_IN);
-        test_assert(result.key_requests[1].cmd_intention_flags == SWAP_IN_CHECK_EXISTS);
+        test_assert(result.key_requests[1].cmd_intention_flags == 0);
         test_assert(result.key_requests[1].dbid == 1);
         test_assert(!strcmp(result.key_requests[2].key->ptr, "HASH"));
         test_assert(!strcmp(result.key_requests[2].b.subkeys[0]->ptr, "F1"));
@@ -1374,12 +1368,12 @@ int swapCmdTest(int argc, char *argv[], int accurate) {
         test_assert(!strcmp(result.key_requests[0].key->ptr, "KEY1"));
         test_assert(result.key_requests[0].b.subkeys == NULL);
         test_assert(result.key_requests[0].cmd_intention == SWAP_IN);
-        test_assert(result.key_requests[0].cmd_intention_flags == SWAP_IN_CHECK_EXISTS);
+        test_assert(result.key_requests[0].cmd_intention_flags == 0);
         test_assert(result.key_requests[0].dbid == 10);
         test_assert(!strcmp(result.key_requests[1].key->ptr, "KEY2"));
         test_assert(result.key_requests[1].b.subkeys == NULL);
         test_assert(result.key_requests[1].cmd_intention == SWAP_IN);
-        test_assert(result.key_requests[1].cmd_intention_flags == SWAP_IN_CHECK_EXISTS);
+        test_assert(result.key_requests[1].cmd_intention_flags == 0);
         test_assert(result.key_requests[1].dbid == 10);
 
         test_assert(!strcmp(result.key_requests[2].key->ptr, "LIST"));
@@ -1394,12 +1388,12 @@ int swapCmdTest(int argc, char *argv[], int accurate) {
         test_assert(!strcmp(result.key_requests[3].key->ptr, "KEY1"));
         test_assert(result.key_requests[3].b.subkeys == NULL);
         test_assert(result.key_requests[3].cmd_intention == SWAP_IN);
-        test_assert(result.key_requests[3].cmd_intention_flags == SWAP_IN_CHECK_EXISTS);
+        test_assert(result.key_requests[3].cmd_intention_flags == 0);
         test_assert(result.key_requests[3].dbid == 2);
         test_assert(!strcmp(result.key_requests[4].key->ptr, "KEY2"));
         test_assert(result.key_requests[4].b.subkeys == NULL);
         test_assert(result.key_requests[4].cmd_intention == SWAP_IN);
-        test_assert(result.key_requests[4].cmd_intention_flags == SWAP_IN_CHECK_EXISTS);
+        test_assert(result.key_requests[4].cmd_intention_flags == 0);
         test_assert(result.key_requests[4].dbid == 2);
 
         test_assert(!strcmp(result.key_requests[5].key->ptr, "HASH"));

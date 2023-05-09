@@ -41,16 +41,7 @@ int hashSwapAna(swapData *data, int thd, struct keyRequest *req,
     int cmd_intention = req->cmd_intention;
     uint32_t cmd_intention_flags = req->cmd_intention_flags;
     serverAssert(req->cmd_flags != 0);
-    if (!(req->cmd_flags & CMD_CATEGORY_HASH 
-        || req->cmd_flags & CMD_CATEGORY_KEYSPACE
-        || req->cmd_flags & CMD_CATEGORY_TRANSACTION
-        || req->cmd_flags & CMD_CATEGORY_SCRIPTING
-        || cmd_intention_flags & SWAP_IN_CHECK_EXISTS
-        || cmd_intention_flags & SWAP_IN_OVERWRITE)) {
-        return SWAP_ERR_DATA_WRONG_TYPE_ERROR;
-    }
-    // serverAssert(req->type == KEYREQUEST_TYPE_SUBKEY);
-    // serverAssert(req->b.num_subkeys >= 0);
+    
 
     switch (cmd_intention) {
     case SWAP_NOP:
@@ -58,6 +49,8 @@ int hashSwapAna(swapData *data, int thd, struct keyRequest *req,
         *intention_flags = 0;
         break;
     case SWAP_IN:
+        serverAssert(req->type == KEYREQUEST_TYPE_SUBKEY);
+        serverAssert(req->b.num_subkeys >= 0);
         if (!swapDataPersisted(data)) {
             /* No need to swap for pure hot key */
             *intention = SWAP_NOP;
@@ -500,6 +493,7 @@ void freeHashSwapData(swapData *data_, void *datactx_) {
 
 swapDataType hashSwapDataType = {
     .name = "hash",
+    .cmd_swap_flags = CMD_SWAP_DATATYPE_HASH,
     .swapAna = hashSwapAna,
     .swapAnaAction = hashSwapAnaAction,
     .encodeKeys = hashEncodeKeys,

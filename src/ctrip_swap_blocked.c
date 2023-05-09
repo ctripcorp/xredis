@@ -260,7 +260,7 @@ void submitSwapBlockedClientRequest(client* c, readyList *rl, dict* key_sets) {
     while (NULL != (de = dictNext(di))) {
         robj* rkey = dictGetKey(de);
         incrRefCount(rkey);
-        getKeyRequestsSwapBlockedLmove(dbid, SWAP_IN, c->cmd->intention_flags, CMD_CATEGORY_LIST,
+        getKeyRequestsSwapBlockedLmove(dbid, SWAP_IN, c->cmd->intention_flags, CMD_SWAP_DATATYPE_LIST,
             rkey, &result, -1, 
             -1, 1, -1, -1);
     }

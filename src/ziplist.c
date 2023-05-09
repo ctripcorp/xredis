@@ -641,18 +641,15 @@ static inline int zipEntrySafe(unsigned char* zl, size_t zlbytes, unsigned char 
         e->p = p;
         /* We didn't call ZIP_ASSERT_ENCODING, so we check lensize was set to 0. */
         if (unlikely(e->lensize == 0)) {
-            printf("zipEntrySafe 1\n");
             return 0;
         }
         /* Make sure the entry doesn't rech outside the edge of the ziplist */
         if (OUT_OF_RANGE(p + e->headersize + e->len)) {
-            printf("zipEntrySafe 2\n");
             return 0;
         }
             
         /* Make sure prevlen doesn't rech outside the edge of the ziplist */
         if (validate_prevlen && OUT_OF_RANGE(p - e->prevrawlen)) {
-            printf("zipEntrySafe 3 %d\n", e->prevrawlen);
             return 0;
         }
         return 1;

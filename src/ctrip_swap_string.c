@@ -46,16 +46,6 @@ int wholeKeySwapAna(swapData *data, int thd, struct keyRequest *req,
         int *intention, uint32_t *intention_flags, void *datactx) {
     int cmd_intention = req->cmd_intention;
     uint32_t cmd_intention_flags = req->cmd_intention_flags;
-    if (!(req->cmd_flags & CMD_CATEGORY_STRING
-        || req->cmd_flags & CMD_CATEGORY_BITMAP
-        || req->cmd_flags & CMD_CATEGORY_HYPERLOGLOG 
-        || req->cmd_flags & CMD_CATEGORY_KEYSPACE
-        || req->cmd_flags & CMD_CATEGORY_TRANSACTION
-        || req->cmd_flags & CMD_CATEGORY_SCRIPTING
-        || cmd_intention_flags & SWAP_IN_CHECK_EXISTS
-        || cmd_intention_flags & SWAP_IN_OVERWRITE)) {
-        return SWAP_ERR_DATA_WRONG_TYPE_ERROR;
-    }
     UNUSED(datactx);
 
     switch(cmd_intention) {
@@ -256,6 +246,7 @@ void *wholeKeyCreateOrMergeObject(swapData *data, void *decoded, void *datactx) 
 
 swapDataType wholeKeySwapDataType = {
     .name = "wholekey",
+    .cmd_swap_flags = CMD_SWAP_DATATYPE_STRING,
     .swapAna = wholeKeySwapAna,
     .swapAnaAction = wholeKeySwapAnaAction,
     .encodeKeys = wholeKeyEncodeKeys,
@@ -389,7 +380,7 @@ int wholeKeySwapAna_(swapData *data_,
     req->b.num_subkeys = 0;
     req->key = createStringObject("key1",4);
     req->b.subkeys = NULL;
-    req->cmd_flags = CMD_CATEGORY_STRING;
+    req->cmd_flags = CMD_SWAP_DATATYPE_STRING;
     req->cmd_intention = cmd_intention;
     req->cmd_intention_flags = cmd_intention_flags;
     retval = wholeKeySwapAna(data_,0,req,intention,intention_flags,datactx);

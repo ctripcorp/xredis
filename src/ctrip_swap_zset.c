@@ -40,15 +40,6 @@ int zsetSwapAna(swapData *data, int thd, struct keyRequest *req,
     zsetDataCtx *datactx = datactx_;
     int cmd_intention = req->cmd_intention;
     uint32_t cmd_intention_flags = req->cmd_intention_flags;
-    if (!(req->cmd_flags & CMD_CATEGORY_SORTEDSET
-        || req->cmd_flags & CMD_CATEGORY_GEO
-        || req->cmd_flags & CMD_CATEGORY_KEYSPACE
-        || req->cmd_flags & CMD_CATEGORY_TRANSACTION
-        || req->cmd_flags & CMD_CATEGORY_SCRIPTING
-        || cmd_intention_flags & SWAP_IN_CHECK_EXISTS
-        || cmd_intention_flags & SWAP_IN_OVERWRITE)) {
-        return SWAP_ERR_DATA_WRONG_TYPE_ERROR;
-    }
 
     switch (cmd_intention) {
     case SWAP_NOP:
@@ -808,6 +799,7 @@ int zsetRocksDel(struct swapData *data_,  void *datactx_, int inaction,
 
 swapDataType zsetSwapDataType = {
     .name = "zset",
+    .cmd_swap_flags = CMD_SWAP_DATATYPE_ZSET,
     .swapAna = zsetSwapAna,
     .swapAnaAction = zsetSwapAnaAction,
     .encodeKeys = zsetEncodeKeys,
@@ -1375,7 +1367,7 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
         cold_kr1->dbid = db->id;
 
         // swap nop
-        kr1->cmd_flags = CMD_CATEGORY_SORTEDSET;
+        kr1->cmd_flags = CMD_SWAP_DATATYPE_ZSET;
         kr1->cmd_intention = SWAP_NOP;
         kr1->cmd_intention_flags = 0;
         zsetSwapAna(zset1_data,0,kr1,&intention,&intention_flags,zset1_ctx);

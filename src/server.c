@@ -197,457 +197,457 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"get",getCommand,2,
-     "read-only fast @string",
+     "read-only fast @string @swap_string",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"getex",getexCommand,-2,
-     "write fast @string",
+     "write fast @string @swap_string",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"getdel",getdelCommand,2,
-     "write fast @string",
+     "write fast @string @swap_string",
      0,NULL,NULL,SWAP_IN,SWAP_IN_DEL,1,1,1,0,0,0},
 
     /* Note that we can't flag set as fast, since it may perform an
      * implicit DEL of a large key. */
     {"set",setCommand,-3,
-     "write use-memory @string",
+     "write use-memory @string @swap_string @swap_keyspace",
      0,NULL,NULL,SWAP_IN,SWAP_IN_OVERWRITE,1,1,1,0,0,0},
 
     {"setnx",setnxCommand,3,
-     "write use-memory fast @string",
-     0,NULL,NULL,SWAP_IN,SWAP_IN_CHECK_EXISTS,1,1,1,0,0,0},
+     "write use-memory fast @string @swap_string @swap_keyspace",
+     0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"setex",setexCommand,4,
-     "write use-memory @string",
+     "write use-memory @string @swap_string @swap_keyspace",
      0,NULL,NULL,SWAP_IN,SWAP_IN_OVERWRITE,1,1,1,0,0,0},
 
     {"psetex",psetexCommand,4,
-     "write use-memory @string",
+     "write use-memory @string @swap_string @swap_keyspace",
      0,NULL,NULL,SWAP_IN,SWAP_IN_OVERWRITE,1,1,1,0,0,0},
 
     {"append",appendCommand,3,
-     "write use-memory fast @string",
+     "write use-memory fast @string @swap_string",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"strlen",strlenCommand,2,
-     "read-only fast @string",
+     "read-only fast @string @swap_string",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"del",delCommand,-2,
-     "write @keyspace",
+     "write @keyspace @swap_keyspace",
      0,NULL,NULL,SWAP_IN,SWAP_IN_DEL_MOCK_VALUE,1,-1,1,0,0,0},
 
     {"unlink",unlinkCommand,-2,
-     "write fast @keyspace",
+     "write fast @keyspace @swap_keyspace",
      0,NULL,NULL,SWAP_IN,SWAP_IN_DEL_MOCK_VALUE,1,-1,1,0,0,0},
 
     {"exists",existsCommand,-2,
-     "read-only fast @keyspace",
+     "read-only fast @keyspace @swap_keyspace",
      0,NULL,NULL,SWAP_IN,SWAP_IN_META,1,-1,1,0,0,0},
 
     {"setbit",setbitCommand,4,
-     "write use-memory @bitmap",
+     "write use-memory @bitmap @swap_string",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"getbit",getbitCommand,3,
-     "read-only fast @bitmap",
+     "read-only fast @bitmap @swap_string",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"bitfield",bitfieldCommand,-2,
-     "write use-memory @bitmap",
+     "write use-memory @bitmap @swap_string",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"bitfield_ro",bitfieldroCommand,-2,
-     "read-only fast @bitmap",
+     "read-only fast @bitmap @swap_string",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"setrange",setrangeCommand,4,
-     "write use-memory @string",
+     "write use-memory @string @swap_string",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"getrange",getrangeCommand,4,
-     "read-only @string",
+     "read-only @string @swap_string",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"substr",getrangeCommand,4,
-     "read-only @string",
+     "read-only @string @swap_string",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"incr",incrCommand,2,
-     "write use-memory fast @string",
+     "write use-memory fast @string @swap_string",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"decr",decrCommand,2,
-     "write use-memory fast @string",
+     "write use-memory fast @string @swap_string",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"mget",mgetCommand,-2,
-     "read-only fast @string",
-     0,NULL,NULL,SWAP_IN,SWAP_IN_CHECK_EXISTS,1,-1,1,0,0,0},
+     "read-only fast @string @swap_string @swap_keyspace",
+     0,NULL,NULL,SWAP_IN,0,1,-1,1,0,0,0},
 
     {"rpush",rpushCommand,-3,
-     "write use-memory fast @list",
+     "write use-memory fast @list @swap_list",
      0,NULL,NULL,SWAP_IN,SWAP_IN_META,1,1,1,0,0,0},
 
     {"lpush",lpushCommand,-3,
-     "write use-memory fast @list",
+     "write use-memory fast @list @swap_list",
      0,NULL,NULL,SWAP_IN,SWAP_IN_META,1,1,1,0,0,0},
 
     {"rpushx",rpushxCommand,-3,
-     "write use-memory fast @list",
+     "write use-memory fast @list @swap_list",
      0,NULL,NULL,SWAP_IN,SWAP_IN_META,1,1,1,0,0,0},
 
     {"lpushx",lpushxCommand,-3,
-     "write use-memory fast @list",
+     "write use-memory fast @list @swap_list",
      0,NULL,NULL,SWAP_IN,SWAP_IN_META,1,1,1,0,0,0},
 
     {"linsert",linsertCommand,5,
-     "write use-memory @list",
+     "write use-memory @list @swap_list",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"rpop",rpopCommand,-2,
-     "write fast @list",
+     "write fast @list @swap_list",
      0,NULL,getKeyRequestsRpop,SWAP_IN,0,1,1,1,0,0,0},
 
     {"lpop",lpopCommand,-2,
-     "write fast @list",
+     "write fast @list @swap_list",
      0,NULL,getKeyRequestsLpop,SWAP_IN,0,1,1,1,0,0,0},
 
     {"brpop",brpopCommand,-3,
-     "write no-script @list @blocking",
+     "write no-script @list @blocking @swap_list",
      0,NULL,getKeyRequestsBrpop,SWAP_IN,0,1,-2,1,0,0,0},
 
     {"brpoplpush",brpoplpushCommand,4,
-     "write use-memory no-script @list @blocking",
+     "write use-memory no-script @list @blocking @swap_list ",
      0,NULL,getKeyRequestsRpoplpush,SWAP_IN,0,1,2,1,0,0,0},
 
     {"blmove",blmoveCommand,6,
-     "write use-memory no-script @list @blocking",
+     "write use-memory no-script @list @blocking @swap_list",
      0,NULL,getKeyRequestsLmove,SWAP_IN,0,1,2,1,0,0,0},
 
     {"blpop",blpopCommand,-3,
-     "write no-script @list @blocking",
+     "write no-script @list @blocking @swap_list",
      0,NULL,getKeyRequestsBlpop,SWAP_IN,0,1,-2,1,0,0,0},
 
     {"llen",llenCommand,2,
-     "read-only fast @list",
+     "read-only fast @list @swap_list",
      0,NULL,NULL,SWAP_IN,SWAP_IN_META,1,1,1,0,0,0},
 
     {"lindex",lindexCommand,3,
-     "read-only @list",
+     "read-only @list @swap_list",
      0,NULL,getKeyRequestsLindex,SWAP_IN,0,1,1,1,0,0,0},
 
     {"lset",lsetCommand,4,
-     "write use-memory @list",
+     "write use-memory @list @swap_list",
      0,NULL,getKeyRequestsLset,SWAP_IN,0,1,1,1,0,0,0},
 
     {"lrange",lrangeCommand,4,
-     "read-only @list",
+     "read-only @list @swap_list",
      0,NULL,getKeyRequestsLrange,SWAP_IN,0,1,1,1,0,0,0},
 
     {"ltrim",ltrimCommand,4,
-     "write @list",
+     "write @list @swap_list",
      0,NULL,getKeyRequestsLtrim,SWAP_IN,0,1,1,1,0,0,0},
 
     {"lpos",lposCommand,-3,
-     "read-only @list",
+     "read-only @list @swap_list",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"lrem",lremCommand,4,
-     "write @list",
+     "write @list @swap_list",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"rpoplpush",rpoplpushCommand,3,
-     "write use-memory @list",
+     "write use-memory @list @swap_list",
      0,NULL,getKeyRequestsRpoplpush,SWAP_IN,0,1,2,1,0,0,0},
 
     {"lmove",lmoveCommand,5,
-     "write use-memory @list",
+     "write use-memory @list @swap_list",
      0,NULL,getKeyRequestsLmove,SWAP_IN,0,1,2,1,0,0,0},
 
     {"sadd",saddCommand,-3,
-     "write use-memory fast @set",
+     "write use-memory fast @set @swap_set",
      0,NULL,getKeyRequestsSadd,SWAP_IN,0,1,1,1,0,0,0},
 
     {"srem",sremCommand,-3,
-     "write fast @set",
+     "write fast @set @swap_set",
      0,NULL,getKeyRequestsSrem,SWAP_IN,SWAP_IN_DEL,1,1,1,0,0,0},
 
     {"smove",smoveCommand,4,
-     "write fast @set",
+     "write fast @set @swap_set",
      0,NULL,getKeyRequestSmove,SWAP_IN,SWAP_IN_DEL,1,2,1,0,0,0},
 
     {"sismember",sismemberCommand,3,
-     "read-only fast @set",
+     "read-only fast @set @swap_set",
      0,NULL,getKeyRequestSmembers,SWAP_IN,0,1,1,1,0,0,0},
 
     {"smismember",smismemberCommand,-3,
-     "read-only fast @set",
+     "read-only fast @set @swap_set",
      0,NULL,getKeyRequestSmembers,SWAP_IN,0,1,1,1,0,0,0},
 
     {"scard",ctrip_scardCommand,2,
-     "read-only fast @set",
+     "read-only fast @set @swap_set",
      0,NULL,NULL,SWAP_IN,SWAP_IN_META,1,1,1,0,0,0},
 
     {"spop",spopCommand,-2,
-     "write random fast @set",
+     "write random fast @set @swap_set",
      0,NULL,NULL,SWAP_IN,SWAP_IN_DEL,1,1,1,0,0,0},
 
     {"srandmember",srandmemberCommand,-2,
-     "read-only random @set",
+     "read-only random @set @swap_set",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"sinter",sinterCommand,-2,
-     "read-only to-sort @set",
+     "read-only to-sort @set @swap_set",
      0,NULL,NULL,SWAP_IN,0,1,-1,1,0,0,0},
 
     {"sinterstore",sinterstoreCommand,-3,
-     "write use-memory @set",
+     "write use-memory @set @swap_set",
      0,NULL,getKeyRequestsSinterstore,SWAP_IN,0,1,-1,1,0,0,0},
 
     {"sunion",sunionCommand,-2,
-     "read-only to-sort @set",
+     "read-only to-sort @set @swap_set",
      0,NULL,NULL,SWAP_IN,0,1,-1,1,0,0,0},
 
     {"sunionstore",sunionstoreCommand,-3,
-     "write use-memory @set",
+     "write use-memory @set @swap_set",
      0,NULL,getKeyRequestsSunionstore,SWAP_IN,0,1,-1,1,0,0,0},
 
     {"sdiff",sdiffCommand,-2,
-     "read-only to-sort @set",
+     "read-only to-sort @set @swap_set",
      0,NULL,NULL,SWAP_IN,0,1,-1,1,0,0,0},
 
     {"sdiffstore",sdiffstoreCommand,-3,
-     "write use-memory @set",
+     "write use-memory @set @swap_set",
      0,NULL,getKeyRequestsSdiffstore,SWAP_IN,0,1,-1,1,0,0,0},
 
     {"smembers",sinterCommand,2,
-     "read-only to-sort @set",
+     "read-only to-sort @set @swap_set",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"sscan",sscanCommand,-3,
-     "read-only random @set",
+     "read-only random @set @swap_set",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
     /*  (zset type) write command flag should be SWAP_IN_DEL, Because the index (score_cf data) needs to be deleted */
     {"zadd",zaddCommand,-4,
-     "write use-memory fast @sortedset",
+     "write use-memory fast @sortedset @swap_zset",
      0,NULL,getKeyRequestsZAdd,SWAP_IN,SWAP_IN_DEL,1,1,1,0,0,0},
 
     {"zincrby",zincrbyCommand,4,
-     "write use-memory fast @sortedset",
+     "write use-memory fast @sortedset @swap_zset",
      0,NULL,getKeyRequestsZincrby,SWAP_IN,SWAP_IN_DEL,1,1,1,0,0,0},
 
     {"zrem",zremCommand,-3,
-     "write fast @sortedset",
+     "write fast @sortedset @swap_zset",
      0,NULL,getKeyRequestsZrem,SWAP_IN,SWAP_IN_DEL,1,1,1,0,0,0},
 
     {"zremrangebyscore",zremrangebyscoreCommand,4,
-     "write @sortedset",
+     "write @sortedset @swap_zset",
      0,NULL,getKeyRequestsZremRangeByScore,SWAP_IN,SWAP_IN_DEL,1,1,1,0,0,0},
 
     {"zremrangebyrank",zremrangebyrankCommand,4,
-     "write @sortedset",
+     "write @sortedset @swap_zset",
      0,NULL,NULL,SWAP_IN,SWAP_IN_DEL,1,1,1,0,0,0},
 
     {"zremrangebylex",zremrangebylexCommand,4,
-     "write @sortedset",
+     "write @sortedset @swap_zset",
      0,NULL,getKeyRequestsZremRangeByLex,SWAP_IN,SWAP_IN_DEL,1,1,1,0,0,0},
 
     {"zunionstore",zunionstoreCommand,-4,
-     "write use-memory @sortedset",
+     "write use-memory @sortedset @swap_zset @swap_set",
      0,zunionInterDiffStoreGetKeys,getKeyRequestsZunionstore,SWAP_IN,SWAP_IN_DEL,1,1,1,0,0,0},
 
     {"zinterstore",zinterstoreCommand,-4,
-     "write use-memory @sortedset",
+     "write use-memory @sortedset @swap_zset @swap_set",
      0,zunionInterDiffStoreGetKeys,getKeyRequestsZinterstore,SWAP_IN,SWAP_IN_DEL,1,1,1,0,0,0},
 
     {"zdiffstore",zdiffstoreCommand,-4,
-     "write use-memory @sortedset",
+     "write use-memory @sortedset @swap_zset @swap_set",
      0,zunionInterDiffStoreGetKeys,getKeyRequestsZdiffstore,SWAP_IN,SWAP_IN_DEL,1,1,1,0,0,0},
 
     {"zunion",zunionCommand,-3,
-     "read-only @sortedset",
+     "read-only @sortedset @swap_zset @swap_set",
      0,zunionInterDiffGetKeys,NULL,SWAP_IN,0,0,0,0,0,0,0},
 
     {"zinter",zinterCommand,-3,
-     "read-only @sortedset",
+     "read-only @sortedset @swap_zset @swap_set",
      0,zunionInterDiffGetKeys,NULL,SWAP_IN,0,0,0,0,0,0,0},
 
     {"zdiff",zdiffCommand,-3,
-     "read-only @sortedset",
+     "read-only @sortedset @swap_zset @swap_set",
      0,zunionInterDiffGetKeys,NULL,SWAP_IN,0,0,0,0,0,0,0},
 
     {"zrange",zrangeCommand,-4,
-     "read-only @sortedset",
+     "read-only @sortedset @swap_zset",
      0,NULL,getKeyRequestsZrange,SWAP_IN,0,1,1,1,0,0,0},
 
     {"zrangestore",zrangestoreCommand,-5,
-     "write use-memory @sortedset",
+     "write use-memory @sortedset @swap_zset",
      0,NULL,getKeyRequestsZrangestore,SWAP_IN,SWAP_IN_DEL,1,2,1,0,0,0},
 
     {"zrangebyscore",zrangebyscoreCommand,-4,
-     "read-only @sortedset",
+     "read-only @sortedset @swap_zset",
      0,NULL,getKeyRequestsZrangeByScore,SWAP_IN,0,1,1,1,0,0,0},
 
     {"zrevrangebyscore",zrevrangebyscoreCommand,-4,
-     "read-only @sortedset",
+     "read-only @sortedset @swap_zset",
      0,NULL,getKeyRequestsZrevrangeByScore,SWAP_IN,0,1,1,1,0,0,0},
 
     {"zrangebylex",zrangebylexCommand,-4,
-     "read-only @sortedset",
+     "read-only @sortedset @swap_zset",
      0,NULL,getKeyRequestsZrangeByLex,SWAP_IN,0,1,1,1,0,0,0},
 
     {"zrevrangebylex",zrevrangebylexCommand,-4,
-     "read-only @sortedset",
+     "read-only @sortedset @swap_zset",
      0,NULL,getKeyRequestsZrevrangeByLex,SWAP_IN,0,1,1,1,0,0,0},
 
     {"zcount",zcountCommand,4,
-     "read-only fast @sortedset",
+     "read-only fast @sortedset @swap_zset",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"zlexcount",zlexcountCommand,4,
-     "read-only fast @sortedset",
+     "read-only fast @sortedset @swap_zset",
      0,NULL,getKeyRequestsZlexCount,SWAP_IN,0,1,1,1,0,0,0},
 
     {"zrevrange",zrevrangeCommand,-4,
-     "read-only @sortedset",
+     "read-only @sortedset @swap_zset",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"zcard",zcardCommand,2,
-     "read-only fast @sortedset",
+     "read-only fast @sortedset @swap_zset",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"zscore",zscoreCommand,3,
-     "read-only fast @sortedset",
+     "read-only fast @sortedset @swap_zset",
      0,NULL,getKeyRequestsZScore,SWAP_IN,0,1,1,1,0,0,0},
 
     {"zmscore",zmscoreCommand,-3,
-     "read-only fast @sortedset",
+     "read-only fast @sortedset @swap_zset",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"zrank",zrankCommand,3,
-     "read-only fast @sortedset",
+     "read-only fast @sortedset @swap_zset",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"zrevrank",zrevrankCommand,3,
-     "read-only fast @sortedset",
+     "read-only fast @sortedset @swap_zset",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"zscan",zscanCommand,-3,
-     "read-only random @sortedset",
+     "read-only random @sortedset @swap_zset",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"zpopmin",zpopminCommand,-2,
-     "write fast @sortedset",
+     "write fast @sortedset @swap_zset",
      0,NULL,NULL,SWAP_IN,SWAP_IN_DEL,1,1,1,0,0,0},
 
     {"zpopmax",zpopmaxCommand,-2,
-     "write fast @sortedset",
+     "write fast @sortedset @swap_zset",
      0,NULL,NULL,SWAP_IN,SWAP_IN_DEL,1,1,1,0,0,0},
 
     {"bzpopmin",bzpopminCommand,-3,
-     "write no-script fast @sortedset @blocking",
+     "write no-script fast @sortedset @blocking @swap_zset",
      0,NULL,getKeyRequestsZpopMin,SWAP_IN,SWAP_IN_DEL,1,-2,1,0,0,0},
 
     {"bzpopmax",bzpopmaxCommand,-3,
-     "write no-script fast @sortedset @blocking",
+     "write no-script fast @sortedset @blocking @swap_zset",
      0,NULL,getKeyRequestsZpopMax,SWAP_IN,SWAP_IN_DEL,1,-2,1,0,0,0},
 
     {"zrandmember",zrandmemberCommand,-2,
-     "read-only random @sortedset",
+     "read-only random @sortedset @swap_zset",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"hset",hsetCommand,-4,
-     "write use-memory fast @hash",
+     "write use-memory fast @hash @swap_hash",
      0,NULL,getKeyRequestsHset,SWAP_IN,0,1,1,1,0,0,0},
 
     {"hsetnx",hsetnxCommand,4,
-     "write use-memory fast @hash",
+     "write use-memory fast @hash @swap_hash",
      0,NULL,getKeyRequestsHsetnx,SWAP_IN,0,1,1,1,0,0,0},
 
     {"hget",hgetCommand,3,
-     "read-only fast @hash",
+     "read-only fast @hash @swap_hash",
      0,NULL,getKeyRequestsHget,SWAP_IN,0,1,1,1,0,0,0},
 
     {"hmset",hsetCommand,-4,
-     "write use-memory fast @hash",
+     "write use-memory fast @hash @swap_hash",
      0,NULL,getKeyRequestsHset,SWAP_IN,0,1,1,1,0,0,0},
 
     {"hmget",hmgetCommand,-3,
-     "read-only fast @hash",
+     "read-only fast @hash @swap_hash",
      0,NULL,getKeyRequestsHmget,SWAP_IN,0,1,1,1,0,0,0},
 
     {"hincrby",hincrbyCommand,4,
-     "write use-memory fast @hash",
+     "write use-memory fast @hash @swap_hash",
      0,NULL,getKeyRequestsHincrby,SWAP_IN,0,1,1,1,0,0,0},
 
     {"hincrbyfloat",hincrbyfloatCommand,4,
-     "write use-memory fast @hash",
+     "write use-memory fast @hash @swap_hash",
      0,NULL,getKeyRequestsHincrbyfloat,SWAP_IN,0,1,1,1,0,0,0},
 
     {"hdel",hdelCommand,-3,
-     "write fast @hash",
+     "write fast @hash @swap_hash",
      0,NULL,getKeyRequestsHdel,SWAP_IN,SWAP_IN_DEL,1,1,1,0,0,0},
 
     {"hlen",hlenCommand,2,
-     "read-only fast @hash",
+     "read-only fast @hash @swap_hash",
      0,NULL,NULL,SWAP_IN,SWAP_IN_META,1,1,1,0,0,0},
 
     {"hstrlen",hstrlenCommand,3,
-     "read-only fast @hash",
+     "read-only fast @hash @swap_hash",
      0,NULL,getKeyRequestsHstrlen,SWAP_IN,0,1,1,1,0,0,0},
 
     {"hkeys",hkeysCommand,2,
-     "read-only to-sort @hash",
+     "read-only to-sort @hash @swap_hash",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"hvals",hvalsCommand,2,
-     "read-only to-sort @hash",
+     "read-only to-sort @hash @swap_hash",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"hgetall",hgetallCommand,2,
-     "read-only random @hash",
+     "read-only random @hash @swap_hash",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"hexists",hexistsCommand,3,
-     "read-only fast @hash",
+     "read-only fast @hash @swap_hash",
      0,NULL,getKeyRequestsHexists,SWAP_IN,0,1,1,1,0,0,0},
 
     {"hrandfield",hrandfieldCommand,-2,
-     "read-only random @hash",
+     "read-only random @hash @swap_hash",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"hscan",hscanCommand,-3,
-     "read-only random @hash",
+     "read-only random @hash @swap_hash",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"incrby",incrbyCommand,3,
-     "write use-memory fast @string",
+     "write use-memory fast @string @swap_string",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"decrby",decrbyCommand,3,
-     "write use-memory fast @string",
+     "write use-memory fast @string @swap_string",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"incrbyfloat",incrbyfloatCommand,3,
-     "write use-memory fast @string",
+     "write use-memory fast @string @swap_string",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"getset",getsetCommand,3,
-     "write use-memory fast @string",
+     "write use-memory fast @string @swap_string",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"mset",msetCommand,-3,
-     "write use-memory @string",
+     "write use-memory @string @swap_string @swap_keyspace",
      0,NULL,NULL,SWAP_IN,SWAP_IN_OVERWRITE,1,-1,2,0,0,0},
 
     {"msetnx",msetnxCommand,-3,
-     "write use-memory @string",
+     "write use-memory @string @swap_string",
      0,NULL,NULL,SWAP_IN,0,1,-1,2,0,0,0},
 
     {"randomkey",randomkeyCommand,1,
-     "read-only random @keyspace",
+     "read-only random @keyspace @swap_keyspace",
      0,NULL,getKeyRequestsMetaScan,SWAP_IN,SWAP_METASCAN_RANDOMKEY,0,0,0,0,0,0},
 
     {"select",selectCommand,2,
@@ -655,7 +655,7 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"swapdb",swapdbCommand,3,
-     "write fast @keyspace @dangerous",
+     "write fast @keyspace @dangerous @swap_keyspace",
      0,NULL,getKeyRequestsGlobal,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"move",moveCommand,3,
@@ -663,41 +663,41 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,NULL,SWAP_NOP,0,1,1,1,0,0,0},
 
     {"copy",copyCommand,-3,
-     "write use-memory @keyspace",
+     "write use-memory @keyspace @swap_keyspace",
      0,NULL,NULL,SWAP_IN,0,1,2,1,0,0,0},
 
     /* Like for SET, we can't mark rename as a fast command because
      * overwriting the target key may result in an implicit slow DEL. */
     {"rename",renameCommand,3,
-     "write @keyspace",
+     "write @keyspace @swap_keyspace",
      0,NULL,NULL,SWAP_IN,SWAP_IN_DEL,1,2,1,0,0,0},
 
     {"renamenx",renamenxCommand,3,
-     "write fast @keyspace",
+     "write fast @keyspace @swap_keyspace",
      0,NULL,NULL,SWAP_IN,SWAP_IN_DEL,1,2,1,0,0,0},
 
     {"expire",expireCommand,3,
-     "write fast @keyspace",
+     "write fast @keyspace @swap_keyspace",
      0,NULL,NULL,SWAP_IN,SWAP_IN_META,1,1,1,0,0,0},
 
     {"expireat",expireatCommand,3,
-     "write fast @keyspace",
+     "write fast @keyspace @swap_keyspace",
      0,NULL,NULL,SWAP_IN,SWAP_IN_META,1,1,1,0,0,0},
 
     {"pexpire",pexpireCommand,3,
-     "write fast @keyspace",
+     "write fast @keyspace @swap_keyspace",
      0,NULL,NULL,SWAP_IN,SWAP_IN_META,1,1,1,0,0,0},
 
     {"pexpireat",pexpireatCommand,3,
-     "write fast @keyspace",
+     "write fast @keyspace @swap_keyspace",
      0,NULL,NULL,SWAP_IN,SWAP_IN_META,1,1,1,0,0,0},
 
     {"keys",keysCommand,2,
-     "read-only to-sort @keyspace @dangerous",
+     "read-only to-sort @keyspace @dangerous @swap_keyspace",
      0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"scan",scanCommand,-2,
-     "read-only random @keyspace",
+     "read-only random @keyspace @swap_keyspace",
      0,NULL,getKeyRequestsMetaScan,SWAP_IN,SWAP_METASCAN_SCAN,0,0,0,0,0,0},
 
     {"dbsize",dbsizeCommand,1,
@@ -744,7 +744,7 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"type",typeCommand,2,
-     "read-only fast @keyspace",
+     "read-only fast @keyspace @swap_keyspace",
      0,NULL,NULL,SWAP_IN,SWAP_IN_META,1,1,1,0,0,0},
 
     {"multi",multiCommand,1,
@@ -780,7 +780,7 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,getKeyRequestsGlobal,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"sort",sortCommand,-2,
-     "write use-memory @list @set @sortedset @dangerous",
+     "write use-memory @list @set @sortedset @dangerous @swap_list @swap_set @swap_zset",
      0,sortGetKeys,getKeyRequestsSort,SWAP_IN,0,1,1,1,0,0,0},
 
     {"info",infoCommand,-1,
@@ -792,19 +792,19 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"ttl",ttlCommand,2,
-     "read-only fast random @keyspace",
+     "read-only fast random @keyspace @swap_keyspace",
      0,NULL,NULL,SWAP_IN,SWAP_IN_META,1,1,1,0,0,0},
 
     {"touch",touchCommand,-2,
-     "read-only fast @keyspace",
+     "read-only fast @keyspace @swap_keyspace",
      0,NULL,NULL,SWAP_IN,SWAP_IN_META,1,-1,1,0,0,0},
 
     {"pttl",pttlCommand,2,
-     "read-only fast random @keyspace",
+     "read-only fast random @keyspace @swap_keyspace",
      0,NULL,NULL,SWAP_IN,SWAP_IN_META,1,1,1,0,0,0},
 
     {"persist",persistCommand,2,
-     "write fast @keyspace",
+     "write fast @keyspace @swap_keyspace",
      0,NULL,NULL,SWAP_IN,SWAP_IN_META,1,1,1,0,0,0},
 
     {"slaveof",replicaofCommand,3,
@@ -824,7 +824,7 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"debug",debugCommand,-2,
-     "admin no-script ok-loading ok-stale",
+     "admin no-script ok-loading ok-stale @swap_keyspace",
      0,debugGetKeys,getKeyRequestsDebug,SWAP_IN,0,0,0,0,0,0,0},
 
     {"config",configCommand,-2,
@@ -856,7 +856,7 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"watch",watchCommand,-2,
-     "no-script fast ok-loading ok-stale @transaction",
+     "no-script fast ok-loading ok-stale @transaction @swap_keyspace",
      0,NULL,NULL,SWAP_NOP,0,1,-1,1,0,0,0},
 
     {"unwatch",unwatchCommand,1,
@@ -868,15 +868,15 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"restore",restoreCommand,-4,
-     "write use-memory @keyspace @dangerous",
+     "write use-memory @keyspace @dangerous @swap_keyspace",
      0,NULL,NULL,SWAP_IN,SWAP_IN_DEL,1,1,1,0,0,0},
 
     {"restore-asking",restoreCommand,-4,
-     "write use-memory cluster-asking @keyspace @dangerous",
+     "write use-memory cluster-asking @keyspace @dangerous @swap_keyspace",
      0,NULL,NULL,SWAP_NOP,0,1,1,1,0,0,0},
 
     {"migrate",migrateCommand,-6,
-     "write random @keyspace @dangerous",
+     "write random @keyspace @dangerous @swap_keyspace",
      0,migrateGetKeys,NULL,SWAP_IN,SWAP_IN_DEL,3,3,1,0,0,0},
 
     {"asking",askingCommand,1,
@@ -892,11 +892,11 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"dump",dumpCommand,2,
-     "read-only random @keyspace",
+     "read-only random @keyspace @swap_keyspace",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"object",objectCommand,-2,
-     "read-only random @keyspace",
+     "read-only random @keyspace @swap_keyspace",
      0,NULL,NULL,SWAP_IN,0,2,2,1,0,0,0},
 
     {"memory",memoryCommand,-2,
@@ -918,11 +918,11 @@ struct redisCommand redisCommandTable[] = {
      * as opposed to after.
       */
     {"eval",evalCommand,-3,
-     "no-script no-monitor may-replicate @scripting",
+     "no-script no-monitor may-replicate @scripting @swap_keyspace",
      0,evalGetKeys,NULL,SWAP_IN,SWAP_IN_DEL,0,0,0,0,0,0},
 
     {"evalsha",evalShaCommand,-3,
-     "no-script no-monitor may-replicate @scripting",
+     "no-script no-monitor may-replicate @scripting @swap_keyspace",
      0,evalGetKeys,NULL,SWAP_IN,SWAP_IN_DEL,0,0,0,0,0,0},
 
     {"slowlog",slowlogCommand,-2,
@@ -938,15 +938,15 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"bitop",bitopCommand,-4,
-     "write use-memory @bitmap",
+     "write use-memory @bitmap @swap_string",
      0,NULL,getKeyRequestsBitop,SWAP_IN,0,2,-1,1,0,0,0},
 
     {"bitcount",bitcountCommand,-2,
-     "read-only @bitmap",
+     "read-only @bitmap @swap_string",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"bitpos",bitposCommand,-3,
-     "read-only @bitmap",
+     "read-only @bitmap @swap_string",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"wait",waitCommand,3,
@@ -958,52 +958,52 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"geoadd",geoaddCommand,-5,
-     "write use-memory @geo",
+     "write use-memory @geo @swap_zset",
      0,NULL,getKeyRequestsGeoAdd,SWAP_IN,SWAP_IN_DEL,1,1,1,0,0,0},
 
     /* GEORADIUS has store options that may write. */
     {"georadius",georadiusCommand,-6,
-     "write use-memory @geo",
+     "write use-memory @geo @swap_zset",
      0,georadiusGetKeys,getKeyRequestsGeoRadius,SWAP_IN,SWAP_IN_DEL,1,1,1,0,0,0},
 
     {"georadius_ro",georadiusroCommand,-6,
-     "read-only @geo",
+     "read-only @geo @swap_zset",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"georadiusbymember",georadiusbymemberCommand,-5,
-     "write use-memory @geo",
+     "write use-memory @geo @swap_zset",
      0,georadiusGetKeys,getKeyRequestsGeoRadiusByMember,SWAP_IN,SWAP_IN_DEL,1,1,1,0,0,0},
 
     {"georadiusbymember_ro",georadiusbymemberroCommand,-5,
-     "read-only @geo",
+     "read-only @geo @swap_zset",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"geohash",geohashCommand,-2,
-     "read-only @geo",
+     "read-only @geo @swap_zset",
      0,NULL,getKeyRequestsGeoHash,SWAP_IN,0,1,1,1,0,0,0},
 
     {"geopos",geoposCommand,-2,
-     "read-only @geo",
+     "read-only @geo @swap_zset",
      0,NULL,getKeyRequestsGeoPos,SWAP_IN,0,1,1,1,0,0,0},
 
     {"geodist",geodistCommand,-4,
-     "read-only @geo",
+     "read-only @geo @swap_zset",
      0,NULL,getKeyRequestsGeoDist,SWAP_IN,0,1,1,1,0,0,0},
 
     {"geosearch",geosearchCommand,-7,
-     "read-only @geo",
+     "read-only @geo @swap_zset",
       0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"geosearchstore",geosearchstoreCommand,-8,
-     "write use-memory @geo",
+     "write use-memory @geo @swap_zset",
       0,NULL,getKeyRequestsGeoSearchStore,SWAP_IN,SWAP_IN_DEL,1,2,1,0,0,0},
 
     {"pfselftest",pfselftestCommand,1,
-     "admin @hyperloglog",
+     "admin @hyperloglog @swap_string",
       0,NULL,NULL,SWAP_IN,0,0,0,0,0,0,0},
 
     {"pfadd",pfaddCommand,-2,
-     "write use-memory fast @hyperloglog",
+     "write use-memory fast @hyperloglog @swap_string",
      0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     /* Technically speaking PFCOUNT may change the key since it changes the
@@ -1011,18 +1011,18 @@ struct redisCommand redisCommandTable[] = {
      * we claim that the representation, even if accessible, is an internal
      * affair, and the command is semantically read only. */
     {"pfcount",pfcountCommand,-2,
-     "read-only may-replicate @hyperloglog",
+     "read-only may-replicate @hyperloglog @swap_string",
      0,NULL,NULL,SWAP_IN,0,1,-1,1,0,0,0},
 
     {"pfmerge",pfmergeCommand,-2,
-     "write use-memory @hyperloglog",
+     "write use-memory @hyperloglog @swap_string",
      0,NULL,NULL,SWAP_IN,0,1,-1,1,0,0,0},
 
     /* Unlike PFCOUNT that is considered as a read-only command (although
      * it changes a bit), PFDEBUG may change the entire key when converting
      * from sparse to dense representation */
     {"pfdebug",pfdebugCommand,-3,
-     "admin write use-memory @hyperloglog",
+     "admin write use-memory @hyperloglog @swap_string",
      0,NULL,NULL,SWAP_IN,0,2,2,1,0,0,0},
 
     {"xadd",xaddCommand,-5,
@@ -1106,7 +1106,7 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"stralgo",stralgoCommand,-2,
-     "read-only @string",
+     "read-only @string @swap_string",
      0,lcsGetKeys,NULL,SWAP_IN,0,0,0,0,0,0,0},
 
     {"reset",resetCommand,1,
@@ -1120,19 +1120,19 @@ struct redisCommand redisCommandTable[] = {
     /* evict command used by shared fake to identify swap does
      * not need any swap before command proc, but triggers swap in proc. */
 	{"swap.evict",swapEvictCommand,-2,
-	 "read-only fast @keyspace",
+	 "read-only fast @keyspace @swap_keyspace",
      0,NULL,getKeyRequestsNone,SWAP_OUT,0,1,-1,1,0,0,0},
 
      {"swap.load",swapLoadCommand,-2,
-      "read-only fast",
+      "read-only fast @swap_keyspace",
       0,NULL,getKeyRequestsNone,SWAP_IN,SWAP_IN_FORCE_HOT,1,-1,1,0,0,0},
 
 	{"swap.expired",swapExpiredCommand,1,
-	 "write fast @keyspace",
+	 "write fast @keyspace @swap_keyspace",
 	 0,NULL,getKeyRequestsNone,SWAP_NOP,0,1,-1,1,0,0,0},
 
     {"swap.scanexpire",swapScanexpireCommand,1,
-     "read-only no-script @keyspace",
+     "read-only no-script @keyspace @swap_keyspace",
      0,NULL,NULL,SWAP_NOP,0,1,-1,1,0,0,0},
 
 	{"swap",swapCommand,-2,
@@ -1160,7 +1160,7 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"ctrip.merge", ctripMergeCommand, -4,
-     "write use-memory @keyspace",
+     "write use-memory @swap_keyspace",
      0,NULL,NULL,SWAP_IN,SWAP_IN_OVERWRITE,1,1,1,0,0,0},
 
     {"ctrip.merge_end", ctripMergeEndCommand, -2,
@@ -1168,7 +1168,7 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"ctrip.get_robj", gtidGetRobjCommand, 2, 
-     "read-only fast no-script @keyspace", 
+     "read-only fast no-script @swap_keyspace", 
      0, NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"gtidx", gtidxCommand, -2,
@@ -3718,7 +3718,10 @@ int populateCommandTableParseFlags(struct redisCommand *c, char *strflags) {
                 (catflag = ACLGetCommandCategoryFlagByName(flag+1)) != 0)
             {
                 c->flags |= catflag;
-            } else {
+            } else if (flag[0] == '@' && 
+                (catflag = SwapCommandDataTypeFlagByName(flag+1)) != 0) {
+                c->flags |= catflag;
+            }  else {
                 sdsfreesplitres(argv,argc);
                 return C_ERR;
             }
