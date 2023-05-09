@@ -482,6 +482,10 @@ int getKeyRequestsOneDestKeyMultiSrcKeys(int dbid, struct redisCommand *cmd, rob
 
     if (dest_key_Index > 0 && dest_key_Index < argc) {
         incrRefCount(argv[dest_key_Index]);
+        /**
+         *  @example
+         *      zunionstore dest(keyspace) 2 src1(list) src2(list)
+        */
         getKeyRequestsAppendSubkeyResult(result,REQUEST_LEVEL_KEY,argv[dest_key_Index], 0, NULL,
                                SWAP_IN, SWAP_IN_DEL,cmd->flags | CMD_SWAP_DATATYPE_KEYSPACE, dbid);
     } 

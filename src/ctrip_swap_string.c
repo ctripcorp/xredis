@@ -404,7 +404,6 @@ int swapDataWholeKeyTest(int argc, char **argv, int accurate) {
         int intention;
         uint32_t intention_flags;
         wholeKeySwapAna_(data, SWAP_NOP, 0, &intention, &intention_flags, ctx);
-        printf("%d\n", intention);
         test_assert(intention == SWAP_NOP);
         wholeKeySwapAna_(data, SWAP_IN, 0, &intention, &intention_flags, ctx);
         test_assert(intention == SWAP_NOP);
