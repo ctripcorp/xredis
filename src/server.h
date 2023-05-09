@@ -771,6 +771,7 @@ typedef struct swapTrace swapTrace;
 typedef struct multiCmd {
     robj **argv;
     int argc;
+    struct argRewrites *swap_arg_rewrites;
     struct redisCommand *cmd;
     swapCmdTrace *swap_cmd;
 } multiCmd;

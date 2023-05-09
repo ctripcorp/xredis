@@ -50,6 +50,7 @@ void freeClientMultiState(client *c) {
         for (i = 0; i < mc->argc; i++)
             decrRefCount(mc->argv[i]);
         zfree(mc->argv);
+        argRewritesFree(mc->swap_arg_rewrites);
         if (mc->swap_cmd) swapCmdTraceFree(mc->swap_cmd);
     }
     zfree(c->mstate.commands);
@@ -74,6 +75,7 @@ void queueMultiCommand(client *c) {
     mc->swap_cmd = NULL;
     mc->argc = c->argc;
     mc->argv = zmalloc(sizeof(robj*)*c->argc);
+    mc->swap_arg_rewrites = argRewritesCreate();
     memcpy(mc->argv,c->argv,sizeof(robj*)*c->argc);
     for (j = 0; j < c->argc; j++)
         incrRefCount(mc->argv[j]);
@@ -164,6 +166,7 @@ void execCommand(client *c) {
     int j;
     robj **orig_argv;
     int orig_argc;
+    struct argRewrites *orig_arg_rewrites;
     struct redisCommand *orig_cmd;
     swapCmdTrace *orig_cmd_trace;
     int was_master = server.masterhost == NULL;
@@ -209,10 +212,12 @@ void execCommand(client *c) {
     orig_argc = c->argc;
     orig_cmd = c->cmd;
     orig_cmd_trace = c->swap_cmd;
+    orig_arg_rewrites = c->swap_arg_rewrites;
     addReplyArrayLen(c,c->mstate.count);
     for (j = 0; j < c->mstate.count; j++) {
         c->argc = c->mstate.commands[j].argc;
         c->argv = c->mstate.commands[j].argv;
+        c->swap_arg_rewrites = c->mstate.commands[j].swap_arg_rewrites;
         c->cmd = c->mstate.commands[j].cmd;
         c->swap_cmd = c->mstate.commands[j].swap_cmd;
         if (c->swap_cmd) c->swap_cmd->swap_submitted_time = orig_cmd_trace->swap_submitted_time;
@@ -252,6 +257,7 @@ void execCommand(client *c) {
         /* Commands may alter argc/argv, restore mstate. */
         c->mstate.commands[j].argc = c->argc;
         c->mstate.commands[j].argv = c->argv;
+        c->mstate.commands[j].swap_arg_rewrites = c->swap_arg_rewrites;
         c->mstate.commands[j].cmd = c->cmd;
         c->mstate.commands[j].swap_cmd = c->swap_cmd;
     }
@@ -264,6 +270,7 @@ void execCommand(client *c) {
     c->argc = orig_argc;
     c->cmd = orig_cmd;
     c->swap_cmd = orig_cmd_trace;
+    c->swap_arg_rewrites = orig_arg_rewrites;
     discardTransaction(c);
 
     /* Make sure the EXEC command will be propagated as well if MULTI

@@ -1816,13 +1816,14 @@ void clientArgRewrite(client *c, argRewriteRequest arg_req, MOVE robj *new_arg) 
         serverAssert(arg_req.arg_idx < c->argc);
         orig_arg = c->argv[arg_req.arg_idx];
         c->argv[arg_req.arg_idx] = new_arg;
+        argRewritesAdd(c->swap_arg_rewrites,arg_req,orig_arg);
     } else {
         serverAssert(arg_req.mstate_idx < c->mstate.count);
         serverAssert(arg_req.arg_idx < c->mstate.commands[arg_req.mstate_idx].argc);
         orig_arg = c->mstate.commands[arg_req.mstate_idx].argv[arg_req.arg_idx];
         c->mstate.commands[arg_req.mstate_idx].argv[arg_req.arg_idx] = new_arg;
+        argRewritesAdd(c->mstate.commands[arg_req.mstate_idx].swap_arg_rewrites,arg_req,orig_arg);
     }
-    argRewritesAdd(c->swap_arg_rewrites,arg_req,orig_arg);
 }
 
 int listBeforeCall(swapData *data, client *c, void *datactx_) {
