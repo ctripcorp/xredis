@@ -103,7 +103,7 @@ static inline char abbrev2ObjectType(char abbrev) {
 sds rocksEncodeMetaVal(int object_type, long long expire, uint64_t version,
         sds extend) {
     uint64_t encoded_version = rocksEncodeVersion(version);
-    size_t len = 1 + sizeof(expire) + sizeof(encoded_version) + 
+    size_t len = 1 + sizeof(expire) + sizeof(encoded_version) +
         (extend ? sdslen(extend) : 0);
     sds raw = sdsnewlen(SDS_NOINIT,len), ptr = raw;
     ptr[0] = objectType2Abbrev(object_type), ptr++;
@@ -233,7 +233,7 @@ sds encodeMetaKey(int dbid, const char* key, size_t keylen_) {
     return rawkey;
 }
 
-sds rocksEncodeMetaKey(redisDb *db, sds key) {    
+sds rocksEncodeMetaKey(redisDb *db, sds key) {
     return encodeMetaKey(db->id, key, key ? sdslen(key) : 0);
 }
 
@@ -386,7 +386,7 @@ sds _encodeScoreKey(int dbid, sds key, uint64_t version, uint8_t subkeyflag,
         scoresubkeylen += sdslen(subkey);
     } else {
         scoresubkeylen = 0;
-    } 
+    }
 
     rawkeylen = sizeof(dbid)+sizeof(keylen)+keylen+sizeof(version)+1+scoresubkeylen;
     rawkey = sdsnewlen(SDS_NOINIT,rawkeylen), ptr = rawkey;

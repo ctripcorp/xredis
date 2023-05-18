@@ -160,7 +160,7 @@ void blockedOnListKeyClientKeyRequestFinished(client *c, swapCtx *ctx) {
     }
     dictAdd(chain->keys, ctx->data->key, ctx->swap_lock);
     chain->keyrequests_count--;
-    
+
     if (chain->keyrequests_count == 0) {
         if (chain->swap_err_count > 0) {
             server.swap_dependency_block_ctx->swap_err_count++;
@@ -183,11 +183,11 @@ void blockedOnListKeyClientKeyRequestFinished(client *c, swapCtx *ctx) {
 }
 
 /**
- * 
+ *
  * handle no need to swap data scene
  * 1. blpop command (without target)
- * 2. brpoplpush src target (when src == target) 
- *  
+ * 2. brpoplpush src target (when src == target)
+ *
 */
 int serveClientsBlockedOnListKeyWithoutTargetKey(robj *o, readyList *rl) {
     int exists_list_blocked_with_target_key = 0;
@@ -238,7 +238,7 @@ int serveClientsBlockedOnListKeyWithoutTargetKey(robj *o, readyList *rl) {
             } else {
                 break;
             }
-            
+
         }
     }
 end:
@@ -261,7 +261,7 @@ void submitSwapBlockedClientRequest(client* c, readyList *rl, dict* key_sets) {
         robj* rkey = dictGetKey(de);
         incrRefCount(rkey);
         getKeyRequestsSwapBlockedLmove(dbid, SWAP_IN, c->cmd->intention_flags, CMD_SWAP_DATATYPE_LIST,
-            rkey, &result, -1, 
+            rkey, &result, -1,
             -1, 1, -1, -1);
     }
     dictReleaseIterator(di);
@@ -284,7 +284,7 @@ void swapServeClientsBlockedOnListKey(robj *o, readyList *rl) {
     /* We serve clients in the same order they blocked for
      * this key, from the first blocked to the last. */
     if (!serveClientsBlockedOnListKeyWithoutTargetKey(o, rl)) return;
-    dict* key_sets = dictCreate(&waitIoDictType, NULL); 
+    dict* key_sets = dictCreate(&waitIoDictType, NULL);
     serverAssert(dictAdd(key_sets, rl->key, NULL) == C_OK);
     incrRefCount(rl->key);
     findSwapBlockedListKeyChain(rl->db, rl->key, key_sets);

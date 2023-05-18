@@ -29,8 +29,8 @@
 #include "ctrip_swap.h"
 
 /* cf compaction filter */
-static void dataFilterDestroy(void* arg) { 
-    (void)arg; 
+static void dataFilterDestroy(void* arg) {
+    (void)arg;
 }
 
 static const char* dataFilterName(void* arg) {
@@ -45,14 +45,14 @@ static sds rocksdbGet(rocksdb_readoptions_t* ropts, int cf, sds rawkey, char** e
     char* val = rocksdb_get_cf(server.rocks->db, ropts,
             server.rocks->cf_handles[cf],
             rawkey, sdslen(rawkey), &vallen, err);
-    if (*err != NULL || val == NULL)  return NULL;       
+    if (*err != NULL || val == NULL)  return NULL;
     sds result = sdsnewlen(val, vallen);
     zlibc_free(val);
     return result;
 }
 
 
-static redisAtomic filterState filter_state = FILTER_STATE_CLOSE; 
+static redisAtomic filterState filter_state = FILTER_STATE_CLOSE;
 int setFilterState(filterState state) {
     atomicSet(filter_state, state);
     return C_OK;
@@ -115,8 +115,8 @@ static unsigned char metaVersionFilter(void* arg, int level, int cf, const char*
     }
     if (meta_version > key_version) {
         result = 1;
-    }   
-end: 
+    }
+end:
     if (result == 1) updateCompactionFiltSuccessCount(cf);
     sdsfree(meta_key);
     if (meta_val != NULL) sdsfree(meta_val);
@@ -152,8 +152,8 @@ rocksdb_compactionfilter_t* createMetaCfCompactionFilter() {
     return NULL;
 }
 
-static void scoreFilterDestroy(void* arg) { 
-    (void)arg; 
+static void scoreFilterDestroy(void* arg) {
+    (void)arg;
 }
 
 static const char* scoreFilterName(void* arg) {
@@ -263,7 +263,7 @@ int swapFilterTest(int argc, char **argv, int accurate) {
             rocksdbPut(META_CF, rawmetakey, rawmetaval, &err);
             test_assert(err == NULL);
 
-            //compact filter will del data when metaversion > dataversion 
+            //compact filter will del data when metaversion > dataversion
             rocksdb_compact_range_cf(server.rocks->db, server.rocks->cf_handles[DATA_CF], NULL, 0, NULL, 0);
             sds val = rocksdbGet(server.rocks->ropts, DATA_CF, rawkey, &err);
             test_assert(err == NULL);
@@ -298,7 +298,7 @@ int swapFilterTest(int argc, char **argv, int accurate) {
             rocksdbPut(META_CF,rawmetakey,rawmetaval, &err);
             test_assert(err == NULL);
 
-            //compact filter will del data when metaversion > dataversion 
+            //compact filter will del data when metaversion > dataversion
             rocksdb_compact_range_cf(server.rocks->db, server.rocks->cf_handles[DATA_CF], NULL, 0, NULL, 0);
             sds val = rocksdbGet(server.rocks->ropts, DATA_CF, rawkey, &err);
             test_assert(err == NULL);
@@ -351,7 +351,7 @@ int swapFilterTest(int argc, char **argv, int accurate) {
             rocksdbDelete(DATA_CF, unknow, &err);
             test_assert(err == NULL);
             sdsfree(unknow);
-            
+
             atomicGet(server.ror_stats->compaction_filter_stats[DATA_CF].filt_count, filt_count);
             atomicGet(server.ror_stats->compaction_filter_stats[DATA_CF].scan_count, scan_count);
             test_assert(filt_count == 0);
@@ -454,7 +454,7 @@ int swapFilterTest(int argc, char **argv, int accurate) {
             rocksdbPut(META_CF,rawmetakey,rawmetaval, &err);
             test_assert(err == NULL);
 
-            /* compact filter will del data when metaversion > dataversion */ 
+            /* compact filter will del data when metaversion > dataversion */
             rocksdb_compact_range_cf(server.rocks->db, server.rocks->cf_handles[SCORE_CF], NULL, 0, NULL, 0);
             sds val = rocksdbGet(server.rocks->ropts, SCORE_CF, rawscorekey, &err);
             test_assert(err == NULL);

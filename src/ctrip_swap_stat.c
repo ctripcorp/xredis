@@ -131,7 +131,7 @@ static int swapThreadcpuUsageGetTicks(int pid, int tid, double *ticks) {
     fclose(file);
 
     if (matched != 2) {
-        serverLog(LL_WARNING, "Error reading file %s: %s (error: %d)", filepath, strerror(errno), errno);     
+        serverLog(LL_WARNING, "Error reading file %s: %s (error: %d)", filepath, strerror(errno), errno);
         return -1;
     }
 
@@ -199,9 +199,9 @@ struct swapThreadCpuUsage *swapThreadCpuUsageNew(){
     cpu_usage->swap_thread_ticks_save = zmalloc(server.total_swap_threads_num * sizeof(double));
     cpu_usage->swap_tids = zmalloc(server.total_swap_threads_num * sizeof(int));
 
-    if(swapThreadcpuUsageGetThreadTids(cpu_usage->pid, cpu_usage->main_tid, "(redis-server", 1)) return cpu_usage; 
+    if(swapThreadcpuUsageGetThreadTids(cpu_usage->pid, cpu_usage->main_tid, "(redis-server", 1)) return cpu_usage;
     if(swapThreadcpuUsageGetTicks(cpu_usage->pid, cpu_usage->main_tid[0], &(cpu_usage->main_thread_ticks_save))) return cpu_usage;
-    
+
     int value;
     atomicGet(server.swap_threads_initialized, value);
     while(value != server.total_swap_threads_num){
@@ -209,7 +209,7 @@ struct swapThreadCpuUsage *swapThreadCpuUsageNew(){
         atomicGet(server.swap_threads_initialized, value);
     }
 
-    if(swapThreadcpuUsageGetThreadTids(cpu_usage->pid, cpu_usage->swap_tids, "(swap", server.total_swap_threads_num)) return cpu_usage;    
+    if(swapThreadcpuUsageGetThreadTids(cpu_usage->pid, cpu_usage->swap_tids, "(swap", server.total_swap_threads_num)) return cpu_usage;
     for (int i = 0; i < server.total_swap_threads_num; i++) {
         if(swapThreadcpuUsageGetTicks(cpu_usage->pid, cpu_usage->swap_tids[i], &(cpu_usage->swap_thread_ticks_save[i]))) return cpu_usage;
     }

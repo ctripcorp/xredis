@@ -41,7 +41,7 @@ int hashSwapAna(swapData *data, int thd, struct keyRequest *req,
     int cmd_intention = req->cmd_intention;
     uint32_t cmd_intention_flags = req->cmd_intention_flags;
     serverAssert(req->cmd_flags != 0);
-    
+
 
     switch (cmd_intention) {
     case SWAP_NOP:
@@ -664,7 +664,7 @@ void hashLoadStartZip(struct rdbKeyLoadData *load, rio *rdb, int *cf,
         *error = RDB_LOAD_ERR_OTHER;
         return;
     }
-    
+
     load->total_fields = hashTypeLength(load->value);
     extend = rocksEncodeObjectMetaLen(load->total_fields);
     *cf = META_CF;
@@ -694,7 +694,7 @@ int hashLoadZip(struct rdbKeyLoadData *load, rio *rdb, int *cf, sds *rawkey,
         sds *rawval, int *error) {
     sds subkey, subval;
     robj subobj;
-    
+
     UNUSED(rdb);
 
     subkey = hashTypeCurrentObjectNewSds(load->iter,OBJ_HASH_KEY);
@@ -1120,7 +1120,7 @@ int swapDataHashTest(int argc, char **argv, int accurate) {
         hotraw = rdbhot.io.buffer.ptr;
 
         test_assert(!sdscmp(hotraw,coldraw) && !sdscmp(hotraw,warmraw));
-        
+
         sdsfree(f1), sdsfree(f2), sdsfree(v1), sdsfree(v2);
         sdsfree(rdbv1), sdsfree(rdbv2);
         sdsfree(myhash_key);

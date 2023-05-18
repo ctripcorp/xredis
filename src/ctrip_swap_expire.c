@@ -250,7 +250,7 @@ int scanExpireDbCycle(redisDb *db, int type, long long timelimit) {
     /* No need to scan empty db. */
     if (db->cold_keys <= 0) goto update_stats;
 
-    unsigned long 
+    unsigned long
         effort = server.active_expire_effort-1, /* Rescale from 0 to 9. */
         expire_keys_per_loop = SCAN_EXPIRE_CYCLE_KEYS_PER_LOOP +
                            SCAN_EXPIRE_CYCLE_KEYS_PER_LOOP/4*effort,
@@ -336,7 +336,7 @@ update_stats:
         stat_scan_expired_keys = 0;
     }
     if (scan_expire->stat_scan_per_sec) {
-        scan_expire->stat_estimated_cycle_seconds = 
+        scan_expire->stat_estimated_cycle_seconds =
             db->cold_keys/scan_expire->stat_scan_per_sec;
     }
 
@@ -373,7 +373,7 @@ sds genSwapScanExpireInfoString(sds info) {
         }
         if (stale_percent < scan_expire->stale_percent)
             stale_percent = scan_expire->stale_percent;
-        if (limit < scan_expire->limit) 
+        if (limit < scan_expire->limit)
             limit = scan_expire->limit;
         estimated_cycle_seconds += scan_expire->stat_estimated_cycle_seconds;
         scan_per_sec += scan_expire->stat_scan_per_sec;
@@ -417,7 +417,7 @@ int activeExpireCycleTryExpire(redisDb *db, dictEntry *de, long long now);
 list *slave_expiring_keys = NULL;
 
 /* object meta should be in memory now, note that ttl may be triggered
- * multiple times if key is cold. */ 
+ * multiple times if key is cold. */
 void slaveExpireClientKeyRequestFinished(client *c, swapCtx *ctx) {
     redisDb *db = c->db;
     uint64_t dbids;
@@ -522,7 +522,7 @@ void expireSlaveKeysSwapMode(void) {
                 key = createStringObject(keyname,sdslen(keyname));
                 val = lookupKey(db,key,LOOKUP_NOTOUCH);
                 if (val) {
-                    /* This is a hot/warm key, expire like memory mode, see 
+                    /* This is a hot/warm key, expire like memory mode, see
                      * expireSlaveKeys for more detail. */
                     dictEntry *expire = dictFind(db->expires,keyname);
                     int expired = 0;

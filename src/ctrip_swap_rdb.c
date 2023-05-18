@@ -61,7 +61,7 @@ void decodedResultDeinit(decodedResult *decoded) {
 
 /* ------------------------------ rdb save -------------------------------- */
 /* Whole key encoding in rocksdb is the same as in rdb, so we skip encoding
- * and decoding to reduce cpu usage. */ 
+ * and decoding to reduce cpu usage. */
 int rdbSaveKeyHeader(rio *rdb, robj *key, robj *x, unsigned char rdbtype,
         long long expiretime) {
     int savelru = server.maxmemory_policy & MAXMEMORY_FLAG_LRU;
@@ -71,7 +71,7 @@ int rdbSaveKeyHeader(rio *rdb, robj *key, robj *x, unsigned char rdbtype,
     if (expiretime != -1) {
         if (rdbSaveType(rdb,RDB_OPCODE_EXPIRETIME_MS) == -1) return -1;
         if (rdbSaveMillisecondTime(rdb,expiretime) == -1) return -1;
-    }    
+    }
 
     /* Save the LRU info. */
     if (savelru) {
@@ -1052,7 +1052,7 @@ int swapRdbTest(int argc, char *argv[], int accurate) {
         robj *decoded = rocksDecodeValRdb(rawval);
         test_assert(myhash->encoding != decoded->encoding);
         test_assert(hashTypeLength(myhash) == hashTypeLength(decoded));
-    } 
+    }
 
     TEST("rdb: save&load string ok in rocks format") {
         rio sdsrdb;

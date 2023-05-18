@@ -201,7 +201,7 @@ objectMetaType lenObjectMetaType = {
     .duplicate = NULL,
 };
 
-/* Note that db.meta is a satellite dict just like db.expire. */ 
+/* Note that db.meta is a satellite dict just like db.expire. */
 /* Db->meta */
 int dictExpandAllowed(size_t moreMem, double usedRatio);
 
@@ -311,8 +311,8 @@ int swapObjectTest(int argc, char *argv[], int accurate) {
 
     TEST("object: meta can be deleted specificly or by effect") {
         char *key1raw = "key1", *val1raw = "val1";
-        robj *key1 = createStringObject(key1raw, strlen(key1raw)); 
-        robj *val1 = createStringObject(val1raw, strlen(val1raw)); 
+        robj *key1 = createStringObject(key1raw, strlen(key1raw));
+        robj *val1 = createStringObject(val1raw, strlen(val1raw));
 
         dbAdd(db,key1,val1);
         dbAddMeta(db,key1,createHashObjectMeta(0,1));

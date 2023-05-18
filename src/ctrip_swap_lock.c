@@ -510,7 +510,7 @@ static void lockUpdateWaitTime(lock *lock) {
     if (stat->wait_time_maxs[stat->wait_time_max_index] < wait_time) {
         stat->wait_time_maxs[stat->wait_time_max_index] = wait_time;
     }
-    
+
 }
 
 static inline void lockStartLatencyTraceIfNeeded(lock *lock) {

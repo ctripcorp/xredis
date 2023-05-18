@@ -164,7 +164,7 @@ typedef struct keyRequest{
   int level;
   int cmd_intention;
   int cmd_intention_flags;
-  uint64_t cmd_flags; 
+  uint64_t cmd_flags;
   int type;
   int deferred;
   robj *key;
@@ -1975,7 +1975,7 @@ swapUnblockCtx* createSwapUnblockCtx();
 void releaseSwapUnblockCtx(swapUnblockCtx* block);
 void swapServeClientsBlockedOnListKey(robj *o, readyList *rl);
 int getKeyRequestsSwapBlockedLmove(int dbid, int intention, int intention_flags, uint64_t cmd_flags,
-            robj *key, struct getKeyRequestsResult *result, int arg_rewrite0, 
+            robj *key, struct getKeyRequestsResult *result, int arg_rewrite0,
             int arg_rewrite1, int num_ranges, ...);
 int serveClientBlockedOnList(client *receiver, robj *key, robj *dstkey, redisDb *db, robj *value, int wherefrom, int whereto,list* swap_wrong_type_error_keys);
 void incrSwapUnBlockCtxVersion();

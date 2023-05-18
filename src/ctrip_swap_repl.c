@@ -187,7 +187,7 @@ static void processFinishedReplCommands() {
         /* update reploff */
         if (c->flags&CLIENT_MASTER) {
             /* transaction commands wont dispatch to worker client untill
-             * exec (queued by repl client), so worker client wont have 
+             * exec (queued by repl client), so worker client wont have
              * CLIENT_MULTI flag after call(). */
             serverAssert(!(wc->flags & CLIENT_MULTI));
             /* Update the applied replication offset of our master. */
@@ -296,9 +296,9 @@ int submitReplWorkerClientRequest(client *wc) {
 /* Different from original replication stream process, slave.master client
  * might trigger swap and block untill rocksdb IO finish. because there is
  * only one master client so rocksdb IO will be done sequentially, thus slave
- * can't catch up with master. 
+ * can't catch up with master.
  * In order to speed up replication stream processing, slave.master client
- * dispatches command to multiple worker client and execute commands when 
+ * dispatches command to multiple worker client and execute commands when
  * rocks IO finishes. Note that replicated commands swap in-parallel but
  * processed in received order. */
 int submitReplClientRequests(client *c) {

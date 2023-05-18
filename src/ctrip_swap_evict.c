@@ -170,12 +170,12 @@ void debugSwapOutCommand(client *c) {
             decrRefCount(k);
         }
         dictReleaseIterator(di);
-    } else {    
+    } else {
         for (i = 1; i < c->argc; i++) {
             evict_result = 0;
             nevict += tryEvictKey(c->db, c->argv[i], &evict_result);
             serverLog(LL_NOTICE, "debug swapout %s: %s.", (sds)c->argv[i]->ptr, evictResultToString(evict_result));
-        }   
+        }
     }
     addReplyLongLong(c, nevict);
 }

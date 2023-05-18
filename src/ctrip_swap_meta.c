@@ -76,7 +76,7 @@ void metaScanResultSetNextSeek(metaScanResult *result, sds nextseek) {
 
 void metaScanResultAppend(metaScanResult *result, int object_type, sds key, long long expire) {
     if (result->num == result->size) {
-        int newsize = result->size + 
+        int newsize = result->size +
             (result->size > 1024 ? 1024 : result->size);
         metaScanResultMakeRoom(result, newsize);
     }
@@ -315,7 +315,7 @@ int setupMetaScanDataCtx4ScanExpire(metaScanDataCtx *datactx, client *c) {
     datactx->limit = scan_expire->limit;
     if (scan_expire->nextseek)
         datactx->seek = sdsdup(scan_expire->nextseek);
-    else 
+    else
         datactx->seek = NULL;
     expirectx = zmalloc(sizeof(metaScanDataCtxScanExpire));
     expirectx->scan_expire = scan_expire;

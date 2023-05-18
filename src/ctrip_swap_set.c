@@ -40,7 +40,7 @@ int setSwapAna(swapData *data, int thd, struct keyRequest *req,
     setDataCtx *datactx = datactx_;
     int cmd_intention = req->cmd_intention;
     uint32_t cmd_intention_flags = req->cmd_intention_flags;
-    
+
     serverAssert(req->type == KEYREQUEST_TYPE_SUBKEY);
     serverAssert(req->b.num_subkeys >= 0);
 
@@ -172,7 +172,7 @@ int setSwapAna(swapData *data, int thd, struct keyRequest *req,
                         swapDataTurnCold(data);
                     }
                     swapDataSwapOut(data,datactx,NULL);
-                    
+
                     *intention = SWAP_NOP;
                     *intention_flags = 0;
                 } else {
