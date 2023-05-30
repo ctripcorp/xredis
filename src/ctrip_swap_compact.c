@@ -295,6 +295,7 @@ int swapFilterTest(int argc, char **argv, int accurate) {
     redisDb *db = server.db;
     if (server.swap_batch_ctx == NULL)
         server.swap_batch_ctx = swapBatchCtxNew();
+    server.swap_compaction_filter_skip_level = -1;
 
     sds subkey = sdsnew("subkey");
     char* err = NULL;

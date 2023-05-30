@@ -361,7 +361,7 @@ end:
 /* ----------------------------- ratelimit ------------------------------ */
 void rejectCommand(client *c, robj *reply);
 
-inline int isSwapRatelimitNeccessary() {
+static inline int isSwapRatelimitNeccessary() {
     return server.swap_eviction_ctx->inprogress_count >= server.swap_evict_inprogress_limit;
 }
 
@@ -436,7 +436,6 @@ void swapRateLimitPause(client *c) {
     if (server.swap_ratelimit_policy != SWAP_RATELIMIT_POLICY_PAUSE) return;
     if (!isSwapRatelimitNeccessary()) return;
 
-     
     if ((pause_ms = swapRatelimitCalculatePauseMills()) > 0) {
         protectClient(c);
         aeCreateTimeEvent(server.el,pause_ms,unprotectClientdProc,c,NULL);

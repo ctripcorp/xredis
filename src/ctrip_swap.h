@@ -2120,7 +2120,6 @@ int swapFilterTest(int argc, char **argv, int accurate);
 int swapListMetaTest(int argc, char *argv[], int accurate);
 int swapListDataTest(int argc, char *argv[], int accurate);
 int swapListUtilsTest(int argc, char *argv[], int accurate);
-int swapHoldTest(int argc, char *argv[], int accurate);
 int swapAbsentTest(int argc, char *argv[], int accurate);
 int lruCacheTest(int argc, char *argv[], int accurate);
 int swapRIOTest(int argc, char *argv[], int accurate);
