@@ -359,12 +359,43 @@ end:
 }
 
 /* ----------------------------- ratelimit ------------------------------ */
-void rejectCommand(client *c, robj *reply);
+#define SWAP_RATELIMIT_PAUSE_MAX_MS 100
 
-static inline int isSwapRatelimitNeccessary() {
-    return server.swap_eviction_ctx->inprogress_count >= server.swap_evict_inprogress_limit;
+static inline int swapRatelimitIsNeccessary(int policy, int *pms) {
+    int pause_ms;
+    static mstime_t prev_logtime;
+    size_t mem_reported, mem_used, mem_ratelimit;
+
+    if (pms) *pms = 0;
+
+    /* mem_used are not returned if not overmaxmemory. */
+    if (!getMaxmemoryState(&mem_reported,&mem_used,NULL,NULL)) return 0;
+
+    mem_ratelimit = server.maxmemory*server.swap_ratelimit_maxmemory_percentage;
+    if (mem_used <= mem_ratelimit)  return 0;
+
+    if (policy == SWAP_RATELIMIT_POLICY_PAUSE) {
+        pause_ms = (mem_used - mem_ratelimit)/server.swap_ratelimit_pause_growth_rate;
+        pause_ms = pause_ms < SWAP_RATELIMIT_PAUSE_MAX_MS ? pause_ms : SWAP_RATELIMIT_PAUSE_MAX_MS;
+        if (pms) *pms = pause_ms;
+    }
+
+    if (server.mstime - prev_logtime > 1000) {
+        char msg[32] = {0};
+        if (policy == SWAP_RATELIMIT_POLICY_PAUSE) {
+            snprintf(msg,sizeof(msg)-1,"pause (%d)ms", pause_ms);
+        } else {
+            snprintf(msg,sizeof(msg)-1,"reject");
+        }
+
+        serverLog(LL_NOTICE,"[ratelimit] mem_used(%ld) > (%ld): %s", mem_used, mem_ratelimit, msg);
+        prev_logtime = server.mstime;
+    }
+
+    return 1;
 }
 
+void rejectCommand(client *c, robj *reply);
 /* return 1 if command rejected */
 int swapRateLimitReject(client *c) {
     serverAssert(server.swap_mode != SWAP_MODE_MEMORY);
@@ -388,36 +419,13 @@ int swapRateLimitReject(client *c) {
                 is_denyoom_command) ||
         (server.swap_ratelimit_policy == SWAP_RATELIMIT_POLICY_REJECT_ALL &&
                (is_read_command || is_write_command))) {
-        if (isSwapRatelimitNeccessary()) {
+        if (swapRatelimitIsNeccessary(server.swap_ratelimit_policy,NULL)) {
             rejectCommand(c, shared.oomerr);
             server.stat_swap_ratelimit_rejected_cmd_count++;
             return 1;
         }
     }
 
-    return 0;
-}
-
-#define SWAP_RATELIMIT_PAUSE_MAX_MS 100
-
-static inline int swapRatelimitCalculatePauseMills() {
-    static mstime_t prev_logtime;
-    size_t mem_reported, mem_tofree, mem_inprogress, pause_ms;
-
-    if (getMaxmemoryState(&mem_reported,NULL,&mem_tofree,NULL)) {
-        mem_inprogress = server.swap_evict_inprogress_growth_rate*server.swap_evict_inprogress_limit;
-        if (mem_tofree > mem_inprogress) {
-            pause_ms = (mem_tofree - mem_inprogress)/server.swap_ratelimit_pause_growth_rate;
-            pause_ms = pause_ms < SWAP_RATELIMIT_PAUSE_MAX_MS ? pause_ms : SWAP_RATELIMIT_PAUSE_MAX_MS;
-
-            if (server.mstime - prev_logtime > 1000) {
-                serverLog(LL_NOTICE,"[ratelimit] pause client for %ld ms: mem_reportd(%ld) mem_tofree(%ld)",
-                        pause_ms, mem_reported, mem_tofree);
-                prev_logtime = server.mstime;
-            }
-            return pause_ms;
-        }
-    }
     return 0;
 }
 
@@ -434,14 +442,13 @@ void swapRateLimitPause(client *c) {
     serverAssert(server.swap_mode != SWAP_MODE_MEMORY);
 
     if (server.swap_ratelimit_policy != SWAP_RATELIMIT_POLICY_PAUSE) return;
-    if (!isSwapRatelimitNeccessary()) return;
 
-    if ((pause_ms = swapRatelimitCalculatePauseMills()) > 0) {
+    if (swapRatelimitIsNeccessary(server.swap_ratelimit_policy,&pause_ms) &&
+            pause_ms > 0) {
         protectClient(c);
         aeCreateTimeEvent(server.el,pause_ms,unprotectClientdProc,c,NULL);
         server.stat_swap_ratelimit_client_pause_count++;
         server.stat_swap_ratelimit_client_pause_ms += pause_ms;
-
     }
 }
 

@@ -1897,6 +1897,7 @@ struct redisServer {
     swapBatchLimitsConfig swap_batch_limits[SWAP_TYPES_FORWARD];
 
     /* swap ratelimit */
+    int swap_ratelimit_maxmemory_percentage;
     int swap_ratelimit_pause_growth_rate;
     int swap_ratelimit_policy;
     long long stat_swap_ratelimit_client_pause_ms;
