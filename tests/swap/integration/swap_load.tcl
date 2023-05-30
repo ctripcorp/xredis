@@ -63,7 +63,7 @@ start_server {tags {"swap bgsave"} overrides {swap-bgsave-fix-metalen-mismatch y
         set load_err [getInfoProperty [r info swap] swap_load_error_count]
         r config set swap-debug-evict-keys 0
         r config set swap-debug-bgsave-metalen-addition 1
-        r config set swap-maxmemory-oom-percentage 100
+        r config set swap-ratelimit-maxmemory-percentage 100
         r bgsave
         wait_for_condition 10 1000 {
             [getInfoProperty [r info swap] swap_load_error_count] eq [expr $load_err + 1]

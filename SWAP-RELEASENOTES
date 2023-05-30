@@ -1,4 +1,11 @@
 ================================================================================
+ror-1.1.1 Released Wed May 31 00:00:00 CST 2023
+================================================================================
+* [opt] refactor ratelimit: ratelimit reason changed from inprogress memory to used_memory.
+* [opt] refactor eviction: eviction supports both disk and memory mode.
+* [opt] fix: memory command return wrong type error.
+
+================================================================================
 ror-1.1.0 Released Wed May 10 16:37:14 CST 2023
 ================================================================================
 * [opt] batch swap request to reduce main thread and swap thread cpu usage.
