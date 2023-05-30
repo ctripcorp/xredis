@@ -2805,6 +2805,7 @@ standardConfig configs[] = {
     createIntConfig("swap-ratelimit-pause-growth-rate", NULL, MODIFIABLE_CONFIG, 1, INT_MAX, server.swap_ratelimit_pause_growth_rate, 20*1024*1024, MEMORY_CONFIG, NULL, NULL),
     createIntConfig("swap-scan-session-bits", NULL, IMMUTABLE_CONFIG, 1, 16, server.swap_scan_session_bits, 7, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("swap-scan-session-max-idle-seconds", NULL, MODIFIABLE_CONFIG, 1, INT_MAX, server.swap_scan_session_max_idle_seconds, 60, INTEGER_CONFIG, NULL, NULL),
+    createIntConfig("swap-compaction-filter-skip-level", NULL, MODIFIABLE_CONFIG, -1, INT_MAX, server.swap_compaction_filter_skip_level, 0, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("rocksdb.max_open_files", NULL, IMMUTABLE_CONFIG, -1, INT_MAX, server.rocksdb_max_open_files, -1, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("rocksdb.data.max_write_buffer_number", "rocksdb.max_write_buffer_number", IMMUTABLE_CONFIG, 1, 256, server.rocksdb_data_max_write_buffer_number, 3, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("rocksdb.meta.max_write_buffer_number", NULL, IMMUTABLE_CONFIG, 1, 256, server.rocksdb_meta_max_write_buffer_number, 3, INTEGER_CONFIG, NULL, NULL),
@@ -2848,7 +2849,7 @@ standardConfig configs[] = {
     createULongLongConfig("swap-repl-max-rocksdb-read-bps", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.swap_repl_max_rocksdb_read_bps, 0, MEMORY_CONFIG, NULL, NULL), /* Default: unlimited */
     createULongLongConfig("swap-cuckoo-filter-estimated-keys", NULL, IMMUTABLE_CONFIG, 1, LLONG_MAX, server.swap_cuckoo_filter_estimated_keys, 32000000, INTEGER_CONFIG, NULL, NULL), /* Default: 32M */
     createULongLongConfig("swap-absent-cache-capacity", NULL, MODIFIABLE_CONFIG, 1, LLONG_MAX, server.swap_absent_cache_capacity, 64*1024, INTEGER_CONFIG, NULL, updateSwapAbsentCacheCapacity), /* Default: 64k */
-    createULongLongConfig("swap-disable-compaction-filter-until", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.swap_disable_compaction_filter_until, 0, INTEGER_CONFIG, NULL, NULL),
+    createULongLongConfig("swap-compaction-filter-disable-until", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.swap_compaction_filter_disable_until, 0, INTEGER_CONFIG, NULL, NULL),
     createULongLongConfig("rocksdb.data.block_cache_size", "rocksdb.block_cache_size", IMMUTABLE_CONFIG, 0, ULLONG_MAX, server.rocksdb_data_block_cache_size, 8*1024*1024, MEMORY_CONFIG, NULL, NULL),
     createULongLongConfig("rocksdb.meta.block_cache_size", NULL, IMMUTABLE_CONFIG, 0, ULLONG_MAX, server.rocksdb_meta_block_cache_size, 512*1024*1024, MEMORY_CONFIG, NULL, NULL),
     createULongLongConfig("rocksdb.data.write_buffer_size", "rocksdb.write_buffer_size", IMMUTABLE_CONFIG, 0, ULLONG_MAX, server.rocksdb_data_write_buffer_size, 64*1024*1024, MEMORY_CONFIG, NULL, NULL),

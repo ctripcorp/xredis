@@ -1903,7 +1903,8 @@ struct redisServer {
     long long stat_swap_ratelimit_client_pause_count;
     long long stat_swap_ratelimit_rejected_cmd_count;
 
-    unsigned long long swap_disable_compaction_filter_until;
+    unsigned long long swap_compaction_filter_disable_until;
+    int swap_compaction_filter_skip_level;
 };
 
 #define MAX_KEYS_BUFFER 256

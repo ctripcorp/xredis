@@ -1434,7 +1434,7 @@ typedef struct rocks {
     rocksdb_options_t *cf_opts[CF_COUNT];
     rocksdb_block_based_table_options_t *block_opts[CF_COUNT];
     rocksdb_column_family_handle_t *cf_handles[CF_COUNT];
-    rocksdb_compactionfilter_t *cf_compaction_filters[CF_COUNT];
+    rocksdb_compactionfilterfactory_t *cf_compactionfilterfatorys[CF_COUNT];
     char** rocksdb_stats_cache;
     rocksdb_options_t *db_opts;
     rocksdb_readoptions_t *ropts;
@@ -1471,9 +1471,8 @@ typedef enum {
 } filterState;
 int setFilterState(filterState state);
 filterState getFilterState();
-rocksdb_compactionfilter_t* createDataCfCompactionFilter();
-rocksdb_compactionfilter_t* createMetaCfCompactionFilter();
-rocksdb_compactionfilter_t* createScoreCfCompactionFilter();
+rocksdb_compactionfilterfactory_t* createDataCfCompactionFilterFactory();
+rocksdb_compactionfilterfactory_t* createScoreCfCompactionFilterFactory();
 
 int rocksInit(void);
 void rocksRelease(void);
@@ -1627,7 +1626,7 @@ static inline void updateCompactionFiltSuccessCount(int cf) {
 static inline void updateCompactionFiltScanCount(int cf) {
     atomicIncr(server.ror_stats->compaction_filter_stats[cf].scan_count, 1);
 }
-static inline void updateCompactionFiltRocksdbGetCount(int cf) {
+static inline void updateCompactionFiltRioCount(int cf) {
     atomicIncr(server.ror_stats->compaction_filter_stats[cf].rio_count, 1);
 }
 

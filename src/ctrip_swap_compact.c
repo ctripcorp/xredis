@@ -102,7 +102,7 @@ static unsigned char metaVersionFilterFilt(void* mvfilter_, int level, int cf, c
     sds meta_val = NULL;
     metaVersionFilter *mvfilter = mvfilter_;
 
-    if (server.unixtime < (time_t)server.swap_disable_compaction_filter_until)
+    if (server.unixtime < (time_t)server.swap_compaction_filter_disable_until)
         return 0;
 
     atomicGet(filter_state, state);
