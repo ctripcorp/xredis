@@ -284,7 +284,7 @@ inline void ctrip_performEvictionEnd(swapEvictKeysCtx *sectx) {
 sds genSwapEvictionInfoString(sds info) {
     swapEvictionCtx *ctx = server.swap_eviction_ctx;
 
-    info = sdscatprintf(info,"swap_evict_inprogress_count:%lld\r\n",
+    info = sdscatprintf(info,"swap_inprogress_evict_count:%lld\r\n",
             ctx->inprogress_count);
 
     info = sdscatprintf(info,"swap_evict_stat:");
@@ -386,7 +386,7 @@ int swapRateLimitReject(client *c) {
 
     if ((server.swap_ratelimit_policy == SWAP_RATELIMIT_POLICY_REJECT_OOM &&
                 is_denyoom_command) ||
-        (server.swap_ratelimit_policy == SWAP_RATELIMIT_POLICY_REJECT_ALL && 
+        (server.swap_ratelimit_policy == SWAP_RATELIMIT_POLICY_REJECT_ALL &&
                (is_read_command || is_write_command))) {
         if (isSwapRatelimitNeccessary()) {
             rejectCommand(c, shared.oomerr);
