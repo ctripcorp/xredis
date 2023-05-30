@@ -328,6 +328,7 @@ void trackSwapInstantaneousMetrics() {
     trackSwapLockInstantaneousMetrics();
     trackSwapBatchInstantaneousMetrics();
     trackSwapCuckooFilterInstantaneousMetrics();
+    trackSwapRateLimitInstantaneousMetrics();
 }
 
 sds genSwapInfoString(sds info) {
@@ -335,12 +336,14 @@ sds genSwapInfoString(sds info) {
     info = genSwapHitInfoString(info);
     info = genSwapCuckooFilterInfoString(info);
     info = genSwapBatchInfoString(info);
+    info = genSwapEvictionInfoString(info);
     info = genSwapExecInfoString(info);
     info = genSwapLockInfoString(info);
     info = genSwapReplInfoString(info);
     info = genSwapThreadInfoString(info);
     info = genSwapScanSessionStatString(info);
     info = genSwapUnblockInfoString(info);
+    info = genSwapRateLimitInfoString(info);
     return info;
 }
 
@@ -353,14 +356,12 @@ sds genSwapExecInfoString(sds info) {
             "swap_inprogress_batch:%ld\r\n"
             "swap_inprogress_count:%ld\r\n"
             "swap_inprogress_memory:%ld\r\n"
-            "swap_inprogress_evict_count:%d\r\n"
             "swap_inprogress_load_count:%d\r\n"
             "swap_load_paused:%d\r\n"
             "swap_load_error_count:%lu\r\n",
             server.swap_inprogress_batch,
             server.swap_inprogress_count,
             server.swap_inprogress_memory,
-            server.swap_evict_inprogress_count,
             server.swap_load_inprogress_count,
             server.swap_load_paused,
             server.swap_load_err_cnt);
@@ -528,50 +529,3 @@ void updateCompactionFiltScanCount(int cf) {
     atomicIncr(server.ror_stats->compaction_filter_stats[cf].scan_count, 1);
 }
 
-/* ----------------------------- ratelimit ------------------------------ */
-#define SWAP_RATELIMIT_DELAY_SLOW 1
-#define SWAP_RATELIMIT_DELAY_STOP 10
-
-int swapRateLimitState() {
-    if (server.swap_inprogress_memory <
-            server.swap_inprogress_memory_slowdown) {
-        return SWAP_RL_NO;
-    } else if (server.swap_inprogress_memory <
-            server.swap_inprogress_memory_stop) {
-        return SWAP_RL_SLOW;
-    } else {
-        return SWAP_RL_STOP;
-    }
-    return SWAP_RL_NO;
-}
-
-int swapRateLimit(client *c) {
-    float pct;
-    int delay;
-
-    switch(swapRateLimitState()) {
-    case SWAP_RL_NO:
-        delay = 0;
-        break;
-    case SWAP_RL_SLOW:
-        pct = ((float)server.swap_inprogress_memory - server.swap_inprogress_memory_slowdown) / ((float)server.swap_inprogress_memory_stop - server.swap_inprogress_memory_slowdown);
-        delay = (int)(SWAP_RATELIMIT_DELAY_SLOW + pct*(SWAP_RATELIMIT_DELAY_STOP - SWAP_RATELIMIT_DELAY_SLOW));
-        break;
-    case SWAP_RL_STOP:
-        delay = SWAP_RATELIMIT_DELAY_STOP;
-        break;
-    default:
-        delay = 0;
-        break;
-    }
-
-    if (delay > 0) {
-        if (c) c->swap_rl_until = server.mstime + delay;
-        serverLog(LL_VERBOSE, "[ratelimit] client(%ld) swap_inprogress_memory(%ld) delay(%d)ms",
-                c ? (int64_t)c->id:-2, server.swap_inprogress_memory, delay);
-    } else {
-        if (c) c->swap_rl_until = 0;
-    }
-
-    return delay;
-}

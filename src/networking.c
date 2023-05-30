@@ -206,7 +206,6 @@ client *createClient(connection *conn) {
     c->CLIENT_DEFERED_CLOSING = 0;
     c->CLIENT_REPL_SWAPPING = 0;
     c->CLIENT_REPL_CMD_DISCARDED = 0;
-    c->swap_rl_until = 0;
     c->swap_locks = listCreate();
     c->swap_metas = NULL;
     c->swap_errcode = 0;
@@ -2188,7 +2187,7 @@ void processInputBuffer(client *c) {
         if (c->flags & CLIENT_BLOCKED) break;
 
         /* Also abort if the client is swapping. */
-        if (swapRateLimited(c) || (c->flags&CLIENT_SWAPPING)) break;
+        if (c->flags&CLIENT_SWAPPING) break;
 
         /* Don't process more buffers from clients that have already pending
          * commands to execute in c->argv. */
@@ -2274,7 +2273,7 @@ void readQueryFromClient(connection *conn) {
      * the event loop. This is the case if threaded I/O is enabled. */
     if (postponeClientRead(c)) return;
 
-    if (swapRateLimited(c) || (c->flags&CLIENT_SWAPPING)) return;
+    if (c->flags&CLIENT_SWAPPING) return;
 
     /* Update total number of reads on server */
     atomicIncr(server.stat_total_reads_processed, 1);

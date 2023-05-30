@@ -38,7 +38,7 @@ void evictClientKeyRequestFinished(client *c, swapCtx *ctx) {
     clientReleaseLocks(c,ctx);
     decrRefCount(key);
 
-    server.swap_evict_inprogress_count--;
+    server.swap_eviction_ctx->inprogress_count--;
 }
 
 int submitEvictClientRequest(client *c, robj *key) {
@@ -52,7 +52,7 @@ int submitEvictClientRequest(client *c, robj *key) {
     releaseKeyRequests(&result);
     getKeyRequestsFreeResult(&result);
 
-    server.swap_evict_inprogress_count++;
+    server.swap_eviction_ctx->inprogress_count++;
     return 1;
 }
 
@@ -88,46 +88,14 @@ int tryEvictKey(redisDb *db, robj *key, int *evict_result) {
     }
 }
 
-static const char* evictResultToString(int evict_result) {
-    char *errstr;
-    switch (evict_result) {
-    case EVICT_SUCC_SWAPPED:
-        errstr = "swapped";
-        break;
-    case EVICT_SUCC_FREED  :
-        errstr = "freed";
-        break;
-    case EVICT_FAIL_ABSENT :
-        errstr = "absent";
-        break;
-    case EVICT_FAIL_EVICTED:
-        errstr = "evicted";
-        break;
-    case EVICT_FAIL_SWAPPING:
-        errstr = "swapping";
-        break;
-    case EVICT_FAIL_HOLDED :
-        errstr = "holded";
-        break;
-    case EVICT_FAIL_UNSUPPORTED:
-        errstr = "unspported";
-        break;
-    default:
-        errstr = "unexpected";
-        break;
-    }
-    return errstr;
-}
-
 /* EVICT is a special command that getswaps returns nothing ('cause we don't
  * need to swap anything before command executes) but does swap out(PUT)
  * inside command func. Note that EVICT is the command of fake evict clients */
 void swapEvictCommand(client *c) {
-    int i, nevict = 0, evict_result;
+    int i, nevict = 0;
 
     for (i = 1; i < c->argc; i++) {
-        evict_result = 0;
-        nevict += tryEvictKey(c->db,c->argv[i],&evict_result);
+        nevict += tryEvictKey(c->db,c->argv[i],NULL);
     }
 
     addReplyLongLong(c, nevict);
@@ -166,7 +134,6 @@ void debugSwapOutCommand(client *c) {
             evict_result = 0;
             robj* k = createRawStringObject(key, sdslen(key));
             nevict += tryEvictKey(c->db, k, &evict_result);
-            serverLog(LL_NOTICE, "debug swapout all %s: %s.", key, evictResultToString(evict_result));
             decrRefCount(k);
         }
         dictReleaseIterator(di);
@@ -174,16 +141,15 @@ void debugSwapOutCommand(client *c) {
         for (i = 1; i < c->argc; i++) {
             evict_result = 0;
             nevict += tryEvictKey(c->db, c->argv[i], &evict_result);
-            serverLog(LL_NOTICE, "debug swapout %s: %s.", (sds)c->argv[i]->ptr, evictResultToString(evict_result));
+            serverLog(LL_NOTICE, "debug swapout %s: %s.", (sds)c->argv[i]->ptr, evictResultName(evict_result));
         }
     }
     addReplyLongLong(c, nevict);
 }
 
+/* ----------------------------- swap evict ------------------------------ */
 unsigned long long calculateNextMemoryLimit(size_t mem_used, unsigned long long from, unsigned long long to) {
     if (from <= to || to == 0) return to;
-    if (server.swap_evict_inprogress_limit < 0) return to;
-
     /* scale down maxmemory step by step for low evict concurrent */
     unsigned long long safe_mem_limit = mem_used - server.maxmemory_scaledown_rate;
     if (safe_mem_limit < from) {
@@ -197,37 +163,322 @@ void updateMaxMemoryScaleFrom() {
     server.maxmemory_scale_from = calculateNextMemoryLimit(mem_used, server.maxmemory_scale_from, server.maxmemory);
 }
 
-#ifdef REDIS_TEST
+inline int swapEvictGetInprogressLimit(size_t mem_tofree) {
+    /* Base inprogress limit is threads num(deffer thread), increase one every n MB */
+    int inprogress_limit = 1 + mem_tofree/(server.swap_evict_inprogress_growth_rate);
 
-void initServerConfig(void);
-int swapHoldTest(int argc, char *argv[], int accurate) {
-    UNUSED(argc);
-    UNUSED(argv);
-    UNUSED(accurate);
-
-    int error = 0;
-    client *c;
-    robj *key1, *key2;
-
-    TEST("hold: init") {
-        initServerConfig();
-        ACLInit();
-        server.hz = 10;
-        c = createClient(NULL);
-        initTestRedisDb();
-        selectDb(c,0);
-
-        key1 = createStringObject("key1",4);
-        key2 = createStringObject("key2",4);
-    }
-
-    TEST("hold: deinit") {
-        decrRefCount(key1);
-        decrRefCount(key2);
-    }
-
-    return error;
+    if (inprogress_limit > server.swap_evict_inprogress_limit)
+        inprogress_limit = server.swap_evict_inprogress_limit;
+    return inprogress_limit;
 }
 
-#endif
+inline size_t ctrip_getMemoryToFree(size_t mem_used) {
+    size_t mem_tofree;
+    if (server.swap_mode != SWAP_MODE_MEMORY && server.maxmemory_scale_from > server.maxmemory) {
+        mem_tofree = mem_used - server.maxmemory_scale_from;
+    } else {
+        mem_tofree = mem_used - server.maxmemory;
+    }
+    return mem_tofree;
+}
+
+inline int swapEvictionReachedInprogressLimit() {
+    return server.swap_eviction_ctx->inprogress_count >=
+        server.swap_eviction_ctx->inprogress_limit;
+}
+
+inline void ctrip_performEvictionStart(swapEvictKeysCtx *sectx) {
+    if (sectx->swap_mode == SWAP_MODE_MEMORY) return;
+    /* Evict keys registered to be evicted ASAP even if not over maxmemory,
+     * because evict asap could reduce cow. */
+    server.swap_eviction_ctx->inprogress_limit = swapEvictGetInprogressLimit(sectx->mem_tofree);
+    if (swapEvictAsap() == EVICT_ASAP_AGAIN) {
+        ctrip_startEvictionTimeProc();
+    }
+}
+
+inline int ctrip_performEvictionLoopStartShouldBreak(swapEvictKeysCtx *sectx) {
+    if (sectx->swap_mode == SWAP_MODE_MEMORY) return 0;
+    if (swapEvictionReachedInprogressLimit()) {
+        ctrip_startEvictionTimeProc();
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+swapEvictionCtx *swapEvictionCtxCreate() {
+    swapEvictionCtx *ctx = zcalloc(sizeof(swapEvictionCtx));
+    return ctx;
+}
+
+void swapEvictionCtxFree(swapEvictionCtx *ctx) {
+    if (ctx == NULL) return;
+    zfree(ctx);
+}
+
+static inline void swapEvictionCtxUpdateStat(swapEvictionCtx *ctx, int evict_result) {
+    ctx->stat.evict_result[evict_result]++;
+}
+
+inline size_t performEvictionSwapSelectedKey(swapEvictKeysCtx *sectx, redisDb *db,
+        robj *keyobj) {
+    int evict_result;
+    size_t mem_freed;
+    mstime_t eviction_latency;
+    swapEvictionCtx *ctx = server.swap_eviction_ctx;
+
+    serverAssert(sectx->swap_mode != SWAP_MODE_MEMORY);
+
+    latencyStartMonitor(eviction_latency);
+
+    /* Key might be directly freed if not dirty, so we need to compute key
+     * size beforehand. */
+    mem_freed = keyEstimateSize(db, keyobj);
+    sectx->swap_trigged += tryEvictKey(db, keyobj, &evict_result);
+    if (evictResultIsSucc(evict_result)) {
+        ctx->failed_inrow = 0;
+        notifyKeyspaceEvent(NOTIFY_EVICTED, "swap-evicted", keyobj, db->id);
+    } else {
+        ctx->failed_inrow++;
+    }
+    swapEvictionCtxUpdateStat(ctx,evict_result);
+
+    latencyEndMonitor(eviction_latency);
+    latencyAddSampleIfNeeded("swap-eviction",eviction_latency);
+
+    sectx->keys_scanned++;
+    return mem_freed;
+}
+
+inline int ctrip_performEvictionLoopCheckShouldBreak(swapEvictKeysCtx *sectx) {
+    swapEvictionCtx *ctx = server.swap_eviction_ctx;
+    if (sectx->swap_mode == SWAP_MODE_MEMORY) return 0;
+    /* evict failed too much continously, continue evict are most
+     * likely to fail again. */
+    if (ctx->failed_inrow > 16) return 1;
+    return 0;
+}
+
+inline void ctrip_performEvictionEnd(swapEvictKeysCtx *sectx) {
+    static long long nscaned, nloop, nswap;
+    static mstime_t prev_logtime;
+
+    if (sectx->swap_mode == SWAP_MODE_MEMORY || sectx->ended) return;
+
+    nloop++;
+    nscaned += sectx->keys_scanned;
+    nswap += sectx->swap_trigged;
+
+    if (server.mstime - prev_logtime > 1000) {
+        serverLog(LL_VERBOSE,
+                "Eviction loop=%lld,scaned=%lld,swapped=%lld,mem_used=%ld,mem_inprogress=%ld",
+                nloop, nscaned, nswap, sectx->mem_used, server.swap_inprogress_memory);
+        prev_logtime = server.mstime;
+        nscaned = 0, nloop = 0, nswap = 0;
+    }
+
+    sectx->ended = 1;
+}
+
+sds genSwapEvictionInfoString(sds info) {
+    swapEvictionCtx *ctx = server.swap_eviction_ctx;
+
+    info = sdscatprintf(info,"swap_evict_inprogress_count:%lld\r\n",
+            ctx->inprogress_count);
+
+    info = sdscatprintf(info,"swap_evict_stat:");
+    for (int i = 0; i < EVICT_RESULT_TYPES; i++) {
+        long long count = ctx->stat.evict_result[i];
+        if (i == 0) {
+            info = sdscatprintf(info,"%s=%lld",evictResultName(i),count);
+        } else {
+            info = sdscatprintf(info,",%s=%lld",evictResultName(i),count);
+        }
+    }
+    info = sdscatprintf(info,"\r\n");
+    return info;
+}
+
+/* ----------------------------- evict asap ------------------------------ */
+#define EVICT_ASAP_KEYS_LIMIT 256
+
+int swapEvictAsap() {
+    static mstime_t stat_mstime;
+    static long stat_evict, stat_scan, stat_loop;
+
+    int evicted = 0, scanned = 0, result = EVICT_ASAP_OK;
+
+    for (int i = 0; i < server.dbnum; i++) {
+        listIter li;
+        listNode *ln;
+        redisDb *db = server.db+i;
+
+        if (listLength(db->evict_asap) == 0) continue;
+
+        listRewind(db->evict_asap, &li);
+        while ((ln = listNext(&li))) {
+            int evict_result;
+            robj *key = listNodeValue(ln);
+
+            if (swapEvictionReachedInprogressLimit() ||
+                    scanned >= EVICT_ASAP_KEYS_LIMIT) {
+                result = EVICT_ASAP_AGAIN;
+                goto end;
+            }
+
+            tryEvictKey(db, key, &evict_result);
+
+            scanned++;
+            if (evict_result == EVICT_FAIL_SWAPPING) {
+                /* Try evict again if key is holded or swapping */
+                listAddNodeHead(db->evict_asap, key);
+            } else {
+                decrRefCount(key);
+                evicted++;
+            }
+            listDelNode(db->evict_asap, ln);
+        }
+    }
+
+end:
+    stat_loop++;
+    stat_evict += evicted;
+    stat_scan += scanned;
+
+    if (server.mstime - stat_mstime > 1000) {
+        if (stat_scan > 0) {
+            serverLog(LL_VERBOSE, "SwapEvictAsap loop=%ld,scaned=%ld,swapped=%ld",
+                    stat_loop, stat_scan, stat_evict);
+        }
+        stat_mstime = server.mstime;
+        stat_loop = 0, stat_evict = 0, stat_scan = 0;
+    }
+
+    return result;
+}
+
+/* ----------------------------- ratelimit ------------------------------ */
+void rejectCommand(client *c, robj *reply);
+
+inline int isSwapRatelimitNeccessary() {
+    return server.swap_eviction_ctx->inprogress_count >= server.swap_evict_inprogress_limit;
+}
+
+/* return 1 if command rejected */
+int swapRateLimitReject(client *c) {
+    serverAssert(server.swap_mode != SWAP_MODE_MEMORY);
+
+    if (server.swap_ratelimit_policy != SWAP_RATELIMIT_POLICY_REJECT_OOM &&
+        server.swap_ratelimit_policy != SWAP_RATELIMIT_POLICY_REJECT_OOM) {
+        return 0;
+    }
+
+    /* Never reject replicated commands from master */
+    if (c->flags & CLIENT_MASTER) return 0;
+
+    int is_read_command = (c->cmd->flags & CMD_READONLY) ||
+                           (c->cmd->proc == execCommand && (c->mstate.cmd_flags & CMD_READONLY));
+    int is_write_command = (c->cmd->flags & CMD_WRITE) ||
+                           (c->cmd->proc == execCommand && (c->mstate.cmd_flags & CMD_WRITE));
+    int is_denyoom_command = (c->cmd->flags & CMD_DENYOOM) ||
+                             (c->cmd->proc == execCommand && (c->mstate.cmd_flags & CMD_DENYOOM));
+
+    if ((server.swap_ratelimit_policy == SWAP_RATELIMIT_POLICY_REJECT_OOM &&
+                is_denyoom_command) ||
+        (server.swap_ratelimit_policy == SWAP_RATELIMIT_POLICY_REJECT_ALL && 
+               (is_read_command || is_write_command))) {
+        if (isSwapRatelimitNeccessary()) {
+            rejectCommand(c, shared.oomerr);
+            server.stat_swap_ratelimit_rejected_cmd_count++;
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+#define SWAP_RATELIMIT_PAUSE_MAX_MS 100
+
+static inline int swapRatelimitCalculatePauseMills() {
+    static mstime_t prev_logtime;
+    size_t mem_reported, mem_tofree, mem_inprogress, pause_ms;
+
+    if (getMaxmemoryState(&mem_reported,NULL,&mem_tofree,NULL)) {
+        mem_inprogress = server.swap_evict_inprogress_growth_rate*server.swap_evict_inprogress_limit;
+        if (mem_tofree > mem_inprogress) {
+            pause_ms = (mem_tofree - mem_inprogress)/server.swap_ratelimit_pause_growth_rate;
+            pause_ms = pause_ms < SWAP_RATELIMIT_PAUSE_MAX_MS ? pause_ms : SWAP_RATELIMIT_PAUSE_MAX_MS;
+
+            if (server.mstime - prev_logtime > 1000) {
+                serverLog(LL_NOTICE,"[ratelimit] pause client for %ld ms: mem_reportd(%ld) mem_tofree(%ld)",
+                        pause_ms, mem_reported, mem_tofree);
+                prev_logtime = server.mstime;
+            }
+            return pause_ms;
+        }
+    }
+    return 0;
+}
+
+static int unprotectClientdProc(
+        struct aeEventLoop *el, long long id, void *clientData) {
+    client *c = clientData;
+    UNUSED(el), UNUSED(id);
+    unprotectClient(c);
+    return AE_NOMORE;
+}
+
+void swapRateLimitPause(client *c) {
+    int pause_ms;
+    serverAssert(server.swap_mode != SWAP_MODE_MEMORY);
+
+    if (server.swap_ratelimit_policy != SWAP_RATELIMIT_POLICY_PAUSE) return;
+    if (!isSwapRatelimitNeccessary()) return;
+
+     
+    if ((pause_ms = swapRatelimitCalculatePauseMills()) > 0) {
+        protectClient(c);
+        aeCreateTimeEvent(server.el,pause_ms,unprotectClientdProc,c,NULL);
+        server.stat_swap_ratelimit_client_pause_count++;
+        server.stat_swap_ratelimit_client_pause_ms += pause_ms;
+
+    }
+}
+
+void trackSwapRateLimitInstantaneousMetrics() {
+    int count_metric_idx =
+        SWAP_RATELIMIT_STATS_METRIC_OFFSET+SWAP_RATELIMIT_STATS_METRIC_PAUSE_COUNT;
+    int ms_metric_idx =
+        SWAP_RATELIMIT_STATS_METRIC_OFFSET+SWAP_RATELIMIT_STATS_METRIC_PAUSE_MS;
+
+    trackInstantaneousMetric(count_metric_idx,server.stat_swap_ratelimit_client_pause_count);
+    trackInstantaneousMetric(ms_metric_idx,server.stat_swap_ratelimit_client_pause_ms);
+}
+
+void resetSwapRateLimitInstantaneousMetrics() {
+    server.stat_swap_ratelimit_client_pause_count = 0;
+    server.stat_swap_ratelimit_client_pause_ms = 0;
+}
+
+sds genSwapRateLimitInfoString(sds info) {
+    int count_metric_idx =
+        SWAP_RATELIMIT_STATS_METRIC_OFFSET+SWAP_RATELIMIT_STATS_METRIC_PAUSE_COUNT;
+    int ms_metric_idx =
+        SWAP_RATELIMIT_STATS_METRIC_OFFSET+SWAP_RATELIMIT_STATS_METRIC_PAUSE_MS;
+    long long count_ps = getInstantaneousMetric(count_metric_idx),
+         ms_ps = getInstantaneousMetric(ms_metric_idx);;
+    float avg_pause_ms = count_ps > 0 ? (double)ms_ps/count_ps : 0;
+
+    info = sdscatprintf(info,
+            "swap_ratelimit_client_pause_instantaneous_ms:%.2f\r\n"
+            "swap_ratelimit_client_pause_count:%lld\r\n"
+            "swap_ratelimit_client_pause_ms:%lld\r\n"
+            "swap_ratelimit_rejected_cmd_count:%lld\r\n",
+            avg_pause_ms,
+            server.stat_swap_ratelimit_client_pause_count,
+            server.stat_swap_ratelimit_client_pause_ms,
+            server.stat_swap_ratelimit_rejected_cmd_count);
+    return info;
+}
 

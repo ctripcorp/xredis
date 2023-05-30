@@ -559,13 +559,16 @@ int lockGlobalAndExec(clientKeyRequestFinished locked_op, uint64_t exclude_mark)
 
 int dbSwap(client *c) {
     int keyrequests_submit;
+
+    if (swapRateLimitReject(c)) return C_OK;
+
     if (!(c->flags & CLIENT_MASTER)) {
         keyrequests_submit = submitNormalClientRequests(c);
     } else {
         keyrequests_submit = submitReplClientRequests(c);
     }
 
-    if (c->keyrequests_count) swapRateLimit(c);
+    if (c->keyrequests_count) swapRateLimitPause(c);
 
     if (keyrequests_submit > 0) {
         /* Swapping command parsed but not processed, return C_ERR so that:
@@ -597,7 +600,8 @@ void swapInit() {
     initStatsSwap();
     swapInitVersion();
 
-    server.swap_evict_inprogress_count = 0;
+    server.swap_eviction_ctx = swapEvictionCtxCreate();
+
     server.swap_load_inprogress_count = 0;
 
     server.evict_clients = zmalloc(server.dbnum*sizeof(client*));

@@ -143,7 +143,7 @@ typedef long long ustime_t; /* microsecond time type. */
 #define STATS_METRIC_NET_INPUT 1    /* Bytes read to network .*/
 #define STATS_METRIC_NET_OUTPUT 2   /* Bytes written to network. */
 #define STATS_METRIC_COUNT_MEM 3
-#define STATS_METRIC_COUNT_SWAP 72 /* define directly here to avoid dependcy cycle, will be checked later. */
+#define STATS_METRIC_COUNT_SWAP 74 /* define directly here to avoid dependcy cycle, will be checked later. */
 #define STATS_METRIC_COUNT (STATS_METRIC_COUNT_SWAP + STATS_METRIC_COUNT_MEM)
 
 /* Protocol and I/O related defines */
@@ -1020,7 +1020,6 @@ typedef struct client {
     int CLIENT_REPL_CMD_DISCARDED;
     long long cmd_reploff; /* Command replication offset when dispatch if this is a repl worker */
     struct client *repl_client; /* Master or peer client if this is a repl worker */
-    long long swap_rl_until; /* client should not read or swap untill swap_rl_untill */
     list *swap_locks; /* swap locks */
     struct metaScanResult *swap_metas;
     int swap_errcode;
@@ -1775,8 +1774,7 @@ struct redisServer {
     redisAtomic size_t swap_error_count;  /* swap error count */
     unsigned long long swap_inprogress_memory_slowdown; /* swap memory to slowdown swap requests */
     unsigned long long swap_inprogress_memory_stop; /* swap memory to (almost) stop swap requests */
-    int swap_maxmemory_oom_percentage; /* reject denyoom commands if server used more memory than
-                                  maxmemory*swap_maxmemory_oom_percentage */
+    int swap_rio_oom_percentage; /* rio may rejected if CHECK_OOM enabled and used memory > maxmemory*swap_rio_oom_percentage */
     int swap_debug_rio_delay_micro; /* sleep swap_debug_rio_delay microsencods to simulate ssd delay. */
     int swap_debug_swapout_notify_delay_micro; /* sleep swap_debug_swapout_notify_delay microsencods
                                         to simulate notify queue blocked after swap out */
@@ -1810,13 +1808,17 @@ struct redisServer {
     list *swap_paused_keyrequests;
     list *swap_resumed_keyrequests;
     uint64_t swap_key_version;
+
+    /* swap eviction */
     int swap_evict_inprogress_limit;
     int swap_evict_inprogress_growth_rate;
-    int swap_evict_inprogress_count;
+    struct swapEvictionCtx *swap_eviction_ctx;
+
     int swap_load_inprogress_count;
     int swap_load_paused;
     size_t swap_load_err_cnt;
-    /* scan session */
+
+    /* swap scan session */
     struct swapScanSessions *swap_scan_sessions;
     int swap_scan_session_bits;
     int swap_scan_session_max_idle_seconds;
@@ -1893,6 +1895,13 @@ struct redisServer {
     /* swap batch */
     struct swapBatchCtx *swap_batch_ctx;
     swapBatchLimitsConfig swap_batch_limits[SWAP_TYPES_FORWARD];
+
+    /* swap ratelimit */
+    int swap_ratelimit_pause_growth_rate;
+    int swap_ratelimit_policy;
+    long long stat_swap_ratelimit_client_pause_ms;
+    long long stat_swap_ratelimit_client_pause_count;
+    long long stat_swap_ratelimit_rejected_cmd_count;
 
     unsigned long long swap_disable_compaction_filter_until;
 };

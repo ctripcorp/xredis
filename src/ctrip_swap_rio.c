@@ -36,8 +36,8 @@
 static inline int rioMayOOM(unsigned long long mem_allocated) {
     if (server.maxmemory == 0) return 0;
     size_t mem_used = ctrip_getUsedMemory();
-    /* expect  total_mem_used < [100 + (swap_maxmemory_oom_percentage - 100)*3/4]*maxmemory/100 */
-    unsigned long long mem_limit = (25 + server.swap_maxmemory_oom_percentage*3/4)*server.maxmemory/100;
+    /* expect  total_mem_used < [100 + (swap_rio_oom_percentage - 100)*3/4]*maxmemory/100 */
+    unsigned long long mem_limit = (25 + server.swap_rio_oom_percentage*3/4)*server.maxmemory/100;
     return mem_used + mem_allocated >= mem_limit;
 }
 

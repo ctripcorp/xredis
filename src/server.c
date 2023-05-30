@@ -900,7 +900,7 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,NULL,SWAP_IN,0,2,2,1,0,0,0},
 
     {"memory",memoryCommand,-2,
-     "random read-only",
+     "random read-only @swap_keyspace",
      0,memoryGetKeys,NULL,SWAP_IN,0,0,0,0,0,0,0},
 
     {"client",clientCommand,-2,

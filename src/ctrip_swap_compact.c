@@ -77,7 +77,7 @@ static unsigned char metaVersionFilter(void* arg, int level, int cf, const char*
     filterState state;
     size_t inflight_snapshot;
 
-    if (server.unixtime < server.swap_disable_compaction_filter_until)
+    if (server.unixtime < (time_t)server.swap_disable_compaction_filter_until)
         return 0;
 
     atomicGet(filter_state, state);

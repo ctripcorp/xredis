@@ -147,6 +147,15 @@ configEnum cuckoo_filter_bit_type_enum[] = {
     {"32", CUCKOO_FILTER_BITS_PER_TAG_32},
     {NULL, 0}
 };
+
+configEnum swap_ratelimit_policy_enum[] = {
+    {"pause", SWAP_RATELIMIT_POLICY_PAUSE},
+    {"reject_oom", SWAP_RATELIMIT_POLICY_REJECT_OOM},
+    {"reject_all", SWAP_RATELIMIT_POLICY_REJECT_ALL},
+    {"disabled", SWAP_RATELIMIT_POLICY_DISABLED},
+    {NULL, 0}
+};
+
 /*-----------------------------------------------------------------------------
  * Ctrip Config file name-value maps.
  *----------------------------------------------------------------------------*/
@@ -2741,6 +2750,7 @@ standardConfig configs[] = {
     createEnumConfig("rocksdb.data.compression","rocksdb.compression", IMMUTABLE_CONFIG, rocksdb_compression_enum, server.rocksdb_data_compression, rocksdb_snappy_compression, NULL, NULL),
     createEnumConfig("rocksdb.meta.compression", NULL, IMMUTABLE_CONFIG, rocksdb_compression_enum, server.rocksdb_meta_compression, rocksdb_snappy_compression, NULL, NULL),
     createEnumConfig("swap-cuckoo-filter-bit-per-key", NULL, IMMUTABLE_CONFIG, cuckoo_filter_bit_type_enum, server.swap_cuckoo_filter_bit_type, CUCKOO_FILTER_BITS_PER_TAG_8, NULL, NULL),
+    createEnumConfig("swap-ratelimit-policy", NULL, MODIFIABLE_CONFIG, swap_ratelimit_policy_enum, server.swap_ratelimit_policy, SWAP_RATELIMIT_POLICY_PAUSE, NULL, NULL),
 
     /* Integer configs */
     createIntConfig("databases", NULL, IMMUTABLE_CONFIG, 1, INT_MAX, server.dbnum, 16, INTEGER_CONFIG, NULL, NULL),
@@ -2779,7 +2789,7 @@ standardConfig configs[] = {
     createIntConfig("min-replicas-max-lag", "min-slaves-max-lag", MODIFIABLE_CONFIG, 0, INT_MAX, server.repl_min_slaves_max_lag, 10, INTEGER_CONFIG, NULL, updateGoodSlaves),
     createIntConfig("swap-debug-evict-keys", NULL, MODIFIABLE_CONFIG, -1, INT_MAX, server.swap_debug_evict_keys, 0, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("ps-parallism-rdb", NULL, MODIFIABLE_CONFIG, 4, 16384, server.ps_parallism_rdb, 32, INTEGER_CONFIG, NULL, NULL),
-    createIntConfig("swap-maxmemory-oom-percentage", NULL, MODIFIABLE_CONFIG, 100, INT_MAX, server.swap_maxmemory_oom_percentage, 200, INTEGER_CONFIG, NULL, NULL),
+    createIntConfig("swap-rio-oom-percentage", "swap-maxmemory-oom-percentage", MODIFIABLE_CONFIG, 100, INT_MAX, server.swap_rio_oom_percentage, 200, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("swap-evict-step-max-subkeys", NULL, MODIFIABLE_CONFIG, 0, 65536, server.swap_evict_step_max_subkeys, 1024, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("swap-debug-rio-delay-micro", NULL, MODIFIABLE_CONFIG, -1, INT_MAX, server.swap_debug_rio_delay_micro, 0, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("swap-threads", NULL, IMMUTABLE_CONFIG, 4, 64, server.swap_threads_num, 4, INTEGER_CONFIG, NULL, NULL),
@@ -2790,8 +2800,9 @@ standardConfig configs[] = {
     createIntConfig("swap-debug-bgsave-metalen-addition", NULL, MODIFIABLE_CONFIG, INT_MIN, INT_MAX, server.swap_debug_bgsave_metalen_addition, 0, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("swap-debug-compaction-filter-delay-micro", NULL, MODIFIABLE_CONFIG, 0, INT_MAX, server.swap_debug_compaction_filter_delay_micro, 0, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("swap-rocksdb-stats-collect-interval-ms", NULL, MODIFIABLE_CONFIG, 1, INT_MAX, server.swap_rocksdb_stats_collect_interval_ms, 2000, INTEGER_CONFIG, NULL, NULL),
-    createIntConfig("swap-evict-inprogress-limit", NULL, MODIFIABLE_CONFIG, -1, INT_MAX, server.swap_evict_inprogress_limit, 128, INTEGER_CONFIG, NULL, NULL),
+    createIntConfig("swap-evict-inprogress-limit", NULL, MODIFIABLE_CONFIG, 4, INT_MAX, server.swap_evict_inprogress_limit, 128, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("swap-evict-inprogress-growth-rate", NULL, MODIFIABLE_CONFIG, 1, INT_MAX, server.swap_evict_inprogress_growth_rate, 5*1024*1024, MEMORY_CONFIG, NULL, NULL),
+    createIntConfig("swap-ratelimit-pause-growth-rate", NULL, MODIFIABLE_CONFIG, 1, INT_MAX, server.swap_ratelimit_pause_growth_rate, 20*1024*1024, MEMORY_CONFIG, NULL, NULL),
     createIntConfig("swap-scan-session-bits", NULL, IMMUTABLE_CONFIG, 1, 16, server.swap_scan_session_bits, 7, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("swap-scan-session-max-idle-seconds", NULL, MODIFIABLE_CONFIG, 1, INT_MAX, server.swap_scan_session_max_idle_seconds, 60, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("rocksdb.max_open_files", NULL, IMMUTABLE_CONFIG, -1, INT_MAX, server.rocksdb_max_open_files, -1, INTEGER_CONFIG, NULL, NULL),

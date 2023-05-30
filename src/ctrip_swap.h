@@ -1332,21 +1332,92 @@ void clientGotLock(client *c, swapCtx *ctx, void *lock);
 void clientReleaseLocks(client *c, swapCtx *ctx);
 
 /* Evict */
-#define EVICT_SUCC_SWAPPED      1
-#define EVICT_SUCC_FREED        2
-#define EVICT_FAIL_ABSENT       -1
-#define EVICT_FAIL_EVICTED      -2
-#define EVICT_FAIL_SWAPPING     -3
-#define EVICT_FAIL_HOLDED       -4
-#define EVICT_FAIL_UNSUPPORTED  -5
+#define EVICT_SUCC_SWAPPED      0
+#define EVICT_SUCC_FREED        1
+#define EVICT_FAIL_ABSENT       2
+#define EVICT_FAIL_EVICTED      3
+#define EVICT_FAIL_SWAPPING     4
+#define EVICT_FAIL_UNSUPPORTED  5
+#define EVICT_RESULT_TYPES      6
+
+static inline const char *evictResultName(int evict_result) {
+    const char *name = "?";
+    const char *names[] = {"SUCC_SWAPPED", "SUCC_FREED", "FAIL_ABSENT", "FAIL_EVICTED", "FAIL_SWAPPING", "FAIL_UNSUPPORTED"};
+    if (evict_result >= 0 && (size_t)evict_result < sizeof(names)/sizeof(char*))
+        name = names[evict_result];
+    return name;
+}
+
+static inline int evictResultIsSucc(int evict_result) {
+  return evict_result <= EVICT_SUCC_FREED;
+}
+
+typedef struct swapEvictionStat {
+    long long evict_result[EVICT_RESULT_TYPES];
+} swapEvictionStat;
+
+typedef struct swapEvictionCtx {
+    long long inprogress_count; /* current inprogrss evict count */
+    long long inprogress_limit; /* current inprogress limit,
+                                   updated on performEviction start */
+    long long failed_inrow;
+    swapEvictionStat stat;
+} swapEvictionCtx;
+
+swapEvictionCtx *swapEvictionCtxCreate();
+void swapEvictionCtxFree(swapEvictionCtx *ctx);
 
 int tryEvictKey(redisDb *db, robj *key, int *evict_result);
 void tryEvictKeyAsapLater(redisDb *db, robj *key);
 void swapEvictCommand(client *c);
 void swapDebugEvictKeys();
-int swapEvictInprogressLimit(size_t mem_tofree);
 unsigned long long calculateNextMemoryLimit(size_t mem_used, unsigned long long from, unsigned long long to);
 void updateMaxMemoryScaleFrom();
+int swapEvictGetInprogressLimit(size_t mem_tofree);
+int swapEvictionReachedInprogressLimit();
+sds genSwapEvictionInfoString(sds info);
+
+#define EVICT_ASAP_OK 0
+#define EVICT_ASAP_AGAIN 1
+int swapEvictAsap();
+
+typedef struct swapEvictKeysCtx {
+    int swap_mode;
+    size_t mem_used;
+    size_t mem_tofree; 
+    long long keys_scanned;
+    long long swap_trigged;
+    int ended;
+} swapEvictKeysCtx;
+
+void ctrip_startEvictionTimeProc();
+size_t ctrip_getMemoryToFree(size_t mem_used);
+void ctrip_performEvictionStart(swapEvictKeysCtx *sectx);
+int ctrip_performEvictionLoopStartShouldBreak(swapEvictKeysCtx *sectx);
+size_t performEvictionSwapSelectedKey(swapEvictKeysCtx *sectx, redisDb *db, robj *keyobj);
+int ctrip_performEvictionLoopCheckShouldBreak(swapEvictKeysCtx *sectx);
+void ctrip_performEvictionEnd(swapEvictKeysCtx *sectx);
+/* used memory in disk swap mode */
+size_t coldFiltersUsedMemory(); /* cuckoo filter not counted in maxmemory */
+static inline size_t ctrip_getUsedMemory() {
+    return zmalloc_used_memory() - server.swap_inprogress_memory - coldFiltersUsedMemory();
+}
+static inline int ctrip_evictionTimeProcGetDelayMillis() {
+  if (server.swap_mode == SWAP_MODE_MEMORY) return 0;
+  if (swapEvictionReachedInprogressLimit()) return 1;
+  return 0;
+}
+
+#define SWAP_RATELIMIT_POLICY_PAUSE 0
+#define SWAP_RATELIMIT_POLICY_REJECT_OOM 1
+#define SWAP_RATELIMIT_POLICY_REJECT_ALL 2
+#define SWAP_RATELIMIT_POLICY_DISABLED 3
+
+int swapRateLimitReject(client *c);
+void swapRateLimitPause(client *c);
+void trackSwapRateLimitInstantaneousMetrics();
+void resetSwapRateLimitInstantaneousMetrics();
+sds genSwapRateLimitInfoString(sds info);
 
 /* Expire */
 int submitExpireClientRequest(client *c, robj *key, int force);
@@ -1476,6 +1547,10 @@ void dictObjectDestructor(void *privdata, void *val);
 #define SWAP_FILTER_STATS_METRIC_FALSE_POSITIVE 1
 #define SWAP_FILTER_STATS_METRIC_COUNT 2
 
+#define SWAP_RATELIMIT_STATS_METRIC_PAUSE_COUNT 0
+#define SWAP_RATELIMIT_STATS_METRIC_PAUSE_MS 1
+#define SWAP_RATELIMIT_STATS_METRIC_COUNT 2
+
 #define SWAP_SWAP_STATS_METRIC_COUNT (SWAP_STAT_METRIC_SIZE*SWAP_TYPES)
 #define SWAP_RIO_STATS_METRIC_COUNT (SWAP_STAT_METRIC_SIZE*ROCKS_TYPES)
 #define SWAP_COMPACTION_FILTER_STATS_METRIC_COUNT (COMPACTION_FILTER_METRIC_SIZE*CF_COUNT)
@@ -1490,8 +1565,9 @@ void dictObjectDestructor(void *privdata, void *val);
 #define SWAP_LOCK_STATS_METRIC_OFFSET (SWAP_DEBUG_STATS_METRIC_OFFSET+SWAP_DEBUG_STATS_METRIC_COUNT)
 #define SWAP_BATCH_STATS_METRIC_OFFSET (SWAP_LOCK_STATS_METRIC_OFFSET+SWAP_LOCK_STATS_METRIC_COUNT)
 #define SWAP_FILTER_STATS_METRIC_OFFSET (SWAP_BATCH_STATS_METRIC_OFFSET+SWAP_BATCH_STATS_METRIC_COUNT)
+#define SWAP_RATELIMIT_STATS_METRIC_OFFSET (SWAP_FILTER_STATS_METRIC_OFFSET+SWAP_FILTER_STATS_METRIC_COUNT)
 
-#define SWAP_STATS_METRIC_COUNT (SWAP_SWAP_STATS_METRIC_COUNT+SWAP_RIO_STATS_METRIC_COUNT+SWAP_COMPACTION_FILTER_STATS_METRIC_COUNT+SWAP_DEBUG_STATS_METRIC_COUNT+SWAP_LOCK_STATS_METRIC_COUNT+SWAP_BATCH_STATS_METRIC_COUNT+SWAP_FILTER_STATS_METRIC_COUNT)
+#define SWAP_STATS_METRIC_COUNT (SWAP_SWAP_STATS_METRIC_COUNT+SWAP_RIO_STATS_METRIC_COUNT+SWAP_COMPACTION_FILTER_STATS_METRIC_COUNT+SWAP_DEBUG_STATS_METRIC_COUNT+SWAP_LOCK_STATS_METRIC_COUNT+SWAP_BATCH_STATS_METRIC_COUNT+SWAP_FILTER_STATS_METRIC_COUNT+SWAP_RATELIMIT_STATS_METRIC_COUNT)
 
 typedef struct swapStat {
     const char *name;
@@ -1558,13 +1634,6 @@ sds genSwapInfoString(sds info);
 sds genSwapStorageInfoString(sds info);
 sds genSwapExecInfoString(sds info);
 sds genSwapUnblockInfoString(sds info);
-
-int swapRateLimitState(void);
-int swapRateLimit(client *c);
-static inline int swapRateLimited(client *c) {
-    return c->swap_rl_until >= server.mstime;
-}
-
 
 /* Rocks iter thread */
 #define ITER_BUFFER_CAPACITY_DEFAULT 4096
@@ -1840,15 +1909,10 @@ void coldFilterAddKey(coldFilter *filter, sds key);
 void coldFilterDeleteKey(coldFilter *filter, sds key);
 void coldFilterKeyNotFound(coldFilter *filter, sds key);
 int coldFilterMayContainKey(coldFilter *filter, sds key, int *filt_by);
-size_t coldFiltersUsedMemory(); /* cuckoo filter not counted in maxmemory */
 
 void coldFilterSubkeyAdded(coldFilter *filter, sds key);
 void coldFilterSubkeyNotFound(coldFilter *filter, sds key, sds subkey);
 int coldFilterMayContainSubkey(coldFilter *filter, sds key, sds subkey);
-/* used memory in disk swap mode */
-static inline size_t ctrip_getUsedMemory() {
-    return zmalloc_used_memory() - server.swap_inprogress_memory - coldFiltersUsedMemory();
-}
 
 /* Util */
 #define ROCKS_KEY_FLAG_NONE 0x0
