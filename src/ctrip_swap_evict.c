@@ -371,7 +371,7 @@ static inline int swapRatelimitIsNeccessary(int policy, int *pms) {
     /* mem_used are not returned if not overmaxmemory. */
     if (!getMaxmemoryState(&mem_reported,&mem_used,NULL,NULL)) return 0;
 
-    mem_ratelimit = server.maxmemory*server.swap_ratelimit_maxmemory_percentage;
+    mem_ratelimit = server.maxmemory*server.swap_ratelimit_maxmemory_percentage/100;
     if (mem_used <= mem_ratelimit)  return 0;
 
     if (policy == SWAP_RATELIMIT_POLICY_PAUSE) {
@@ -401,7 +401,7 @@ int swapRateLimitReject(client *c) {
     serverAssert(server.swap_mode != SWAP_MODE_MEMORY);
 
     if (server.swap_ratelimit_policy != SWAP_RATELIMIT_POLICY_REJECT_OOM &&
-        server.swap_ratelimit_policy != SWAP_RATELIMIT_POLICY_REJECT_OOM) {
+        server.swap_ratelimit_policy != SWAP_RATELIMIT_POLICY_REJECT_ALL) {
         return 0;
     }
 
