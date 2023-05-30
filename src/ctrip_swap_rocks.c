@@ -140,7 +140,7 @@ int rocksInit() {
     }
 
     rocks->block_opts[DATA_CF] = rocksdb_block_based_options_create();
-    rocks->cf_compaction_filters[DATA_CF] = createDataCfCompactionFilter();
+    rocks->cf_compactionfilterfatorys[DATA_CF] = createDataCfCompactionFilterFactory();
     rocksdb_block_based_options_set_block_size(rocks->block_opts[DATA_CF], server.rocksdb_data_block_size);
     rocksdb_block_based_options_set_cache_index_and_filter_blocks(rocks->block_opts[DATA_CF], server.rocksdb_data_cache_index_and_filter_blocks);
     rocksdb_block_based_options_set_filter_policy(rocks->block_opts[DATA_CF], rocksdb_filterpolicy_create_bloom(10));
@@ -150,7 +150,7 @@ int rocksInit() {
     rocksdb_cache_destroy(data_cache);
 
     rocksdb_options_set_block_based_table_factory(rocks->cf_opts[DATA_CF], rocks->block_opts[DATA_CF]);
-    rocksdb_options_set_compaction_filter(rocks->cf_opts[DATA_CF], rocks->cf_compaction_filters[DATA_CF]);
+    rocksdb_options_set_compaction_filter_factory(rocks->cf_opts[DATA_CF], rocks->cf_compactionfilterfatorys[DATA_CF]);
 
     /* score cf */
     rocks->cf_opts[SCORE_CF] = rocksdb_options_create_copy(rocks->db_opts);
@@ -163,7 +163,7 @@ int rocksInit() {
     rocksdb_options_set_max_bytes_for_level_base(rocks->cf_opts[SCORE_CF],server.rocksdb_data_max_bytes_for_level_base);
 
     rocks->block_opts[SCORE_CF] = rocksdb_block_based_options_create();
-    rocks->cf_compaction_filters[SCORE_CF] = createScoreCfCompactionFilter();
+    rocks->cf_compactionfilterfatorys[SCORE_CF] = createScoreCfCompactionFilterFactory();
     rocksdb_block_based_options_set_block_size(rocks->block_opts[SCORE_CF], server.rocksdb_data_block_size);
     rocksdb_block_based_options_set_cache_index_and_filter_blocks(rocks->block_opts[SCORE_CF], server.rocksdb_data_cache_index_and_filter_blocks);
     rocksdb_block_based_options_set_filter_policy(rocks->block_opts[SCORE_CF], rocksdb_filterpolicy_create_bloom(10));
@@ -173,7 +173,7 @@ int rocksInit() {
     rocksdb_cache_destroy(score_cache);
 
     rocksdb_options_set_block_based_table_factory(rocks->cf_opts[SCORE_CF], rocks->block_opts[SCORE_CF]);
-    rocksdb_options_set_compaction_filter(rocks->cf_opts[SCORE_CF], rocks->cf_compaction_filters[SCORE_CF]);
+    rocksdb_options_set_compaction_filter_factory(rocks->cf_opts[SCORE_CF], rocks->cf_compactionfilterfatorys[SCORE_CF]);
 
     /* meta cf */
     rocks->cf_opts[META_CF] = rocksdb_options_create_copy(rocks->db_opts);
@@ -192,7 +192,7 @@ int rocksInit() {
     }
 
     rocks->block_opts[META_CF] = rocksdb_block_based_options_create();
-    rocks->cf_compaction_filters[META_CF] = createMetaCfCompactionFilter();
+    rocks->cf_compactionfilterfatorys[META_CF] = NULL;
     rocksdb_block_based_options_set_block_size(rocks->block_opts[META_CF], server.rocksdb_meta_block_size);
     rocksdb_block_based_options_set_cache_index_and_filter_blocks(rocks->block_opts[META_CF], server.rocksdb_meta_cache_index_and_filter_blocks);
     rocksdb_block_based_options_set_filter_policy(rocks->block_opts[META_CF], rocksdb_filterpolicy_create_bloom(10));
@@ -202,7 +202,7 @@ int rocksInit() {
     rocksdb_cache_destroy(meta_cache);
 
     rocksdb_options_set_block_based_table_factory(rocks->cf_opts[META_CF], rocks->block_opts[META_CF]);
-    rocksdb_options_set_compaction_filter(rocks->cf_opts[META_CF], rocks->cf_compaction_filters[META_CF]);
+    rocksdb_options_set_compaction_filter_factory(rocks->cf_opts[META_CF], rocks->cf_compactionfilterfatorys[META_CF]);
 
     setFilterState(FILTER_STATE_OPEN);
     rocks->db = rocksdb_open_column_families(rocks->db_opts, dir, CF_COUNT,
@@ -271,7 +271,8 @@ void rocksRelease() {
     rocksdb_readoptions_destroy(rocks->filter_meta_ropts);
     rocksdb_close(rocks->db);
     for (i = 0; i < CF_COUNT; i++) {
-        if (rocks->cf_compaction_filters[i]) rocksdb_compactionfilter_destroy(rocks->cf_compaction_filters[i]);
+        if (rocks->cf_compactionfilterfatorys[i])
+            rocksdb_compactionfilterfactory_destroy(rocks->cf_compactionfilterfatorys[i]);
     }
     zfree(rocks);
     server.rocks = NULL;

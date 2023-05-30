@@ -28,14 +28,16 @@
 
 #include "ctrip_swap.h"
 
-/* cf compaction filter */
-static void dataFilterDestroy(void* arg) {
-    (void)arg;
+static redisAtomic filterState filter_state = FILTER_STATE_CLOSE;
+int setFilterState(filterState state) {
+    atomicSet(filter_state, state);
+    return C_OK;
 }
 
-static const char* dataFilterName(void* arg) {
-  (void)arg;
-  return "data_cf_filter";
+filterState getFilterState() {
+    filterState state;
+    atomicGet(filter_state, state);
+    return state;
 }
 
 static sds rocksdbGet(rocksdb_readoptions_t* ropts, int cf, sds rawkey, char** err) {
@@ -51,31 +53,54 @@ static sds rocksdbGet(rocksdb_readoptions_t* ropts, int cf, sds rawkey, char** e
     return result;
 }
 
+typedef struct metaVersionFilter {
+    uint64_t cached_keyversion;
+    sds cached_metakey;
+    uint64_t cached_metaversion;
+} metaVersionFilter;
 
-static redisAtomic filterState filter_state = FILTER_STATE_CLOSE;
-int setFilterState(filterState state) {
-    atomicSet(filter_state, state);
-    return C_OK;
+static inline metaVersionFilter *metaVersionFilterCreate() {
+    metaVersionFilter *mvfilter = zcalloc(sizeof(metaVersionFilter));
+    return mvfilter;
 }
 
-filterState getFilterState() {
-    filterState state;
-    atomicGet(filter_state, state);
-    return state;
+static inline void metaVersionFilterUpdateCache(metaVersionFilter *mvfilter,
+        uint64_t keyversion, MOVE sds metakey, uint64_t metaversion) {
+    mvfilter->cached_keyversion = keyversion;
+    if (mvfilter->cached_metakey) sdsfree(mvfilter->cached_metakey);
+    mvfilter->cached_metakey = metakey;
+    mvfilter->cached_metaversion = metaversion;
 }
 
-static unsigned char metaVersionFilter(void* arg, int level, int cf, const char* rawkey,
+static inline int metaVersionFilterMatchCache(metaVersionFilter *mvfilter,
+        uint64_t keyversion, sds metakey) {
+    return mvfilter->cached_keyversion == keyversion &&
+        sdscmp(mvfilter->cached_metakey, metakey) == 0;
+}
+
+static inline void metaVersionFilterDestroy(void* mvfilter_) {
+    metaVersionFilter *mvfilter = mvfilter_;
+    if (mvfilter == NULL) return;
+    if (mvfilter->cached_metakey) {
+        sdsfree(mvfilter->cached_metakey);
+        mvfilter->cached_metakey = NULL;
+    }
+    zfree(mvfilter);
+}
+
+static unsigned char metaVersionFilterFilt(void* mvfilter_, int level, int cf, const char* rawkey,
                                    size_t rawkey_length,
                                    int (*decodekey)(const char*, size_t , int* , const char**, size_t* ,uint64_t*)) {
-    UNUSED(arg);
-    UNUSED(level);
-    unsigned char result = 0;
-    int dbid;
+    int dbid, result = 0;
     uint64_t key_version;
     const char* key;
     size_t key_len;
     filterState state;
     size_t inflight_snapshot;
+    uint64_t meta_version;
+    char* err = NULL;
+    sds meta_val = NULL;
+    metaVersionFilter *mvfilter = mvfilter_;
 
     if (server.unixtime < (time_t)server.swap_disable_compaction_filter_until)
         return 0;
@@ -88,49 +113,70 @@ static unsigned char metaVersionFilter(void* arg, int level, int cf, const char*
     if (inflight_snapshot > 0) return 0;
 
     updateCompactionFiltScanCount(cf);
+
+    /* Skip compaction filter to speed up compaction process. */
+    if (level <= server.swap_compaction_filter_skip_level) return 0;
+
     int retval = decodekey(rawkey, rawkey_length, &dbid, &key, &key_len, &key_version);
     if (retval != 0) return 0;
 
-    /* type is string*/
+    /* Type is string*/
     if (key_version == SWAP_VERSION_ZERO) return 0;
 
     if (server.swap_debug_compaction_filter_delay_micro > 0)
         usleep(server.swap_debug_compaction_filter_delay_micro);
 
     sds meta_key = encodeMetaKey(dbid, key, key_len);
-    char* err = NULL;
-    sds meta_val = rocksdbGet(server.rocks->filter_meta_ropts, META_CF, meta_key, &err);
-    if (err != NULL) {
-        serverLog(LL_NOTICE, "[metaVersionFilter] rockget (%s) meta val fail: %s ", meta_key, err);
-        goto end;
+
+    if (metaVersionFilterMatchCache(mvfilter,key_version,meta_key)) {
+        meta_version = mvfilter->cached_metaversion;
+    } else {
+        updateCompactionFiltRioCount(cf);
+        meta_val = rocksdbGet(server.rocks->filter_meta_ropts, META_CF, meta_key, &err);
+        if (err != NULL) {
+            serverLog(LL_NOTICE, "[metaVersionFilter] rockget (%s) meta val fail: %s ", meta_key, err);
+            /* if error happened, key will not be filtered. */
+            meta_version = key_version;
+            goto end;
+        }
+
+        if (meta_val != NULL) {
+            int object_type;
+            long long expire;
+            const char* extend;
+            size_t extend_len;
+
+            retval = rocksDecodeMetaVal(meta_val,sdslen(meta_val),&object_type,&expire,
+                    &meta_version, &extend,&extend_len);
+            if (retval) {
+                serverLog(LL_NOTICE, "[metaVersionFilter] decode meta val fail: %s", meta_val);
+                /* if error happened, key will not be filtered. */
+                meta_version = key_version;
+                goto end;
+            }
+        } else {
+            /* if metakey not found, meta_version assigned to max so that key
+             * gets filtered. */
+            meta_version = SWAP_VERSION_MAX;
+        }
+
+        metaVersionFilterUpdateCache(mvfilter,key_version,meta_key,meta_version);
+        meta_key = NULL; /*moved*/
     }
 
-    if (meta_val == NULL) {
-        result = 1;
-        goto end;
-    }
-
-    int object_type;
-    uint64_t meta_version;
-    long long expire;
-    const char* extend;
-    size_t extend_len;
-
-    retval = rocksDecodeMetaVal(meta_val,sdslen(meta_val),&object_type,&expire,
-            &meta_version, &extend,&extend_len);
-    if (retval) {
-        serverLog(LL_NOTICE, "[metaVersionFilter] decode meta val fail: %s", meta_val);
-        goto end;
-    }
-    if (meta_version > key_version) {
-        result = 1;
-    }
 end:
-    if (result == 1) updateCompactionFiltSuccessCount(cf);
+    result = meta_version > key_version;
+    if (result) updateCompactionFiltSuccessCount(cf);
     sdsfree(meta_key);
     if (meta_val != NULL) sdsfree(meta_val);
     if (err != NULL) zlibc_free(err);
     return result;
+}
+
+/* data cf compaction filter */
+static const char* dataFilterName(void* arg) {
+  (void)arg;
+  return "data_cf_filter";
 }
 
 static int decodeDataVersion(const char* rawkey, size_t rawkey_len, int* dbid, const char** key, size_t* key_len, uint64_t* version) {
@@ -139,7 +185,7 @@ static int decodeDataVersion(const char* rawkey, size_t rawkey_len, int* dbid, c
     return rocksDecodeDataKey(rawkey, rawkey_len, dbid, key, key_len, version, &subkey, &subkey_len);
 }
 
-static unsigned char dataFilterFilter(void* arg, int level, const char* rawkey,
+static unsigned char dataFilterFilter(void* mvfilter, int level, const char* rawkey,
                                    size_t rawkey_length,
                                    const char* existing_value,
                                    size_t value_length, char** new_value,
@@ -150,21 +196,27 @@ static unsigned char dataFilterFilter(void* arg, int level, const char* rawkey,
     UNUSED(new_value);
     UNUSED(new_value_length);
     UNUSED(value_changed);
-    return metaVersionFilter(arg, level, DATA_CF,rawkey, rawkey_length, decodeDataVersion);
+    return metaVersionFilterFilt(mvfilter, level, DATA_CF,rawkey, rawkey_length, decodeDataVersion);
 }
 
-rocksdb_compactionfilter_t* createDataCfCompactionFilter() {
-    return rocksdb_compactionfilter_create(NULL, dataFilterDestroy,
+rocksdb_compactionfilter_t* createDataCfCompactionFilter(void *state, rocksdb_compactionfiltercontext_t *context) {
+    metaVersionFilter *mvfilter = metaVersionFilterCreate();
+    UNUSED(state), UNUSED(context);
+    return rocksdb_compactionfilter_create(mvfilter, metaVersionFilterDestroy,
                                               dataFilterFilter, dataFilterName);
 }
-rocksdb_compactionfilter_t* createMetaCfCompactionFilter() {
-    return NULL;
+
+static const char* dataFilterFactoryName(void* arg) {
+  (void)arg;
+  return "data_cf_filter_factory";
 }
 
-static void scoreFilterDestroy(void* arg) {
-    (void)arg;
+rocksdb_compactionfilterfactory_t* createDataCfCompactionFilterFactory() {
+    return rocksdb_compactionfilterfactory_create(NULL,NULL,
+            createDataCfCompactionFilter,dataFilterFactoryName);
 }
 
+/* score cf compaction filter */
 static const char* scoreFilterName(void* arg) {
   (void)arg;
   return "score_cf_filter";
@@ -177,7 +229,7 @@ static int decodeScoreVersion(const char* rawkey, size_t rawkey_len, int* dbid, 
     return decodeScoreKey(rawkey, rawkey_len, dbid, key, key_len, version, &score, &subkey, &subkey_len);
 }
 
-static unsigned char scoreFilterFilter(void* arg, int level, const char* rawkey,
+static unsigned char scoreFilterFilter(void* mvfilter, int level, const char* rawkey,
                                    size_t rawkey_length,
                                    const char* existing_value,
                                    size_t value_length, char** new_value,
@@ -188,14 +240,25 @@ static unsigned char scoreFilterFilter(void* arg, int level, const char* rawkey,
     UNUSED(new_value);
     UNUSED(new_value_length);
     UNUSED(value_changed);
-    return metaVersionFilter(arg, level, SCORE_CF,rawkey, rawkey_length, decodeScoreVersion);
+    return metaVersionFilterFilt(mvfilter, level, SCORE_CF,rawkey, rawkey_length, decodeScoreVersion);
 }
 
-rocksdb_compactionfilter_t* createScoreCfCompactionFilter() {
-    return  rocksdb_compactionfilter_create(NULL, scoreFilterDestroy,
+rocksdb_compactionfilter_t* createScoreCfCompactionFilter(void *state, rocksdb_compactionfiltercontext_t *context) {
+    metaVersionFilter *mvfilter = metaVersionFilterCreate();
+    UNUSED(state), UNUSED(context);
+    return  rocksdb_compactionfilter_create(mvfilter, metaVersionFilterDestroy,
                                               scoreFilterFilter, scoreFilterName);
 }
 
+static const char* scoreFilterFactoryName(void* arg) {
+  (void)arg;
+  return "score_cf_filter_factory";
+}
+
+rocksdb_compactionfilterfactory_t* createScoreCfCompactionFilterFactory() {
+    return rocksdb_compactionfilterfactory_create(NULL,NULL,
+            createScoreCfCompactionFilter,scoreFilterFactoryName);
+}
 
 #ifdef REDIS_TEST
 static void rocksdbPut(int cf, sds rawkey, sds rawval, char** err) {

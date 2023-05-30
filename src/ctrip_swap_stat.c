@@ -73,8 +73,10 @@ void initStatsSwap() {
         server.ror_stats->compaction_filter_stats[i].name = swap_cf_names[i];
         server.ror_stats->compaction_filter_stats[i].filt_count = 0;
         server.ror_stats->compaction_filter_stats[i].scan_count = 0;
-        server.ror_stats->compaction_filter_stats[i].stats_metric_idx_filte = metric_offset+COMPACTION_FILTER_METRIC_filt_count;
-        server.ror_stats->compaction_filter_stats[i].stats_metric_idx_scan = metric_offset+COMPACTION_FILTER_METRIC_SCAN_COUNT;
+        server.ror_stats->compaction_filter_stats[i].rio_count = 0;
+        server.ror_stats->compaction_filter_stats[i].stats_metric_idx_filt = metric_offset+COMPACTION_FILTER_METRIC_FILT;
+        server.ror_stats->compaction_filter_stats[i].stats_metric_idx_scan = metric_offset+COMPACTION_FILTER_METRIC_SCAN;
+        server.ror_stats->compaction_filter_stats[i].stats_metric_idx_rio = metric_offset+COMPACTION_FILTER_METRIC_RIO;
     }
     server.swap_debug_info = zmalloc(SWAP_DEBUG_INFO_TYPE*sizeof(swapDebugInfo));
     for (i = 0; i < SWAP_DEBUG_INFO_TYPE; i++) {
@@ -305,14 +307,16 @@ void trackSwapInstantaneousMetrics() {
         trackInstantaneousMetric(s->stats_metric_idx_memory,memory);
         trackInstantaneousMetric(s->stats_metric_idx_time,time);
     }
-    long long filt_count, scan_count;
+    long long filt_count, scan_count, rio_count;
     compactionFilterStat* cfs;
     for (i = 0; i < CF_COUNT; i++) {
         cfs = server.ror_stats->compaction_filter_stats + i;
         atomicGet(cfs->filt_count,filt_count);
-        trackInstantaneousMetric(cfs->stats_metric_idx_filte,filt_count);
+        trackInstantaneousMetric(cfs->stats_metric_idx_filt,filt_count);
         atomicGet(cfs->scan_count,scan_count);
         trackInstantaneousMetric(cfs->stats_metric_idx_scan,scan_count);
+        atomicGet(cfs->rio_count,rio_count);
+        trackInstantaneousMetric(cfs->stats_metric_idx_rio,rio_count);
     }
     if (server.swap_debug_trace_latency) {
         swapDebugInfo *d;
@@ -400,13 +404,15 @@ sds genSwapExecInfoString(sds info) {
 
     for (j = 0; j < CF_COUNT; j++) {
         compactionFilterStat *cfs = &server.ror_stats->compaction_filter_stats[j];
-        long long filt_count, scan_count;
+        long long filt_count, scan_count, rio_count;
         atomicGet(cfs->filt_count,filt_count);
         atomicGet(cfs->scan_count,scan_count);
-        info = sdscatprintf(info,"swap_compaction_filter_%s:filt_count=%lld,scan_count=%lld,filt_ps=%lld,scan_ps=%lld\r\n",
-                cfs->name,filt_count,scan_count,
-                getInstantaneousMetric(cfs->stats_metric_idx_filte),
-                getInstantaneousMetric(cfs->stats_metric_idx_scan));
+        atomicGet(cfs->rio_count,rio_count);
+        info = sdscatprintf(info,"swap_compaction_filter_%s:filt_count=%lld,scan_count=%lld,rio_count=%lld,filt_ps=%lld,scan_ps=%lld,rio_ps=%lld\r\n",
+                cfs->name,filt_count,scan_count,rio_count,
+                getInstantaneousMetric(cfs->stats_metric_idx_filt),
+                getInstantaneousMetric(cfs->stats_metric_idx_scan),
+                getInstantaneousMetric(cfs->stats_metric_idx_rio));
     }
     if (server.swap_debug_trace_latency) {
         swapDebugInfo *d;
@@ -453,6 +459,7 @@ void resetStatsSwap() {
     for (i = 0; i < CF_COUNT; i++) {
         server.ror_stats->compaction_filter_stats[i].filt_count = 0;
         server.ror_stats->compaction_filter_stats[i].scan_count = 0;
+        server.ror_stats->compaction_filter_stats[i].rio_count = 0;
     }
     resetSwapLockInstantaneousMetrics();
     resetSwapBatchInstantaneousMetrics();
@@ -519,13 +526,5 @@ sds genSwapHitInfoString(sds info) {
 void metricDebugInfo(int type, long val) {
     atomicIncr(server.swap_debug_info[type].count, 1);
     atomicIncr(server.swap_debug_info[type].value, val);
-}
-
-void updateCompactionFiltSuccessCount(int cf) {
-    atomicIncr(server.ror_stats->compaction_filter_stats[cf].filt_count, 1);
-}
-
-void updateCompactionFiltScanCount(int cf) {
-    atomicIncr(server.ror_stats->compaction_filter_stats[cf].scan_count, 1);
 }
 

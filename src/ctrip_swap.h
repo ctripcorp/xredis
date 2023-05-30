@@ -295,6 +295,7 @@ int objectIsDirty(robj *o);
 
 /* Object meta */
 #define SWAP_VERSION_ZERO 0
+#define SWAP_VERSION_MAX  UINT64_MAX
 
 extern dictType objectMetaDictType;
 
@@ -1529,9 +1530,10 @@ void dictObjectDestructor(void *privdata, void *val);
 #define SWAP_DEBUG_VALUE 1
 #define SWAP_DEBUG_SIZE 2
 
-#define COMPACTION_FILTER_METRIC_filt_count 0
-#define COMPACTION_FILTER_METRIC_SCAN_COUNT 1
-#define COMPACTION_FILTER_METRIC_SIZE 2
+#define COMPACTION_FILTER_METRIC_FILT 0
+#define COMPACTION_FILTER_METRIC_SCAN 1
+#define COMPACTION_FILTER_METRIC_RIO 2
+#define COMPACTION_FILTER_METRIC_SIZE 3
 
 #define SWAP_LOCK_METRIC_REQUEST 0
 #define SWAP_LOCK_METRIC_CONFLICT 1
@@ -1585,8 +1587,10 @@ typedef struct compactionFilterStat {
     const char *name;
     redisAtomic long long filt_count;
     redisAtomic long long scan_count;
-    int stats_metric_idx_filte;
+    redisAtomic long long rio_count;
+    int stats_metric_idx_filt;
     int stats_metric_idx_scan;
+    int stats_metric_idx_rio;
 } compactionFilterStat;
 
 typedef struct swapHitStat {
@@ -1617,8 +1621,16 @@ typedef struct rorStat {
 void initStatsSwap(void);
 void resetStatsSwap(void);
 
-void updateCompactionFiltSuccessCount(int cf);
-void updateCompactionFiltScanCount(int cf);
+static inline void updateCompactionFiltSuccessCount(int cf) {
+    atomicIncr(server.ror_stats->compaction_filter_stats[cf].filt_count, 1);
+}
+static inline void updateCompactionFiltScanCount(int cf) {
+    atomicIncr(server.ror_stats->compaction_filter_stats[cf].scan_count, 1);
+}
+static inline void updateCompactionFiltRocksdbGetCount(int cf) {
+    atomicIncr(server.ror_stats->compaction_filter_stats[cf].rio_count, 1);
+}
+
 typedef
 struct swapDebugInfo {
     const char *name;
