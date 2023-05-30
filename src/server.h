@@ -1786,6 +1786,7 @@ struct redisServer {
     int swap_debug_rio_error_action;
     int swap_debug_trace_latency;
     int swap_debug_bgsave_metalen_addition;
+    int swap_debug_compaction_filter_delay_micro;
 
     /* repl swap */
     int repl_workers;   /* num of repl worker clients */
@@ -1892,6 +1893,8 @@ struct redisServer {
     /* swap batch */
     struct swapBatchCtx *swap_batch_ctx;
     swapBatchLimitsConfig swap_batch_limits[SWAP_TYPES_FORWARD];
+
+    unsigned long long swap_disable_compaction_filter_until;
 };
 
 #define MAX_KEYS_BUFFER 256
