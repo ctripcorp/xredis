@@ -199,8 +199,8 @@ static inline int reachedSwapLoadInprogressLimit(size_t mem_tofree) {
 
 static inline int swapLoadMayOOM(size_t mem_used) {
     if (server.maxmemory == 0) return 0;
-    /* expect mem_used < [100 + (swap_rio_oom_percentage - 100)/2]*maxmemory/100 */
-    unsigned long long mem_limit = (50 + server.swap_rio_oom_percentage/2)*server.maxmemory/100;
+    /* expect mem_used < [100 + (swap_ratelimit_maxmemory_percentage - 100)/2]*maxmemory/100 */
+    unsigned long long mem_limit = (50 + server.swap_ratelimit_maxmemory_percentage/2)*server.maxmemory/100;
     return mem_used >= mem_limit;
 }
 

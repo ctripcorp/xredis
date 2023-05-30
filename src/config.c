@@ -2789,7 +2789,6 @@ standardConfig configs[] = {
     createIntConfig("min-replicas-max-lag", "min-slaves-max-lag", MODIFIABLE_CONFIG, 0, INT_MAX, server.repl_min_slaves_max_lag, 10, INTEGER_CONFIG, NULL, updateGoodSlaves),
     createIntConfig("swap-debug-evict-keys", NULL, MODIFIABLE_CONFIG, -1, INT_MAX, server.swap_debug_evict_keys, 0, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("ps-parallism-rdb", NULL, MODIFIABLE_CONFIG, 4, 16384, server.ps_parallism_rdb, 32, INTEGER_CONFIG, NULL, NULL),
-    createIntConfig("swap-rio-oom-percentage", "swap-maxmemory-oom-percentage", MODIFIABLE_CONFIG, 100, INT_MAX, server.swap_rio_oom_percentage, 200, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("swap-evict-step-max-subkeys", NULL, MODIFIABLE_CONFIG, 0, 65536, server.swap_evict_step_max_subkeys, 1024, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("swap-debug-rio-delay-micro", NULL, MODIFIABLE_CONFIG, -1, INT_MAX, server.swap_debug_rio_delay_micro, 0, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("swap-threads", NULL, IMMUTABLE_CONFIG, 4, 64, server.swap_threads_num, 4, INTEGER_CONFIG, NULL, NULL),
@@ -2844,8 +2843,6 @@ standardConfig configs[] = {
     createULongLongConfig("maxmemory", NULL, MODIFIABLE_CONFIG, 0, ULLONG_MAX, server.maxmemory, 0, MEMORY_CONFIG, NULL, updateMaxmemory),
     createULongLongConfig("maxmemory-scaledown-rate", NULL, MODIFIABLE_CONFIG, 1, ULLONG_MAX, server.maxmemory_scaledown_rate, 1024*1024, MEMORY_CONFIG, NULL, NULL),
     createULongLongConfig("swap-max-db-size", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.swap_max_db_size, 0, MEMORY_CONFIG, NULL, NULL),
-    createULongLongConfig("swap-inprogress-memory-slowdown", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.swap_inprogress_memory_slowdown, 64*1024*1024, MEMORY_CONFIG, NULL, NULL), /* Default: 64mb */
-    createULongLongConfig("swap-inprogress-memory-stop", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.swap_inprogress_memory_stop, 128*1024*1024, MEMORY_CONFIG, NULL, NULL), /* Default: 128mb */
     createULongLongConfig("swap-evict-step-max-memory", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.swap_evict_step_max_memory, 1*1024*1024, MEMORY_CONFIG, NULL, NULL), /* Default: 1mb */
     createULongLongConfig("swap-repl-max-rocksdb-read-bps", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.swap_repl_max_rocksdb_read_bps, 0, MEMORY_CONFIG, NULL, NULL), /* Default: unlimited */
     createULongLongConfig("swap-cuckoo-filter-estimated-keys", NULL, IMMUTABLE_CONFIG, 1, LLONG_MAX, server.swap_cuckoo_filter_estimated_keys, 32000000, INTEGER_CONFIG, NULL, NULL), /* Default: 32M */

@@ -1772,9 +1772,6 @@ struct redisServer {
     redisAtomic size_t swap_inprogress_count; /* swap request inprogress count */
     redisAtomic size_t swap_inprogress_memory;  /* swap consumed memory in bytes */
     redisAtomic size_t swap_error_count;  /* swap error count */
-    unsigned long long swap_inprogress_memory_slowdown; /* swap memory to slowdown swap requests */
-    unsigned long long swap_inprogress_memory_stop; /* swap memory to (almost) stop swap requests */
-    int swap_rio_oom_percentage; /* rio may rejected if CHECK_OOM enabled and used memory > maxmemory*swap_rio_oom_percentage */
     int swap_debug_rio_delay_micro; /* sleep swap_debug_rio_delay microsencods to simulate ssd delay. */
     int swap_debug_swapout_notify_delay_micro; /* sleep swap_debug_swapout_notify_delay microsencods
                                         to simulate notify queue blocked after swap out */
