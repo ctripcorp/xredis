@@ -364,15 +364,18 @@ end:
 static inline int swapRatelimitIsNeccessary(int policy, int *pms) {
     int pause_ms;
     static mstime_t prev_logtime;
-    size_t mem_reported, mem_used, mem_ratelimit;
+    size_t mem_reported, mem_used, mem_ratelimit, actual_maxmemory;
 
     if (pms) *pms = 0;
 
     /* mem_used are not returned if not overmaxmemory. */
     if (!getMaxmemoryState(&mem_reported,&mem_used,NULL,NULL)) return 0;
 
-    mem_ratelimit = server.maxmemory*server.swap_ratelimit_maxmemory_percentage/100;
-    if (mem_used <= mem_ratelimit)  return 0;
+    actual_maxmemory = calculateNextMemoryLimit(mem_used,
+            server.maxmemory_scale_from,server.maxmemory);
+
+    mem_ratelimit = actual_maxmemory*server.swap_ratelimit_maxmemory_percentage/100;
+    if (mem_used <= mem_ratelimit || mem_ratelimit == 0)  return 0;
 
     if (policy == SWAP_RATELIMIT_POLICY_PAUSE) {
         pause_ms = (mem_used - mem_ratelimit)/server.swap_ratelimit_pause_growth_rate;
