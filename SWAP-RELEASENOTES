@@ -1,4 +1,10 @@
 ================================================================================
+ror-1.1.2 Released Wed Jun 7 00:00:00 CST 2023
+================================================================================
+* [fix] backport #9311 #11242 to fix quicklist bug encountered when swap list.
+* [fix] ratelimit will be diabled when maxmemory set manually.
+
+================================================================================
 ror-1.1.1 Released Wed May 31 00:00:00 CST 2023
 ================================================================================
 * [opt] refactor ratelimit: ratelimit reason changed from inprogress memory to used_memory.
