@@ -16,6 +16,7 @@ redis-benchmark
 redis-check-aof
 redis-check-rdb
 redis-check-dump
+redis-monitor-pipe
 redis-cli
 redis-sentinel
 redis-server
