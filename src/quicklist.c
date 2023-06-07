@@ -878,7 +878,7 @@ REDIS_STATIC void _quicklistInsert(quicklist *quicklist, quicklistEntry *entry,
         full = 1;
     }
 
-    if (after && (entry->offset == node->count)) {
+    if (after && (entry->offset == node->count - 1 || entry->offset == -1)) {
         D("At Tail of current ziplist");
         at_tail = 1;
         if (!_quicklistNodeAllowInsert(node->next, fill, sz)) {
@@ -887,7 +887,7 @@ REDIS_STATIC void _quicklistInsert(quicklist *quicklist, quicklistEntry *entry,
         }
     }
 
-    if (!after && (entry->offset == 0)) {
+    if (!after && (entry->offset == 0 || entry->offset == -(node->count))) {
         D("At Head");
         at_head = 1;
         if (!_quicklistNodeAllowInsert(node->prev, fill, sz)) {
