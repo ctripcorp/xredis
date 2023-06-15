@@ -852,7 +852,6 @@ void hdelCommand(client *c) {
     }
     if (deleted) {
         signalModifiedKey(c,c->db,c->argv[1]);
-        
         if (keyremoved) {
             notifyKeyspaceEvent(NOTIFY_GENERIC,"hdel",c->argv[1],
                                 c->db->id);

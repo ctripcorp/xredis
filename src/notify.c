@@ -91,16 +91,6 @@ sds keyspaceEventsFlagsToString(int flags) {
     return res;
 }
 
-void ctrip_setObjDirtyIfNeeded(int type, robj *key, int dbid) {
-    static const int notifyTypeIgnore = NOTIFY_EVICTED|NOTIFY_KEY_MISS|NOTIFY_LOADED;
-    if (type & notifyTypeIgnore) return;
-
-    robj* o = lookupKey(&server.db[dbid], key, LOOKUP_NOTOUCH);
-    if (NULL != o) {
-        setObjectDirty(o);
-    }
-}
-
 /* The API provided to the rest of the Redis core is a simple function:
  *
  * notifyKeyspaceEvent(char *event, robj *key, int dbid);
@@ -119,8 +109,6 @@ void notifyKeyspaceEvent(int type, char *event, robj *key, int dbid) {
      * will only call event subscribers if the event type matches the types
      * they are interested in. */
      moduleNotifyKeyspaceEvent(type, event, key, dbid);
-
-    ctrip_setObjDirtyIfNeeded(type, key, dbid);
 
     /* If notifications for this class of events are off, return ASAP. */
     if (!(server.notify_keyspace_events & type)) return;
@@ -153,13 +141,3 @@ void notifyKeyspaceEvent(int type, char *event, robj *key, int dbid) {
     decrRefCount(eventobj);
 }
 
-void notifyKeyspaceEventDirty(int type, char *event, robj *key, int dbid, ...) {
-    robj *o;
-    va_list ap;
-
-    va_start(ap, dbid);
-    while ((o = va_arg(ap, robj*))) setObjectDirty(o);
-    va_end(ap);
-
-    notifyKeyspaceEvent(type,event,key,dbid);
-}

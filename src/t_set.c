@@ -329,7 +329,8 @@ void saddCommand(client *c) {
     }
     if (added) {
         signalModifiedKey(c,c->db,c->argv[1]);
-        notifyKeyspaceEvent(NOTIFY_SET,"sadd",c->argv[1],c->db->id);
+        notifyKeyspaceEventDirty(NOTIFY_SET,"sadd",c->argv[1],c->db->id,
+                set,NULL);
     }
     server.dirty += added;
     addReplyLongLong(c,added);
@@ -354,10 +355,14 @@ void sremCommand(client *c) {
     }
     if (deleted) {
         signalModifiedKey(c,c->db,c->argv[1]);
-        notifyKeyspaceEvent(NOTIFY_SET,"srem",c->argv[1],c->db->id);
-        if (keyremoved)
+        if (keyremoved) {
+            notifyKeyspaceEvent(NOTIFY_SET,"srem",c->argv[1],c->db->id);
             notifyKeyspaceEvent(NOTIFY_GENERIC,"del",c->argv[1],
                                 c->db->id);
+        } else {
+            notifyKeyspaceEventDirty(NOTIFY_SET,"srem",c->argv[1],c->db->id,
+                    set,NULL);
+        }
         server.dirty += deleted;
     }
     addReplyLongLong(c,deleted);
@@ -392,7 +397,7 @@ void smoveCommand(client *c) {
         addReply(c,shared.czero);
         return;
     }
-    notifyKeyspaceEvent(NOTIFY_SET,"srem",c->argv[1],c->db->id);
+    notifyKeyspaceEventDirty(NOTIFY_SET,"srem",c->argv[1],c->db->id,srcset,NULL);
 
     /* Remove the src set from the database when empty */
     if (ctrip_setTypeSize(c->db, c->argv[1], srcset) == 0) {
@@ -413,7 +418,7 @@ void smoveCommand(client *c) {
     if (setTypeAdd(dstset,ele->ptr)) {
         server.dirty++;
         signalModifiedKey(c,c->db,c->argv[2]);
-        notifyKeyspaceEvent(NOTIFY_SET,"sadd",c->argv[2],c->db->id);
+        notifyKeyspaceEventDirty(NOTIFY_SET,"sadd",c->argv[2],c->db->id,dstset);
     }
     addReply(c,shared.cone);
 }
@@ -502,7 +507,7 @@ void spopWithCountCommand(client *c) {
     size = setTypeSize(set);
 
     /* Generate an SPOP keyspace notification */
-    notifyKeyspaceEvent(NOTIFY_SET,"spop",c->argv[1],c->db->id);
+    notifyKeyspaceEventDirty(NOTIFY_SET,"spop",c->argv[1],c->db->id,set,NULL);
     server.dirty += (count >= size) ? size : count;
 
     /* CASE 1:
@@ -652,7 +657,7 @@ void spopCommand(client *c) {
         setTypeRemove(set,ele->ptr);
     }
 
-    notifyKeyspaceEvent(NOTIFY_SET,"spop",c->argv[1],c->db->id);
+    notifyKeyspaceEventDirty(NOTIFY_SET,"spop",c->argv[1],c->db->id,set);
 
     /* Replicate/AOF this command as an SREM operation */
     rewriteClientCommandVector(c,3,shared.srem,c->argv[1],ele);
@@ -996,8 +1001,8 @@ void sinterGenericCommand(client *c, robj **setkeys,
         if (setTypeSize(dstset) > 0) {
             setKey(c,c->db,dstkey,dstset);
             addReplyLongLong(c,setTypeSize(dstset));
-            notifyKeyspaceEvent(NOTIFY_SET,"sinterstore",
-                dstkey,c->db->id);
+            notifyKeyspaceEventDirty(NOTIFY_SET,"sinterstore",
+                dstkey,c->db->id,dstset,NULL);
             server.dirty++;
         } else {
             addReply(c,shared.czero);
@@ -1172,9 +1177,9 @@ void sunionDiffGenericCommand(client *c, robj **setkeys, int setnum,
         if (setTypeSize(dstset) > 0) {
             setKey(c,c->db,dstkey,dstset);
             addReplyLongLong(c,setTypeSize(dstset));
-            notifyKeyspaceEvent(NOTIFY_SET,
+            notifyKeyspaceEventDirty(NOTIFY_SET,
                 op == SET_OP_UNION ? "sunionstore" : "sdiffstore",
-                dstkey,c->db->id);
+                dstkey,c->db->id,dstset,NULL);
             server.dirty++;
         } else {
             addReply(c,shared.czero);

@@ -286,12 +286,37 @@ void getKeyRequestsAttachSwapTrace(getKeyRequestsResult * result, swapCmdTrace *
 
 void getKeyRequestsAppendRangeResult(getKeyRequestsResult *result, int level, MOVE robj *key, int arg_rewrite0, int arg_rewrite1, int num_ranges, MOVE range *ranges, int cmd_intention, int cmd_intention_flags, uint64_t cmd_flags, int dbid);
 
-#define setObjectDirty(o) do { \
-    if (o) o->dirty = 1; \
+#define setObjectMetaDirty(o) do { \
+    if (o) o->dirty_meta = 1; \
 } while(0)
 
+#define setObjectDataDirty(o) do { \
+    if (o) o->dirty_data = 1; \
+} while(0)
+
+#define setObjectDirty(o) do { \
+  setObjectMetaDirty(o); \
+  setObjectDataDirty(o); \
+} while(0)
+
+#define clearObjectMetaDirty(o) do { \
+    if (o) o->dirty_meta = 0; \
+} while(0)
+
+#define clearObjectDataDirty(o) do { \
+    if (o) o->dirty_data = 0; \
+} while(0)
+
+#define clearObjectDirty(o) do { \
+  clearObjectMetaDirty(o); \
+  clearObjectDataDirty(o); \
+} while(0)
+
+#define objectIsDirty(o) ((o)->dirty_meta || (o)->dirty_data)
+#define objectIsMetaDirty(o) ((o)->dirty_meta)
+#define objectIsDataDirty(o) ((o)->dirty_data)
+
 void dbSetDirty(redisDb *db, robj *key);
-int objectIsDirty(robj *o);
 
 /* Object meta */
 #define SWAP_VERSION_ZERO 0
@@ -1967,6 +1992,10 @@ const char *strObjectType(int type);
 int timestampIsExpired(mstime_t expire);
 size_t ctripDbSize(redisDb *db);
 long get_dir_size(char *dirname);
+
+void notifyKeyspaceEventDirty(int type, char *event, robj *key, int dbid, ...);
+void notifyKeyspaceEventDirtyKey(int type, char *event, robj *key, int dbid);
+void notifyKeyspaceEventDirtySubkeys(int type, char *event, robj *key, int dbid, ...);
 
 uint64_t SwapCommandDataTypeFlagByName(const char *name);
 

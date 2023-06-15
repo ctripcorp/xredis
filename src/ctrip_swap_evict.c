@@ -71,7 +71,7 @@ int tryEvictKey(redisDb *db, robj *key, int *evict_result) {
         return 0;
     }
 
-    dirty = o->dirty;
+    dirty = objectIsDirty(o);
     old_keyrequests_count = evict_client->keyrequests_count;
     submitEvictClientRequest(evict_client,key);
     /* Evit request finished right away, no swap triggered. */

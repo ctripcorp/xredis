@@ -44,7 +44,8 @@ robj *createObject(int type, void *ptr) {
     o->encoding = OBJ_ENCODING_RAW;
     o->ptr = ptr;
     o->refcount = 1;
-    o->dirty = 1;
+    o->dirty_meta = 1;
+    o->dirty_data = 1;
     o->persistent = 0;
     o->reserved = 0;
 
@@ -92,7 +93,8 @@ robj *createEmbeddedStringObject(const char *ptr, size_t len) {
     o->encoding = OBJ_ENCODING_EMBSTR;
     o->ptr = sh+1;
     o->refcount = 1;
-    o->dirty = 1;
+    o->dirty_meta = 1;
+    o->dirty_data = 1;
     o->persistent = 0;
     o->reserved = 0;
 

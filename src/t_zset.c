@@ -1842,8 +1842,8 @@ cleanup:
     zfree(scores);
     if (added || updated) {
         signalModifiedKey(c,c->db,key);
-        notifyKeyspaceEvent(NOTIFY_ZSET,
-            incr ? "zincr" : "zadd", key, c->db->id);
+        notifyKeyspaceEventDirty(NOTIFY_ZSET,
+            incr ? "zincr" : "zadd", key, c->db->id,zobj,NULL);
     }
 }
 
@@ -1878,9 +1878,12 @@ void zremCommand(client *c) {
     }
 
     if (deleted) {
-        notifyKeyspaceEvent(NOTIFY_ZSET,"zrem",key,c->db->id);
-        if (keyremoved)
+        if (keyremoved) {
+            notifyKeyspaceEvent(NOTIFY_ZSET,"zrem",key,c->db->id);
             notifyKeyspaceEvent(NOTIFY_GENERIC,"del",key,c->db->id);
+        } else {
+            notifyKeyspaceEventDirty(NOTIFY_ZSET,"zrem",key,c->db->id,zobj,NULL);
+        }
         signalModifiedKey(c,c->db,key);
         server.dirty += deleted;
     }
@@ -1991,9 +1994,13 @@ void zremrangeGenericCommand(client *c, zrange_type rangetype) {
     /* Step 4: Notifications and reply. */
     if (deleted) {
         signalModifiedKey(c,c->db,key);
-        notifyKeyspaceEvent(NOTIFY_ZSET,notify_type,key,c->db->id);
-        if (keyremoved)
+        if (keyremoved) {
+            notifyKeyspaceEvent(NOTIFY_ZSET,notify_type,key,c->db->id);
             notifyKeyspaceEvent(NOTIFY_GENERIC,"del",key,c->db->id);
+        } else {
+            notifyKeyspaceEventDirty(NOTIFY_ZSET,notify_type,key,c->db->id,
+                    zobj,NULL);
+        }
     }
     server.dirty += deleted;
     addReplyLongLong(c,deleted);
@@ -2804,10 +2811,10 @@ void zunionInterDiffGenericCommand(client *c, robj *dstkey, int numkeysIndex, in
             zsetConvertToZiplistIfNeeded(dstobj, maxelelen, totelelen);
             setKey(c, c->db, dstkey, dstobj);
             addReplyLongLong(c, zsetLength(dstobj));
-            notifyKeyspaceEvent(NOTIFY_ZSET,
+            notifyKeyspaceEventDirty(NOTIFY_ZSET,
                                 (op == SET_OP_UNION) ? "zunionstore" :
                                     (op == SET_OP_INTER ? "zinterstore" : "zdiffstore"),
-                                dstkey, c->db->id);
+                                dstkey, c->db->id, dstobj, NULL);
             server.dirty++;
         } else {
             addReply(c, shared.czero);
@@ -2984,7 +2991,8 @@ static void zrangeResultFinalizeStore(zrange_result_handler *handler, size_t res
     if (result_count) {
         setKey(handler->client, handler->client->db, handler->dstkey, handler->dstobj);
         addReplyLongLong(handler->client, result_count);
-        notifyKeyspaceEvent(NOTIFY_ZSET, "zrangestore", handler->dstkey, handler->client->db->id);
+        notifyKeyspaceEventDirty(NOTIFY_ZSET, "zrangestore", handler->dstkey,
+                handler->client->db->id, handler->dstobj, NULL);
         server.dirty++;
     } else {
         addReply(handler->client, shared.czero);
@@ -3902,7 +3910,7 @@ void genericZpopCommand(client *c, robj **keyv, int keyc, int where, int emitkey
 
         if (result_count == 0) { /* Do this only for the first iteration. */
             char *events[2] = {"zpopmin","zpopmax"};
-            notifyKeyspaceEvent(NOTIFY_ZSET,events[where],key,c->db->id);
+            notifyKeyspaceEventDirty(NOTIFY_ZSET,events[where],key,c->db->id,zobj,NULL);
             signalModifiedKey(c,c->db,key);
         }
 

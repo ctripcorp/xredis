@@ -37,10 +37,6 @@ void dbSetDirty(redisDb *db, robj *key) {
     if (o) setObjectDirty(o);
 }
 
-int objectIsDirty(robj *o) {
-    return o->dirty;
-}
-
 /* objectMeta */
 static inline objectMetaType *getObjectMetaType(int object_type) {
     objectMetaType *omtype = NULL;

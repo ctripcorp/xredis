@@ -79,7 +79,7 @@ int wholeKeySwapAna(swapData *data, int thd, struct keyRequest *req,
         break;
     case SWAP_OUT:
         if (data->value) {
-            if (data->value->dirty) {
+            if (objectIsDirty(data->value)) {
                 *intention = SWAP_OUT;
                 *intention_flags = 0;
             } else {
@@ -199,7 +199,7 @@ static robj *createSwapInObject(MOVE robj *newval) {
     /* Copy swapin object before modifing If newval is shared object. */
     if (newval->refcount == OBJ_SHARED_REFCOUNT)
         swapin = dupSharedObject(newval);
-    swapin->dirty = 0;
+    clearObjectDirty(swapin);
     return swapin;
 }
 

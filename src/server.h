@@ -713,9 +713,10 @@ typedef struct redisObject {
     unsigned lru:LRU_BITS; /* LRU time (relative to global lru_clock) or
                             * LFU data (least significant 8 bits frequency
                             * and most significant 16 bits access time). */
-    unsigned dirty:1;
+    unsigned dirty_meta:1;     /* set to 1 if rocksdb and redis meta differs */
+    unsigned dirty_data:1;     /* set to 1 if rocksdb and redis data differs */
     unsigned persistent:1;
-    unsigned reserved:2;
+    unsigned reserved:1;
     int refcount:REFCOUNT_BITS;
     void *ptr;
 } robj;
@@ -2608,7 +2609,6 @@ void addReplyPubsubMessage(client *c, robj *channel, robj *msg);
 
 /* Keyspace events notification */
 void notifyKeyspaceEvent(int type, char *event, robj *key, int dbid);
-void notifyKeyspaceEventDirty(int type, char *event, robj *key, int dbid, ...);
 int keyspaceEventsStringToFlags(char *classes);
 sds keyspaceEventsFlagsToString(int flags);
 

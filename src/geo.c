@@ -823,8 +823,8 @@ void georadiusGeneric(client *c, int srcKeyIndex, int flags) {
             zsetConvertToZiplistIfNeeded(zobj,maxelelen,totelelen);
             setKey(c,c->db,storekey,zobj);
             decrRefCount(zobj);
-            notifyKeyspaceEvent(NOTIFY_ZSET,flags & GEOSEARCH ? "geosearchstore" : "georadiusstore",storekey,
-                                c->db->id);
+            notifyKeyspaceEventDirty(NOTIFY_ZSET,flags & GEOSEARCH ? "geosearchstore" : "georadiusstore",storekey,
+                                c->db->id,zobj,NULL);
             server.dirty += returned_items;
         } else if (dbDelete(c->db,storekey)) {
             signalModifiedKey(c,c->db,storekey);

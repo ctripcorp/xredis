@@ -4647,7 +4647,7 @@ moduleType *RM_ModuleTypeGetType(RedisModuleKey *key) {
 int RM_ModuleTypeGetDirty(RedisModuleKey *key) {
     if (key == NULL ||
         key->value == NULL ||
-        !key->value->dirty) return 0;
+        !(key->value->dirty_meta || key->value->dirty_data)) return 0;
     else return 1;
 }
 
@@ -6068,7 +6068,7 @@ int RM_GetNotifyKeyspaceEvents() {
 int RM_NotifyKeyspaceEvent(RedisModuleCtx *ctx, int type, const char *event, RedisModuleString *key) {
     if (!ctx || !ctx->client)
         return REDISMODULE_ERR;
-    notifyKeyspaceEvent(type, (char *)event, key, ctx->client->db->id);
+    notifyKeyspaceEventDirtyKey(type, (char *)event, key, ctx->client->db->id);
     return REDISMODULE_OK;
 }
 

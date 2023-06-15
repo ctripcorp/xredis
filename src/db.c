@@ -1251,7 +1251,7 @@ void renameGenericCommand(client *c, int nx) {
     signalModifiedKey(c,c->db,c->argv[2]);
     notifyKeyspaceEventDirty(NOTIFY_GENERIC,"rename_from",
         c->argv[1],c->db->id,o,NULL);
-    notifyKeyspaceEvent(NOTIFY_GENERIC,"rename_to",
+    notifyKeyspaceEventDirtyKey(NOTIFY_GENERIC,"rename_to",
         c->argv[2],c->db->id);
     server.dirty++;
     addReply(c,nx ? shared.cone : shared.ok);
@@ -1318,9 +1318,9 @@ void moveCommand(client *c) {
     dbDelete(src,c->argv[1]);
     signalModifiedKey(c,src,c->argv[1]);
     signalModifiedKey(c,dst,c->argv[1]);
-    notifyKeyspaceEvent(NOTIFY_GENERIC,
+    notifyKeyspaceEventDirtyKey(NOTIFY_GENERIC,
                 "move_from",c->argv[1],src->id);
-    notifyKeyspaceEvent(NOTIFY_GENERIC,
+    notifyKeyspaceEventDirtyKey(NOTIFY_GENERIC,
                 "move_to",c->argv[1],dst->id);
 
     server.dirty++;
@@ -1423,7 +1423,7 @@ void copyCommand(client *c) {
 
     /* OK! key copied */
     signalModifiedKey(c,dst,c->argv[2]);
-    notifyKeyspaceEvent(NOTIFY_GENERIC,"copy_to",c->argv[2],dst->id);
+    notifyKeyspaceEventDirtyKey(NOTIFY_GENERIC,"copy_to",c->argv[2],dst->id);
 
     server.dirty++;
     addReply(c,shared.cone);

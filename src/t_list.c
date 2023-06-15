@@ -257,7 +257,7 @@ void pushGenericCommand(client *c, int where, int xx) {
 
     char *event = (where == LIST_HEAD) ? "lpush" : "rpush";
     signalModifiedKey(c,c->db,c->argv[1]);
-    notifyKeyspaceEvent(NOTIFY_LIST,event,c->argv[1],c->db->id);
+    notifyKeyspaceEventDirty(NOTIFY_LIST,event,c->argv[1],c->db->id,lobj,NULL);
 }
 
 /* LPUSH <key> <element> [<element> ...] */
@@ -326,8 +326,8 @@ void linsertCommand(client *c) {
 
     if (inserted) {
         signalModifiedKey(c,c->db,c->argv[1]);
-        notifyKeyspaceEvent(NOTIFY_LIST,"linsert",
-                            c->argv[1],c->db->id);
+        notifyKeyspaceEventDirty(NOTIFY_LIST,"linsert",
+                            c->argv[1],c->db->id,subject,NULL);
         server.dirty++;
     } else {
         /* Notify client of a failed insert */
@@ -396,7 +396,7 @@ void lsetCommand(client *c) {
         } else {
             addReply(c,shared.ok);
             signalModifiedKey(c,c->db,c->argv[1]);
-            notifyKeyspaceEvent(NOTIFY_LIST,"lset",c->argv[1],c->db->id);
+            notifyKeyspaceEventDirty(NOTIFY_LIST,"lset",c->argv[1],c->db->id,o,NULL);
             server.dirty++;
         }
     } else {
@@ -453,7 +453,7 @@ void addListRangeReply(client *c, robj *o, long start, long end, int reverse) {
 void listElementsRemoved(client *c, robj *key, int where, robj *o, objectMeta *om, long count) {
     char *event = (where == LIST_HEAD) ? "lpop" : "rpop";
 
-    notifyKeyspaceEvent(NOTIFY_LIST, event, key, c->db->id);
+    notifyKeyspaceEventDirty(NOTIFY_LIST, event, key, c->db->id, o,NULL);
     if (ctripListTypeLength(o,om) == 0) {
         notifyKeyspaceEvent(NOTIFY_GENERIC, "del", key, c->db->id);
         dbDelete(c->db, key);
@@ -580,7 +580,7 @@ void ltrimCommand(client *c) {
     }
 
     objectMeta *om = lookupMeta(c->db,c->argv[1]);
-    notifyKeyspaceEvent(NOTIFY_LIST,"ltrim",c->argv[1],c->db->id);
+    notifyKeyspaceEventDirty(NOTIFY_LIST,"ltrim",c->argv[1],c->db->id,o,NULL);
     if (ctripListTypeLength(o,om) == 0) {
         dbDelete(c->db,c->argv[1]);
         notifyKeyspaceEvent(NOTIFY_GENERIC,"del",c->argv[1],c->db->id);
@@ -753,7 +753,7 @@ void lremCommand(client *c) {
 
     if (removed) {
         signalModifiedKey(c,c->db,c->argv[1]);
-        notifyKeyspaceEvent(NOTIFY_LIST,"lrem",c->argv[1],c->db->id);
+        notifyKeyspaceEventDirty(NOTIFY_LIST,"lrem",c->argv[1],c->db->id,subject,NULL);
     }
 
     objectMeta *om = lookupMeta(c->db,c->argv[1]);
@@ -776,10 +776,10 @@ void lmoveHandlePush(client *c, robj *dstkey, robj *dstobj, robj *value,
     }
     signalModifiedKey(c,c->db,dstkey);
     ctripListTypePush(dstobj,value,where,c->db,dstkey);
-    notifyKeyspaceEvent(NOTIFY_LIST,
+    notifyKeyspaceEventDirty(NOTIFY_LIST,
                         where == LIST_HEAD ? "lpush" : "rpush",
                         dstkey,
-                        c->db->id);
+                        c->db->id,dstobj,NULL);
     /* Always send the pushed value to the client. */
     addReplyBulk(c,value);
 }
@@ -827,10 +827,10 @@ void lmoveGenericCommand(client *c, int wherefrom, int whereto) {
         decrRefCount(value);
 
         /* Delete the source list when it is empty */
-        notifyKeyspaceEvent(NOTIFY_LIST,
+        notifyKeyspaceEventDirty(NOTIFY_LIST,
                             wherefrom == LIST_HEAD ? "lpop" : "rpop",
                             touchedkey,
-                            c->db->id);
+                            c->db->id,sobj,NULL);
 
         objectMeta *om = lookupMeta(c->db,touchedkey);
         if (ctripListTypeLength(sobj,om) == 0) {
@@ -926,7 +926,7 @@ int serveClientBlockedOnList(client *receiver, robj *key, robj *dstkey, redisDb 
 
         /* Notify event. */
         char *event = (wherefrom == LIST_HEAD) ? "lpop" : "rpop";
-        notifyKeyspaceEvent(NOTIFY_LIST,event,key,receiver->db->id);
+        notifyKeyspaceEventDirtyKey(NOTIFY_LIST,event,key,receiver->db->id);
     } else {
         /* BLMOVE */
         if (swap_wrong_type_error_keys != NULL && listSearchKey(swap_wrong_type_error_keys, dstkey) != NULL) {
@@ -952,7 +952,7 @@ int serveClientBlockedOnList(client *receiver, robj *key, robj *dstkey, redisDb 
                 PROPAGATE_REPL);
 
             /* Notify event ("lpush" or "rpush" was notified by lmoveHandlePush). */
-            notifyKeyspaceEvent(NOTIFY_LIST,wherefrom == LIST_TAIL ? "rpop" : "lpop",
+            notifyKeyspaceEventDirtyKey(NOTIFY_LIST,wherefrom == LIST_TAIL ? "rpop" : "lpop",
                                 key,receiver->db->id);
         } else {
             /* BLMOVE failed because of wrong

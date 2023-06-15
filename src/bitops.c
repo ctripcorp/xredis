@@ -769,7 +769,7 @@ void bitopCommand(client *c) {
     if (maxlen) {
         o = createObject(OBJ_STRING,res);
         setKey(c,c->db,targetkey,o);
-        notifyKeyspaceEvent(NOTIFY_STRING,"set",targetkey,c->db->id);
+        notifyKeyspaceEventDirty(NOTIFY_STRING,"set",targetkey,c->db->id,o,NULL);
         decrRefCount(o);
         server.dirty++;
     } else if (dbDelete(c->db,targetkey)) {
@@ -1150,8 +1150,7 @@ void bitfieldGeneric(client *c, int flags) {
 
     if (changes) {
         signalModifiedKey(c,c->db,c->argv[1]);
-        dbSetDirty(c->db,c->argv[1]);
-        notifyKeyspaceEvent(NOTIFY_STRING,"setbit",c->argv[1],c->db->id);
+        notifyKeyspaceEventDirty(NOTIFY_STRING,"setbit",c->argv[1],c->db->id,o,NULL);
         server.dirty += changes;
     }
     zfree(ops);

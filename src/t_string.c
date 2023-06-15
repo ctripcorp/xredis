@@ -110,7 +110,7 @@ void setGenericCommand(client *c, int flags, robj *key, robj *val, robj *expire,
     notifyKeyspaceEventDirty(NOTIFY_STRING,"set",key,c->db->id,val,NULL);
     if (expire) {
         setExpire(c,c->db,key,when);
-        notifyKeyspaceEvent(NOTIFY_GENERIC,"expire",key,c->db->id);
+        notifyKeyspaceEvent(NOTIFY_GENERIC,"expire",key,c->db->id); /* already set dirty */
 
         /* Propagate as SET Key Value PXAT millisecond-timestamp if there is EXAT/PXAT or
          * propagate as SET Key Value PX millisecond if there is EX/PX flag.
@@ -384,13 +384,13 @@ void getexCommand(client *c) {
         rewriteClientCommandVector(c,3,exp,c->argv[1],millisecondObj);
         decrRefCount(millisecondObj);
         signalModifiedKey(c, c->db, c->argv[1]);
-        notifyKeyspaceEvent(NOTIFY_GENERIC,"expire",c->argv[1],c->db->id);
+        notifyKeyspaceEventDirty(NOTIFY_GENERIC,"expire",c->argv[1],c->db->id,o,NULL);
         server.dirty++;
     } else if (flags & OBJ_PERSIST) {
         if (removeExpire(c->db, c->argv[1])) {
             signalModifiedKey(c, c->db, c->argv[1]);
             rewriteClientCommandVector(c, 2, shared.persist, c->argv[1]);
-            notifyKeyspaceEvent(NOTIFY_GENERIC,"persist",c->argv[1],c->db->id);
+            notifyKeyspaceEventDirty(NOTIFY_GENERIC,"persist",c->argv[1],c->db->id,o,NULL);
             server.dirty++;
         }
     }
@@ -414,7 +414,8 @@ void getsetCommand(client *c) {
     if (getGenericCommand(c) == C_ERR) return;
     c->argv[2] = tryObjectEncoding(c->argv[2]);
     setKey(c,c->db,c->argv[1],c->argv[2]);
-    notifyKeyspaceEvent(NOTIFY_STRING,"set",c->argv[1],c->db->id);
+    notifyKeyspaceEventDirty(NOTIFY_STRING,"set",c->argv[1],c->db->id,
+            c->argv[2],NULL);
     server.dirty++;
 
     /* Propagate as SET command */
@@ -562,7 +563,8 @@ void msetGenericCommand(client *c, int nx) {
     for (j = 1; j < c->argc; j += 2) {
         c->argv[j+1] = tryObjectEncoding(c->argv[j+1]);
         setKey(c,c->db,c->argv[j],c->argv[j+1]);
-        notifyKeyspaceEvent(NOTIFY_STRING,"set",c->argv[j],c->db->id);
+        notifyKeyspaceEventDirty(NOTIFY_STRING,"set",c->argv[j],c->db->id,
+                c->argv[j+1],NULL);
     }
     server.dirty += (c->argc-1)/2;
     addReply(c, nx ? shared.cone : shared.ok);

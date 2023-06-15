@@ -219,7 +219,7 @@ int zsetSwapAna(swapData *data, int thd, struct keyRequest *req,
                         createZsetObjectMeta(swapGetAndIncrVersion(),0));
             }
 
-            if (!data->value->dirty) {
+            if (!objectIsDirty(data->value)) {
                 /* directly evict value from db.dict if not dirty. */
 
                 swapDataCleanObject(data, datactx);
@@ -543,7 +543,7 @@ int zsetDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
 static inline robj *createSwapInObject(robj *newval) {
     robj *swapin = newval;
     serverAssert(newval && newval->type == OBJ_ZSET);
-    swapin->dirty = 0;
+    clearObjectDirty(swapin);
     return swapin;
 }
 
@@ -1455,7 +1455,7 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
 
         // swap out - first swap out
         zset1_data->value = zset1;
-        zset1->dirty = 1;
+        setObjectDirty(zset1);
         zset1_data->object_meta = NULL;
         zset1_data->cold_meta = NULL;
         zset1_data->new_meta = NULL;
@@ -1466,7 +1466,7 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
         test_assert(NULL != zset1_data->new_meta);
 
         // swap out - data not dirty
-        zset1->dirty = 0;
+        clearObjectDirty(zset1);
         zset1_ctx->bdc.num = 0;
         zset1_data->object_meta = createZsetObjectMeta(0,0);
         zset1_data->new_meta = NULL;

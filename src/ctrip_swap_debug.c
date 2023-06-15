@@ -45,10 +45,10 @@ static sds debugRioGet(int cf, sds rawkey) {
 static sds getSwapObjectInfo(robj *o) {
     if (o) {
         return sdscatprintf(sdsempty(),
-                "at=%p,refcount=%d,type=%s,encoding=%s,dirty=%d,"
+                "at=%p,refcount=%d,type=%s,encoding=%s,dirty_meta=%d,dirty_data=%d"
                 "lru=%d,lru_seconds_idle=%llu",
                 (void*)o,o->refcount,strObjectType(o->type),
-                strEncoding(o->encoding),o->dirty,o->lru,
+                strEncoding(o->encoding),o->dirty_meta,o->dirty_data,o->lru,
                 estimateObjectIdleTime(o)/1000);
     } else {
         return sdsnew("<nil>");

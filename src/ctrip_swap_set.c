@@ -165,7 +165,7 @@ int setSwapAna(swapData *data, int thd, struct keyRequest *req,
                             createSetObjectMeta(swapGetAndIncrVersion(),0));
                 }
 
-                if (!data->value->dirty) {
+                if (!objectIsDirty(data->value)) {
                     /* directly evict value from db.dict if not dirty. */
                     swapDataCleanObject(data, datactx);
                     if (setTypeSize(data->value) == 0) {
@@ -321,7 +321,7 @@ int setDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
 static inline robj *createSwapInObject(robj *newval) {
     robj *swapin = newval;
     serverAssert(newval && newval->type == OBJ_SET);
-    swapin->dirty = 0;
+    clearObjectDirty(swapin);
     return swapin;
 }
 
@@ -910,7 +910,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
 
         // swap out - first swap out
         set1_data->value = set1;
-        set1->dirty = 1;
+        setObjectDirty(set1);
         set1_data->object_meta = NULL;
         set1_data->cold_meta = NULL;
         set1_data->new_meta = NULL;
@@ -921,7 +921,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         test_assert(NULL != set1_data->new_meta);
 
         // swap out - data not dirty
-        set1->dirty = 0;
+        clearObjectDirty(set1);
         set1_ctx->ctx.num = 0;
         set1_data->object_meta = createSetObjectMeta(0,0);
         set1_data->new_meta = NULL;

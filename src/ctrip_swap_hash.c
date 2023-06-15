@@ -166,7 +166,7 @@ int hashSwapAna(swapData *data, int thd, struct keyRequest *req,
                         createHashObjectMeta(swapGetAndIncrVersion(),0));
             }
 
-            if (!data->value->dirty) {
+            if (!objectIsDirty(data->value)) {
                 /* directly evict value from db.dict if not dirty. */
                 swapDataCleanObject(data, datactx);
                 if (hashTypeLength(data->value) == 0) {
@@ -347,7 +347,7 @@ int hashDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
 static inline robj *createSwapInObject(robj *newval) {
     robj *swapin = newval;
     serverAssert(newval && newval->type == OBJ_HASH);
-    swapin->dirty = 0;
+    clearObjectDirty(swapin);
     return swapin;
 }
 
