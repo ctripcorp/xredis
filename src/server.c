@@ -1659,6 +1659,8 @@ void tryResizeHashTables(int dbid) {
         dictResize(server.db[dbid].expires);
     if (htNeedsResize(server.db[dbid].meta))
         dictResize(server.db[dbid].meta);
+    if (htNeedsResize(server.db[dbid].dirty_subkeys))
+        dictResize(server.db[dbid].dirty_subkeys);
 }
 
 /* Our hash table implementation performs rehashing incrementally while
@@ -1682,6 +1684,11 @@ int incrementallyRehash(int dbid) {
     /* Metas */
     if (dictIsRehashing(server.db[dbid].meta)) {
         dictRehashMilliseconds(server.db[dbid].meta,1);
+        return 1; /* already used our millisecond for this loop... */
+    }
+    /* Dirty subkeys */
+    if (dictIsRehashing(server.db[dbid].dirty_subkeys)) {
+        dictRehashMilliseconds(server.db[dbid].dirty_subkeys,1);
         return 1; /* already used our millisecond for this loop... */
     }
     return 0;
@@ -3500,7 +3507,7 @@ void initServer(void) {
         server.db[j].dict = dictCreate(&dbDictType,NULL);
         server.db[j].expires = dictCreate(&dbExpiresDictType,NULL);
         server.db[j].meta = dictCreate(&objectMetaDictType, NULL);
-        server.db[j].hold_keys = dictCreate(&objectKeyPointerValueDictType, NULL);
+        server.db[j].dirty_subkeys = dictCreate(&dbDirtySubkeysDictType, NULL);
         server.db[j].evict_asap = listCreate();
         server.db[j].cold_keys = 0;
         server.db[j].scan_expire = scanExpireCreate();

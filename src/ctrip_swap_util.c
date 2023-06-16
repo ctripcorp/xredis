@@ -32,6 +32,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 
+
 void notifyKeyspaceEventDirtyKey(int type, char *event, robj *key, int dbid) {
     robj* o = lookupKey(&server.db[dbid], key, LOOKUP_NOTOUCH);
     notifyKeyspaceEventDirty(type,event,key,dbid,o,NULL);
@@ -45,6 +46,30 @@ void notifyKeyspaceEventDirty(int type, char *event, robj *key, int dbid, ...) {
     while ((o = va_arg(ap, robj*))) setObjectDirty(o);
     va_end(ap);
 
+    notifyKeyspaceEvent(type,event,key,dbid);
+}
+
+void notifyKeyspaceEventDirtySubkeys(int type, char *event, robj *key,
+        int dbid, robj *o, int count, sds *subkeys) {
+    redisDb *db = server.db+dbid;
+
+    robj *dss = lookupDirtySubkeys(db,key);
+    if (dss == NULL) {
+        dss = dirtySubkeysNew();
+        dbAddDirtySubkeys(db,key,dss);
+    }
+
+    for (int i = 0; i < count; i++) {
+        dirtySubkeysAdd(dss,subkeys[i]);
+    }
+
+    setObjectDirty(o);
+    notifyKeyspaceEvent(type,event,key,dbid);
+}
+
+void notifyKeyspaceEventDirtyMeta(int type, char *event, robj *key,
+        int dbid, robj *o) {
+    setObjectMetaDirty(o);
     notifyKeyspaceEvent(type,event,key,dbid);
 }
 

@@ -1995,7 +1995,21 @@ long get_dir_size(char *dirname);
 
 void notifyKeyspaceEventDirty(int type, char *event, robj *key, int dbid, ...);
 void notifyKeyspaceEventDirtyKey(int type, char *event, robj *key, int dbid);
-void notifyKeyspaceEventDirtySubkeys(int type, char *event, robj *key, int dbid, ...);
+void notifyKeyspaceEventDirtyMeta(int type, char *event, robj *key, int dbid, robj *o);
+void notifyKeyspaceEventDirtySubkeys(int type, char *event, robj *key, int dbid, robj *o, int count, sds *subkeys);
+
+robj *dirtySubkeysNew();
+void dirtySubkeysFree(robj *dss);
+unsigned long dirtySubkeysLength(robj *dss);
+int dirtySubkeysAdd(robj *dss, sds subkey);
+int dirtySubkeysDelete(robj *dss, sds subkey);
+
+extern dictType dbDirtySubkeysDictType;
+
+void dbAddDirtySubkeys(redisDb *db, robj* key, robj *dss);
+int dbDeleteDirtySubkeys(redisDb *db, robj* key);
+robj *lookupDirtySubkeys(redisDb *db, robj* key);
+
 
 uint64_t SwapCommandDataTypeFlagByName(const char *name);
 

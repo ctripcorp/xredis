@@ -334,6 +334,7 @@ int dbSyncDelete(redisDb *db, robj *key) {
      * the key, because it is shared with the main dictionary. */
     if (dictSize(db->expires) > 0) dictDelete(db->expires,key->ptr);
     if (dictSize(db->meta) > 0) dictDelete(db->meta,key->ptr);
+    if (dictSize(db->dirty_subkeys) > 0) dictDelete(db->dirty_subkeys,key->ptr);
     dictEntry *de = dictUnlink(db->dict,key->ptr);
     if (de) {
         robj *val = dictGetVal(de);
@@ -419,6 +420,7 @@ long long emptyDbStructure(redisDb *dbarray, int dbnum, int async,
             dictEmpty(dbarray[j].dict,callback);
             dictEmpty(dbarray[j].expires,callback);
 			dictEmpty(dbarray[j].meta,callback);
+			dictEmpty(dbarray[j].dirty_subkeys,callback);
         }
         /* Because all keys of database are removed, reset average ttl. */
         dbarray[j].avg_ttl = 0;
@@ -435,12 +437,14 @@ void dbPauseRehash(redisDb *db) {
     dictPauseRehashing(db->dict);
     dictPauseRehashing(db->expires);
     dictPauseRehashing(db->meta);
+    dictPauseRehashing(db->dirty_subkeys);
 }
 
 void dbResumeRehash(redisDb *db) {
     dictResumeRehashing(db->dict);
     dictResumeRehashing(db->expires);
     dictResumeRehashing(db->meta);
+    dictResumeRehashing(db->dirty_subkeys);
 }
 
 /* Remove all keys from all the databases in a Redis server.
@@ -513,6 +517,7 @@ dbBackup *backupDb(void) {
         server.db[i].dict = dictCreate(&dbDictType,NULL);
         server.db[i].expires = dictCreate(&dbExpiresDictType,NULL);
         server.db[i].meta = dictCreate(&objectMetaDictType,NULL);
+        server.db[i].dirty_subkeys = dictCreate(&dbDirtySubkeysDictType,NULL);
         server.db[i].cold_filter = coldFilterCreate();
     }
 
@@ -544,6 +549,7 @@ void discardDbBackup(dbBackup *buckup, int flags, void(callback)(void*)) {
         dictRelease(buckup->dbarray[i].dict);
         dictRelease(buckup->dbarray[i].expires);
         dictRelease(buckup->dbarray[i].meta);
+        dictRelease(buckup->dbarray[i].dirty_subkeys);
         coldFilterDestroy(buckup->dbarray[i].cold_filter);
     }
 
@@ -569,9 +575,11 @@ void restoreDbBackup(dbBackup *buckup) {
         serverAssert(dictSize(server.db[i].dict) == 0);
         serverAssert(dictSize(server.db[i].expires) == 0);
         serverAssert(dictSize(server.db[i].meta) == 0);
+        serverAssert(dictSize(server.db[i].dirty_subkeys) == 0);
         dictRelease(server.db[i].dict);
         dictRelease(server.db[i].expires);
         dictRelease(server.db[i].meta);
+        dictRelease(server.db[i].dirty_subkeys);
         coldFilterDestroy(server.db[i].cold_filter);
         server.db[i] = buckup->dbarray[i];
     }
@@ -1467,6 +1475,7 @@ int dbSwapDatabases(int id1, int id2) {
     db1->avg_ttl = db2->avg_ttl;
     db1->expires_cursor = db2->expires_cursor;
     db1->meta = db2->meta;
+    db1->dirty_subkeys = db2->dirty_subkeys;
     db1->cold_filter = db2->cold_filter;
 
     db2->dict = aux.dict;
@@ -1474,6 +1483,7 @@ int dbSwapDatabases(int id1, int id2) {
     db2->avg_ttl = aux.avg_ttl;
     db2->expires_cursor = aux.expires_cursor;
     db2->meta = aux.meta;
+    db2->dirty_subkeys = aux.dirty_subkeys;
     db2->cold_filter = aux.cold_filter;
 
     /* Now we need to handle clients blocked on lists: as an effect

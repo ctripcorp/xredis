@@ -199,7 +199,6 @@ client *createClient(connection *conn) {
     c->keyrequests_count = 0;
     c->swap_cmd = NULL;
     c->swap_result = 0;
-    c->hold_keys = dictCreate(&objectKeyPointerValueDictType, NULL);
     c->cmd_reploff = -1;
     c->repl_client = NULL;
     c->client_hold_mode = CLIENT_HOLD_MODE_CMD;
@@ -1519,7 +1518,6 @@ void freeClient(client *c) {
     /* Release other dynamically allocated client structure fields,
      * and finally release the client structure itself. */
     if (c->name) decrRefCount(c->name);
-    dictRelease(c->hold_keys);
     zfree(c->argv);
     c->argv_len_sum = 0;
     freeClientMultiState(c);

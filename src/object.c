@@ -1080,6 +1080,12 @@ struct redisMemOverhead *getMemoryOverheadData(void) {
         mh->db[mh->num_dbs].overhead_ht_meta = mem;
         mem_total+=mem;
 
+        mem = dictSize(db->dirty_subkeys) * sizeof(dictEntry)  +
+            dictSlots(db->dirty_subkeys) * sizeof(dictEntry*) +
+            dictSize(db->dirty_subkeys) * sizeof(robj);
+        mh->db[mh->num_dbs].overhead_ht_dirty_subkeys = mem;
+        mem_total+=mem;
+
         mh->num_dbs++;
     }
 
@@ -1417,7 +1423,7 @@ NULL
             char dbname[32];
             snprintf(dbname,sizeof(dbname),"db.%zd",mh->db[j].dbid);
             addReplyBulkCString(c,dbname);
-            addReplyMapLen(c,3);
+            addReplyMapLen(c,4);
 
             addReplyBulkCString(c,"overhead.hashtable.main");
             addReplyLongLong(c,mh->db[j].overhead_ht_main);
@@ -1427,6 +1433,9 @@ NULL
 
             addReplyBulkCString(c,"overhead.hashtable.meta");
             addReplyLongLong(c,mh->db[j].overhead_ht_meta);
+
+            addReplyBulkCString(c,"overhead.hashtable.dirty_subkeys");
+            addReplyLongLong(c,mh->db[j].overhead_ht_dirty_subkeys);
         }
 
         addReplyBulkCString(c,"overhead.total");

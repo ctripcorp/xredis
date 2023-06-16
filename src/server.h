@@ -761,7 +761,7 @@ typedef struct redisDb {
     list *defrag_later;         /* List of key names to attempt to defrag one by one, gradually. */
     /* swap */
     dict *meta;                 /* meta for rocksdb subkeys of big object. */
-    dict *hold_keys;            /* holded keys. */
+    dict *dirty_subkeys;        /* dirty subkeys. */
     list *evict_asap;           /* keys to be evicted asap. */
     long long cold_keys;        /* # of cold keys. */
     sds randomkey_nextseek;     /* nextseek for randomkey command */
@@ -1012,7 +1012,6 @@ typedef struct client {
     swapCmdTrace *swap_cmd;
     long swap_duration; /* microseconds used in swap */
     int swap_result;
-    dict *hold_keys;
     voidfuncptr client_swap_finished_cb;
     void *client_swap_finished_pd;
     int client_hold_mode; /* indicates how client should hold key */
@@ -1167,6 +1166,7 @@ struct redisMemOverhead {
         size_t overhead_ht_main;
         size_t overhead_ht_expires;
         size_t overhead_ht_meta;
+        size_t overhead_ht_dirty_subkeys;
     } *db;
     struct rocksdbMemOverhead *rocks;
 };

@@ -707,7 +707,7 @@ int initTestRedisDb() {
         server.db[j].dict = dictCreate(&dbDictType,NULL);
         server.db[j].expires = dictCreate(&dbExpiresDictType,NULL);
         server.db[j].meta = dictCreate(&objectMetaDictType, NULL);
-        server.db[j].hold_keys = dictCreate(&objectKeyPointerValueDictType, NULL);
+        server.db[j].dirty_subkeys = dictCreate(&objectKeyPointerValueDictType, NULL);
         server.db[j].evict_asap = listCreate();
         server.db[j].cold_keys = 0;
         server.db[j].randomkey_nextseek = NULL;
