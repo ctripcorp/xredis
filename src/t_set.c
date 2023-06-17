@@ -318,20 +318,28 @@ void saddCommand(client *c) {
 
     set = lookupKeyWrite(c->db,c->argv[1]);
     if (checkType(c,set,OBJ_SET)) return;
-    
+
+    sds *dirty_subkeys = zmalloc(sizeof(sds)*c->argc-2);
+
     if (set == NULL) {
         set = setTypeCreate(c->argv[2]->ptr);
         dbAdd(c->db,c->argv[1],set);
     }
 
     for (j = 2; j < c->argc; j++) {
-        if (setTypeAdd(set,c->argv[j]->ptr)) added++;
+        if (setTypeAdd(set,c->argv[j]->ptr)) {
+            dirty_subkeys[added] = c->argv[j]->ptr;
+            added++;
+        }
     }
     if (added) {
         signalModifiedKey(c,c->db,c->argv[1]);
-        notifyKeyspaceEventDirty(NOTIFY_SET,"sadd",c->argv[1],c->db->id,
-                set,NULL);
+        notifyKeyspaceEventDirtySubkeys(NOTIFY_SET,"sadd",c->argv[1],
+                c->db->id,set,added,dirty_subkeys);
     }
+
+    zfree(dirty_subkeys);
+
     server.dirty += added;
     addReplyLongLong(c,added);
 }
@@ -360,8 +368,8 @@ void sremCommand(client *c) {
             notifyKeyspaceEvent(NOTIFY_GENERIC,"del",c->argv[1],
                                 c->db->id);
         } else {
-            notifyKeyspaceEventDirty(NOTIFY_SET,"srem",c->argv[1],c->db->id,
-                    set,NULL);
+            notifyKeyspaceEventDirtyMeta(NOTIFY_SET,"srem",c->argv[1],
+                    c->db->id,set);
         }
         server.dirty += deleted;
     }
@@ -397,7 +405,9 @@ void smoveCommand(client *c) {
         addReply(c,shared.czero);
         return;
     }
-    notifyKeyspaceEventDirty(NOTIFY_SET,"srem",c->argv[1],c->db->id,srcset,NULL);
+    sds dirty_subkeys[1] = {(sds)ele->ptr};
+    notifyKeyspaceEventDirtySubkeys(NOTIFY_SET,"srem",c->argv[1],c->db->id,
+            srcset,1,dirty_subkeys);
 
     /* Remove the src set from the database when empty */
     if (ctrip_setTypeSize(c->db, c->argv[1], srcset) == 0) {
@@ -418,7 +428,8 @@ void smoveCommand(client *c) {
     if (setTypeAdd(dstset,ele->ptr)) {
         server.dirty++;
         signalModifiedKey(c,c->db,c->argv[2]);
-        notifyKeyspaceEventDirty(NOTIFY_SET,"sadd",c->argv[2],c->db->id,dstset);
+        notifyKeyspaceEventDirtySubkeys(NOTIFY_SET,"sadd",c->argv[2],
+                c->db->id,dstset,1,dirty_subkeys);
     }
     addReply(c,shared.cone);
 }
@@ -507,7 +518,7 @@ void spopWithCountCommand(client *c) {
     size = setTypeSize(set);
 
     /* Generate an SPOP keyspace notification */
-    notifyKeyspaceEventDirty(NOTIFY_SET,"spop",c->argv[1],c->db->id,set,NULL);
+    notifyKeyspaceEventDirtyMeta(NOTIFY_SET,"spop",c->argv[1],c->db->id,set);
     server.dirty += (count >= size) ? size : count;
 
     /* CASE 1:

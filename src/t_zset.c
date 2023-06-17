@@ -1786,6 +1786,8 @@ void zaddGenericCommand(client *c, int flags) {
         return;
     }
 
+    sds *dirty_subkeys = zmalloc(sizeof(sds)*elements);
+
     /* Start parsing all the scores, we need to emit any syntax error
      * before executing additions to the sorted set, as the command should
      * either execute fully or nothing at all. */
@@ -1816,6 +1818,7 @@ void zaddGenericCommand(client *c, int flags) {
         int retflags = 0;
 
         ele = c->argv[scoreidx+1+j*2]->ptr;
+        dirty_subkeys[j] = ele;
         int retval = zsetAdd(zobj, score, ele, flags, &retflags, &newscore);
         if (retval == 0) {
             addReplyError(c,nanerr);
@@ -1842,9 +1845,10 @@ cleanup:
     zfree(scores);
     if (added || updated) {
         signalModifiedKey(c,c->db,key);
-        notifyKeyspaceEventDirty(NOTIFY_ZSET,
-            incr ? "zincr" : "zadd", key, c->db->id,zobj,NULL);
+        notifyKeyspaceEventDirtySubkeys(NOTIFY_ZSET,
+            incr ? "zincr" : "zadd", key, c->db->id,zobj,elements,dirty_subkeys);
     }
+    zfree(dirty_subkeys);
 }
 
 void zaddCommand(client *c) {
@@ -1882,7 +1886,7 @@ void zremCommand(client *c) {
             notifyKeyspaceEvent(NOTIFY_ZSET,"zrem",key,c->db->id);
             notifyKeyspaceEvent(NOTIFY_GENERIC,"del",key,c->db->id);
         } else {
-            notifyKeyspaceEventDirty(NOTIFY_ZSET,"zrem",key,c->db->id,zobj,NULL);
+            notifyKeyspaceEventDirtyMeta(NOTIFY_ZSET,"zrem",key,c->db->id,zobj);
         }
         signalModifiedKey(c,c->db,key);
         server.dirty += deleted;
@@ -3910,7 +3914,7 @@ void genericZpopCommand(client *c, robj **keyv, int keyc, int where, int emitkey
 
         if (result_count == 0) { /* Do this only for the first iteration. */
             char *events[2] = {"zpopmin","zpopmax"};
-            notifyKeyspaceEventDirty(NOTIFY_ZSET,events[where],key,c->db->id,zobj,NULL);
+            notifyKeyspaceEventDirtyMeta(NOTIFY_ZSET,events[where],key,c->db->id,zobj);
             signalModifiedKey(c,c->db,key);
         }
 

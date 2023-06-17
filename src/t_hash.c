@@ -651,7 +651,10 @@ void hsetnxCommand(client *c) {
         hashTypeSet(o,c->argv[2]->ptr,c->argv[3]->ptr,HASH_SET_COPY);
         addReply(c, shared.cone);
         signalModifiedKey(c,c->db,c->argv[1]);
-        notifyKeyspaceEventDirty(NOTIFY_HASH,"hset",c->argv[1],c->db->id,o,NULL);
+
+        sds dirty_subkeys[1] = {(sds)c->argv[2]->ptr};
+        notifyKeyspaceEventDirtySubkeys(NOTIFY_HASH,"hset",c->argv[1],
+                c->db->id,o,1,dirty_subkeys);
         server.dirty++;
     }
 }
@@ -668,8 +671,13 @@ void hsetCommand(client *c) {
     if ((o = hashTypeLookupWriteOrCreate(c,c->argv[1])) == NULL) return;
     hashTypeTryConversion(o,c->argv,2,c->argc-1);
 
-    for (i = 2; i < c->argc; i += 2)
+    size_t ndss = (c->argc-2)/2;
+    sds *dirty_subkeys = zmalloc(sizeof(sds)*ndss);
+
+    for (i = 2; i < c->argc; i += 2) {
         created += !hashTypeSet(o,c->argv[i]->ptr,c->argv[i+1]->ptr,HASH_SET_COPY);
+        dirty_subkeys[i/2] = (sds)c->argv[i+1]->ptr;
+    }
 
     /* HMSET (deprecated) and HSET return value is different. */
     char *cmdname = c->argv[0]->ptr;
@@ -681,7 +689,11 @@ void hsetCommand(client *c) {
         addReply(c, shared.ok);
     }
     signalModifiedKey(c,c->db,c->argv[1]);
-    notifyKeyspaceEventDirty(NOTIFY_HASH,"hset",c->argv[1],c->db->id,o,NULL);
+
+    notifyKeyspaceEventDirtySubkeys(NOTIFY_HASH,"hset",c->argv[1],
+            c->db->id,o,ndss,dirty_subkeys);
+    zfree(dirty_subkeys);
+
     server.dirty += (c->argc - 2)/2;
 }
 
@@ -716,7 +728,9 @@ void hincrbyCommand(client *c) {
     hashTypeSet(o,c->argv[2]->ptr,new,HASH_SET_TAKE_VALUE);
     addReplyLongLong(c,value);
     signalModifiedKey(c,c->db,c->argv[1]);
-    notifyKeyspaceEventDirty(NOTIFY_HASH,"hincrby",c->argv[1],c->db->id,o,NULL);
+    sds dirty_subkeys[1] = {(sds)c->argv[2]->ptr};
+    notifyKeyspaceEventDirtySubkeys(NOTIFY_HASH,"hincrby",c->argv[1],
+            c->db->id,o,1,dirty_subkeys);
     server.dirty++;
 }
 
@@ -755,7 +769,9 @@ void hincrbyfloatCommand(client *c) {
     hashTypeSet(o,c->argv[2]->ptr,new,HASH_SET_TAKE_VALUE);
     addReplyBulkCBuffer(c,buf,len);
     signalModifiedKey(c,c->db,c->argv[1]);
-    notifyKeyspaceEventDirty(NOTIFY_HASH,"hincrbyfloat",c->argv[1],c->db->id,o,NULL);
+    sds dirty_subkeys[1] = {(sds)c->argv[2]->ptr};
+    notifyKeyspaceEventDirtySubkeys(NOTIFY_HASH,"hincrbyfloat",c->argv[1],
+            c->db->id,o,1,dirty_subkeys);
     server.dirty++;
 
     /* Always replicate HINCRBYFLOAT as an HSET command with the final value
@@ -853,12 +869,11 @@ void hdelCommand(client *c) {
     if (deleted) {
         signalModifiedKey(c,c->db,c->argv[1]);
         if (keyremoved) {
-            notifyKeyspaceEvent(NOTIFY_GENERIC,"hdel",c->argv[1],
-                                c->db->id);
-            notifyKeyspaceEvent(NOTIFY_GENERIC,"del",c->argv[1],
-                                c->db->id);
+            notifyKeyspaceEvent(NOTIFY_HASH,"hdel",c->argv[1],c->db->id);
+            notifyKeyspaceEvent(NOTIFY_GENERIC,"del",c->argv[1],c->db->id);
         } else {
-            notifyKeyspaceEventDirty(NOTIFY_HASH,"hdel",c->argv[1],c->db->id,o,NULL);
+            notifyKeyspaceEventDirtyMeta(NOTIFY_HASH,"hdel",c->argv[1],
+                    c->db->id,o);
         }
         server.dirty += deleted;
     }
