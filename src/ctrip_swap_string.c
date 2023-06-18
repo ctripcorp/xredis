@@ -362,7 +362,7 @@ void wholeKeyLoadInit(rdbKeyLoadData *keydata) {
 
 swapData *createWholeKeySwapDataWithExpire(redisDb *db, robj *key, robj *value,
         long long expire, void **datactx) {
-    swapData *data = createSwapData(db,key,value);
+    swapData *data = createSwapData(db,key,value,NULL);
     swapDataSetupMeta(data,OBJ_STRING,expire,datactx);
     return data;
 }

@@ -2707,6 +2707,7 @@ standardConfig configs[] = {
     createBoolConfig("swap-absent-cache-enabled", NULL, MODIFIABLE_CONFIG, server.swap_absent_cache_enabled, 1, NULL, updateSwapAbsentCacheEnabled),
     createBoolConfig("swap-absent-cache-include-subkey", NULL, MODIFIABLE_CONFIG, server.swap_absent_cache_include_subkey, 1, NULL, NULL),
     createBoolConfig("swap-bgsave-fix-metalen-mismatch", NULL, MODIFIABLE_CONFIG, server.swap_bgsave_fix_metalen_mismatch, 0, NULL, NULL),
+    createBoolConfig("swap-dirty-subkeys-enabled", NULL, MODIFIABLE_CONFIG, server.swap_dirty_subkeys_enabled, 0, NULL, NULL),
     createBoolConfig("rocksdb.data.cache_index_and_filter_blocks", "rocksdb.cache_index_and_filter_blocks", IMMUTABLE_CONFIG, server.rocksdb_data_cache_index_and_filter_blocks, 0, NULL, NULL),
     createBoolConfig("rocksdb.meta.cache_index_and_filter_blocks", NULL, IMMUTABLE_CONFIG, server.rocksdb_meta_cache_index_and_filter_blocks, 0, NULL, NULL),
     createBoolConfig("rocksdb.enable_pipelined_write", NULL, IMMUTABLE_CONFIG, server.rocksdb_enable_pipelined_write, 0, NULL, NULL),

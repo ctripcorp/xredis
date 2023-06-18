@@ -28,13 +28,15 @@
 
 #include "ctrip_swap.h"
 
-swapData *createSwapData(redisDb *db, robj *key, robj *value) {
+swapData *createSwapData(redisDb *db, robj *key, robj *value, robj *dirty_subkeys) {
     swapData *data = zcalloc(sizeof(swapData));
     data->db = db;
     if (key) incrRefCount(key);
     data->key = key;
     if (value) incrRefCount(value);
     data->value = value;
+    if (dirty_subkeys) incrRefCount(dirty_subkeys);
+    data->dirty_subkeys = dirty_subkeys;
     return data;
 }
 
@@ -261,6 +263,7 @@ inline void swapDataFree(swapData *d, void *datactx) {
     if (d->new_meta) freeObjectMeta(d->new_meta);
     if (d->key) decrRefCount(d->key);
     if (d->value) decrRefCount(d->value);
+    if (d->dirty_subkeys) decrRefCount(d->dirty_subkeys);
     if (d->absent) swapDataAbsentSubkeyFree(d->absent);
     zfree(d);
 }
@@ -440,7 +443,7 @@ int swapDataTest(int argc, char *argv[], int accurate) {
         key_request->cmd_intention_flags = 0;
         key_request->dbid = 0;
 
-        data = createSwapData(db,key1,NULL);
+        data = createSwapData(db,key1,NULL,NULL);
         test_assert(!swapDataAlreadySetup(data));
         swapDataSetupMeta(data,OBJ_STRING,0/*expired*/,&datactx);
         test_assert(swapDataAlreadySetup(data));
@@ -461,7 +464,7 @@ int swapDataTest(int argc, char *argv[], int accurate) {
         key_request->cmd_intention_flags = SWAP_IN_DEL;
         key_request->dbid = 0;
 
-        data = createSwapData(db,key1,val1);
+        data = createSwapData(db,key1,val1,NULL);
         swapDataSetupMeta(data,OBJ_STRING,-1,&datactx);
         swapDataAna(data,0,key_request,&intention,&intention_flags,datactx);
         test_assert(intention == SWAP_DEL);

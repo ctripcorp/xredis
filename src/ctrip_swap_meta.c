@@ -757,7 +757,7 @@ int metaScanTest(int argc, char *argv[], int accurate) {
         metaScanResult *result;
         swapScanSession *session;
 
-        data = createSwapData(db,NULL,NULL);
+        data = createSwapData(db,NULL,NULL,NULL);
         session = swapScanSessionsAssign(server.swap_scan_sessions);
         test_assert(session->session_id == 0);
         rewriteResetClientCommandCString(c,6,"SCAN","1","COUNT","3","MATCH","*");

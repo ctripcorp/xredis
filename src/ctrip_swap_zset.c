@@ -1288,7 +1288,7 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
     }
 
     TEST("set - encodeKeys/encodeData/DecodeData") {
-        zset1_data = createSwapData(db, key1,zset1);
+        zset1_data = createSwapData(db, key1,zset1,NULL);
         swapDataSetupZSet(zset1_data, (void**)&zset1_ctx);
         sds *rawkeys, *rawvals;
         int *cfs, cf;
@@ -1352,7 +1352,7 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
         int intention;
         uint32_t intention_flags;
         objectMeta *zset1_meta = createZsetObjectMeta(0,0);
-        zset1_data = createSwapData(db, key1,zset1);
+        zset1_data = createSwapData(db, key1,zset1,NULL);
         swapDataSetupZSet(zset1_data, (void**)&zset1_ctx);
 
         kr1->key = key1;
@@ -1495,7 +1495,7 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
     TEST("zset - swapIn/swapOut") {
         robj *s, *result;
         objectMeta *m;
-        zset1_data = createSwapData(db, key1,zset1);
+        zset1_data = createSwapData(db, key1,zset1,NULL);
         swapDataSetupZSet(zset1_data, (void**)&zset1_ctx);
         test_assert(lookupMeta(db,key1) == NULL);
         test_assert((s = lookupKey(db, key1, LOOKUP_NOTOUCH)) != NULL);

@@ -752,7 +752,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
     }
 
     TEST("set - encodeKeys/encodeData/DecodeData") {
-        set1_data = createSwapData(db, key1,set1);
+        set1_data = createSwapData(db, key1,set1,NULL);
         swapDataSetupSet(set1_data, (void**)&set1_ctx);
         sds *rawkeys, *rawvals;
         int *cfs, cf;
@@ -805,7 +805,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         int intention;
         uint32_t intention_flags;
         objectMeta *set1_meta = createSetObjectMeta(0,0);
-        set1_data = createSwapData(db, key1,set1);
+        set1_data = createSwapData(db, key1,set1,NULL);
         swapDataSetupSet(set1_data, (void**)&set1_ctx);
 
         kr1->key = key1;
@@ -951,7 +951,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
     TEST("set - swapIn/swapOut") {
         robj *s, *result;
         objectMeta *m;
-        set1_data = createSwapData(db, key1,set1);
+        set1_data = createSwapData(db, key1,set1,NULL);
         swapDataSetupSet(set1_data, (void**)&set1_ctx);
         test_assert(lookupMeta(db,key1) == NULL);
         test_assert((s = lookupKey(db, key1, LOOKUP_NOTOUCH)) != NULL);

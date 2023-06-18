@@ -78,3 +78,56 @@ inline int dirtySubkeysAdd(robj *dss, sds subkey) {
 inline int dirtySubkeysDelete(robj *dss, sds subkey) {
     return hashTypeDelete(dss,subkey);
 }
+
+void notifyKeyspaceEventDirtyKey(int type, char *event, robj *key, int dbid) {
+    robj* o = lookupKey(&server.db[dbid], key, LOOKUP_NOTOUCH);
+    notifyKeyspaceEventDirty(type,event,key,dbid,o,NULL);
+}
+
+void notifyKeyspaceEventDirty(int type, char *event, robj *key, int dbid, ...) {
+    robj *o;
+    va_list ap;
+
+    va_start(ap, dbid);
+    while ((o = va_arg(ap, robj*))) setObjectDirty(o);
+    va_end(ap);
+
+    notifyKeyspaceEvent(type,event,key,dbid);
+}
+
+
+/* dirty_data: all subkeys may be dirty.
+ * dirty_subkeys: only a subset of subkeys is dirty.
+ * if both dirty_data and dirty_subkeys are set, then all subkeys may be dirty,
+ * effect is same as dirty_data. */
+void notifyKeyspaceEventDirtySubkeys(int type, char *event, robj *key,
+        int dbid, robj *o, int count, sds *subkeys) {
+    if (server.swap_dirty_subkeys_enabled) {
+        if (!objectIsDataDirty(o)) {
+            redisDb *db = server.db+dbid;
+            robj *dss = lookupDirtySubkeys(db,key);
+
+            if (dss == NULL) {
+                dss = dirtySubkeysNew();
+                dbAddDirtySubkeys(db,key,dss);
+            }
+
+            for (int i = 0; i < count; i++) {
+                dirtySubkeysAdd(dss,subkeys[i]);
+            }
+        }
+
+        if (!objectIsMetaDirty(o)) setObjectMetaDirty(o);
+    } else {
+        setObjectDirty(o);
+    }
+
+    notifyKeyspaceEvent(type,event,key,dbid);
+}
+
+void notifyKeyspaceEventDirtyMeta(int type, char *event, robj *key,
+        int dbid, robj *o) {
+    setObjectMetaDirty(o);
+    notifyKeyspaceEvent(type,event,key,dbid);
+}
+

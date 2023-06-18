@@ -339,7 +339,7 @@ void keyRequestProceed(void *lock, int flush, redisDb *db, robj *key,
     void *datactx = NULL;
     swapData *data = NULL;
     swapCtx *ctx = pd;
-    robj *value;
+    robj *value, *dirty_subkeys;
     objectMeta *object_meta;
     char *reason;
     void *msgs = NULL;
@@ -365,7 +365,7 @@ void keyRequestProceed(void *lock, int flush, redisDb *db, robj *key,
 
 	/* handle metascan request. */
     if (isMetaScanRequest(cmd_intention_flags)) {
-        data = createSwapData(db,NULL,NULL);
+        data = createSwapData(db,NULL,NULL,NULL);
         retval = swapDataSetupMetaScan(data,cmd_intention_flags,c,&datactx);
         swapCtxSetSwapData(ctx,data,datactx);
         if (retval) {
@@ -379,8 +379,9 @@ void keyRequestProceed(void *lock, int flush, redisDb *db, robj *key,
     }
 
     value = lookupKey(db,key,LOOKUP_NOTOUCH);
+    dirty_subkeys = lookupDirtySubkeys(db,key);
 
-    data = createSwapData(db,key,value);
+    data = createSwapData(db,key,value,dirty_subkeys);
     swapCtxSetSwapData(ctx,data,datactx);
 
     if (isSwapHitStatKeyRequest(ctx->key_request)) {

@@ -432,6 +432,7 @@ typedef struct swapData {
   unsigned reserved:28;
   sds nextseek; /* own, moved from exec */
   swapDataAbsentSubkey *absent;
+  robj *dirty_subkeys;
   void *extends[2];
 } swapData;
 
@@ -458,7 +459,7 @@ typedef struct swapDataType {
   int (*mergedIsHot)(struct swapData *data, MOVE void *result, void *datactx);
 } swapDataType;
 
-swapData *createSwapData(redisDb *db, robj *key, robj *value);
+swapData *createSwapData(redisDb *db, robj *key, robj *value, robj *dirty_subkeys);
 int swapDataSetupMeta(swapData *d, int object_type, long long expire, OUT void **datactx);
 int swapDataAlreadySetup(swapData *d);
 void swapDataMarkPropagateExpire(swapData *data);

@@ -1904,6 +1904,8 @@ struct redisServer {
 
     unsigned long long swap_compaction_filter_disable_until;
     int swap_compaction_filter_skip_level;
+
+    int swap_dirty_subkeys_enabled;
 };
 
 #define MAX_KEYS_BUFFER 256

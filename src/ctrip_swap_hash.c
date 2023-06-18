@@ -839,11 +839,11 @@ int swapDataHashTest(int argc, char **argv, int accurate) {
         cold_kr1->b.subkeys = NULL;
         dbAdd(db,key1,hash1);
 
-        hash1_data = createSwapData(db,key1,hash1);
+        hash1_data = createSwapData(db,key1,hash1,NULL);
         swapDataSetupMeta(hash1_data,OBJ_HASH,-1,(void**)&hash1_ctx);
         swapDataSetObjectMeta(hash1_data, NULL);
 
-        cold1_data = createSwapData(db,cold1,NULL);
+        cold1_data = createSwapData(db,cold1,NULL,NULL);
         swapDataSetupMeta(cold1_data,OBJ_HASH,-1,(void**)&cold1_ctx);
         swapDataSetObjectMeta(cold1_data, cold1_meta);
     }

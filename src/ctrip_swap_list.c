@@ -2964,10 +2964,10 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
     hotmeta = createListObjectMeta(0,hotlm);      \
     warmmeta = createListObjectMeta(0,warmlm);    \
     coldmeta = createListObjectMeta(0,coldlm);    \
-    puredata = createSwapData(db,purekey,pure); \
-    hotdata = createSwapData(db,hotkey,hot);    \
-    warmdata = createSwapData(db,warmkey,warm); \
-    colddata = createSwapData(db,coldkey,NULL); \
+    puredata = createSwapData(db,purekey,pure,NULL); \
+    hotdata = createSwapData(db,hotkey,hot,NULL);    \
+    warmdata = createSwapData(db,warmkey,warm,NULL); \
+    colddata = createSwapData(db,coldkey,NULL,NULL); \
     swapDataSetupMeta(puredata,OBJ_LIST,-1,&puredatactx);   \
     swapDataSetupMeta(hotdata,OBJ_LIST,-1,&hotdatactx), swapDataSetObjectMeta(hotdata,hotmeta);         \
     swapDataSetupMeta(warmdata,OBJ_LIST,-1,&warmdatactx), swapDataSetObjectMeta(warmdata,warmmeta);     \
@@ -3223,7 +3223,7 @@ int swapListDataTest(int argc, char *argv[], int accurate) {
         listTypePush(list,ele2,LIST_TAIL);
         listTypePush(list,ele3,LIST_TAIL);
 
-        swapData *data = createSwapData(db,key,list);
+        swapData *data = createSwapData(db,key,list,NULL);
         swapDataSetupMeta(data,OBJ_LIST,-1,&datactx_);
         listDataCtx *datactx = datactx_;
         datactx->arg_reqs[0].mstate_idx = -1;
