@@ -312,9 +312,10 @@ void getKeyRequestsAppendRangeResult(getKeyRequestsResult *result, int level, MO
   clearObjectDataDirty(o); \
 } while(0)
 
-#define objectIsDirty(o) ((o)->dirty_meta || (o)->dirty_data)
 #define objectIsMetaDirty(o) ((o)->dirty_meta)
 #define objectIsDataDirty(o) ((o)->dirty_data)
+
+#define objectIsDirty(o) (objectIsMetaDirty(o) || objectIsDataDirty(o))
 
 void dbSetDirty(redisDb *db, robj *key);
 
@@ -1952,9 +1953,12 @@ void coldFilterSubkeyNotFound(coldFilter *filter, sds key, sds subkey);
 int coldFilterMayContainSubkey(coldFilter *filter, sds key, sds subkey);
 
 /* Util */
+#define MIN(a,b) ((a) < (b) ? (a) : (b))
+
 #define ROCKS_KEY_FLAG_NONE 0x0
 #define ROCKS_KEY_FLAG_SUBKEY 0x1
 #define ROCKS_KEY_FLAG_DELETE 0xff
+
 sds encodeMetaKey(int dbid, const char* key, size_t key_len);
 sds rocksEncodeMetaKey(redisDb *db, sds key);
 int rocksDecodeMetaKey(const char *raw, size_t rawlen, int *dbid, const char **key, size_t *keylen);

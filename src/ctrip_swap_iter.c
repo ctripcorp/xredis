@@ -91,9 +91,6 @@ static void rocksIterNotifyVacant(rocksIter* it) {
     pthread_mutex_unlock(&cq->buffer_lock);
 }
 
-
-#define MIN(a,b) ((a) < (b) ? (a) : (b))
-
 static inline void iterResultInit(iterResult *result,
         int cf, unsigned char rdbtype,
         MOVE sds rawkey, MOVE sds rawval) {

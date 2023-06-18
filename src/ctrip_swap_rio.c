@@ -31,8 +31,6 @@
 #define RIO_ITERATE_NUMKEYS_ALLOC_LINER 4096
 #define RIO_ESTIMATE_PAYLOAD_SAMPLE 8
 
-#define MIN(a,b) ((a) > (b) ? (b): (a))
-
 static inline int rioMayOOM(unsigned long long mem_allocated) {
     if (server.maxmemory == 0) return 0;
     size_t mem_used = ctrip_getUsedMemory();
