@@ -35,6 +35,88 @@ static void createFakeSetForDeleteIfCold(swapData *data) {
     }
 }
 
+#define SELECT_MAIN 0
+#define SELECT_DSS  1
+
+/* return 1 if noswap needed */
+static int setSwapAnaOutSelectSubkeys(swapData *data, setDataCtx *datactx) {
+    int select_type, noswap;
+    size_t count;
+    robj *subkeys;
+    unsigned long long evict_memory = 0;
+
+    if (objectIsDataDirty(data->value)) { /* all subkeys might be dirty */
+        select_type = SELECT_MAIN;
+        subkeys = data->value;
+        count = setTypeSize(subkeys);
+        noswap = 0;
+    } else if (data->dirty_subkeys) { /* a subset of subkeys might be dirty */
+        select_type = SELECT_DSS;
+        subkeys = data->dirty_subkeys;
+        count = dirtySubkeysLength(subkeys);
+        noswap = 0;
+    } else {
+        /* If data dirty, meta will be persisted as an side effect.
+         * If just meta dirty, we still persists meta.
+         * If data & meta clean, we persists nothing (just free). */
+        if (objectIsMetaDirty(data->value)) { /* meta dirty */
+            /* meta dirty */
+            select_type = SELECT_MAIN;
+            subkeys = data->value;
+            count = 0;
+            noswap = 0;
+        } else { /* clean */
+            select_type = SELECT_MAIN;
+            subkeys = data->value;
+            count = setTypeSize(subkeys);
+            noswap = 1;
+        }
+    }
+
+    count = MIN(count,(size_t)server.swap_evict_step_max_subkeys);
+    datactx->ctx.subkeys = zmalloc(count*sizeof(robj*));
+
+    if (select_type == SELECT_MAIN) {
+        sds vstr;
+        setTypeIterator *si = setTypeInitIterator(subkeys);
+        while (NULL != (vstr = setTypeNextObject(si))) {
+            size_t vlen = sdslen(vstr);
+            robj* subkey;
+
+            if ((size_t)datactx->ctx.num >= count ||
+                    evict_memory >= server.swap_evict_step_max_memory) {
+                /* Evict in small steps. */
+                if (vstr) sdsfree(vstr);
+                break;
+            }
+
+            subkey = createObject(OBJ_STRING, vstr);
+            evict_memory += vlen;
+            datactx->ctx.subkeys[datactx->ctx.num++] = subkey;
+        }
+        setTypeReleaseIterator(si);
+    } else {
+        robj *subkey;
+        size_t sublen;
+        dirtySubkeysIterator dss_iter;
+
+        dirtySubkeysIteratorInit(&dss_iter, subkeys);
+        while ((subkey = dirtySubkeysIteratorNext(&dss_iter,&sublen)) != NULL) {
+            if ((size_t)datactx->ctx.num >= count ||
+                    evict_memory >= server.swap_evict_step_max_memory) {
+                /* Evict big hash in small steps. */
+                break;
+            }
+
+            datactx->ctx.subkeys[datactx->ctx.num++] = subkey;
+            evict_memory += sublen;
+        }
+        dirtySubkeysIteratorDeinit(&dss_iter);
+    }
+
+    return noswap;
+}
+
 int setSwapAna(swapData *data, int thd, struct keyRequest *req,
                 int *intention, uint32_t *intention_flags, void *datactx_) {
     setDataCtx *datactx = datactx_;
@@ -138,26 +220,7 @@ int setSwapAna(swapData *data, int thd, struct keyRequest *req,
                 *intention = SWAP_NOP;
                 *intention_flags = 0;
             } else {
-                unsigned long long evict_memory = 0;
-                sds vstr;
-                datactx->ctx.subkeys = zmalloc(
-                        server.swap_evict_step_max_subkeys*sizeof(robj*));
-                setTypeIterator *si;
-                si = setTypeInitIterator(data->value);
-                while (NULL != (vstr = setTypeNextObject(si))) {
-                    size_t vlen = sdslen(vstr);
-                    robj* subkey = createObject(OBJ_STRING, vstr);
-
-                    evict_memory += vlen;
-                    datactx->ctx.subkeys[datactx->ctx.num++] = subkey;
-
-                    if (datactx->ctx.num >= server.swap_evict_step_max_subkeys ||
-                        evict_memory >= server.swap_evict_step_max_memory) {
-                        /* Evict in small steps. */
-                        break;
-                    }
-                }
-                setTypeReleaseIterator(si);
+                int noswap = setSwapAnaOutSelectSubkeys(data,datactx);
 
                 /* create new meta if needed */
                 if (!swapDataPersisted(data)) {
@@ -165,7 +228,7 @@ int setSwapAna(swapData *data, int thd, struct keyRequest *req,
                             createSetObjectMeta(swapGetAndIncrVersion(),0));
                 }
 
-                if (!objectIsDirty(data->value)) {
+                if (noswap) {
                     /* directly evict value from db.dict if not dirty. */
                     swapDataCleanObject(data, datactx);
                     if (setTypeSize(data->value) == 0) {
@@ -358,6 +421,11 @@ int setSwapOut(swapData *data, void *datactx, int *totally_out) {
     UNUSED(datactx);
     serverAssert(!swapDataIsCold(data));
 
+    if (data->dirty_subkeys &&
+            dirtySubkeysLength(data->dirty_subkeys) == 0) {
+        dbDeleteDirtySubkeys(data->db,data->key);
+    }
+
     if (setTypeSize(data->value) == 0) {
         /* all fields swapped out, key turnning into cold:
          * - rocks-meta should have already persisted.
@@ -434,6 +502,11 @@ int setCleanObject(swapData *data, void *datactx_) {
     setDataCtx *datactx = datactx_;
     if (swapDataIsCold(data)) return 0;
     for (int i = 0; i < datactx->ctx.num; i++) {
+        if (data->dirty_subkeys) {
+            dirtySubkeysRemove(data->dirty_subkeys,
+                    datactx->ctx.subkeys[i]->ptr);
+        }
+
         if (setTypeRemove(data->value,datactx->ctx.subkeys[i]->ptr)) {
             swapDataObjectMetaModifyLen(data,1);
         }
