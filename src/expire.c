@@ -541,7 +541,7 @@ void expireGenericCommand(client *c, long long basetime, int unit) {
         setExpire(c,c->db,key,when);
         addReply(c,shared.cone);
         signalModifiedKey(c,c->db,key);
-        notifyKeyspaceEventDirty(NOTIFY_GENERIC,"expire",key,c->db->id,o,NULL);
+        notifyKeyspaceEventDirtyMeta(NOTIFY_GENERIC,"expire",key,c->db->id,o);
         server.dirty++;
         return;
     }
@@ -606,7 +606,7 @@ void persistCommand(client *c) {
     if ((o = lookupKeyWrite(c->db,c->argv[1]))) {
         if (removeExpire(c->db,c->argv[1])) {
             signalModifiedKey(c,c->db,c->argv[1]);
-            notifyKeyspaceEventDirty(NOTIFY_GENERIC,"persist",c->argv[1],c->db->id,o,NULL);
+            notifyKeyspaceEventDirtyMeta(NOTIFY_GENERIC,"persist",c->argv[1],c->db->id,o);
             addReply(c,shared.cone);
             server.dirty++;
         } else {

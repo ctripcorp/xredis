@@ -52,38 +52,41 @@ extern const char *swap_cf_names[CF_COUNT];
 #define rocksdb_stats_section "rocksdb.stats"
 #define rocksdb_stats_section_len 13
 
-/* Delete key in rocksdb after right after swap in. */
+/* --- cmd intention flags --- */
+/* Delete key in rocksdb when swap in. */
 #define SWAP_IN_DEL (1U<<0)
-/* No need to swap if this is a big object */
+/* Only need to swap meta for hash/set/zset/list  */
 #define SWAP_IN_META (1U<<1)
 /* Delete key in rocksdb and mock value needed to be swapped in. */
 #define SWAP_IN_DEL_MOCK_VALUE (1U<<2)
-/* This is a metascan request for scan command. */
-#define SWAP_METASCAN_SCAN (1U<<3)
-/* This is a metascan request for randomkey command. */
-#define SWAP_METASCAN_RANDOMKEY (1U<<4)
-/* This is a metascan request for active-expire. */
-#define SWAP_METASCAN_EXPIRE (1U<<5)
 /* Data swap in will be overwritten by fun dbOverwrite
  * same as SWAP_IN_DEL for collection type(SET, ZSET, LISH, HASH...), same as SWAP_IN for STRING */
-#define SWAP_IN_OVERWRITE (1U<<6)
+#define SWAP_IN_OVERWRITE (1U<<3)
+/* When swap finished, meta will be deleted(so that key will turn pure hot).*/
+#define SWAP_IN_FORCE_HOT (1U<<4)
 /* whether to expire Keys with generated in writtable slave is decided
  * before submitExpireClientRequest and should not skip expire even
  * if current role is slave. */
-#define SWAP_EXPIRE_FORCE (1U<<7)
-#define SWAP_IN_FORCE_HOT (1U<<8)
-#define SWAP_OOM_CHECK (1U<<9)
-/* Delete rocksdb data key */
-#define SWAP_EXEC_IN_DEL (1U<<0)
-#define SWAP_EXEC_FORCE_HOT (1U<<1)
-#define SWAP_EXEC_OOM_CHECK (1U<<2)
+#define SWAP_EXPIRE_FORCE (1U<<5)
+/* If oom would happen during RIO, swap will abort. */
+#define SWAP_OOM_CHECK (1U<<6)
+/* This is a metascan request for scan command. */
+#define SWAP_METASCAN_SCAN (1U<<7)
+/* This is a metascan request for randomkey command. */
+#define SWAP_METASCAN_RANDOMKEY (1U<<8)
+/* This is a metascan request for active-expire. */
+#define SWAP_METASCAN_EXPIRE (1U<<9)
 
+/* --- swap intention flags --- */
+/* Delete rocksdb data key when swap in */
+#define SWAP_EXEC_IN_DEL (1U<<0)
+/* object meta will be deleted from db.meta */
+#define SWAP_EXEC_FORCE_HOT (1U<<1)
+/* check whether oom would happend during RIO */
+#define SWAP_EXEC_OOM_CHECK (1U<<2)
 /* Don't delete key in keyspace when swap (Delete key in rocksdb) finish. */
-#define SWAP_FIN_DEL_SKIP (1U<<8)
-/* Propagate expired when swap finish */
-#define SWAP_FIN_PROP_EXPIRED (1U<<9)
-/* Set object dirty when swap finish */
-#define SWAP_FIN_SET_DIRTY (1U<<10)
+#define SWAP_FIN_DEL_SKIP (1U<<3)
+
 
 #define SWAP_UNSET -1
 #define SWAP_NOP    0
@@ -317,7 +320,16 @@ void getKeyRequestsAppendRangeResult(getKeyRequestsResult *result, int level, MO
 
 #define objectIsDirty(o) (objectIsMetaDirty(o) || objectIsDataDirty(o))
 
-void dbSetDirty(redisDb *db, robj *key);
+static inline void dbSetDirty(redisDb *db, robj *key) {
+    robj *o = lookupKey(db,key,LOOKUP_NOTOUCH);
+    if (o) setObjectDirty(o);
+}
+
+static inline void dbSetMetaDirty(redisDb *db, robj *key) {
+    robj *o = lookupKey(db,key,LOOKUP_NOTOUCH);
+    if (o) setObjectMetaDirty(o);
+}
+
 
 /* Object meta */
 #define SWAP_VERSION_ZERO 0
@@ -327,7 +339,7 @@ extern dictType objectMetaDictType;
 
 struct objectMeta;
 typedef struct objectMetaType {
-  sds (*encodeObjectMeta) (struct objectMeta *object_meta);
+  sds (*encodeObjectMeta) (struct objectMeta *object_meta, void *aux);
   int (*decodeObjectMeta) (struct objectMeta *object_meta, const char* extend, size_t extlen);
   int (*objectIsHot)(struct objectMeta *object_meta, robj *value);
   void (*free)(struct objectMeta *object_meta);
@@ -367,7 +379,7 @@ static inline void objectMetaSetPtr(objectMeta *object_meta, void *ptr) {
 objectMeta *createObjectMeta(int object_type, uint64_t version);
 
 objectMeta *createLenObjectMeta(int object_type, uint64_t version, size_t len);
-sds encodeLenObjectMeta(struct objectMeta *object_meta);
+sds encodeLenObjectMeta(struct objectMeta *object_meta, void *aux);
 int decodeLenObjectMeta(struct objectMeta *object_meta, const char *extend, size_t extlen);
 int lenObjectMetaIsHot(struct objectMeta *object_meta, robj *value);
 
@@ -428,7 +440,7 @@ typedef struct swapData {
   int object_type;
   unsigned propagate_expire:1;
   unsigned set_dirty:1;
-  unsigned del_meta:1;
+  unsigned set_dirty_meta:1;
   unsigned persistence_deleted:1;
   unsigned reserved:28;
   sds nextseek; /* own, moved from exec */
@@ -458,6 +470,7 @@ typedef struct swapDataType {
   void (*free)(struct swapData *data, void *datactx);
   int (*rocksDel)(struct swapData *data_,  void *datactx_, int inaction, int num, int* cfs, sds *rawkeys, sds *rawvals, OUT int *outaction, OUT int *outnum, OUT int** outcfs,OUT sds **outrawkeys);
   int (*mergedIsHot)(struct swapData *data, MOVE void *result, void *datactx);
+  void* (*getObjectMetaAux)(struct swapData *data, void *datactx);
 } swapDataType;
 
 swapData *createSwapData(redisDb *db, robj *key, robj *value, robj *dirty_subkeys);
@@ -467,7 +480,7 @@ void swapDataMarkPropagateExpire(swapData *data);
 int swapDataAna(swapData *d, int thd, struct keyRequest *key_request, int *intention, uint32_t *intention_flag, void *datactx);
 int swapDataSwapAnaAction(swapData *data, int intention, void *datactx_, int *action);
 sds swapDataEncodeMetaKey(swapData *d);
-sds swapDataEncodeMetaVal(swapData *d);
+sds swapDataEncodeMetaVal(swapData *d, void *datactx);
 int swapDataEncodeKeys(swapData *d, int intention, void *datactx, int *num, int **cfs, sds **rawkeys);
 int swapDataEncodeData(swapData *d, int intention, void *datactx, int *num, int **cfs, sds **rawkeys, sds **rawvals);
 int swapDataEncodeRange(struct swapData *data, int intention, void *datactx_, int *limit, uint32_t *flags, int *pcf, sds *start, sds *end);
@@ -486,6 +499,7 @@ int swapDataMergedIsHot(swapData *d, void *result, void *datactx);
 void swapDataRetainAbsentSubkeys(swapData *data, int num, int *cfs, sds *rawkeys, sds *rawvals);
 void swapDataMergeAbsentSubkey(swapData *data);
 int swapDataMayContainSubkey(swapData *data, int thd, robj *subkey);
+void *swapDataGetObjectMetaAux(swapData *data, void *datactx);
 
 static inline void swapDataSetObjectMeta(swapData *d, objectMeta *object_meta) {
     d->object_meta = object_meta;
@@ -610,9 +624,6 @@ typedef void (*clientKeyRequestFinished)(client *c, struct swapCtx *ctx);
 typedef struct swapCtx {
   client *c;
   keyRequest key_request[1];
-  unsigned int expired:1;
-  unsigned int set_dirty:1;
-  unsigned int reserved:32;
   swapData *data;
   void *datactx;
   clientKeyRequestFinished finished;
@@ -2001,13 +2012,21 @@ long get_dir_size(char *dirname);
 void notifyKeyspaceEventDirty(int type, char *event, robj *key, int dbid, ...);
 void notifyKeyspaceEventDirtyKey(int type, char *event, robj *key, int dbid);
 void notifyKeyspaceEventDirtyMeta(int type, char *event, robj *key, int dbid, robj *o);
-void notifyKeyspaceEventDirtySubkeys(int type, char *event, robj *key, int dbid, robj *o, int count, sds *subkeys);
+void notifyKeyspaceEventDirtySubkeys(int type, char *event, robj *key, int dbid, robj *o, int count, sds *subkeys, size_t *sublens);
 
 robj *dirtySubkeysNew();
 void dirtySubkeysFree(robj *dss);
 unsigned long dirtySubkeysLength(robj *dss);
-int dirtySubkeysAdd(robj *dss, sds subkey);
-int dirtySubkeysDelete(robj *dss, sds subkey);
+int dirtySubkeysAdd(robj *dss, sds subkey, size_t sublen);
+int dirtySubkeysRemove(robj *dss, sds subkey);
+
+typedef struct dirtySubkeysIterator {
+  hashTypeIterator *iter;
+}dirtySubkeysIterator;
+
+void dirtySubkeysIteratorInit(dirtySubkeysIterator *it, robj *dss);
+void dirtySubkeysIteratorDeinit(dirtySubkeysIterator *it);
+robj* dirtySubkeysIteratorNext(dirtySubkeysIterator *it, size_t *vlen);
 
 extern dictType dbDirtySubkeysDictType;
 

@@ -653,8 +653,9 @@ void hsetnxCommand(client *c) {
         signalModifiedKey(c,c->db,c->argv[1]);
 
         sds dirty_subkeys[1] = {(sds)c->argv[2]->ptr};
+        size_t dirty_sublens[1] = {sdslen(c->argv[3]->ptr)};
         notifyKeyspaceEventDirtySubkeys(NOTIFY_HASH,"hset",c->argv[1],
-                c->db->id,o,1,dirty_subkeys);
+                c->db->id,o,1,dirty_subkeys, dirty_sublens);
         server.dirty++;
     }
 }
@@ -673,10 +674,12 @@ void hsetCommand(client *c) {
 
     size_t ndss = (c->argc-2)/2;
     sds *dirty_subkeys = zmalloc(sizeof(sds)*ndss);
+    size_t *dirty_sublens = zmalloc(sizeof(size_t)*ndss);
 
     for (i = 2; i < c->argc; i += 2) {
         created += !hashTypeSet(o,c->argv[i]->ptr,c->argv[i+1]->ptr,HASH_SET_COPY);
-        dirty_subkeys[i/2] = (sds)c->argv[i+1]->ptr;
+        dirty_subkeys[(i-2)/2] = (sds)c->argv[i]->ptr;
+        dirty_sublens[(i-2)/2] = sdslen(c->argv[i+1]->ptr);
     }
 
     /* HMSET (deprecated) and HSET return value is different. */
@@ -691,8 +694,9 @@ void hsetCommand(client *c) {
     signalModifiedKey(c,c->db,c->argv[1]);
 
     notifyKeyspaceEventDirtySubkeys(NOTIFY_HASH,"hset",c->argv[1],
-            c->db->id,o,ndss,dirty_subkeys);
+            c->db->id,o,ndss,dirty_subkeys,dirty_sublens);
     zfree(dirty_subkeys);
+    zfree(dirty_sublens);
 
     server.dirty += (c->argc - 2)/2;
 }
@@ -729,8 +733,9 @@ void hincrbyCommand(client *c) {
     addReplyLongLong(c,value);
     signalModifiedKey(c,c->db,c->argv[1]);
     sds dirty_subkeys[1] = {(sds)c->argv[2]->ptr};
+    size_t dirty_sublens[1] = {sizeof(long long)};
     notifyKeyspaceEventDirtySubkeys(NOTIFY_HASH,"hincrby",c->argv[1],
-            c->db->id,o,1,dirty_subkeys);
+            c->db->id,o,1,dirty_subkeys,dirty_sublens);
     server.dirty++;
 }
 
@@ -770,8 +775,9 @@ void hincrbyfloatCommand(client *c) {
     addReplyBulkCBuffer(c,buf,len);
     signalModifiedKey(c,c->db,c->argv[1]);
     sds dirty_subkeys[1] = {(sds)c->argv[2]->ptr};
+    size_t dirty_sublens[1] = {sizeof(long double)};
     notifyKeyspaceEventDirtySubkeys(NOTIFY_HASH,"hincrbyfloat",c->argv[1],
-            c->db->id,o,1,dirty_subkeys);
+            c->db->id,o,1,dirty_subkeys,dirty_sublens);
     server.dirty++;
 
     /* Always replicate HINCRBYFLOAT as an HSET command with the final value

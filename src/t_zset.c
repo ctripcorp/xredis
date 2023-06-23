@@ -1787,6 +1787,7 @@ void zaddGenericCommand(client *c, int flags) {
     }
 
     sds *dirty_subkeys = zmalloc(sizeof(sds)*elements);
+    size_t *dirty_sublens = zmalloc(sizeof(size_t)*elements);
 
     /* Start parsing all the scores, we need to emit any syntax error
      * before executing additions to the sorted set, as the command should
@@ -1819,6 +1820,7 @@ void zaddGenericCommand(client *c, int flags) {
 
         ele = c->argv[scoreidx+1+j*2]->ptr;
         dirty_subkeys[j] = ele;
+        dirty_sublens[j] = sdslen(ele) + sizeof(double);
         int retval = zsetAdd(zobj, score, ele, flags, &retflags, &newscore);
         if (retval == 0) {
             addReplyError(c,nanerr);
@@ -1846,9 +1848,10 @@ cleanup:
     if (added || updated) {
         signalModifiedKey(c,c->db,key);
         notifyKeyspaceEventDirtySubkeys(NOTIFY_ZSET,
-            incr ? "zincr" : "zadd", key, c->db->id,zobj,elements,dirty_subkeys);
+            incr ? "zincr" : "zadd", key, c->db->id,zobj,elements,dirty_subkeys,dirty_sublens);
     }
     zfree(dirty_subkeys);
+    zfree(dirty_sublens);
 }
 
 void zaddCommand(client *c) {

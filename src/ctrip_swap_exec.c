@@ -164,6 +164,8 @@ void swapRequestMerge(swapRequest *req) {
         }
         break;
     case SWAP_OUT:
+        /* object meta will be persisted every time, so meta turns clean .*/
+        clearObjectMetaDirty(data->value);
         retval = swapDataSwapOut(data,datactx,&swap_out_completely);
         if (!swapDataIsCold(data)) {
             if (swap_out_completely) {
@@ -392,6 +394,10 @@ static void swapExecBatchExecuteIntentionDel(swapExecBatch *exec_batch,
         if (swapRequestGetError(req)) continue;
 
         is_hot = swapDataMergedIsHot(req->data,req->result,req->datactx);
+        if (!is_hot && (req->intention_flags & SWAP_EXEC_FORCE_HOT)) {
+            serverLog(LL_WARNING, "[rocks] force del meta, key:%s", (char*)req->data->key->ptr);
+            is_hot = 1;
+        }
         merged_is_hots[i] = is_hot;
 
         aux_rio = RIOBatchAlloc(aux_rios);
@@ -414,13 +420,7 @@ static void swapExecBatchExecuteIntentionDel(swapExecBatch *exec_batch,
             continue;
         }
 
-        if (merged_is_hots[i] || req->intention_flags & SWAP_EXEC_FORCE_HOT) {
-            if (!merged_is_hots[i]) {
-                serverLog(LL_WARNING, "[rocks] force del meta, key:%s", (char*)req->data->key->ptr);
-            }
-            req->data->del_meta = 1;
-            req->data->persistence_deleted = 1;
-        }
+        if (merged_is_hots[i]) req->data->persistence_deleted = 1;
     }
 
     RIOBatchDeinit(aux_rios);
@@ -498,7 +498,7 @@ static void swapExecBatchExecuteDoOutMeta(swapExecBatch *exec_batch) {
         if (req->data->db == NULL || req->data->key == NULL) continue;
         meta_cfs[num_metas] = META_CF;
         meta_rawkeys[num_metas] = swapDataEncodeMetaKey(req->data);
-        meta_rawvals[num_metas] = swapDataEncodeMetaVal(req->data);
+        meta_rawvals[num_metas] = swapDataEncodeMetaVal(req->data,req->datactx);
         num_metas++;
     }
     RIOInitPut(meta_rio,num_metas,meta_cfs,meta_rawkeys,meta_rawvals);

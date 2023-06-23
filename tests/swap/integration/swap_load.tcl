@@ -19,10 +19,10 @@ start_server {tags {"swap bgsave"} overrides {swap-bgsave-fix-metalen-mismatch y
         r bgsave
         waitForBgsave r
 
-        wait_key_hot r h1
-        wait_key_hot r s1
-        wait_key_hot r l1
-        wait_key_hot r z1
+        wait_key_persist_deleted r h1
+        wait_key_persist_deleted r s1
+        wait_key_persist_deleted r l1
+        wait_key_persist_deleted r z1
     }
 }
 

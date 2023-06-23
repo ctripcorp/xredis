@@ -32,9 +32,26 @@ proc keyspace_is_empty {r} {
     }
 }
 
-proc object_is_dirty {r key} {
+proc object_is_data_dirty {r key} {
     set str [$r swap object $key]
-    if {[swap_object_property $str value dirty] == 1} {
+    if {[swap_object_property $str value dirty_data] == 1} {
+        set _ 1
+    } else {
+        set _ 0
+    }
+}
+
+proc object_is_meta_dirty {r key} {
+    set str [$r swap object $key]
+    if {[swap_object_property $str value dirty_meta] == 1} {
+        set _ 1
+    } else {
+        set _ 0
+    }
+}
+
+proc object_is_dirty {r key} {
+    if {[object_is_data_dirty $r $key] || [object_is_meta_dirty $r $key]} {
         set _ 1
     } else {
         set _ 0
@@ -61,6 +78,32 @@ proc object_is_warm {r key} {
 
 proc object_is_hot {r key} {
     set str [$r swap object $key]
+    if {[swap_object_property $str value at] != "" } {
+        set om_type [swap_object_property $str hot_meta object_type]
+        if {$om_type == ""} {
+            # no hot meta
+            set _ 1
+        } elseif {$om_type == 0} {
+            # string
+            set _ 0
+        } elseif {$om_type == 1} {
+            # list
+            set _ 0
+        } else {
+            # hash/set/zset
+            if {[swap_object_property $str hot_meta len] == 0} {
+                set _ 1
+            } else {
+                set _ 0
+            }
+        }
+    } else {
+        set _ 0
+    }
+}
+
+proc object_not_persisted {r key} {
+    set str [$r swap object $key]
     if { [swap_object_property $str value at] != "" && [swap_object_property $str cold_meta object_type] == ""} {
         set _ 1
     } else {
@@ -68,9 +111,9 @@ proc object_is_hot {r key} {
     }
 }
 
-proc wait_key_hot {r key} {
+proc wait_key_persist_deleted {r key} {
     wait_for_condition 50 40 {
-        [object_is_hot $r $key]
+        [object_not_persisted $r $key]
     } else {
         fail "wait $key hot failed."
     }
@@ -105,6 +148,26 @@ proc wait_key_warm {r key} {
         [object_is_warm $r $key]
     } else {
         fail "wait $key warm failed."
+    }
+}
+
+proc object_cold_meta_len {r key} {
+    set str [$r swap object $key]
+    set meta_len [swap_object_property $str cold_meta len]
+    if {$meta_len == ""} {
+        set _ 0
+    } else {
+        set _ $meta_len
+    }
+}
+
+proc object_hot_meta_len {r key} {
+    set str [$r swap object $key]
+    set meta_len [swap_object_property $str hot_meta len]
+    if {$meta_len == ""} {
+        set _ 0
+    } else {
+        set _ $meta_len
     }
 }
 

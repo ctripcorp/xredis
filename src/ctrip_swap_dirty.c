@@ -58,6 +58,16 @@ robj *lookupDirtySubkeys(redisDb *db, robj* key) {
     return dictFetchValue(db->dirty_subkeys,key->ptr);
 }
 
+/*
+ * dirty_data means all subkeys might be dirty, it will be not cleared (untill
+ * object totally swapped out and then swapped in again).
+ * dirty_subkeys works only when dirty_data not set, it keeps track of dirty
+ * subkeys that differs from rocksdb. if both dirty_data and dirty_subkeys are
+ * set, then all subkeys may be dirty, effect is same as dirty_data.
+ * dirty_meta means object meta(expire,type,length) in memory differs from
+ * rocksdb, cleared whenever swapout finished (swapout persists meta).
+ */
+
 inline robj *dirtySubkeysNew() {
     return createHashObject();
 }
@@ -71,12 +81,52 @@ inline unsigned long dirtySubkeysLength(robj *dss) {
     return hashTypeLength(dss);
 }
 
-inline int dirtySubkeysAdd(robj *dss, sds subkey) {
-    return hashTypeSet(dss,subkey,NULL,0);
+inline int dirtySubkeysAdd(robj *dss, sds subkey, size_t sublen) {
+    return hashTypeSet(dss,subkey,sdsfromlonglong(sublen),HASH_SET_TAKE_VALUE);
 }
 
-inline int dirtySubkeysDelete(robj *dss, sds subkey) {
-    return hashTypeDelete(dss,subkey);
+inline int dirtySubkeysRemove(robj *dss, sds subkey) {
+    if (dirtySubkeysLength(dss) > 0)
+        return hashTypeDelete(dss,subkey);
+    else
+        return 0;
+}
+
+void dirtySubkeysIteratorInit(dirtySubkeysIterator *it, robj *dss) {
+    it->iter = hashTypeInitIterator(dss);
+}
+
+void dirtySubkeysIteratorDeinit(dirtySubkeysIterator *it) {
+    if (it->iter) {
+        hashTypeReleaseIterator(it->iter);
+        it->iter = NULL;
+    }
+}
+
+robj *dirtySubkeysIteratorNext(dirtySubkeysIterator *it, size_t *len) {
+    robj *subkey;
+    unsigned char *vstr;
+    unsigned int vlen;
+    long long vll;
+
+    if (hashTypeNext(it->iter) == C_ERR) {
+        *len = 0;
+        return NULL;
+    }
+
+    hashTypeCurrentObject(it->iter,OBJ_HASH_KEY,&vstr,&vlen,&vll);
+    if (vstr) {
+        subkey = createStringObject((const char*)vstr,vlen);
+    } else {
+        subkey = createStringObjectFromLongLong(vll);
+        subkey = unshareStringValue(subkey);
+    }
+
+    hashTypeCurrentObject(it->iter,OBJ_HASH_VALUE,&vstr,&vlen,&vll);
+    serverAssert(vstr == NULL);
+
+    *len = vll;
+    return subkey;
 }
 
 void notifyKeyspaceEventDirtyKey(int type, char *event, robj *key, int dbid) {
@@ -95,13 +145,8 @@ void notifyKeyspaceEventDirty(int type, char *event, robj *key, int dbid, ...) {
     notifyKeyspaceEvent(type,event,key,dbid);
 }
 
-
-/* dirty_data: all subkeys may be dirty.
- * dirty_subkeys: only a subset of subkeys is dirty.
- * if both dirty_data and dirty_subkeys are set, then all subkeys may be dirty,
- * effect is same as dirty_data. */
 void notifyKeyspaceEventDirtySubkeys(int type, char *event, robj *key,
-        int dbid, robj *o, int count, sds *subkeys) {
+        int dbid, robj *o, int count, sds *subkeys, size_t *sublens) {
     if (server.swap_dirty_subkeys_enabled) {
         if (!objectIsDataDirty(o)) {
             redisDb *db = server.db+dbid;
@@ -113,7 +158,7 @@ void notifyKeyspaceEventDirtySubkeys(int type, char *event, robj *key,
             }
 
             for (int i = 0; i < count; i++) {
-                dirtySubkeysAdd(dss,subkeys[i]);
+                dirtySubkeysAdd(dss,subkeys[i], sublens[i]);
             }
         }
 

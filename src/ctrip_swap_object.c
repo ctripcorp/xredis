@@ -32,11 +32,6 @@
  * db.evict related API
  *----------------------------------------------------------------------------*/
 
-void dbSetDirty(redisDb *db, robj *key) {
-    robj *o = lookupKey(db,key,LOOKUP_NOTOUCH);
-    if (o) setObjectDirty(o);
-}
-
 /* objectMeta */
 static inline objectMetaType *getObjectMetaType(int object_type) {
     objectMetaType *omtype = NULL;
@@ -115,7 +110,7 @@ sds objectMetaEncode(struct objectMeta *object_meta) {
     serverAssert(object_meta);
     objectMetaType *omtype = getObjectMetaType(object_meta->object_type);
     if (omtype->encodeObjectMeta) {
-        return omtype->encodeObjectMeta(object_meta);
+        return omtype->encodeObjectMeta(object_meta,NULL);
     } else {
         return NULL;
     }
@@ -173,8 +168,10 @@ objectMeta *createLenObjectMeta(int object_type, uint64_t version, size_t len) {
 	return m;
 }
 
-sds encodeLenObjectMeta(struct objectMeta *object_meta) {
-    return object_meta ? rocksEncodeObjectMetaLen(object_meta->len) : NULL;
+sds encodeLenObjectMeta(struct objectMeta *object_meta, void *aux) {
+    long long cold_len = object_meta ? object_meta->len : 0;
+    long long hot_len = (long long)aux;
+    return rocksEncodeObjectMetaLen(hot_len+cold_len);
 }
 
 int decodeLenObjectMeta(struct objectMeta *object_meta, const char *extend, size_t extlen) {

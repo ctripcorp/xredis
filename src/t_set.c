@@ -320,6 +320,7 @@ void saddCommand(client *c) {
     if (checkType(c,set,OBJ_SET)) return;
 
     sds *dirty_subkeys = zmalloc(sizeof(sds)*c->argc-2);
+    size_t *dirty_sublens = zmalloc(sizeof(size_t)*c->argc-2);
 
     if (set == NULL) {
         set = setTypeCreate(c->argv[2]->ptr);
@@ -329,16 +330,18 @@ void saddCommand(client *c) {
     for (j = 2; j < c->argc; j++) {
         if (setTypeAdd(set,c->argv[j]->ptr)) {
             dirty_subkeys[added] = c->argv[j]->ptr;
+            dirty_sublens[added] = sdslen(c->argv[j]->ptr);
             added++;
         }
     }
     if (added) {
         signalModifiedKey(c,c->db,c->argv[1]);
         notifyKeyspaceEventDirtySubkeys(NOTIFY_SET,"sadd",c->argv[1],
-                c->db->id,set,added,dirty_subkeys);
+                c->db->id,set,added,dirty_subkeys,dirty_sublens);
     }
 
     zfree(dirty_subkeys);
+    zfree(dirty_sublens);
 
     server.dirty += added;
     addReplyLongLong(c,added);
@@ -406,8 +409,9 @@ void smoveCommand(client *c) {
         return;
     }
     sds dirty_subkeys[1] = {(sds)ele->ptr};
+    size_t dirty_sublens[1] = {sdslen(ele->ptr)};
     notifyKeyspaceEventDirtySubkeys(NOTIFY_SET,"srem",c->argv[1],c->db->id,
-            srcset,1,dirty_subkeys);
+            srcset,1,dirty_subkeys,dirty_sublens);
 
     /* Remove the src set from the database when empty */
     if (ctrip_setTypeSize(c->db, c->argv[1], srcset) == 0) {
@@ -429,7 +433,7 @@ void smoveCommand(client *c) {
         server.dirty++;
         signalModifiedKey(c,c->db,c->argv[2]);
         notifyKeyspaceEventDirtySubkeys(NOTIFY_SET,"sadd",c->argv[2],
-                c->db->id,dstset,1,dirty_subkeys);
+                c->db->id,dstset,1,dirty_subkeys,dirty_sublens);
     }
     addReply(c,shared.cone);
 }
@@ -668,7 +672,7 @@ void spopCommand(client *c) {
         setTypeRemove(set,ele->ptr);
     }
 
-    notifyKeyspaceEventDirty(NOTIFY_SET,"spop",c->argv[1],c->db->id,set);
+    notifyKeyspaceEventDirtyMeta(NOTIFY_SET,"spop",c->argv[1],c->db->id,set);
 
     /* Replicate/AOF this command as an SREM operation */
     rewriteClientCommandVector(c,3,shared.srem,c->argv[1],ele);

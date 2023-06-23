@@ -70,11 +70,15 @@ int swapDataKeyRequestFinished(swapData *data) {
         deleteExpiredKeyAndPropagate(data->db,data->key);
     }
 
-    if (data->set_dirty || data->del_meta) {
+    if (data->set_dirty) {
         dbSetDirty(data->db,data->key);
     }
 
-    if (data->del_meta) {
+    if (data->set_dirty_meta) {
+        dbSetMetaDirty(data->db,data->key);
+    }
+
+    if (data->persistence_deleted) {
         dbDeleteMeta(data->db, data->key);
     }
     return 0;
@@ -108,7 +112,13 @@ int swapDataAna(swapData *d, int thd, struct keyRequest *key_request,
         retval = d->type->swapAna(d,thd,key_request,intention,
                 intention_flags,datactx);
 
-        if ((*intention_flags & SWAP_FIN_DEL_SKIP) ||
+        if ((*intention_flags & SWAP_EXEC_IN_DEL) &&
+                key_request->type == KEYREQUEST_TYPE_SUBKEY &&
+                key_request->b.num_subkeys > 0 &&
+                server.swap_dirty_subkeys_enabled) {
+            /* current command is HDEL/SREM */
+            d->set_dirty_meta = 1;
+        } else if ((*intention_flags & SWAP_FIN_DEL_SKIP) ||
                 (*intention_flags & SWAP_EXEC_IN_DEL)) {
             /* rocksdb and mem differs. */
             d->set_dirty = 1;
@@ -268,12 +278,20 @@ inline void swapDataFree(swapData *d, void *datactx) {
     zfree(d);
 }
 
-sds swapDataEncodeMetaVal(swapData *d) {
+inline void *swapDataGetObjectMetaAux(swapData *data, void *datactx) {
+    if (data->type->getObjectMetaAux)
+        return data->type->getObjectMetaAux(data,datactx);
+    else
+        return NULL;
+}
+
+sds swapDataEncodeMetaVal(swapData *d, void *datactx) {
     sds extend = NULL, encoded;
     objectMeta *object_meta = swapDataObjectMeta(d);
     uint64_t version = object_meta ? object_meta->version : SWAP_VERSION_ZERO;
     if (d->omtype->encodeObjectMeta) {
-        extend = d->omtype->encodeObjectMeta(object_meta);
+        void *omaux = swapDataGetObjectMetaAux(d,datactx);
+        extend = d->omtype->encodeObjectMeta(object_meta,omaux);
     }
     encoded = rocksEncodeMetaVal(d->object_type,d->expire,version,extend);
     sdsfree(extend);

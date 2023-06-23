@@ -1167,7 +1167,8 @@ static sds encodeListMeta(listMeta *lm) {
     return result;
 }
 
-sds encodeListObjectMeta(struct objectMeta *object_meta) {
+sds encodeListObjectMeta(struct objectMeta *object_meta, void *aux) {
+    UNUSED(aux);
     if (object_meta == NULL) return NULL;
     serverAssert(object_meta->object_type == OBJ_LIST);
     return encodeListMeta(objectMetaGetPtr(object_meta));
@@ -1954,6 +1955,7 @@ swapDataType listSwapDataType = {
     .free = freeListSwapData,
     .rocksDel = NULL,
     .mergedIsHot = listMergedIsHot,
+    .getObjectMetaAux = NULL,
 };
 
 int swapDataSetupList(swapData *d, void **pdatactx) {

@@ -72,7 +72,7 @@ int zsetSwapAna(swapData *data, int thd, struct keyRequest *req,
             }
         } else if (req->b.num_subkeys == 0) {
             if (cmd_intention_flags == SWAP_IN_DEL_MOCK_VALUE) {
-                /* DEL/GETDEL: Lazy delete current key. */
+                /* DEL/UNLINK: Lazy delete current key. */
                 datactx->bdc.ctx_flag |= BIG_DATA_CTX_FLAG_MOCK_VALUE;
 
                 *intention = SWAP_DEL;
@@ -797,6 +797,12 @@ int zsetRocksDel(struct swapData *data_,  void *datactx_, int inaction,
     return 0;
 }
 
+void *zsetGetObjectMetaAux(swapData *data, void *datactx) {
+    UNUSED(datactx);
+    size_t hotlen = data->value ? zsetLength(data->value) : 0;
+    return (void*)hotlen;
+}
+
 swapDataType zsetSwapDataType = {
     .name = "zset",
     .cmd_swap_flags = CMD_SWAP_DATATYPE_ZSET,
@@ -814,6 +820,7 @@ swapDataType zsetSwapDataType = {
     .rocksDel = zsetRocksDel,
     .free = freeZsetSwapData,
     .mergedIsHot = zsetMergedIsHot,
+    .getObjectMetaAux = zsetGetObjectMetaAux,
 };
 
 

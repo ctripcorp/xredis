@@ -56,7 +56,7 @@ int setSwapAna(swapData *data, int thd, struct keyRequest *req,
                 *intention_flags = 0;
             } else if (req->b.num_subkeys == 0) {
                 if (cmd_intention_flags == SWAP_IN_DEL_MOCK_VALUE) {
-                    /* DEL/GETDEL: Lazy delete current key. */
+                    /* DEL/UNLINK: Lazy delete current key. */
                     datactx->ctx.ctx_flag |= BIG_DATA_CTX_FLAG_MOCK_VALUE;
                     *intention = SWAP_DEL;
                     *intention_flags = SWAP_FIN_DEL_SKIP;
@@ -453,6 +453,12 @@ void freeSetSwapData(swapData *data_, void *datactx_) {
     zfree(datactx);
 }
 
+void *setGetObjectMetaAux(swapData *data, void *datactx) {
+    UNUSED(datactx);
+    size_t hotlen = data->value ? setTypeSize(data->value) : 0;
+    return (void*)hotlen;
+}
+
 swapDataType setSwapDataType = {
     .name = "set",
     .cmd_swap_flags = CMD_SWAP_DATATYPE_SET,
@@ -471,6 +477,7 @@ swapDataType setSwapDataType = {
     .free = freeSetSwapData,
     .rocksDel = NULL,
     .mergedIsHot = setMergedIsHot,
+    .getObjectMetaAux = setGetObjectMetaAux,
 };
 
 int swapDataSetupSet(swapData *d, OUT void **pdatactx) {
