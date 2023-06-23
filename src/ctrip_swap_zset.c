@@ -35,6 +35,124 @@ static void createFakeZsetForDeleteIfCold(swapData *data) {
 	}
 }
 
+#define SELECT_MAIN 0
+#define SELECT_DSS  1
+
+/* return 1 if noswap needed */
+static int zsetSwapAnaOutSelectSubkeys(swapData *data, zsetDataCtx *datactx) {
+    int select_type, noswap;
+    size_t count;
+    robj *subkeys;
+    unsigned long long evict_memory = 0;
+
+    if (objectIsDataDirty(data->value)) { /* all subkeys might be dirty */
+        select_type = SELECT_MAIN;
+        subkeys = data->value;
+        count = zsetLength(subkeys);
+        noswap = 0;
+    } else if (data->dirty_subkeys) { /* a subset of subkeys might be dirty */
+        select_type = SELECT_DSS;
+        subkeys = data->dirty_subkeys;
+        count = dirtySubkeysLength(subkeys);
+        noswap = 0;
+    } else {
+        /* If data dirty, meta will be persisted as an side effect.
+         * If just meta dirty, we still persists meta.
+         * If data & meta clean, we persists nothing (just free). */
+        if (objectIsMetaDirty(data->value)) { /* meta dirty */
+            /* meta dirty */
+            select_type = SELECT_MAIN;
+            subkeys = data->value;
+            count = 0;
+            noswap = 0;
+        } else { /* clean */
+            select_type = SELECT_MAIN;
+            subkeys = data->value;
+            count = zsetLength(subkeys);
+            noswap = 1;
+        }
+    }
+
+    count = MIN(count,(size_t)server.swap_evict_step_max_subkeys);
+    datactx->bdc.subkeys = zmalloc(count*sizeof(robj*));
+
+    if (select_type == SELECT_MAIN) {
+        robj *subkey;
+        int len = zsetLength(subkeys);
+        if (len > 0) {
+            if (subkeys->encoding == OBJ_ENCODING_ZIPLIST) {
+                unsigned char *zl = subkeys->ptr;
+                unsigned char *eptr, *sptr;
+                unsigned char *vstr;
+                unsigned int vlen;
+                long long vlong;
+                eptr = ziplistIndex(zl, 0);
+                sptr = ziplistNext(zl, eptr);
+                while (eptr != NULL) {
+                    if ((size_t)datactx->bdc.num >= count ||
+                            evict_memory >= server.swap_evict_step_max_memory) {
+                        /* Evict big zset in small steps. */
+                        break;
+                    }
+
+                    vlong = 0;
+                    ziplistGet(eptr, &vstr, &vlen, &vlong);
+                    evict_memory += vlen;
+                    if (vstr != NULL) {
+                        subkey = createStringObject((const char*)vstr, vlen);
+                    } else {
+                        subkey = createObject(OBJ_STRING,sdsfromlonglong(vlong));
+                    }
+                    datactx->bdc.subkeys[datactx->bdc.num++] = subkey;
+                    ziplistGet(sptr, &vstr, &vlen, &vlong);
+                    evict_memory += vlen;
+
+                    zzlNext(zl, &eptr, &sptr);
+                }
+            } else if (subkeys->encoding == OBJ_ENCODING_SKIPLIST) {
+                zset *zs = subkeys->ptr;
+                dict* d = zs->dict;
+                dictIterator* di = dictGetIterator(d);
+                dictEntry *de;
+                while ((de = dictNext(di)) != NULL) {
+                    if ((size_t)datactx->bdc.num >= count ||
+                            evict_memory >= server.swap_evict_step_max_memory) {
+                        /* Evict big zset in small steps. */
+                        break;
+                    }
+                    sds skey = dictGetKey(de);
+                    subkey = createStringObject(skey, sdslen(skey));
+                    datactx->bdc.subkeys[datactx->bdc.num++] = subkey;
+                    evict_memory += sizeof(zset) + sizeof(dictEntry);
+                }
+                dictReleaseIterator(di);
+            } else {
+                serverPanic("unknown zset encoding");
+            }
+        }
+    } else {
+        robj *subkey;
+        size_t sublen;
+        dirtySubkeysIterator dss_iter;
+
+        dirtySubkeysIteratorInit(&dss_iter, subkeys);
+        while ((subkey = dirtySubkeysIteratorNext(&dss_iter,&sublen)) != NULL) {
+            if ((size_t)datactx->bdc.num >= count ||
+                    evict_memory >= server.swap_evict_step_max_memory) {
+                /* Evict big object in small steps. */
+                break;
+            }
+
+            datactx->bdc.subkeys[datactx->bdc.num++] = subkey;
+            evict_memory += sublen;
+        }
+        dirtySubkeysIteratorDeinit(&dss_iter);
+    }
+
+    return noswap;
+}
+
+
 int zsetSwapAna(swapData *data, int thd, struct keyRequest *req,
         int *intention, uint32_t *intention_flags, void *datactx_) {
     zsetDataCtx *datactx = datactx_;
@@ -156,62 +274,7 @@ int zsetSwapAna(swapData *data, int thd, struct keyRequest *req,
             *intention = SWAP_NOP;
             *intention_flags = 0;
         } else {
-            unsigned long long evict_memory = 0;
-            datactx->bdc.subkeys = zmalloc(
-                    server.swap_evict_step_max_subkeys*sizeof(robj*));
-
-            int len = zsetLength(data->value);
-                robj *subkey;
-            if (len > 0) {
-                if (data->value->encoding == OBJ_ENCODING_ZIPLIST) {
-                    unsigned char *zl = data->value->ptr;
-                    unsigned char *eptr, *sptr;
-                    unsigned char *vstr;
-                    unsigned int vlen;
-                    long long vlong;
-                    eptr = ziplistIndex(zl, 0);
-                    sptr = ziplistNext(zl, eptr);
-                    while (eptr != NULL) {
-                        vlong = 0;
-                        ziplistGet(eptr, &vstr, &vlen, &vlong);
-                        evict_memory += vlen;
-                        if (vstr != NULL) {
-                            subkey = createStringObject((const char*)vstr, vlen);
-                        } else {
-                            subkey = createObject(OBJ_STRING,sdsfromlonglong(vlong));
-                        }
-                        datactx->bdc.subkeys[datactx->bdc.num++] = subkey;
-                        ziplistGet(sptr, &vstr, &vlen, &vlong);
-                        evict_memory += vlen;
-                        if (datactx->bdc.num >= server.swap_evict_step_max_subkeys ||
-                                evict_memory >= server.swap_evict_step_max_memory) {
-                            /* Evict big zset in small steps. */
-                            break;
-                        }
-                        zzlNext(zl, &eptr, &sptr);
-                    }
-                } else if (data->value->encoding == OBJ_ENCODING_SKIPLIST) {
-                    zset *zs = data->value->ptr;
-                    dict* d = zs->dict;
-                    dictIterator* di = dictGetIterator(d);
-                    dictEntry *de;
-                    while ((de = dictNext(di)) != NULL) {
-                        sds skey = dictGetKey(de);
-                        subkey = createStringObject(skey, sdslen(skey));
-                        datactx->bdc.subkeys[datactx->bdc.num++] = subkey;
-                        evict_memory += sizeof(zset) + sizeof(dictEntry);
-                        if (datactx->bdc.num >= server.swap_evict_step_max_subkeys ||
-                                evict_memory >= server.swap_evict_step_max_memory) {
-                            /* Evict big zset in small steps. */
-                            break;
-                        }
-                    }
-                    dictReleaseIterator(di);
-                } else {
-                    *intention = SWAP_NOP;
-                    return 0;
-                }
-            }
+            int noswap = zsetSwapAnaOutSelectSubkeys(data,datactx);
 
             /* create new meta if needed */
             if (!swapDataPersisted(data)) {
@@ -219,7 +282,7 @@ int zsetSwapAna(swapData *data, int thd, struct keyRequest *req,
                         createZsetObjectMeta(swapGetAndIncrVersion(),0));
             }
 
-            if (!objectIsDirty(data->value)) {
+            if (noswap) {
                 /* directly evict value from db.dict if not dirty. */
 
                 swapDataCleanObject(data, datactx);
@@ -580,6 +643,11 @@ int zsetSwapOut(swapData *data, void *datactx, int *totally_out) {
     UNUSED(datactx);
     serverAssert(!swapDataIsCold(data));
 
+    if (data->dirty_subkeys &&
+            dirtySubkeysLength(data->dirty_subkeys) == 0) {
+        dbDeleteDirtySubkeys(data->db,data->key);
+    }
+
     if (zsetLength(data->value) == 0) {
         /* all fields swapped out, key turnning into cold:
          * - rocks-meta should have already persisted.
@@ -696,6 +764,11 @@ int zsetCleanObject(swapData *data, void *datactx_) {
     zsetDataCtx *datactx = datactx_;
     if (swapDataIsCold(data)) return 0;
     for (int i = 0; i < datactx->bdc.num; i++) {
+        if (data->dirty_subkeys) {
+            dirtySubkeysRemove(data->dirty_subkeys,
+                    datactx->bdc.subkeys[i]->ptr);
+        }
+
         if (zsetDel(data->value,datactx->bdc.subkeys[i]->ptr)) {
             swapDataObjectMetaModifyLen(data,1);
         }

@@ -1114,7 +1114,7 @@ int swapDataHashTest(int argc, char **argv, int accurate) {
 
         sds coldraw,warmraw,hotraw;
         objectMeta *object_meta = createHashObjectMeta(Vcur,2);
-        sds extend = hashObjectMetaType.encodeObjectMeta(object_meta);
+        sds extend = hashObjectMetaType.encodeObjectMeta(object_meta,0);
 
         rio rdbcold, rdbwarm, rdbhot;
         rdbKeySaveData _save, *save = &_save;
