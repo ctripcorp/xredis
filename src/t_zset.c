@@ -1848,7 +1848,8 @@ cleanup:
     if (added || updated) {
         signalModifiedKey(c,c->db,key);
         notifyKeyspaceEventDirtySubkeys(NOTIFY_ZSET,
-            incr ? "zincr" : "zadd", key, c->db->id,zobj,elements,dirty_subkeys,dirty_sublens);
+            incr ? "zincr" : "zadd", key, c->db->id,zobj,elements,
+            dirty_subkeys,dirty_sublens);
     }
     zfree(dirty_subkeys);
     zfree(dirty_sublens);

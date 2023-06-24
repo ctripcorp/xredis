@@ -121,24 +121,28 @@ start_server {tags {"dirty subkeys"} overrides {swap-dirty-subkeys-enabled yes}}
     }
 
     test {hash: hdel flags meta dirty} {
-        r hmset hash1 a a0 b b0 1 10 2 20
+        r hmset hash1 a a0 b b0 c c0 1 10 2 20
         r hdel hash1 a
         r swap.evict hash1
         wait_key_cold r hash1
-        assert_equal [object_meta_len r hash1] 3
+        assert_equal [object_meta_len r hash1] 4
 
-        r hgetall hash1
-        assert_equal [object_is_dirty r hash1] 0
-        r hdel hash1 1
+        r hmget hash1 b c
+        r hdel hash1 2
         assert_equal [object_is_meta_dirty r hash1] 1
         assert_equal [object_is_data_dirty r hash1] 0
-
         r swap.evict hash1
         after 100
-        assert_equal [object_is_hot r hash1] 1
         assert_equal [object_is_dirty r hash1] 0
+        assert_equal [object_hot_meta_len r hash1] 1
+        assert_equal [object_cold_meta_len r hash1] 3
 
-        assert_equal [object_hot_meta_len r hash1] 0
+        # hdel triggers persist delete, whole key is dirty
+        r hdel hash1 1
+        assert_equal [object_is_meta_dirty r hash1] 1
+        assert_equal [object_is_data_dirty r hash1] 1
+        r swap.evict hash1
+        wait_key_cold r hash1
         assert_equal [object_cold_meta_len r hash1] 2
     }
 
@@ -154,8 +158,9 @@ start_server {tags {"dirty subkeys"} overrides {swap-dirty-subkeys-enabled yes}}
         assert_equal [object_cold_meta_len r hash2] 0
 
         r swap.evict hash2
+        wait_key_cold r hash2
         assert_equal [object_cold_meta_len r hash2] 2
-        assert_equal [llength [r hgetall hash2]] 4
+        assert_equal [llength [r hkeys hash2]] 2
     }
 
     test {hash: evict only dirty subkeys} {
@@ -201,6 +206,200 @@ start_server {tags {"dirty subkeys"} overrides {swap-dirty-subkeys-enabled yes}}
         r swap.evict hash4
         wait_key_cold r hash4
         assert_equal [r hmget hash4 a b 1 2] {a1 b1 11 21}
+
+        r config set swap-evict-step-max-subkeys $bak_evict_step_subkeys
+    }
+
+    test {set: dirty-subkeys feature dont affect not existing key} {
+        r srem not-existing-set foo bar
+        r swap.evict not-existing-set
+        after 100
+        assert_equal [r scard not-existing-set] 0
+    }
+
+    test {set: srem flags meta dirty} {
+        r sadd set1 a b c 1 2
+        r srem set1 a
+        r swap.evict set1
+        wait_key_cold r set1
+        assert_equal [object_meta_len r set1] 4
+
+        r smismember set1 b c
+        r srem set1 2
+        assert_equal [object_is_meta_dirty r set1] 1
+        assert_equal [object_is_data_dirty r set1] 0
+        r swap.evict set1
+        after 100
+        assert_equal [object_is_dirty r set1] 0
+        assert_equal [object_hot_meta_len r set1] 1
+        assert_equal [object_cold_meta_len r set1] 3
+
+        # srem triggers persist delete, whole key is dirty
+        r srem set1 1
+        assert_equal [object_is_meta_dirty r set1] 1
+        assert_equal [object_is_data_dirty r set1] 1
+        r swap.evict set1
+        wait_key_cold r set1
+        assert_equal [object_cold_meta_len r set1] 2
+    }
+
+    test {set: delete all dirty subkey, key turn hot} {
+        r sadd set2 a 1
+        r swap.evict set2
+        wait_key_cold r set2
+        assert_equal [object_is_cold r set2] 1
+
+        r sadd set2 b 2
+        r srem set2 a 1
+        assert_equal [object_is_hot r set2] 1
+        assert_equal [object_cold_meta_len r set2] 0
+
+        r swap.evict set2
+        wait_key_cold r set2
+        assert_equal [object_cold_meta_len r set2] 2
+        assert_equal [llength [r smembers set2]] 2
+    }
+
+    test {set: evict only dirty subkeys} {
+        r sadd set3 a b 1 2
+        r swap.evict set3
+        wait_key_cold r set3
+        assert_equal [object_is_cold r set3] 1
+
+        r smembers set3
+        r sadd set3 a c
+        assert_equal [object_is_hot r set3] 1
+
+        r swap.evict set3
+        assert_equal [object_is_warm r set3] 1
+
+        r swap.evict set3
+        assert_equal [object_is_cold r set3] 1
+
+        assert_equal [r smismember set3 a b c 1 2] {1 1 1 1 1}
+        assert_equal [object_is_hot r set3] 1
+    }
+
+    test {set: evict subkeys multiple steps} {
+        set bak_evict_step_subkeys [lindex [r config get swap-evict-step-max-subkeys] 1]
+        r config set swap-evict-step-max-subkeys 1
+
+        r sadd set4 a b 1 2
+        for {set i 0} {$i < 3} {incr i} {
+            r swap.evict set4
+            after 100
+            assert_equal [object_is_cold r set4] 0
+        }
+        r swap.evict set4
+        wait_key_cold r set4
+        assert_equal [r smismember set4 a b 1 2] {1 1 1 1}
+
+        r sadd set4 a b 1 2
+        for {set i 0} {$i < 3} {incr i} {
+            r swap.evict set4
+            after 100
+            assert_equal [object_is_cold r set4] 0
+        }
+        r swap.evict set4
+        wait_key_cold r set4
+        assert_equal [r smismember set4 a b 1 2] {1 1 1 1}
+
+        r config set swap-evict-step-max-subkeys $bak_evict_step_subkeys
+    }
+
+    test {zset: dirty-subkeys feature dont affect not existing key} {
+        r zrem not-existing-zset foo bar
+        r swap.evict not-existing-zset
+        after 100
+        assert_equal [r zcard not-existing-zset] 0
+    }
+
+    r debug set-active-expire 0
+
+    test {zset: zrem flags meta dirty} {
+        r zadd zset1 10 a 20 b 30 c 40 1 50 2
+        r zrem zset1 a
+        r swap.evict zset1
+        wait_key_cold r zset1
+        assert_equal [object_meta_len r zset1] 4
+
+        r zmscore zset1 b c
+        r zrem zset1 2
+        assert_equal [object_is_meta_dirty r zset1] 1
+        assert_equal [object_is_data_dirty r zset1] 0
+        r swap.evict zset1
+        after 100
+        assert_equal [object_is_dirty r zset1] 0
+        assert_equal [object_hot_meta_len r zset1] 1
+        assert_equal [object_cold_meta_len r zset1] 3
+
+        # zrem triggers persist delete, whole key is dirty
+        r zrem zset1 1
+        assert_equal [object_is_meta_dirty r zset1] 1
+        assert_equal [object_is_data_dirty r zset1] 1
+        r swap.evict zset1
+        wait_key_cold r zset1
+        assert_equal [object_cold_meta_len r zset1] 2
+    }
+
+    test {zset: delete all dirty subkey, key turn hot} {
+        r zadd zset2 10 a 30 1
+        r swap.evict zset2
+        wait_key_cold r zset2
+        assert_equal [object_is_cold r zset2] 1
+
+        r zadd zset2 20 b 40 2
+        r zrem zset2 a 1
+        assert_equal [object_is_hot r zset2] 1
+        assert_equal [object_cold_meta_len r zset2] 0
+
+        r swap.evict zset2
+        wait_key_cold r zset2
+        assert_equal [object_cold_meta_len r zset2] 2
+        assert_equal [llength [r zrange zset2 0 -1]] 2
+    }
+
+    test {zset: evict only dirty subkeys} {
+        r zadd zset3 10 a 20 b 30 1 40 2
+        r swap.evict zset3
+        wait_key_cold r zset3
+        assert_equal [object_is_cold r zset3] 1
+
+        r zrange zset3 0 -1
+        r zadd zset3 11 a 50 c
+        assert_equal [object_is_hot r zset3] 1
+
+        r swap.evict zset3
+        wait_key_cold r zset3
+        assert_equal [object_is_cold r zset3] 1
+
+        assert_equal [r zmscore zset3 a b c 1 2] {11 20 50 30 40}
+        assert_equal [object_is_hot r zset3] 1
+    }
+
+    test {zset: evict subkeys multiple steps} {
+        set bak_evict_step_subkeys [lindex [r config get swap-evict-step-max-subkeys] 1]
+        r config set swap-evict-step-max-subkeys 1
+
+        r zadd zset4 10 a 20 b 30 1 40 2
+        for {set i 0} {$i < 3} {incr i} {
+            r swap.evict zset4
+            after 100
+            assert_equal [object_is_cold r zset4] 0
+        }
+        r swap.evict zset4
+        wait_key_cold r zset4
+        assert_equal [r zmscore zset4 a b 1 2] {10 20 30 40}
+
+        r zadd zset4 11 a 21 b 31 1 41 2
+        for {set i 0} {$i < 3} {incr i} {
+            r swap.evict zset4
+            after 100
+            assert_equal [object_is_cold r zset4] 0
+        }
+        r swap.evict zset4
+        wait_key_cold r zset4
+        assert_equal [r zmscore zset4 a b 1 2] {11 21 31 41}
 
         r config set swap-evict-step-max-subkeys $bak_evict_step_subkeys
     }

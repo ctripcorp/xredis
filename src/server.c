@@ -524,7 +524,7 @@ struct redisCommand redisCommandTable[] = {
 
     {"zmscore",zmscoreCommand,-3,
      "read-only fast @sortedset @swap_zset",
-     0,NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
+     0,NULL,getKeyRequestsZMScore,SWAP_IN,0,1,1,1,0,0,0},
 
     {"zrank",zrankCommand,3,
      "read-only fast @sortedset @swap_zset",

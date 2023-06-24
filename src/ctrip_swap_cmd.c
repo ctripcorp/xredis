@@ -852,6 +852,10 @@ int getKeyRequestsZincrby(int dbid, struct redisCommand *cmd, robj **argv, int a
     return getKeyRequestsSingleKeyWithSubkeys(dbid, cmd, argv, argc, result, 1, 3, -1, 2);
 }
 
+int getKeyRequestsZMScore(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result) {
+    return getKeyRequestsSingleKeyWithSubkeys(dbid, cmd, argv, argc, result, 1, 2, -1, 1);
+}
+
 #define ZMIN -1
 #define ZMAX 1
 int getKeyRequestsZpopGeneric(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result, int flags) {

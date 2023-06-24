@@ -420,7 +420,13 @@ static void swapExecBatchExecuteIntentionDel(swapExecBatch *exec_batch,
             continue;
         }
 
-        if (merged_is_hots[i]) req->data->persistence_deleted = 1;
+        if (merged_is_hots[i]) {
+            /* shared subkey(subkey that exists both in rocksdb and redis)
+             * gets deleted, because we dont known which are shared, so
+             * we have to set whole key dirty */
+            req->data->set_dirty = 1;
+            req->data->persistence_deleted = 1;
+        }
     }
 
     RIOBatchDeinit(aux_rios);
