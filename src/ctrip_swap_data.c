@@ -116,11 +116,19 @@ int swapDataAna(swapData *d, int thd, struct keyRequest *key_request,
                 key_request->type == KEYREQUEST_TYPE_SUBKEY &&
                 key_request->b.num_subkeys > 0 &&
                 server.swap_dirty_subkeys_enabled) {
-            /* current command is HDEL/SREM */
+            /* commands with EXEC_IN_DEL flags for subkeys:
+             *  - HDEL/SREM: meta will be set dirty when swap finished and
+             *    persisted later, but subkeys in rocksdb and memory will
+             *    not diverge.
+             *  - ZADD/ZINCRBY/GEOADD...: meta will be set dirty when swap
+             *    finished, subkeys will be flag dirty when call() and then
+             *    persisted later.
+             * set meta dirty is sufficient for both kind.
+             */
             d->set_dirty_meta = 1;
         } else if ((*intention_flags & SWAP_FIN_DEL_SKIP) ||
                 (*intention_flags & SWAP_EXEC_IN_DEL)) {
-            /* rocksdb and mem differs. */
+            /* rocksdb and memory will diverge when swap finish. */
             d->set_dirty = 1;
         }
     }

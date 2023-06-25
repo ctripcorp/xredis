@@ -374,9 +374,10 @@ struct redisCommand redisCommandTable[] = {
      "write fast @set @swap_set",
      0,NULL,getKeyRequestsSrem,SWAP_IN,SWAP_IN_DEL,1,1,1,0,0,0},
 
+    /* smove cmd intention flags set by getKeyRequestSmove */
     {"smove",smoveCommand,4,
      "write fast @set @swap_set",
-     0,NULL,getKeyRequestSmove,SWAP_IN,SWAP_IN_DEL,1,2,1,0,0,0},
+     0,NULL,getKeyRequestSmove,SWAP_IN,0,1,2,1,0,0,0},
 
     {"sismember",sismemberCommand,3,
      "read-only fast @set @swap_set",
