@@ -1896,7 +1896,7 @@ struct redisServer {
 
     /* swap ratelimit */
     int swap_ratelimit_maxmemory_percentage;
-    int swap_ratelimit_pause_growth_rate;
+    int swap_ratelimit_maxmemory_pause_growth_rate;
     int swap_ratelimit_policy;
     long long stat_swap_ratelimit_client_pause_ms;
     long long stat_swap_ratelimit_client_pause_count;
@@ -1906,6 +1906,12 @@ struct redisServer {
     int swap_compaction_filter_skip_level;
 
     int swap_dirty_subkeys_enabled;
+
+    /* swap persist */
+    int swap_persist_enabled;
+    struct swapPersistCtx *swap_persist_ctx;
+    int swap_ratelimit_persist_lag;
+    int swap_ratelimit_persist_pause_growth_rate;
 };
 
 #define MAX_KEYS_BUFFER 256

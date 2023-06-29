@@ -212,6 +212,7 @@ start_server {tags {"introspection"}} {
             swap-cuckoo-filter-bit-per-key
             swap-cuckoo-filter-estimated-keys
             ctrip-monitor-port
+            swap-persist-enabled
         }
 
         if {!$::tls} {

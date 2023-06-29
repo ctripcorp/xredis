@@ -348,6 +348,7 @@ sds genSwapInfoString(sds info) {
     info = genSwapScanSessionStatString(info);
     info = genSwapUnblockInfoString(info);
     info = genSwapRateLimitInfoString(info);
+    info = genSwapPersistInfoString(info);
     return info;
 }
 

@@ -4652,8 +4652,7 @@ int RM_ModuleTypeGetDirty(RedisModuleKey *key) {
 }
 
 void RM_DbSetDirty(RedisModuleCtx *ctx, robj *keyname) {
-    robj *o = lookupKey(ctx->client->db, keyname, LOOKUP_NOTOUCH);
-    if (o) setObjectDirty(o);
+    dbSetDirty(ctx->client->db, keyname);
 }
 
 /* Replace the value assigned to a module type.

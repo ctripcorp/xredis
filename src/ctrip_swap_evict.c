@@ -28,27 +28,37 @@
 
 #include "ctrip_swap.h"
 
+
 void evictClientKeyRequestFinished(client *c, swapCtx *ctx) {
     UNUSED(ctx);
     robj *key = ctx->key_request->key;
+    int dbid = ctx->key_request->dbid;
+    uint64_t persist_version = (uint64_t)ctx->pd;
+
     if (ctx->errcode) clientSwapError(c,ctx->errcode);
     incrRefCount(key);
     c->keyrequests_count--;
     serverAssert(c->client_hold_mode == CLIENT_HOLD_MODE_EVICT);
+
+    if (persist_version != SWAP_PERSIST_VERSION_NO) {
+        swapPersistKeyRequestFinished(server.swap_persist_ctx,
+                dbid,key,persist_version);
+    }
+
     clientReleaseLocks(c,ctx);
     decrRefCount(key);
 
     server.swap_eviction_ctx->inprogress_count--;
 }
 
-int submitEvictClientRequest(client *c, robj *key) {
+int submitEvictClientRequest(client *c, robj *key, uint64_t persist_version) {
     getKeyRequestsResult result = GET_KEYREQUESTS_RESULT_INIT;
     getKeyRequestsPrepareResult(&result,1);
     incrRefCount(key);
     getKeyRequestsAppendSubkeyResult(&result,REQUEST_LEVEL_KEY,key,0,NULL,
             c->cmd->intention,c->cmd->intention_flags,c->cmd->flags,c->db->id);
     c->keyrequests_count++;
-    submitDeferredClientKeyRequests(c,&result,evictClientKeyRequestFinished,NULL);
+    submitDeferredClientKeyRequests(c,&result,evictClientKeyRequestFinished,(void*)persist_version);
     releaseKeyRequests(&result);
     getKeyRequestsFreeResult(&result);
 
@@ -73,7 +83,7 @@ int tryEvictKey(redisDb *db, robj *key, int *evict_result) {
 
     dirty = objectIsDirty(o);
     old_keyrequests_count = evict_client->keyrequests_count;
-    submitEvictClientRequest(evict_client,key);
+    submitEvictClientRequest(evict_client,key,SWAP_PERSIST_VERSION_NO);
     /* Evit request finished right away, no swap triggered. */
     if (evict_client->keyrequests_count == old_keyrequests_count) {
         if (dirty) {
@@ -359,9 +369,8 @@ end:
 }
 
 /* ----------------------------- ratelimit ------------------------------ */
-#define SWAP_RATELIMIT_PAUSE_MAX_MS 100
 
-static inline int swapRatelimitIsNeccessary(int policy, int *pms) {
+inline int swapRatelimitMaxmemoryNeeded(int policy, int *pms) {
     int pause_ms;
     static mstime_t prev_logtime;
     size_t mem_reported, mem_used, mem_ratelimit, actual_maxmemory;
@@ -378,7 +387,7 @@ static inline int swapRatelimitIsNeccessary(int policy, int *pms) {
     if (mem_used <= mem_ratelimit || mem_ratelimit == 0)  return 0;
 
     if (policy == SWAP_RATELIMIT_POLICY_PAUSE) {
-        pause_ms = (mem_used - mem_ratelimit)/server.swap_ratelimit_pause_growth_rate;
+        pause_ms = (mem_used - mem_ratelimit)/server.swap_ratelimit_maxmemory_pause_growth_rate;
         pause_ms = pause_ms < SWAP_RATELIMIT_PAUSE_MAX_MS ? pause_ms : SWAP_RATELIMIT_PAUSE_MAX_MS;
         if (pms) *pms = pause_ms;
     }
@@ -422,7 +431,7 @@ int swapRateLimitReject(client *c) {
                 is_denyoom_command) ||
         (server.swap_ratelimit_policy == SWAP_RATELIMIT_POLICY_REJECT_ALL &&
                (is_read_command || is_write_command))) {
-        if (swapRatelimitIsNeccessary(server.swap_ratelimit_policy,NULL)) {
+        if (swapRatelimitNeeded(server.swap_ratelimit_policy,NULL)) {
             rejectCommand(c, shared.oomerr);
             server.stat_swap_ratelimit_rejected_cmd_count++;
             return 1;
@@ -446,7 +455,7 @@ void swapRateLimitPause(client *c) {
 
     if (server.swap_ratelimit_policy != SWAP_RATELIMIT_POLICY_PAUSE) return;
 
-    if (swapRatelimitIsNeccessary(server.swap_ratelimit_policy,&pause_ms) &&
+    if (swapRatelimitNeeded(server.swap_ratelimit_policy,&pause_ms) &&
             pause_ms > 0) {
         protectClient(c);
         aeCreateTimeEvent(server.el,pause_ms,unprotectClientdProc,c,NULL);

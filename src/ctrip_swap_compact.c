@@ -292,6 +292,7 @@ int swapFilterTest(int argc, char **argv, int accurate) {
     robj *key1 = createStringObject("key1",4);
     robj *val1 = createStringObject("val1",4);
     initTestRedisDb();
+    setFilterState(FILTER_STATE_OPEN);
     redisDb *db = server.db;
     if (server.swap_batch_ctx == NULL)
         server.swap_batch_ctx = swapBatchCtxNew();

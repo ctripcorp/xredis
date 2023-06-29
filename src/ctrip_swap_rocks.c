@@ -98,7 +98,7 @@ int rocksInit() {
     rocksdb_readoptions_set_fill_cache(rocks->ropts, 1);
 
     rocks->wopts = rocksdb_writeoptions_create();
-    rocksdb_writeoptions_disable_WAL(rocks->wopts, 1);
+    if (!server.swap_persist_enabled) rocksdb_writeoptions_disable_WAL(rocks->wopts, 1);
 
 	if (server.rocksdb_ratelimiter_rate_per_sec > 0) {
 		rocksdb_ratelimiter_t *ratelimiter = rocksdb_ratelimiter_create(server.rocksdb_ratelimiter_rate_per_sec, 100*1000/*100ms*/, 10);
@@ -108,14 +108,16 @@ int rocksInit() {
     rocksdb_options_set_bytes_per_sync(rocks->db_opts,server.rocksdb_bytes_per_sync);
 
     struct stat statbuf;
-    if (!stat(ROCKS_DATA, &statbuf) && S_ISDIR(statbuf.st_mode)) {
-        /* "data.rocks" folder already exists, remove it on start */
+    if (!stat(ROCKS_DATA, &statbuf) && S_ISDIR(statbuf.st_mode) && !server.swap_persist_enabled) {
+        /* "data.rocks" folder already exists, remove it on start if persist not enabled. */
         rmdirRecursive(ROCKS_DATA);
     }
-    if (mkdir(ROCKS_DATA, 0755)) {
-        serverLog(LL_WARNING, "[ROCKS] mkdir %s failed: %s",
-                ROCKS_DATA, strerror(errno));
-        return -1;
+    if (stat(ROCKS_DATA, &statbuf)) {
+        if (mkdir(ROCKS_DATA, 0755)) {
+            serverLog(LL_WARNING, "[ROCKS] mkdir %s failed: %s",
+                    ROCKS_DATA, strerror(errno));
+            return -1;
+        }
     }
 
     snprintf(dir, ROCKS_DIR_MAX_LEN, "%s/%d", ROCKS_DATA, server.rocksdb_epoch);
@@ -204,7 +206,6 @@ int rocksInit() {
     rocksdb_options_set_block_based_table_factory(rocks->cf_opts[META_CF], rocks->block_opts[META_CF]);
     rocksdb_options_set_compaction_filter_factory(rocks->cf_opts[META_CF], rocks->cf_compactionfilterfatorys[META_CF]);
 
-    setFilterState(FILTER_STATE_OPEN);
     rocks->db = rocksdb_open_column_families(rocks->db_opts, dir, CF_COUNT,
             swap_cf_names, (const rocksdb_options_t *const *)rocks->cf_opts,
             rocks->cf_handles, errs);

@@ -26,6 +26,7 @@ set ::disk_tests {
     swap/integration/compact_range
     swap/integration/expire_evict
     swap/integration/swap_load
+    swap/integration/persist
     swap/ported/replication-psync
     swap/ported/replication
     swap/ported/other

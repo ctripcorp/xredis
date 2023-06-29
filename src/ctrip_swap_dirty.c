@@ -139,7 +139,7 @@ void notifyKeyspaceEventDirty(int type, char *event, robj *key, int dbid, ...) {
     va_list ap;
 
     va_start(ap, dbid);
-    while ((o = va_arg(ap, robj*))) setObjectDirty(o);
+    while ((o = va_arg(ap, robj*))) setObjectDirtyPersist(dbid,key,o);
     va_end(ap);
 
     notifyKeyspaceEvent(type,event,key,dbid);
@@ -162,9 +162,9 @@ void notifyKeyspaceEventDirtySubkeys(int type, char *event, robj *key,
             }
         }
 
-        if (!objectIsMetaDirty(o)) setObjectMetaDirty(o);
+        if (!objectIsMetaDirty(o)) setObjectMetaDirtyPersist(dbid,key,o);
     } else {
-        setObjectDirty(o);
+        setObjectDirtyPersist(dbid,key,o);
     }
 
     notifyKeyspaceEvent(type,event,key,dbid);
@@ -172,7 +172,7 @@ void notifyKeyspaceEventDirtySubkeys(int type, char *event, robj *key,
 
 void notifyKeyspaceEventDirtyMeta(int type, char *event, robj *key,
         int dbid, robj *o) {
-    setObjectMetaDirty(o);
+    setObjectMetaDirtyPersist(dbid,key,o);
     notifyKeyspaceEvent(type,event,key,dbid);
 }
 

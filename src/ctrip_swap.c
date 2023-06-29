@@ -678,6 +678,11 @@ void swapInit() {
     }
 
     server.swap_batch_ctx = swapBatchCtxNew();
+
+    if (server.swap_persist_enabled)
+        server.swap_persist_ctx = swapPersistCtxNew();
+    else
+        server.swap_persist_ctx = NULL;
 }
 
 
@@ -765,6 +770,8 @@ int swapTest(int argc, char **argv, int accurate) {
   result += swapRIOTest(argc, argv, accurate);
   result += swapBatchTest(argc, argv, accurate);
   result += cuckooFilterTest(argc, argv, accurate);
+  result += swapPersistTest(argc, argv, accurate);
+
   return result;
 }
 #endif

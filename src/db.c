@@ -199,6 +199,7 @@ void dbAdd(redisDb *db, robj *key, robj *val) {
     if (server.cluster_enabled) slotToKeyAdd(key->ptr);
     /* Newly added key are scheduled to evict asap to reduce cow. */
     if (hasActiveChildProcess()) tryEvictKeyAsapLater(db, key);
+    if (objectIsDirty(val)) schedulePersistIfNeeded(db->id,key);
 }
 
 /* This is a special version of dbAdd() that is used only when loading
