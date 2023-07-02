@@ -1144,7 +1144,7 @@ objectMeta *createListObjectMeta(uint64_t version, listMeta *list_meta) {
 #define LIST_META_ENCODED_INITAL_LEN 32
 /*  len(# of elements) | num (# of segments) | (ridx,len) ... */
 
-static sds encodeListMeta(listMeta *lm) {
+sds encodeListMeta(listMeta *lm) {
     sds result;
 
     if (lm == NULL) return NULL;
@@ -1247,12 +1247,50 @@ void listObjectMetaDup(struct objectMeta *dup_meta, struct objectMeta *object_me
     objectMetaSetPtr(dup_meta,listMetaDup(objectMetaGetPtr(object_meta)));
 }
 
+static inline long listDecodeRidx(const char *str, size_t len);
+
+int listObjectMetaRebuildFeed(struct objectMeta *rebuild_meta,
+        uint64_t version, const char *subkey, size_t sublen) {
+    long ridx;
+    listMeta *lm = objectMetaGetPtr(rebuild_meta);
+    UNUSED(version);
+    if (sublen != sizeof(ridx)) return -1;
+    ridx = listDecodeRidx(subkey,sublen);
+    return listMetaAppendSegment(lm,SEGMENT_TYPE_COLD,ridx,1);
+}
+
+int listObjectMetaEqual(struct objectMeta *oma, struct objectMeta *omb) {
+    listMeta *lma = objectMetaGetPtr(oma);
+    listMeta *lmb = objectMetaGetPtr(omb);
+    segment *sega, *segb;
+
+    listMetaDefrag(lma);
+    listMetaDefrag(lmb);
+
+    if (lma->len != lmb->len || lma->num != lmb->num)
+        return 0;
+
+    for (int idx = 0; idx < lma->num; idx++) {
+        sega = lma->segments+idx;
+        segb = lmb->segments+idx;
+        if (sega->type != segb->type ||
+                sega->index != segb->index ||
+                sega->len != segb->len) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
 objectMetaType listObjectMetaType = {
     .encodeObjectMeta = encodeListObjectMeta,
     .decodeObjectMeta = decodeListObjectMeta,
     .objectIsHot = listObjectMetaIsHot,
     .free = listObjectMetaFree,
     .duplicate = listObjectMetaDup,
+    .equal = listObjectMetaEqual,
+    .rebuildFeed = listObjectMetaRebuildFeed,
 };
 
 

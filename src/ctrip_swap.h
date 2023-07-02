@@ -430,6 +430,8 @@ typedef struct objectMetaType {
   int (*objectIsHot)(struct objectMeta *object_meta, robj *value);
   void (*free)(struct objectMeta *object_meta);
   void (*duplicate)(struct objectMeta *dup_meta, struct objectMeta *object_meta);
+  int (*equal)(struct objectMeta *oma, struct objectMeta *omb);
+  int (*rebuildFeed)(struct objectMeta *rebuild_meta, uint64_t version, const char *subkey, size_t sublen);
 } objectMetaType;
 
 typedef struct objectMeta {
@@ -454,6 +456,8 @@ sds objectMetaEncode(struct objectMeta *object_meta);
 int objectMetaDecode(struct objectMeta *object_meta, const char *extend, size_t extlen);
 int keyIsHot(objectMeta *object_meta, robj *value);
 sds dumpObjectMeta(objectMeta *object_meta);
+int objectMetaEqual(struct objectMeta *oma, struct objectMeta *omb);
+int objectMetaRebuildFeed(struct objectMeta *object_meta, uint64_t version, const char *subkey, size_t sublen);
 
 static inline void *objectMetaGetPtr(objectMeta *object_meta) {
   return (void*)(long)object_meta->ptr;
@@ -496,7 +500,6 @@ static inline int swapObjectMetaIsHot(swapObjectMeta *som) {
       return 0;
     }
 }
-
 
 /* Data */
 #define SWAP_DATA_ABSENT_SUBKEYS_INIT 4
@@ -1878,8 +1881,16 @@ typedef struct decodedData {
   sds rdbraw;
 } decodedData;
 
+typedef struct rocksIterDecodeStats {
+    long long ok;
+    long long err;
+} rocksIterDecodeStats;
+
 void decodedResultInit(decodedResult *decoded);
 void decodedResultDeinit(decodedResult *decoded);
+
+int rocksIterDecode(rocksIter *it, decodedResult *decoded, rocksIterDecodeStats *stats);
+sds rocksIterDecodeStatsDump(rocksIterDecodeStats *stats);
 
 struct rdbKeySaveData;
 typedef struct rdbKeySaveType {
@@ -1901,8 +1912,6 @@ typedef struct rdbKeySaveData {
 } rdbKeySaveData;
 
 typedef struct rdbSaveRocksStats {
-    long long iter_decode_ok;
-    long long iter_decode_err;
     long long init_save_ok;
     long long init_save_skip;
     long long init_save_err;
@@ -2001,6 +2010,32 @@ void listLoadInit(rdbKeyLoadData *load);
 
 void zsetLoadInit(rdbKeyLoadData *load);
 int rdbLoadLenVerbatim(rio *rdb, sds *verbatim, int *isencoded, unsigned long long *lenptr);
+
+/* persist load fix */
+typedef struct keyLoadFixData {
+  redisDb *db;
+  int object_type;
+  robj *key;
+  long long expire;
+  uint64_t version;
+  objectMeta *cold_meta;
+  objectMeta *rebuild_meta;
+  long long feed_err;
+  long long feed_ok;
+  sds errstr;
+} keyLoadFixData;
+
+typedef struct loadFixStats {
+  long long init_ok;
+  long long init_skip;
+  long long init_err;
+  long long fix_none;
+  long long fix_update;
+  long long fix_delete;
+  long long fix_err;
+} loadFixStats;
+
+sds loadFixStatsDump(loadFixStats *stats);
 
 /* absent cache */
 typedef struct absentKeyMapEntry {

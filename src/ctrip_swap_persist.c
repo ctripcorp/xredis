@@ -314,7 +314,7 @@ inline int swapRatelimitPersistNeeded(int policy, int *pms) {
 
     if (pms) *pms = 0;
 
-    if (server.swap_persist_enabled) return 0;
+    if (!server.swap_persist_enabled) return 0;
 
     mstime_t lag = swapPersistCtxLag(server.swap_persist_ctx) / 1000;
     if (lag <= server.swap_ratelimit_persist_lag) return 0;
@@ -354,48 +354,342 @@ sds genSwapPersistInfoString(sds info) {
     return info;
 }
 
-/* scan meta cf to rebuild cold_keys/cold_filter & fix keys */
-void loadDataFromRocksdb() {
-    struct rocks *rocks = server.rocks;
-    rocksdb_iterator_t *meta_iter = rocksdb_create_iterator_cf(
-            rocks->db, rocks->ropts,rocks->cf_handles[META_CF]);
+#define INIT_FIX_OK 0
+#define INIT_FIX_ERR -1
+#define INIT_FIX_SKIP -2
 
-    for (int i = 0; i < server.dbnum; i++) {
-        redisDb *db = server.db+i;
-        sds meta_start_key = rocksEncodeDbRangeStartKey(db->id);
-        sds meta_end_key = rocksEncodeDbRangeEndKey(db->id);
+struct listMeta *listMetaCreate();
 
-        long long start_time = ustime();
-        rocksdb_iter_seek(meta_iter,meta_start_key,sdslen(meta_start_key));
+int keyLoadFixDataInit(keyLoadFixData *fix, redisDb *db, decodedResult *dr) {
+    serverAssert(db->id == dr->dbid);
 
-        while (rocksdb_iter_valid(meta_iter)) {
-            int dbid;
-            const char *rawkey, *key;
-            size_t rklen, klen, minlen;
-            robj *keyobj = NULL;
+    if (dr->cf != META_CF) {
+        /* skip orphan (sub)data keys: note that meta key is prefix of data
+         * subkey, so rocksIter always start init with meta key, except for
+         * orphan (sub)data key. */
+        return INIT_FIX_SKIP;
+    }
 
-            rawkey = rocksdb_iter_key(meta_iter,&rklen);
+    objectMeta *cold_meta, *rebuild_meta;
+    decodedMeta *dm = (decodedMeta*)dr;
 
-            minlen = rklen < sdslen(meta_end_key) ? rklen : sdslen(meta_end_key);
-            if (memcmp(rawkey,meta_end_key,minlen) >= 0) break; /* dbid switched */
+    size_t extlen = dm->extend ? sdslen(dm->extend) : 0;
+    if (buildObjectMeta(dm->object_type,dm->version,dm->extend,
+                extlen, &cold_meta)) {
+        return INIT_FIX_ERR;
+    }
 
-            rocksDecodeMetaKey(rawkey,rklen,&dbid,&key,&klen);
 
-            keyobj = createStringObject(key,klen);
+    switch (dm->object_type) {
+    case OBJ_STRING:
+        rebuild_meta = NULL;
+        break;
+    case OBJ_HASH:
+    case OBJ_SET:
+    case OBJ_ZSET:
+        rebuild_meta = createLenObjectMeta(dm->object_type,dm->version,0);
+        break;
+    case OBJ_LIST:
+        rebuild_meta = createListObjectMeta(dm->version,listMetaCreate());
+        break;
+    default:
+        rebuild_meta = NULL;
+        break;
+    }
 
-            tryLoadKey(db,keyobj,0);
+    fix->db = db;
+    fix->object_type = dm->object_type;
+    fix->key = createStringObject(dr->key, sdslen(dr->key));
+    fix->expire = dm->expire;
+    fix->version = dm->version;
+    fix->cold_meta = cold_meta;
+    fix->rebuild_meta = rebuild_meta;
+    fix->feed_err = 0;
+    fix->feed_ok = 0;
+    fix->errstr = NULL;
 
-            db->cold_keys++;
-            coldFilterAddKey(db->cold_filter,keyobj->ptr);
+    return INIT_FIX_OK;
+}
 
-            decrRefCount(keyobj);
+void keyLoadFixDataDeinit(keyLoadFixData *fix) {
+    if (fix->key) {
+        decrRefCount(fix->key);
+        fix->key = NULL;
+    }
 
-            rocksdb_iter_next(meta_iter);
+    if (fix->cold_meta) {
+        freeObjectMeta(fix->cold_meta);
+        fix->cold_meta = NULL;
+    }
+
+    if (fix->rebuild_meta) {
+        freeObjectMeta(fix->rebuild_meta);
+        fix->rebuild_meta = NULL;
+    }
+
+    if (fix->errstr) {
+        sdsfree(fix->errstr);
+        fix->errstr = NULL;
+    }
+}
+
+static inline int keyLoadFixStart(struct keyLoadFixData *fix) {
+    UNUSED(fix);
+    return 0;
+}
+
+static inline void keyLoadFixFeed(struct keyLoadFixData *fix, decodedData *d) {
+    /* skip obselete subkeys, note that this rule also works for string,
+     * subkey version never equal string version (i.e. zero). */
+    if (fix->version != d->version) return;
+
+    if (fix->rebuild_meta &&
+            objectMetaRebuildFeed(fix->rebuild_meta,d->version,d->subkey,
+                sdslen(d->subkey))) {
+        fix->feed_err++;
+    } else {
+        fix->feed_ok++;
+    }
+}
+
+#define FIX_NONE 0
+#define FIX_UPDATE -1
+#define FIX_DELETE -2
+
+static int keyLoadFixAna(struct keyLoadFixData *fix) {
+    objectMeta *rebuild_meta = fix->rebuild_meta,
+               *cold_meta = fix->cold_meta;
+    if (fix->feed_err > 0 || fix->feed_ok <= 0)
+        return FIX_DELETE;
+
+    if (rebuild_meta == NULL && cold_meta == NULL) {
+        if (fix->feed_ok != 1)
+            return FIX_DELETE;
+        else
+            return FIX_NONE;
+    }
+
+    if (rebuild_meta == NULL || cold_meta == NULL)
+        return FIX_DELETE;
+
+    if (rebuild_meta->object_type != cold_meta->object_type ||
+            rebuild_meta->version != cold_meta->version)
+        return FIX_DELETE;
+
+    if (objectMetaEqual(rebuild_meta, cold_meta))
+        return FIX_NONE;
+    else
+        return FIX_UPDATE;
+}
+
+static inline int keyLoadFixEnd(struct keyLoadFixData *fix,
+        loadFixStats *fix_stats) {
+    sds extend = NULL;
+    int fix_result = 0;
+    RIO _rio = {0}, *rio = &_rio;
+    int *cfs;
+    sds *rawkeys, *rawvals;
+
+    fix_result = keyLoadFixAna(fix);
+
+    switch (fix_result) {
+    case FIX_NONE:
+        fix_stats->fix_none++;
+        break;
+    case FIX_UPDATE:
+        cfs = zmalloc(sizeof(int));
+        rawkeys = zmalloc(sizeof(sds)), rawvals = zmalloc(sizeof(sds));
+        cfs[0] = META_CF;
+        rawkeys[0] = rocksEncodeMetaKey(fix->db,fix->key->ptr);
+        extend = objectMetaEncode(fix->rebuild_meta);
+        rawvals[0] = rocksEncodeMetaVal(fix->object_type,fix->expire,
+                fix->version,extend);
+        RIOInitPut(rio,1,cfs,rawkeys,rawvals);
+        RIODo(rio);
+        if (!RIOGetError(rio)) {
+            fix_stats->fix_update++;
+        } else  {
+            fix_stats->fix_err++;
+            if (rio->err) fix->errstr = sdsdup(rio->err);
+        }
+        RIODeinit(rio);
+        sdsfree(extend);
+        break;
+    case FIX_DELETE:
+        cfs = zmalloc(sizeof(int));
+        rawkeys = zmalloc(sizeof(sds));
+        cfs[0] = META_CF;
+        rawkeys[0] = rocksEncodeMetaKey(fix->db,fix->key->ptr);
+        RIOInitDel(rio,1,cfs,rawkeys);
+        RIODo(rio);
+        if (!RIOGetError(rio)) {
+            fix_stats->fix_delete++;
+        } else {
+            fix_stats->fix_err++;
+            if (rio->err) fix->errstr = sdsdup(rio->err);
+        }
+        RIODeinit(rio);
+        break;
+    default:
+        serverPanic("unpexected fix result");
+        break;
+    }
+
+    return C_OK;
+}
+
+sds loadFixStatsDump(loadFixStats *stats) {
+    return sdscatprintf(sdsempty(),
+            "fix.init.ok=%lld,"
+            "fix.init.skip=%lld,"
+            "fix.init.err=%lld,"
+            "fix.do.none=%lld,"
+            "fix.do.update=%lld,"
+            "fix.do.delete=%lld,"
+            "fix.do.err=%lld",
+            stats->init_ok,
+            stats->init_skip,
+            stats->init_err,
+            stats->fix_none,
+            stats->fix_update,
+            stats->fix_delete,
+            stats->fix_err);
+}
+
+/* scan and fix whole persisted data. */
+int persistLoadFixDb(redisDb *db) {
+    rocksIter *it = NULL;
+    sds errstr = NULL;
+    rocksIterDecodeStats _iter_stats = {0}, *iter_stats = &_iter_stats;
+    loadFixStats _fix_stats = {0}, *fix_stats = &_fix_stats;
+    decodedResult  _cur, *cur = &_cur, _next, *next = &_next;
+    decodedResultInit(cur);
+    decodedResultInit(next);
+    int iter_valid; /* true if current iter value is valid. */
+
+    if (!(it = rocksCreateIter(server.rocks,db))) {
+        serverLog(LL_WARNING, "Create rocks iterator failed.");
+        return C_ERR;
+    }
+
+    iter_valid = rocksIterSeekToFirst(it);
+
+    while (1) {
+        int init_result, decode_result;
+        keyLoadFixData _fix, *fix = &_fix;
+        serverAssert(next->key == NULL);
+
+        if (cur->key == NULL) {
+            if (!iter_valid) break;
+
+            decode_result = rocksIterDecode(it,cur,iter_stats);
+            iter_valid = rocksIterNext(it);
+
+            if (decode_result) continue;
+
+            serverAssert(cur->key != NULL);
         }
 
-        sdsfree(meta_start_key);
-        sdsfree(meta_end_key);
+        init_result = keyLoadFixDataInit(fix,db,cur);
+        if (init_result == INIT_FIX_SKIP) {
+            fix_stats->init_skip++;
+            decodedResultDeinit(cur);
+            continue;
+        } else if (init_result == INIT_FIX_ERR) {
+            if (fix_stats->init_err++ < 10) {
+                sds repr = sdscatrepr(sdsempty(),cur->key,sdslen(cur->key));
+                serverLog(LL_WARNING, "Init fix key failed: %s", repr);
+                sdsfree(repr);
+            }
+            decodedResultDeinit(cur);
+            continue;
+        } else {
+            fix_stats->init_ok++;
+        }
 
+        if (keyLoadFixStart(fix) == -1) {
+            errstr = sdscatfmt(sdsempty(),"Fix key(%S) start failed: %s",
+                    cur->key, strerror(errno));
+            keyLoadFixDataDeinit(fix);
+            decodedResultDeinit(cur);
+            goto err; /* IO error, can't recover. */
+        }
+
+        while (1) {
+            int key_switch;
+
+            /* Iterate untill next valid rawkey found or eof. */
+            while (1) {
+                if (!iter_valid) break; /* eof */
+
+                decode_result = rocksIterDecode(it,next,iter_stats);
+                iter_valid = rocksIterNext(it);
+
+                if (decode_result) {
+                    continue;
+                } else { /* next found */
+                    serverAssert(next->key != NULL);
+                    break;
+                }
+            }
+
+            /* Can't find next valid rawkey, break to finish saving cur key.*/
+            if (next->key == NULL) {
+                decodedResultDeinit(cur);
+                break;
+            }
+
+            serverAssert(cur->key && next->key);
+            key_switch = sdslen(cur->key) != sdslen(next->key) ||
+                    sdscmp(cur->key,next->key);
+
+            decodedResultDeinit(cur);
+            _cur = _next;
+            decodedResultInit(next);
+
+            /* key switched, finish current & start another. */
+            if (key_switch) break;
+
+            /* key not switched, continue scan current key. */
+            keyLoadFixFeed(fix,(decodedData*)cur);
+        }
+
+        /* call save_end if save_start called, no matter error or not. */
+        if (keyLoadFixEnd(fix, fix_stats) != C_OK) {
+            errstr = sdsdup(fix->errstr);
+            keyLoadFixDataDeinit(fix);
+            goto err;
+        }
+
+        keyLoadFixDataDeinit(fix);
+    }
+
+    sds iter_stats_dump = rocksIterDecodeStatsDump(iter_stats);
+    sds fix_stats_dump = loadFixStatsDump(fix_stats);
+    serverLog(LL_NOTICE,
+            "Fix persist keys finished: db=(%d), iter=(%s), fix=(%s)",
+            db->id,iter_stats_dump,fix_stats_dump);
+    sdsfree(iter_stats_dump);
+    sdsfree(fix_stats_dump);
+
+    if (it) rocksReleaseIter(it);
+
+    return C_OK;
+
+err:
+    serverLog(LL_WARNING, "Fix persist data rdb failed: %s", errstr);
+    if (it) rocksReleaseIter(it);
+    if (errstr) sdsfree(errstr);
+    return C_ERR;
+}
+
+
+/* scan meta cf to rebuild cold_keys/cold_filter & fix keys */
+void loadDataFromRocksdb() {
+    for (int i = 0; i < server.dbnum; i++) {
+        redisDb *db = server.db+i;
+        long long start_time = ustime();
+        persistLoadFixDb(db);
         if (db->cold_keys) {
             double elapsed = (double)(ustime() - start_time)/1000000;
             serverLog(LL_NOTICE,
@@ -403,8 +697,6 @@ void loadDataFromRocksdb() {
                     i,db->cold_keys,elapsed);
         }
     }
-
-    rocksdb_iter_destroy(meta_iter);
 }
 
 static int keyspaceIsEmpty() {
@@ -420,15 +712,111 @@ void ctripLoadDataFromDisk(void) {
             server.swap_persist_enabled) {
         loadDataFromRocksdb();
     }
-
     setFilterState(FILTER_STATE_OPEN);
-
     if (keyspaceIsEmpty()) loadDataFromDisk();
 }
 
 
 #ifdef REDIS_TEST
 
+#define PUT_META(redisdb,object_type,key_,version,expire,extend) do {\
+    char *err = NULL;                                       \
+    sds keysds = rocksEncodeMetaKey(redisdb, key_);         \
+    sds valsds = rocksEncodeMetaVal(object_type,expire,version,extend);\
+    rocksdb_put_cf(server.rocks->db,server.rocks->wopts,    \
+            server.rocks->cf_handles[META_CF],              \
+            keysds,sdslen(keysds),valsds,sdslen(valsds),&err);\
+    serverAssert(err == NULL);                              \
+    sdsfree(keysds), sdsfree(valsds);                       \
+} while (0)
+
+#define PUT_DATA(redisdb,key_,version,subkey_,val_) do {    \
+    char *err = NULL;                                       \
+    sds keysds = rocksEncodeDataKey(redisdb,key_,version,subkey_);\
+    sds valsds = rocksEncodeValRdb(val_);                   \
+    rocksdb_put_cf(server.rocks->db,server.rocks->wopts,    \
+            server.rocks->cf_handles[DATA_CF],              \
+            keysds,sdslen(keysds),valsds,sdslen(valsds),&err);\
+    serverAssert(err == NULL);                              \
+    sdsfree(keysds), sdsfree(valsds);                       \
+} while (0)
+
+#define CHECK_NO_META(redisdb,key) do {                     \
+    char *err = NULL;                                       \
+    size_t meta_rvlen;                                      \
+    sds keysds = rocksEncodeMetaKey(redisdb, key);          \
+    char *meta_rawval =                                     \
+    rocksdb_get_cf(server.rocks->db,server.rocks->ropts,    \
+            server.rocks->cf_handles[META_CF],              \
+            keysds,sdslen(keysds),&meta_rvlen,&err);        \
+    test_assert(meta_rawval == NULL);                       \
+    test_assert(err == NULL);                               \
+    sdsfree(keysds);                                        \
+} while (0)
+
+#define CHECK_META(redisdb,key,   object_type,version,expire,extend) do { \
+    char *err = NULL;                                       \
+    size_t meta_rvlen;                                      \
+    sds keysds = rocksEncodeMetaKey(redisdb, key);          \
+    char *meta_rawval =                                     \
+    rocksdb_get_cf(server.rocks->db,server.rocks->ropts,    \
+            server.rocks->cf_handles[META_CF],              \
+            keysds,sdslen(keysds),&meta_rvlen,&err);        \
+    test_assert(err == NULL);                               \
+    test_assert(meta_rawval != NULL);                       \
+    int _obj_type;                                          \
+    long long _expire;                                      \
+    uint64_t _version;                                      \
+    const char *_extend;                                    \
+    size_t _extlen;                                         \
+    rocksDecodeMetaVal(meta_rawval,meta_rvlen,&_obj_type,   \
+            &_expire,&_version,&_extend,&_extlen);          \
+    test_assert(object_type == _obj_type);                  \
+    test_assert(version == _version);                       \
+    if (extend != NULL) {                                   \
+        test_assert(sdslen(extend) == _extlen);             \
+        test_assert(!memcmp(extend,_extend,_extlen));       \
+    } else {                                                \
+        test_assert(_extend == NULL);                       \
+    }                                                       \
+    sdsfree(keysds);                                        \
+    zlibc_free(meta_rawval);                                \
+} while (0)
+
+int ROCKS_FLUSHDB(int dbid) {
+    int retval = 0, i;
+    sds startkey = NULL, endkey = NULL;
+    char *err = NULL;
+
+    startkey = rocksEncodeDbRangeStartKey(dbid);
+    endkey = rocksEncodeDbRangeEndKey(dbid);
+
+    for (i = 0; i < CF_COUNT; i++) {
+        rocksdb_delete_range_cf(server.rocks->db,server.rocks->wopts,
+                server.rocks->cf_handles[i],startkey,sdslen(startkey),
+                endkey,sdslen(endkey), &err);
+        if (err != NULL) {
+            retval = -1;
+            serverLog(LL_WARNING,
+                    "[ROCKS] flush db(%d) by delete_range fail:%s",dbid,err);
+        }
+    }
+    if (startkey) sdsfree(startkey);
+    if (endkey) sdsfree(endkey);
+
+    return retval;
+}
+
+static inline sds listEncodeRidx(long ridx) {
+    ridx = htonu64(ridx);
+    return sdsnewlen(&ridx,sizeof(ridx));
+}
+
+sds encodeListMeta(struct listMeta *lm);
+int listMetaAppendSegment(struct listMeta *list_meta, int type, long index, long len);
+void listMetaFree(struct listMeta *list_meta);
+
+void initServerConfig(void);
 int swapPersistTest(int argc, char *argv[], int accurate) {
     UNUSED(argc);
     UNUSED(argv);
@@ -440,6 +828,9 @@ int swapPersistTest(int argc, char *argv[], int accurate) {
     TEST("persist: init") {
         server.hz = 10;
         initTestRedisDb();
+        monotonicInit();
+        initServerConfig();
+        if (!server.rocks) rocksInit();
         db = server.db;
 	}
 
@@ -528,6 +919,149 @@ int swapPersistTest(int argc, char *argv[], int accurate) {
 
         decrRefCount(key1), decrRefCount(key2);
         swapPersistCtxFree(ctx);
+    }
+
+    TEST("persist: load fix (string)") {
+        sds k1 = sdsnew("k1"), k2 = sdsnew("k2"), k3 = sdsnew("k3"), k4 = sdsnew("k4");
+        robj *v1 = createStringObject("v1",2), *v2 = createStringObject("v2",2),
+             *v3 = createStringObject("v3",2), *v4 = createStringObject("v4",2);
+        sds s3 = sdsnew("s3"), s4 = sdsnew("s4");
+        uint64_t version = 2;
+
+        /* meta => deleted */
+        PUT_META(db,OBJ_STRING,k1,0,0,NULL);
+        /* meta + data => none */
+        PUT_META(db,OBJ_STRING,k2,0,0,NULL);
+        PUT_DATA(db,k2,0,NULL,v2);
+        PUT_DATA(db,k2,0,NULL,v1);
+        /* meta + subkey => deleted */
+        PUT_META(db,OBJ_STRING,k3,0,0,NULL);
+        PUT_DATA(db,k3,version,s3,v3);
+        /* meta + data + subkey => none */
+        PUT_META(db,OBJ_STRING,k4,0,0,NULL);
+        PUT_DATA(db,k4,0,NULL,v4);
+        PUT_DATA(db,k4,version,s4,v4);
+        PUT_DATA(db,k4,version,s3,v3);
+
+        persistLoadFixDb(db);
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnonnull"
+        CHECK_NO_META(db,k1);
+        CHECK_META(db,k2, OBJ_STRING,0,0,NULL);
+        CHECK_NO_META(db,k3);
+        CHECK_META(db,k4, OBJ_STRING,0,0,NULL);
+#pragma GCC diagnostic pop
+
+        sdsfree(k1), sdsfree(k2), sdsfree(k3), sdsfree(k4);
+        decrRefCount(v1), decrRefCount(v2), decrRefCount(v3), decrRefCount(v4);
+        sdsfree(s3), sdsfree(s4);
+
+        ROCKS_FLUSHDB(db->id);
+    }
+
+    TEST("persist: load fix (hash/set/zset)") {
+        sds k1 = sdsnew("k1"), k2 = sdsnew("k2"), k3 = sdsnew("k3"), k4 = sdsnew("k4");
+        robj *v1 = createStringObject("v1",2), *v2 = createStringObject("v2",2),
+             *v3 = createStringObject("v3",2), *v4 = createStringObject("v4",2);
+        sds s1 = sdsnew("s1"), s2 = sdsnew("s2"), s3 = sdsnew("s3"), s4 = sdsnew("s4");
+        sds ext_one = rocksEncodeObjectMetaLen(1), ext_two = rocksEncodeObjectMetaLen(2),
+            ext_three = rocksEncodeObjectMetaLen(3);
+        uint64_t version = 2, oversion = 1;
+
+        /* meta => deleted */
+        PUT_META(db,OBJ_HASH,k1,version,0,ext_one);
+        /* meta + strig + subkey... => none */
+        PUT_META(db,OBJ_HASH,k2,version,0,ext_two);
+        PUT_DATA(db,k2,version,s1,v1);
+        PUT_DATA(db,k2,version,s2,v2);
+        PUT_DATA(db,k2,oversion,s1,v1);
+        PUT_DATA(db,k2,oversion,s2,v2);
+        PUT_DATA(db,k2,0,NULL,v2);
+        /* meta + string + obselete => deleted */
+        PUT_META(db,OBJ_HASH,k3,version,0,ext_one);
+        PUT_DATA(db,k3,0,NULL,v3);
+        PUT_DATA(db,k3,oversion,s1,v1);
+        /* meta + subkey(len not match) => update */
+        PUT_META(db,OBJ_HASH,k4,version,0,ext_two);
+        PUT_DATA(db,k4,0,NULL,v1);
+        PUT_DATA(db,k4,version,s1,v1);
+        PUT_DATA(db,k4,version,s2,v2);
+        PUT_DATA(db,k4,version,s3,v3);
+        PUT_DATA(db,k4,oversion,s1,v1);
+
+        persistLoadFixDb(db);
+
+        CHECK_NO_META(db,k1);
+        CHECK_META(db,k2, OBJ_HASH,version,0,ext_two);
+        CHECK_NO_META(db,k3);
+        CHECK_META(db,k4, OBJ_HASH,version,0,ext_three);
+
+        sdsfree(k1), sdsfree(k2), sdsfree(k3), sdsfree(k4);
+        decrRefCount(v1), decrRefCount(v2), decrRefCount(v3), decrRefCount(v4);
+        sdsfree(s1), sdsfree(s2), sdsfree(s3), sdsfree(s4);
+        sdsfree(ext_one), sdsfree(ext_two), sdsfree(ext_three);
+
+        ROCKS_FLUSHDB(db->id);
+    }
+
+    TEST("persist: load fix (list)") {
+        sds k1 = sdsnew("k1"), k2 = sdsnew("k2"), k3 = sdsnew("k3"), k4 = sdsnew("k4"), k5 = sdsnew("k5");
+        robj *v1 = createStringObject("v1",2), *v2 = createStringObject("v2",2),
+             *v3 = createStringObject("v3",2), *v4 = createStringObject("v4",2);
+        sds s1 = listEncodeRidx(1), s2 = listEncodeRidx(2), s3 = listEncodeRidx(3), s4 = listEncodeRidx(4);
+        sds f1 = sdsnew("f1"), f2 = sdsnew("f2");
+        struct listMeta *lm = listMetaCreate();
+        listMetaAppendSegment(lm,SEGMENT_TYPE_COLD,1,2);
+        sds ext2 = encodeListMeta(lm);
+        listMetaAppendSegment(lm,SEGMENT_TYPE_COLD,3,1);
+        sds ext3 = encodeListMeta(lm);
+
+        uint64_t version = 2, oversion = 1;
+
+        /* meta => deleted */
+        PUT_META(db,OBJ_LIST,k1,version,0,ext3);
+        /* meta + strig + subkey... => none */
+        PUT_META(db,OBJ_LIST,k2,version,0,ext3);
+        PUT_DATA(db,k2,version,s1,v1);
+        PUT_DATA(db,k2,version,s2,v2);
+        PUT_DATA(db,k2,version,s3,v3);
+        PUT_DATA(db,k2,oversion,f1,v1);
+        PUT_DATA(db,k2,oversion,f2,v2);
+        PUT_DATA(db,k2,0,NULL,v2);
+        /* meta + string + obselete => deleted */
+        PUT_META(db,OBJ_LIST,k3,version,0,ext3);
+        PUT_DATA(db,k3,0,NULL,v3);
+        PUT_DATA(db,k3,oversion,s1,v1);
+        /* meta + subkey(len not match) => update */
+        PUT_META(db,OBJ_LIST,k4,version,0,ext3);
+        PUT_DATA(db,k4,0,NULL,v1);
+        PUT_DATA(db,k4,oversion,s1,v1);
+        PUT_DATA(db,k4,version,s1,v1);
+        PUT_DATA(db,k4,version,s2,v2);
+        PUT_DATA(db,k4,oversion,f2,v2);
+        /* meta + subkey(invalid) => deleted */
+        PUT_META(db,OBJ_LIST,k5,version,0,ext2);
+        PUT_DATA(db,k5,version,s1,v2);
+        PUT_DATA(db,k5,version,s2,v2);
+        PUT_DATA(db,k5,version,f1,v1);
+
+        persistLoadFixDb(db);
+
+        CHECK_NO_META(db,k1);
+        CHECK_META(db,k2, OBJ_LIST,version,0,ext3);
+        CHECK_NO_META(db,k3);
+        CHECK_META(db,k4, OBJ_LIST,version,0,ext2);
+        CHECK_NO_META(db,k5);
+
+        sdsfree(k1), sdsfree(k2), sdsfree(k3), sdsfree(k4), sdsfree(k5);
+        decrRefCount(v1), decrRefCount(v2), decrRefCount(v3), decrRefCount(v4);
+        sdsfree(s1), sdsfree(s2), sdsfree(s3), sdsfree(s4);
+        sdsfree(f1), sdsfree(f2);
+        listMetaFree(lm);
+        sdsfree(ext2), sdsfree(ext3);
+
+        ROCKS_FLUSHDB(db->id);
     }
 
     return error;

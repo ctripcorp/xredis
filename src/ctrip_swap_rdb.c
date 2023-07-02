@@ -160,14 +160,10 @@ void rdbKeySaveDataDeinit(rdbKeySaveData *save) {
 
 sds rdbSaveRocksStatsDump(rdbSaveRocksStats *stats) {
     return sdscatprintf(sdsempty(),
-            "decoded.ok=%lld,"
-            "decoded.err=%lld,"
             "init.ok=%lld,"
             "init.skip=%lld,"
             "init.err=%lld,"
             "save.ok=%lld,",
-            stats->iter_decode_ok,
-            stats->iter_decode_err,
             stats->init_save_ok,
             stats->init_save_skip,
             stats->init_save_err,
@@ -291,116 +287,6 @@ int rdbKeySaveDataInit(rdbKeySaveData *save, redisDb *db, decodedResult *dr) {
     }
 }
 
-int rocksDecodeDataCF(sds rawkey, unsigned char rdbtype, sds rdbraw,
-        decodedData *decoded) {
-    int dbid, retval;
-    const char *key, *subkey;
-    size_t keylen, subkeylen;
-    uint64_t version;
-
-    retval = rocksDecodeDataKey(rawkey,sdslen(rawkey),&dbid,&key,&keylen,
-            &version,&subkey,&subkeylen);
-    if (retval) return retval;
-
-    decoded->cf = DATA_CF;
-    decoded->dbid = dbid;
-    decoded->key = sdsnewlen(key,keylen);
-    decoded->version = version;
-    decoded->subkey = NULL == subkey ? NULL : sdsnewlen(subkey,subkeylen);
-    decoded->rdbtype = rdbtype;
-    decoded->rdbraw = rdbraw;
-
-    sdsfree(rawkey);
-    return 0;
-}
-
-int rocksDecodeMetaCF(sds rawkey, sds rawval, decodedMeta *decoded) {
-    int dbid, retval, object_type;
-    const char *key, *extend;
-    size_t keylen, extlen;
-    long long expire;
-    uint64_t version;
-
-    retval = rocksDecodeMetaKey(rawkey,sdslen(rawkey),&dbid,&key,&keylen);
-    if (retval) return retval;
-
-    retval = rocksDecodeMetaVal(rawval,sdslen(rawval),&object_type,&expire,
-            &version,&extend,&extlen);
-    if (retval) return retval;
-
-    decoded->cf = META_CF;
-    decoded->dbid = dbid;
-    decoded->key = sdsnewlen(key,keylen);
-    decoded->version = version;
-    decoded->object_type = object_type;
-    decoded->expire = expire;
-    decoded->extend = extlen > 0 ? sdsnewlen(extend,extlen) : NULL;
-
-    sdsfree(rawkey);
-    sdsfree(rawval);
-    return 0;
-}
-
-int rdbSaveRocksIterDecode(rocksIter *it, decodedResult *decoded,
-        rdbSaveRocksStats *stats) {
-    sds rawkey, rawval;
-    int cf, retval;
-    unsigned char rdbtype;
-
-    rocksIterCfKeyTypeValue(it,&cf,&rawkey,&rdbtype,&rawval);
-
-#ifdef ROCKS_DEBUG
-    sds repr = sdsnew("rdbSaveRocksIter: ");
-    repr = sdscatprintf(repr,"[%s] (",swapGetCFName(cf));
-    repr = sdscatrepr(repr,rawkey,sdslen(rawkey));
-    repr = sdscatprintf(repr, ") => (%d) (",rdbtype);
-    repr = sdscatrepr(repr,rawval,sdslen(rawval));
-    repr = sdscat(repr, ")");
-    serverLog(LL_NOTICE, "%s", repr);
-#endif
-
-    /* rawkey,rawval moved from rocksIter to decoded if decode ok. */
-    switch (cf) {
-    case META_CF:
-        retval = rocksDecodeMetaCF(rawkey,rawval,(decodedMeta*)decoded);
-        break;
-    case DATA_CF:
-        retval = rocksDecodeDataCF(rawkey,rdbtype,rawval,(decodedData*)decoded);
-        break;
-    default:
-        retval = C_ERR;
-        break;
-    }
-
-    if (retval) {
-        if (stats->iter_decode_err++ < 10) {
-            sds repr = sdscatrepr(sdsempty(),rawkey,sdslen(rawkey));
-            serverLog(LL_WARNING, "Decode rocks raw failed: %s", repr);
-            sdsfree(repr);
-        }
-        sdsfree(rawkey);
-        sdsfree(rawval);
-    } else {
-#ifdef SWAP_DEBUG
-        if (decoded->cf == META_CF) {
-            decodedMeta *meta = (decodedMeta*)decoded;
-            serverLog(LL_NOTICE,
-                    "[rdb] decoded meta: key=%s, type=%d, expire=%lld, extend=%s",
-                    meta->key, meta->object_type, meta->expire, meta->extend);
-        } else {
-            decodedData *data = (decodedData*)decoded;
-            sds repr = sdscatrepr(sdsempty(),data->rdbraw,sdslen(data->rdbraw));
-            serverLog(LL_NOTICE,
-                    "[rdb] decoded data: key=%s, subkey=%s, rdbtype=%d, rdbraw==%s",
-                    data->key, data->subkey, data->rdbtype, repr);
-            sdsfree(repr);
-        }
-#endif
-        stats->iter_decode_ok++;
-    }
-    return retval;
-}
-
 /* Bighash/set/zset... fields are located adjacent, and will be iterated
  * next to each.
  * Note that only IO error aborts rdbSaveRocks, keys with decode/init_save
@@ -409,6 +295,7 @@ int rdbSaveRocks(rio *rdb, int *error, redisDb *db, int rdbflags) {
     rocksIter *it = NULL;
     sds errstr = NULL;
     int recoverable_err = 0;
+    rocksIterDecodeStats _iter_stats = {0}, *iter_stats = &_iter_stats;
     rdbSaveRocksStats _stats = {0}, *stats = &_stats;
     decodedResult  _cur, *cur = &_cur, _next, *next = &_next;
     decodedResultInit(cur);
@@ -430,7 +317,7 @@ int rdbSaveRocks(rio *rdb, int *error, redisDb *db, int rdbflags) {
         if (cur->key == NULL) {
             if (!iter_valid) break;
 
-            decode_result = rdbSaveRocksIterDecode(it,cur,stats);
+            decode_result = rocksIterDecode(it,cur,iter_stats);
             iter_valid = rocksIterNext(it);
 
             if (decode_result) continue;
@@ -442,7 +329,6 @@ int rdbSaveRocks(rio *rdb, int *error, redisDb *db, int rdbflags) {
         if (init_result == INIT_SAVE_SKIP) {
             stats->init_save_skip++;
             decodedResultDeinit(cur);
-            // rdbKeySaveDataDeinit(save);
             continue;
         } else if (init_result == INIT_SAVE_ERR) {
             if (stats->init_save_err++ < 10) {
@@ -451,7 +337,6 @@ int rdbSaveRocks(rio *rdb, int *error, redisDb *db, int rdbflags) {
                 sdsfree(repr);
             }
             decodedResultDeinit(cur);
-            // rdbKeySaveDataDeinit(save);
             continue;
         } else {
             stats->init_save_ok++;
@@ -486,7 +371,7 @@ int rdbSaveRocks(rio *rdb, int *error, redisDb *db, int rdbflags) {
             while (1) {
                 if (!iter_valid) break; /* eof */
 
-                decode_result = rdbSaveRocksIterDecode(it,next,stats);
+                decode_result = rocksIterDecode(it,next,iter_stats);
                 iter_valid = rocksIterNext(it);
 
                 if (decode_result) {
@@ -554,8 +439,12 @@ saveend:
         goto err;
     }
 
+    sds iter_stats_dump = rocksIterDecodeStatsDump(iter_stats);
     sds stats_dump = rdbSaveRocksStatsDump(stats);
-    serverLog(LL_NOTICE,"Rdb save keys from rocksdb finished: %s",stats_dump);
+    serverLog(LL_NOTICE,
+            "Rdb save keys from rocksdb finished: iter=(%s), save=(%s)",
+            iter_stats_dump,stats_dump);
+    sdsfree(iter_stats_dump);
     sdsfree(stats_dump);
 
     if (it) rocksReleaseIter(it);

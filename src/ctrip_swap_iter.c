@@ -461,21 +461,125 @@ void rocksIterGetError(rocksIter *it, char **perror) {
     if (perror) *perror = error;
 }
 
-#ifdef REDIS_TEST
+int rocksDecodeDataCF(sds rawkey, unsigned char rdbtype, sds rdbraw,
+        decodedData *decoded) {
+    int dbid, retval;
+    const char *key, *subkey;
+    size_t keylen, subkeylen;
+    uint64_t version;
 
-void dbg_rocksdb_put_cf(
-    rocksdb_t* db, const rocksdb_writeoptions_t* options,
-    rocksdb_column_family_handle_t* column_family, const char* key,
-    size_t keylen, const char* val, size_t vallen, char** errptr) {
+    retval = rocksDecodeDataKey(rawkey,sdslen(rawkey),&dbid,&key,&keylen,
+            &version,&subkey,&subkeylen);
+    if (retval) return retval;
 
-    sds rawkeyrepr = sdscatrepr(sdsempty(),key,keylen);
-    sds rawvalrepr = sdscatrepr(sdsempty(),val,vallen);
-    serverLog(LL_WARNING, "save: rawkey=%s, rawva=%s", rawkeyrepr, rawvalrepr);
-    sdsfree(rawkeyrepr);
-    sdsfree(rawvalrepr);
+    decoded->cf = DATA_CF;
+    decoded->dbid = dbid;
+    decoded->key = sdsnewlen(key,keylen);
+    decoded->version = version;
+    decoded->subkey = NULL == subkey ? NULL : sdsnewlen(subkey,subkeylen);
+    decoded->rdbtype = rdbtype;
+    decoded->rdbraw = rdbraw;
 
-    rocksdb_put_cf(db,options,column_family,key,keylen,val,vallen,errptr);
+    sdsfree(rawkey);
+    return 0;
 }
+
+int rocksDecodeMetaCF(sds rawkey, sds rawval, decodedMeta *decoded) {
+    int dbid, retval, object_type;
+    const char *key, *extend;
+    size_t keylen, extlen;
+    long long expire;
+    uint64_t version;
+
+    retval = rocksDecodeMetaKey(rawkey,sdslen(rawkey),&dbid,&key,&keylen);
+    if (retval) return retval;
+
+    retval = rocksDecodeMetaVal(rawval,sdslen(rawval),&object_type,&expire,
+            &version,&extend,&extlen);
+    if (retval) return retval;
+
+    decoded->cf = META_CF;
+    decoded->dbid = dbid;
+    decoded->key = sdsnewlen(key,keylen);
+    decoded->version = version;
+    decoded->object_type = object_type;
+    decoded->expire = expire;
+    decoded->extend = extlen > 0 ? sdsnewlen(extend,extlen) : NULL;
+
+    sdsfree(rawkey);
+    sdsfree(rawval);
+    return 0;
+}
+
+int rocksIterDecode(rocksIter *it, decodedResult *decoded,
+        rocksIterDecodeStats *stats) {
+    sds rawkey, rawval;
+    int cf, retval;
+    unsigned char rdbtype;
+
+    rocksIterCfKeyTypeValue(it,&cf,&rawkey,&rdbtype,&rawval);
+
+#ifdef ROCKS_DEBUG
+    sds repr = sdsnew("rocksIterDecode: ");
+    repr = sdscatprintf(repr,"[%s] (",swapGetCFName(cf));
+    repr = sdscatrepr(repr,rawkey,sdslen(rawkey));
+    repr = sdscatprintf(repr, ") => (%d) (",rdbtype);
+    repr = sdscatrepr(repr,rawval,sdslen(rawval));
+    repr = sdscat(repr, ")");
+    serverLog(LL_NOTICE, "%s", repr);
+#endif
+
+    /* rawkey,rawval moved from rocksIter to decoded if decode ok. */
+    switch (cf) {
+    case META_CF:
+        retval = rocksDecodeMetaCF(rawkey,rawval,(decodedMeta*)decoded);
+        break;
+    case DATA_CF:
+        retval = rocksDecodeDataCF(rawkey,rdbtype,rawval,(decodedData*)decoded);
+        break;
+    default:
+        retval = C_ERR;
+        break;
+    }
+
+    if (retval) {
+        if (stats->err++ < 10) {
+            sds repr = sdscatrepr(sdsempty(),rawkey,sdslen(rawkey));
+            serverLog(LL_WARNING, "Decode rocks raw failed: %s", repr);
+            sdsfree(repr);
+        }
+        sdsfree(rawkey);
+        sdsfree(rawval);
+    } else {
+#ifdef SWAP_DEBUG
+        if (decoded->cf == META_CF) {
+            decodedMeta *meta = (decodedMeta*)decoded;
+            serverLog(LL_NOTICE,
+                    "[rdb] decoded meta: key=%s, type=%d, expire=%lld, extend=%s",
+                    meta->key, meta->object_type, meta->expire, meta->extend);
+        } else {
+            decodedData *data = (decodedData*)decoded;
+            sds repr = sdscatrepr(sdsempty(),data->rdbraw,sdslen(data->rdbraw));
+            serverLog(LL_NOTICE,
+                    "[rdb] decoded data: key=%s, subkey=%s, rdbtype=%d, rdbraw==%s",
+                    data->key, data->subkey, data->rdbtype, repr);
+            sdsfree(repr);
+        }
+#endif
+        stats->ok++;
+    }
+    return retval;
+}
+
+sds rocksIterDecodeStatsDump(rocksIterDecodeStats *stats) {
+    return sdscatprintf(sdsempty(),
+            "decoded.ok=%lld,"
+            "decoded.err=%lld",
+            stats->ok,
+            stats->err);
+}
+
+#ifdef REDIS_TEST
 
 #define PUT_META(redisdb,object_type,key_,expire) do {      \
     char *err = NULL;                                       \
@@ -501,7 +605,6 @@ void dbg_rocksdb_put_cf(
 
 int doRocksdbFlush();
 void initServerConfig(void);
-int rdbSaveRocksIterDecode(rocksIter *it, decodedResult *decoded, rdbSaveRocksStats *stats);
 
 void prepareDataForDb(redisDb *db) {
     sds ha = sdsnew("ha"), h = sdsnew("h"), field_a = sdsnew("a");
@@ -519,29 +622,29 @@ void prepareDataForDb(redisDb *db) {
 void validateRocksIterForDb(redisDb *db) {
     decodedResult decoded_ = {0}, *decoded = &decoded_;
     rocksIter *it = rocksCreateIter(server.rocks,db);
-    rdbSaveRocksStats stats_ = {0}, *stats = &stats_;
+    rocksIterDecodeStats stats_ = {0}, *stats = &stats_;
     sds ha = sdsnew("ha"), h = sdsnew("h"), field_a = sdsnew("a");
 
     serverAssert(rocksIterSeekToFirst(it));
-    rdbSaveRocksIterDecode(it,decoded,stats);
+    rocksIterDecode(it,decoded,stats);
     serverAssert(decoded->cf == META_CF);
     serverAssert(!sdscmp(decoded->key,h));
     decodedResultDeinit(decoded);
 
     serverAssert(rocksIterNext(it));
-    rdbSaveRocksIterDecode(it,decoded,stats);
+    rocksIterDecode(it,decoded,stats);
     serverAssert(decoded->cf == DATA_CF);
     serverAssert(!sdscmp(decoded->key, h));
     decodedResultDeinit(decoded);
 
     serverAssert(rocksIterNext(it));
-    rdbSaveRocksIterDecode(it,decoded,stats);
+    rocksIterDecode(it,decoded,stats);
     serverAssert(decoded->cf == META_CF);
     serverAssert(!sdscmp(decoded->key, ha));
     decodedResultDeinit(decoded);
 
     serverAssert(rocksIterNext(it));
-    rdbSaveRocksIterDecode(it,decoded,stats);
+    rocksIterDecode(it,decoded,stats);
     serverAssert(decoded->cf == DATA_CF);
     serverAssert(!sdscmp(decoded->key, ha));
     decodedResultDeinit(decoded);

@@ -126,6 +126,25 @@ int objectMetaDecode(struct objectMeta *object_meta, const char *extend, size_t 
     }
 }
 
+int objectMetaEqual(struct objectMeta *oma, struct objectMeta *omb) {
+    objectMetaType *typea = getObjectMetaType(oma->object_type);
+    objectMetaType *typeb = getObjectMetaType(omb->object_type);
+    if (oma->version != omb->version || typea != typeb) return 0;
+    if (typea->equal)
+        return typea->equal(oma,omb);
+    else
+        return 1;
+}
+
+int objectMetaRebuildFeed(struct objectMeta *rebuild_meta, uint64_t version,
+        const char *subkey, size_t sublen) {
+    objectMetaType *omtype = getObjectMetaType(rebuild_meta->object_type);
+    if (omtype->rebuildFeed)
+        return omtype->rebuildFeed(rebuild_meta,version,subkey,sublen);
+    else
+        return 0;
+}
+
 int keyIsHot(objectMeta *object_meta, robj *value) {
     swapObjectMeta som;
     objectMetaType *type;
@@ -186,12 +205,30 @@ int lenObjectMetaIsHot(objectMeta *object_meta, robj *value) {
     return object_meta->len == 0;
 }
 
+static inline int lenObjectMetaRebuildFeed(struct objectMeta *rebuild_meta,
+        uint64_t version, const char *subkey, size_t sublen) {
+    UNUSED(sublen), UNUSED(version);
+
+    if (subkey) {
+        rebuild_meta->len++;
+        return 0;
+    } else {
+        return -1;
+    }
+}
+
+static inline int lenObjectMetaEqual(struct objectMeta *oma, struct objectMeta *omb) {
+    return oma->len == omb->len;
+}
+
 objectMetaType lenObjectMetaType = {
     .encodeObjectMeta = encodeLenObjectMeta,
     .decodeObjectMeta = decodeLenObjectMeta,
     .objectIsHot = lenObjectMetaIsHot,
     .free = NULL,
     .duplicate = NULL,
+    .equal = lenObjectMetaEqual,
+    .rebuildFeed = lenObjectMetaRebuildFeed,
 };
 
 /* Note that db.meta is a satellite dict just like db.expire. */
