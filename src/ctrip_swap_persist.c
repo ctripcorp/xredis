@@ -348,7 +348,7 @@ sds genSwapPersistInfoString(sds info) {
         mstime_t lag = swapPersistCtxLag(server.swap_persist_ctx);
         info = sdscatprintf(info,
                 "swap_persist_stat:add_succ=%lld,add_ignored=%lld,submit_succ=%lld,submit_blocked=%lld\r\n"
-                "swap_persist_inprogress:count=%lu,memory=%lu,lag=%lld\r\n",
+                "swap_persist_inprogress:count=%lu,memory=%lu,lag_millis=%lld\r\n",
                 stat->add_succ,stat->add_ignored,stat->submit_succ,stat->submit_blocked,keys,mem,lag);
     }
     return info;

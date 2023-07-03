@@ -327,7 +327,7 @@ void persistingKeysInitIterator(persistingKeysIter *iter, persistingKeys *keys);
 void persistingKeysDeinitIterator(persistingKeysIter *iter);
 sds persistingKeysIterNext(persistingKeysIter *iter, uint64_t *version, mstime_t *mstime);
 
-#define SWAP_PERSIST_MAX_KEYS_PER_LOOP 256
+#define SWAP_PERSIST_MAX_KEYS_PER_LOOP 1024
 
 typedef struct swapPersistStat {
   long long add_succ;
