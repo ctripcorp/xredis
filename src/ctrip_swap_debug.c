@@ -74,6 +74,8 @@ static int getCfOrReply(client *c, robj *cf) {
         return META_CF;
     } else if (!strcasecmp(cf->ptr, "data")) {
         return DATA_CF;
+    } else if (!strcasecmp(cf->ptr, "score")) {
+        return SCORE_CF;
     } else {
         addReplyError(c,"invalid cf");
         return -1;

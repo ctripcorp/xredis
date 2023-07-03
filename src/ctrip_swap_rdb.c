@@ -163,7 +163,7 @@ sds rdbSaveRocksStatsDump(rdbSaveRocksStats *stats) {
             "init.ok=%lld,"
             "init.skip=%lld,"
             "init.err=%lld,"
-            "save.ok=%lld,",
+            "save.ok=%lld",
             stats->init_save_ok,
             stats->init_save_skip,
             stats->init_save_err,
@@ -413,6 +413,8 @@ int rdbSaveRocks(rio *rdb, int *error, redisDb *db, int rdbflags) {
 saveend:
         /* call save_end if save_start called, no matter error or not. */
         save_result = rdbKeySaveEnd(save,rdb,save_result);
+        if (server.swap_debug_rdb_key_save_delay_micro)
+            debugDelay(server.swap_debug_rdb_key_save_delay_micro);
         if (save_result == SAVE_ERR_NONE) {
             stats->save_ok++;
         } else if (server.swap_bgsave_fix_metalen_mismatch && save_result > SAVE_ERR_NONE && save_result < SAVE_ERR_UNRECOVERABLE) {

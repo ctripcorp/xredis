@@ -476,10 +476,19 @@ static int keyLoadFixAna(struct keyLoadFixData *fix) {
             rebuild_meta->version != cold_meta->version)
         return FIX_DELETE;
 
-    if (objectMetaEqual(rebuild_meta, cold_meta))
+    if (objectMetaEqual(rebuild_meta, cold_meta)) {
         return FIX_NONE;
-    else
+    } else {
+#ifdef SWAP_DEBUG
+        sds cold_meta_dump = dumpObjectMeta(cold_meta);
+        sds rebuild_meta_dump = dumpObjectMeta(cold_meta);
+        serverLog(LL_WARNING, "update meta: %s => %s",
+                cold_meta_dump, rebuild_meta_dump);
+        sdsfree(cold_meta_dump);
+        sdsfree(rebuild_meta_dump);
+#endif
         return FIX_UPDATE;
+    }
 }
 
 static inline int keyLoadFixEnd(struct keyLoadFixData *fix,
@@ -492,9 +501,15 @@ static inline int keyLoadFixEnd(struct keyLoadFixData *fix,
 
     fix_result = keyLoadFixAna(fix);
 
+#ifdef SWAP_DEBUG
+    serverLog(LL_WARNING,"keyLoadFixEnd: %s => %d", (sds)fix->key->ptr, fix_result);
+#endif
+
     switch (fix_result) {
     case FIX_NONE:
         fix_stats->fix_none++;
+        fix->db->cold_keys++;
+        coldFilterAddKey(fix->db->cold_filter,fix->key->ptr);
         break;
     case FIX_UPDATE:
         cfs = zmalloc(sizeof(int));
@@ -508,6 +523,8 @@ static inline int keyLoadFixEnd(struct keyLoadFixData *fix,
         RIODo(rio);
         if (!RIOGetError(rio)) {
             fix_stats->fix_update++;
+            fix->db->cold_keys++;
+            coldFilterAddKey(fix->db->cold_filter,fix->key->ptr);
         } else  {
             fix_stats->fix_err++;
             if (rio->err) fix->errstr = sdsdup(rio->err);
@@ -664,13 +681,15 @@ int persistLoadFixDb(redisDb *db) {
         keyLoadFixDataDeinit(fix);
     }
 
-    sds iter_stats_dump = rocksIterDecodeStatsDump(iter_stats);
-    sds fix_stats_dump = loadFixStatsDump(fix_stats);
-    serverLog(LL_NOTICE,
-            "Fix persist keys finished: db=(%d), iter=(%s), fix=(%s)",
-            db->id,iter_stats_dump,fix_stats_dump);
-    sdsfree(iter_stats_dump);
-    sdsfree(fix_stats_dump);
+    if (db->cold_keys) {
+        sds iter_stats_dump = rocksIterDecodeStatsDump(iter_stats);
+        sds fix_stats_dump = loadFixStatsDump(fix_stats);
+        serverLog(LL_NOTICE,
+                "Fix persist keys finished: db=(%d), iter=(%s), fix=(%s)",
+                db->id,iter_stats_dump,fix_stats_dump);
+        sdsfree(iter_stats_dump);
+        sdsfree(fix_stats_dump);
+    }
 
     if (it) rocksReleaseIter(it);
 
@@ -921,6 +940,8 @@ int swapPersistTest(int argc, char *argv[], int accurate) {
         swapPersistCtxFree(ctx);
     }
 
+    ROCKS_FLUSHDB(db->id);
+
     TEST("persist: load fix (string)") {
         sds k1 = sdsnew("k1"), k2 = sdsnew("k2"), k3 = sdsnew("k3"), k4 = sdsnew("k4");
         robj *v1 = createStringObject("v1",2), *v2 = createStringObject("v2",2),
@@ -943,8 +964,10 @@ int swapPersistTest(int argc, char *argv[], int accurate) {
         PUT_DATA(db,k4,version,s4,v4);
         PUT_DATA(db,k4,version,s3,v3);
 
+        db->cold_keys = 0;
         persistLoadFixDb(db);
 
+        test_assert(db->cold_keys == 2);
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wnonnull"
         CHECK_NO_META(db,k1);
@@ -990,7 +1013,10 @@ int swapPersistTest(int argc, char *argv[], int accurate) {
         PUT_DATA(db,k4,version,s3,v3);
         PUT_DATA(db,k4,oversion,s1,v1);
 
+        db->cold_keys = 0;
         persistLoadFixDb(db);
+
+        test_assert(db->cold_keys == 2);
 
         CHECK_NO_META(db,k1);
         CHECK_META(db,k2, OBJ_HASH,version,0,ext_two);
@@ -1046,7 +1072,10 @@ int swapPersistTest(int argc, char *argv[], int accurate) {
         PUT_DATA(db,k5,version,s2,v2);
         PUT_DATA(db,k5,version,f1,v1);
 
+        db->cold_keys = 0;
         persistLoadFixDb(db);
+
+        test_assert(db->cold_keys == 2);
 
         CHECK_NO_META(db,k1);
         CHECK_META(db,k2, OBJ_LIST,version,0,ext3);

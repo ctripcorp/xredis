@@ -162,7 +162,7 @@ void notifyKeyspaceEventDirtySubkeys(int type, char *event, robj *key,
             }
         }
 
-        if (!objectIsMetaDirty(o)) setObjectMetaDirtyPersist(dbid,key,o);
+        setObjectMetaDirtyPersist(dbid,key,o);
     } else {
         setObjectDirtyPersist(dbid,key,o);
     }

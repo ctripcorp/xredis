@@ -144,9 +144,11 @@ void *rocksIterIOThreadMain(void *arg) {
             data_valid = rocksdbIterValid(it->data_iter,it->data_endkey);
             if (!meta_valid && !data_valid) {
                 rocksIterNotifyFinshed(it);
-                serverLog(LL_WARNING,
-                        "Rocks iter thread iterated meta=%ld data=%ld.",
-                        meta_itered, data_itered);
+                if (meta_itered || data_itered) {
+                    serverLog(LL_WARNING,
+                            "Rocks iter thread iterated meta=%ld data=%ld.",
+                            meta_itered, data_itered);
+                }
                 break;
             }
 
@@ -225,8 +227,6 @@ void *rocksIterIOThreadMain(void *arg) {
             }
         }
     }
-
-    serverLog(LL_WARNING, "Rocks iter thread exit.");
 
     return NULL;
 }
@@ -316,7 +316,6 @@ rocksIter *rocksCreateIter(rocks *rocks, redisDb *db) {
         meta_iter = rocksdb_create_iterator_cf(it->checkpoint_db, rocks->ropts,
                 it->cf_handles[META_CF]);
     } else {
-        serverLog(LL_WARNING, "[rocks] create iter from rocksdb.");
         data_iter = rocksdb_create_iterator_cf(rocks->db, rocks->ropts,
                 rocks->cf_handles[DATA_CF]);
         meta_iter = rocksdb_create_iterator_cf(rocks->db, rocks->ropts,
@@ -409,8 +408,6 @@ void rocksReleaseIter(rocksIter *it) {
             if ((err = pthread_join(it->io_thread, NULL)) != 0) {
                 serverLog(LL_WARNING, "Iter io thread can't be joined: %s",
                         strerror(err));
-            } else {
-                serverLog(LL_WARNING, "Iter io thread terminated.");
             }
         }
         it->io_thread = 0;

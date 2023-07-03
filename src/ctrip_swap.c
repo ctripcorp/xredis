@@ -745,7 +745,6 @@ int clearTestRedisServer() {
 int swapTest(int argc, char **argv, int accurate) {
   int result = 0;
 
-  /*
   result += swapLockTest(argc, argv, accurate);
   result += swapLockReentrantTest(argc, argv, accurate);
   result += swapLockProceedTest(argc, argv, accurate);
@@ -771,7 +770,6 @@ int swapTest(int argc, char **argv, int accurate) {
   result += swapRIOTest(argc, argv, accurate);
   result += swapBatchTest(argc, argv, accurate);
   result += cuckooFilterTest(argc, argv, accurate);
-  */
   result += swapPersistTest(argc, argv, accurate);
 
   return result;
