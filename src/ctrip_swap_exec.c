@@ -166,7 +166,8 @@ void swapRequestMerge(swapRequest *req) {
     case SWAP_OUT:
         /* object meta will be persisted every time, so meta turns clean .*/
         clearObjectMetaDirty(data->value);
-        retval = swapDataSwapOut(data,datactx,&swap_out_completely);
+        int clear_dirty = req->intention_flags & SWAP_EXEC_OUT_KEEP_DATA;
+        retval = swapDataSwapOut(data,datactx,clear_dirty,&swap_out_completely);
         if (!swapDataIsCold(data)) {
             if (swap_out_completely) {
                 swapDataTurnCold(data);
@@ -525,7 +526,8 @@ void swapExecBatchExecuteOut(swapExecBatch *exec_batch) {
         int errcode = 0;
         swapRequest *req = exec_batch->reqs[i];
         if (swapRequestGetError(req)) continue;
-        if ((errcode = swapDataCleanObject(req->data,req->datactx))) {
+        int keep_data = req->intention_flags & SWAP_EXEC_OUT_KEEP_DATA;
+        if ((errcode = swapDataCleanObject(req->data,req->datactx,keep_data))) {
             swapRequestSetError(req,errcode);
             continue;
         }

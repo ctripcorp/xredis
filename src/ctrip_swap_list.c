@@ -1734,12 +1734,13 @@ int listSwapIn(swapData *data, MOVE void *result_, void *datactx) {
     return 0;
 }
 
-int listCleanObject(swapData *data, void *datactx_) {
+int listCleanObject(swapData *data, void *datactx_, int keep_data) {
     metaList main;
     listDataCtx *datactx = datactx_;
+    UNUSED(keep_data);
+
     if (swapDataIsCold(data)) return 0;
     swapDataInitMetaList(data,&main);
-
 
 #ifdef SWAP_LIST_DEBUG
     sds main_dump = metaListDump(sdsempty(),&main);
@@ -1762,8 +1763,8 @@ int listCleanObject(swapData *data, void *datactx_) {
 /* subkeys already cleaned by cleanObject(to save cpu usage of main thread),
  * swapout only updates db.dict keyspace, meta (db.meta/db.expire) swapped
  * out by swap framework. */
-int listSwapOut(swapData *data, void *datactx, int *totally_out) {
-    UNUSED(datactx);
+int listSwapOut(swapData *data, void *datactx, int clear_dirty, int *totally_out) {
+    UNUSED(datactx), UNUSED(clear_dirty);
     serverAssert(!swapDataIsCold(data));
 
     if (listTypeLength(data->value) == 0) {
@@ -3158,8 +3159,8 @@ int swapListDataTest(int argc, char *argv[], int accurate) {
         swap_meta = listMetaCreate();
         listMetaAppendSegment(swap_meta,SEGMENT_TYPE_COLD,1,2);
         purectx->swap_meta = swap_meta;
-        listCleanObject(puredata,puredatactx);
-        listSwapOut(puredata,puredatactx,NULL);
+        listCleanObject(puredata,puredatactx,0);
+        listSwapOut(puredata,puredatactx,0,NULL);
         object_meta = lookupMeta(db,purekey);
         test_assert(object_meta != NULL);
         test_assert(listMetaLength(objectMetaGetPtr(object_meta),SEGMENT_TYPE_BOTH) == 3);
@@ -3172,8 +3173,8 @@ int swapListDataTest(int argc, char *argv[], int accurate) {
         swap_meta = listMetaCreate();
         listMetaAppendSegment(swap_meta,SEGMENT_TYPE_COLD,0,3/*exceeds range*/);
         purectx->swap_meta = swap_meta;
-        listCleanObject(puredata,puredatactx);
-        listSwapOut(puredata,puredatactx,NULL);
+        listCleanObject(puredata,puredatactx,0);
+        listSwapOut(puredata,puredatactx,0,NULL);
         object_meta = lookupMeta(db,purekey);
         test_assert(object_meta == NULL);
         value = lookupKey(db,purekey,LOOKUP_NOTOUCH);
@@ -3224,8 +3225,8 @@ int swapListDataTest(int argc, char *argv[], int accurate) {
         swap_meta = listMetaCreate();
         listMetaAppendSegment(swap_meta,SEGMENT_TYPE_COLD,0,3);
         purectx->swap_meta = swap_meta;
-        listCleanObject(puredata,puredatactx);
-        listSwapOut(puredata,puredatactx,NULL);
+        listCleanObject(puredata,puredatactx,0);
+        listSwapOut(puredata,puredatactx,0,NULL);
         object_meta = lookupMeta(db,purekey);
         test_assert(object_meta == NULL);
         value = lookupKey(db,purekey,LOOKUP_NOTOUCH);

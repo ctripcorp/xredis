@@ -39,7 +39,8 @@ static void createFakeZsetForDeleteIfCold(swapData *data) {
 #define SELECT_DSS  1
 
 /* return 1 if noswap needed */
-static int zsetSwapAnaOutSelectSubkeys(swapData *data, zsetDataCtx *datactx) {
+static int zsetSwapAnaOutSelectSubkeys(swapData *data, zsetDataCtx *datactx,
+        int *may_keep_data) {
     int select_type, noswap;
     size_t count;
     robj *subkeys;
@@ -76,6 +77,7 @@ static int zsetSwapAnaOutSelectSubkeys(swapData *data, zsetDataCtx *datactx) {
     count = MIN(count,(size_t)server.swap_evict_step_max_subkeys);
     datactx->bdc.subkeys = zmalloc(count*sizeof(robj*));
 
+    *may_keep_data = 1;
     if (select_type == SELECT_MAIN) {
         robj *subkey;
         int len = zsetLength(subkeys);
@@ -91,7 +93,10 @@ static int zsetSwapAnaOutSelectSubkeys(swapData *data, zsetDataCtx *datactx) {
                 while (eptr != NULL) {
                     if ((size_t)datactx->bdc.num >= count ||
                             evict_memory >= server.swap_evict_step_max_memory) {
-                        /* Evict big zset in small steps. */
+                        /* Evict big zset in small steps.
+                         * There still may be dirty subkeys in memory, cant set clean
+                         * while keep data. */
+                        if (!noswap) *may_keep_data = 0;
                         break;
                     }
 
@@ -274,7 +279,9 @@ int zsetSwapAna(swapData *data, int thd, struct keyRequest *req,
             *intention = SWAP_NOP;
             *intention_flags = 0;
         } else {
-            int noswap = zsetSwapAnaOutSelectSubkeys(data,datactx);
+            int may_keep_data;
+            int noswap = zsetSwapAnaOutSelectSubkeys(data,datactx,&may_keep_data);
+            int keep_data = (cmd_intention_flags & SWAP_OUT_KEEP_DATA) && may_keep_data;
 
             /* create new meta if needed */
             if (!swapDataPersisted(data)) {
@@ -284,17 +291,16 @@ int zsetSwapAna(swapData *data, int thd, struct keyRequest *req,
 
             if (noswap) {
                 /* directly evict value from db.dict if not dirty. */
-
-                swapDataCleanObject(data, datactx);
+                swapDataCleanObject(data,datactx,keep_data);
                 if (zsetLength(data->value) == 0) {
                     swapDataTurnCold(data);
                 }
-                swapDataSwapOut(data,datactx,NULL);
+                swapDataSwapOut(data,datactx,keep_data,NULL);
                 *intention = SWAP_NOP;
                 *intention_flags = 0;
             } else {
                 *intention = SWAP_OUT;
-                *intention_flags = 0;
+                *intention_flags = keep_data ? SWAP_EXEC_OUT_KEEP_DATA : 0;
             }
         }
         break;
@@ -639,7 +645,7 @@ int zsetSwapIn(swapData *data_, void *result_, void *datactx_) {
 /* subkeys already cleaned by cleanObject(to save cpu usage of main thread),
  * swapout only updates db.dict keyspace, meta (db.meta/db.expire) swapped
  * out by swap framework. */
-int zsetSwapOut(swapData *data, void *datactx, int *totally_out) {
+int zsetSwapOut(swapData *data, void *datactx, int clear_dirty, int *totally_out) {
     UNUSED(datactx);
     serverAssert(!swapDataIsCold(data));
 
@@ -647,6 +653,8 @@ int zsetSwapOut(swapData *data, void *datactx, int *totally_out) {
             dirtySubkeysLength(data->dirty_subkeys) == 0) {
         dbDeleteDirtySubkeys(data->db,data->key);
     }
+
+    if (clear_dirty) clearObjectDataDirty(data->value);
 
     if (zsetLength(data->value) == 0) {
         /* all fields swapped out, key turnning into cold:
@@ -760,7 +768,7 @@ void *zsetCreateOrMergeObject(swapData *data, void *decoded_, void *datactx) {
     return result;
 }
 
-int zsetCleanObject(swapData *data, void *datactx_) {
+int zsetCleanObject(swapData *data, void *datactx_, int keep_data) {
     zsetDataCtx *datactx = datactx_;
     if (swapDataIsCold(data)) return 0;
     for (int i = 0; i < datactx->bdc.num; i++) {
@@ -769,7 +777,7 @@ int zsetCleanObject(swapData *data, void *datactx_) {
                     datactx->bdc.subkeys[i]->ptr);
         }
 
-        if (zsetDel(data->value,datactx->bdc.subkeys[i]->ptr)) {
+        if (!keep_data && zsetDel(data->value,datactx->bdc.subkeys[i]->ptr)) {
             swapDataObjectMetaModifyLen(data,1);
         }
     }
@@ -1585,8 +1593,8 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
         zset1_data->new_meta = createZsetObjectMeta(0,0);
         zset1_ctx->bdc.num = 2;
         zset1_ctx->bdc.subkeys = mockSubKeys(2, sdsdup(f1), sdsdup(f2));
-        zsetCleanObject(zset1_data, zset1_ctx);
-        zsetSwapOut(zset1_data, zset1_ctx, NULL);
+        zsetCleanObject(zset1_data, zset1_ctx, 0);
+        zsetSwapOut(zset1_data, zset1_ctx, 0, NULL);
         test_assert((m =lookupMeta(db,key1)) != NULL && m->len == 2);
         test_assert((s = lookupKey(db, key1, LOOKUP_NOTOUCH)) != NULL);
         test_assert(zsetLength(s) == 2);
@@ -1594,8 +1602,8 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
         zset1_data->new_meta = NULL;
         zset1_data->object_meta = m;
         zset1_ctx->bdc.subkeys = mockSubKeys(2, sdsdup(f3), sdsdup(f4));
-        zsetCleanObject(zset1_data, zset1_ctx);
-        zsetSwapOut(zset1_data, zset1_ctx, NULL);
+        zsetCleanObject(zset1_data, zset1_ctx, 0);
+        zsetSwapOut(zset1_data, zset1_ctx, 0, NULL);
         test_assert(lookupKey(db,key1,LOOKUP_NOTOUCH) == NULL);
         test_assert(lookupMeta(db,key1) == NULL);
 
@@ -1632,8 +1640,8 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
         zset1_data->value = s;
         zset1_ctx->bdc.num = 4;
         zset1_ctx->bdc.subkeys = mockSubKeys(4, sdsdup(f1), sdsdup(f2), sdsdup(f3), sdsdup(f4));
-        zsetCleanObject(zset1_data, zset1_ctx);
-        zsetSwapOut(zset1_data, zset1_ctx, NULL);
+        zsetCleanObject(zset1_data, zset1_ctx, 0);
+        zsetSwapOut(zset1_data, zset1_ctx, 0, NULL);
         test_assert((m = lookupMeta(db,key1)) == NULL);
         test_assert((s = lookupKey(db,key1,LOOKUP_NOTOUCH)) == NULL);
 

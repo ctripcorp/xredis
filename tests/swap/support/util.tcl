@@ -135,6 +135,14 @@ proc keyspace_is_cold {r} {
     }
 }
 
+proc wait_key_clean {r key} {
+    wait_for_condition 50 40 {
+        ![object_is_dirty $r $key]
+    } else {
+        fail "wait $key clean failed."
+    }
+}
+
 proc wait_keyspace_cold {r} {
     wait_for_condition 50 40 {
         [keyspace_is_cold $r]

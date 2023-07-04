@@ -55,8 +55,11 @@ int submitEvictClientRequest(client *c, robj *key, uint64_t persist_version) {
     getKeyRequestsResult result = GET_KEYREQUESTS_RESULT_INIT;
     getKeyRequestsPrepareResult(&result,1);
     incrRefCount(key);
+
+    uint32_t cmd_intention_flags = c->cmd->intention_flags;
+    if (persist_version > 0) cmd_intention_flags |= SWAP_OUT_KEEP_DATA;
     getKeyRequestsAppendSubkeyResult(&result,REQUEST_LEVEL_KEY,key,0,NULL,
-            c->cmd->intention,c->cmd->intention_flags,c->cmd->flags,c->db->id);
+            c->cmd->intention,cmd_intention_flags,c->cmd->flags,c->db->id);
     c->keyrequests_count++;
     submitDeferredClientKeyRequests(c,&result,evictClientKeyRequestFinished,(void*)persist_version);
     releaseKeyRequests(&result);

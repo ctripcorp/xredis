@@ -79,14 +79,17 @@ int wholeKeySwapAna(swapData *data, int thd, struct keyRequest *req,
         break;
     case SWAP_OUT:
         if (data->value) {
+            /* we can always keep data and clear dirty after persist string */
+            int keep_data = cmd_intention_flags & SWAP_OUT_KEEP_DATA;
+
             if (objectIsDirty(data->value)) {
                 *intention = SWAP_OUT;
-                *intention_flags = 0;
+                *intention_flags = keep_data ? SWAP_EXEC_OUT_KEEP_DATA : 0;
             } else {
                 serverAssert(thd == SWAP_ANA_THD_MAIN);
                 /* Not dirty: swapout right away without swap. */
-                swapDataTurnCold(data);
-                swapDataSwapOut(data, NULL,NULL);
+                if (!keep_data) swapDataTurnCold(data);
+                swapDataSwapOut(data,NULL,keep_data,NULL);
                 *intention = SWAP_NOP;
                 *intention_flags = 0;
             }
@@ -215,14 +218,17 @@ int wholeKeySwapIn(swapData *data, MOVE void *result, void *datactx) {
     return 0;
 }
 
-int wholeKeySwapOut(swapData *data, void *datactx, int *totally_out) {
+int wholeKeySwapOut(swapData *data, void *datactx, int clear_dirty, int *totally_out) {
     UNUSED(datactx);
     redisDb *db = data->db;
     robj *key = data->key;
-    /* TODO opt lazyfree_lazy_swap_del */
-    // if (dictSize(db->dict) > 0) dictDelete(db->dict,key->ptr);
-    if (dictSize(db->dict) > 0) dbDelete(db, key);
-    if (totally_out) *totally_out = 1;
+    if (clear_dirty) {
+        clearObjectDataDirty(data->value);
+        if (totally_out) *totally_out = 0;
+    } else {
+        if (dictSize(db->dict) > 0) dbDelete(db, key);
+        if (totally_out) *totally_out = 1;
+    }
     return 0;
 }
 
@@ -231,7 +237,6 @@ int wholeKeySwapDel(swapData *data, void *datactx, int async) {
     redisDb *db = data->db;
     robj *key = data->key;
     if (async) return 0;
-    //TODO remove
     if (data->value) dictDelete(db->dict,key->ptr);
     return 0;
 }
@@ -574,7 +579,7 @@ int swapDataWholeKeyTest(int argc, char **argv, int accurate) {
         test_assert(dictFind(db->dict, key->ptr) != NULL);
 
         swapData* data = createWholeKeySwapData(db, key, value, NULL);
-        test_assert(wholeKeySwapOut(data, NULL, NULL) == 0);
+        test_assert(wholeKeySwapOut(data, NULL, 0, NULL) == 0);
         test_assert(dictFind(db->dict, key->ptr) == NULL);
         swapDataFree(data, NULL);
         clearTestRedisDb();
@@ -589,7 +594,7 @@ int swapDataWholeKeyTest(int argc, char **argv, int accurate) {
         test_assert(dictFind(db->dict, key->ptr) != NULL);
 
         swapData* data = createWholeKeySwapDataWithExpire(db, key, value, 1000000, NULL);
-        test_assert(wholeKeySwapOut(data, NULL, NULL) == 0);
+        test_assert(wholeKeySwapOut(data, NULL, 0, NULL) == 0);
         test_assert(dictFind(db->dict, key->ptr) == NULL);
         swapDataFree(data, NULL);
         clearTestRedisDb();

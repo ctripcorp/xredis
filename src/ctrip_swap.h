@@ -76,6 +76,8 @@ extern const char *swap_cf_names[CF_COUNT];
 #define SWAP_METASCAN_RANDOMKEY (1U<<8)
 /* This is a metascan request for active-expire. */
 #define SWAP_METASCAN_EXPIRE (1U<<9)
+/* Keep data in memory when swap out if possible. */
+#define SWAP_OUT_KEEP_DATA (1U<<10)
 
 /* --- swap intention flags --- */
 /* Delete rocksdb data key when swap in */
@@ -86,6 +88,8 @@ extern const char *swap_cf_names[CF_COUNT];
 #define SWAP_EXEC_OOM_CHECK (1U<<2)
 /* Don't delete key in keyspace when swap (Delete key in rocksdb) finish. */
 #define SWAP_FIN_DEL_SKIP (1U<<3)
+/* Reserve data when swap out. */
+#define SWAP_EXEC_OUT_KEEP_DATA (1U<<4)
 
 
 #define SWAP_UNSET -1
@@ -551,10 +555,10 @@ typedef struct swapDataType {
   int (*encodeData)(struct swapData *data, int intention, void *datactx, OUT int *num, OUT int **cfs, OUT sds **rawkeys, OUT sds **rawvals);
   int (*decodeData)(struct swapData *data, int num, int *cfs, sds *rawkeys, sds *rawvals, OUT void **decoded);
   int (*swapIn)(struct swapData *data, MOVE void *result, void *datactx);
-  int (*swapOut)(struct swapData *data, void *datactx, OUT int *totally_out);
+  int (*swapOut)(struct swapData *data, void *datactx, int keep_data, OUT int *totally_out);
   int (*swapDel)(struct swapData *data, void *datactx, int async);
   void *(*createOrMergeObject)(struct swapData *data, MOVE void *decoded, void *datactx);
-  int (*cleanObject)(struct swapData *data, void *datactx);
+  int (*cleanObject)(struct swapData *data, void *datactx, int keep_data);
   int (*beforeCall)(struct swapData *data, client *c, void *datactx);
   void (*free)(struct swapData *data, void *datactx);
   int (*rocksDel)(struct swapData *data_,  void *datactx_, int inaction, int num, int* cfs, sds *rawkeys, sds *rawvals, OUT int *outaction, OUT int *outnum, OUT int** outcfs,OUT sds **outrawkeys);
@@ -576,10 +580,10 @@ int swapDataEncodeRange(struct swapData *data, int intention, void *datactx_, in
 int swapDataDecodeAndSetupMeta(swapData *d, sds rawval, OUT void **datactx);
 int swapDataDecodeData(swapData *d, int num, int *cfs, sds *rawkeys, sds *rawvals, void **decoded);
 int swapDataSwapIn(swapData *d, void *result, void *datactx);
-int swapDataSwapOut(swapData *d, void *datactx, OUT int *totally_out);
+int swapDataSwapOut(swapData *d, void *datactx, int keep_data, OUT int *totally_out);
 int swapDataSwapDel(swapData *d, void *datactx, int async);
 void *swapDataCreateOrMergeObject(swapData *d, MOVE void *decoded, void *datactx);
-int swapDataCleanObject(swapData *d, void *datactx);
+int swapDataCleanObject(swapData *d, void *datactx, int keep_data);
 int swapDataBeforeCall(swapData *d, client *c, void *datactx);
 int swapDataKeyRequestFinished(swapData *data);
 char swapDataGetObjectAbbrev(robj *value);

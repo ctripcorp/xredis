@@ -39,7 +39,8 @@ static void createFakeHashForDeleteIfCold(swapData *data) {
 #define SELECT_DSS  1
 
 /* return 1 if noswap needed */
-static int hashSwapAnaOutSelectSubkeys(swapData *data, hashDataCtx *datactx) {
+static int hashSwapAnaOutSelectSubkeys(swapData *data, hashDataCtx *datactx,
+        int *may_keep_data) {
     int select_type, noswap;
     size_t count;
     robj *subkeys;
@@ -76,6 +77,7 @@ static int hashSwapAnaOutSelectSubkeys(swapData *data, hashDataCtx *datactx) {
     count = MIN(count,(size_t)server.swap_evict_step_max_subkeys);
     datactx->ctx.subkeys = zmalloc(count*sizeof(robj*));
 
+    *may_keep_data = 1;
     if (select_type == SELECT_MAIN) {
         hashTypeIterator *hi = hashTypeInitIterator(subkeys);
         while (hashTypeNext(hi) != C_ERR) {
@@ -86,7 +88,10 @@ static int hashSwapAnaOutSelectSubkeys(swapData *data, hashDataCtx *datactx) {
 
             if ((size_t)datactx->ctx.num >= count ||
                     evict_memory >= server.swap_evict_step_max_memory) {
-                /* Evict big hash in small steps. */
+                /* Evict big hash in small steps.
+                 * There still may be dirty subkeys in memory, cant set clean
+                 * while keep data. */
+                if (!noswap) *may_keep_data = 0;
                 break;
             }
 
@@ -220,7 +225,11 @@ int hashSwapAna(swapData *data, int thd, struct keyRequest *req,
             *intention = SWAP_NOP;
             *intention_flags = 0;
         } else {
-            int noswap = hashSwapAnaOutSelectSubkeys(data,datactx);
+            /* may_keep_data is true if we could keep data in memory and clear dirty
+             * after persisting data to rocksdb. */
+            int may_keep_data;
+            int noswap = hashSwapAnaOutSelectSubkeys(data,datactx,&may_keep_data);
+            int keep_data = (cmd_intention_flags & SWAP_OUT_KEEP_DATA) && may_keep_data;
 
             /* create new meta if needed */
             if (!swapDataPersisted(data)) {
@@ -230,17 +239,17 @@ int hashSwapAna(swapData *data, int thd, struct keyRequest *req,
 
             if (noswap) {
                 /* directly evict value from db.dict if not dirty. */
-                swapDataCleanObject(data, datactx);
+                swapDataCleanObject(data,datactx,keep_data);
                 if (hashTypeLength(data->value) == 0) {
                     swapDataTurnCold(data);
                 }
-                swapDataSwapOut(data,datactx,NULL);
+                swapDataSwapOut(data,datactx,keep_data,NULL);
 
                 *intention = SWAP_NOP;
                 *intention_flags = 0;
             } else {
                 *intention = SWAP_OUT;
-                *intention_flags = 0;
+                *intention_flags = keep_data ? SWAP_EXEC_OUT_KEEP_DATA : 0;
             }
         }
         break;
@@ -441,7 +450,7 @@ int hashSwapIn(swapData *data, void *result, void *datactx) {
 /* subkeys already cleaned by cleanObject(to save cpu usage of main thread),
  * swapout only updates db.dict keyspace, meta (db.meta/db.expire) swapped
  * out by swap framework. */
-int hashSwapOut(swapData *data, void *datactx, int *totally_out) {
+int hashSwapOut(swapData *data, void *datactx, int clear_dirty, int *totally_out) {
     UNUSED(datactx);
     serverAssert(!swapDataIsCold(data));
 
@@ -449,6 +458,8 @@ int hashSwapOut(swapData *data, void *datactx, int *totally_out) {
             dirtySubkeysLength(data->dirty_subkeys) == 0) {
         dbDeleteDirtySubkeys(data->db,data->key);
     }
+
+    if (clear_dirty) clearObjectDataDirty(data->value);
 
     if (hashTypeLength(data->value) == 0) {
         /* all fields swapped out, key turnning into cold:
@@ -535,7 +546,7 @@ void *hashCreateOrMergeObject(swapData *data, void *decoded_, void *datactx) {
     return result;
 }
 
-int hashCleanObject(swapData *data, void *datactx_) {
+int hashCleanObject(swapData *data, void *datactx_, int keep_data) {
     hashDataCtx *datactx = datactx_;
     if (swapDataIsCold(data)) return 0;
     for (int i = 0; i < datactx->ctx.num; i++) {
@@ -543,7 +554,7 @@ int hashCleanObject(swapData *data, void *datactx_) {
             dirtySubkeysRemove(data->dirty_subkeys,
                     datactx->ctx.subkeys[i]->ptr);
         }
-        if (hashTypeDelete(data->value,datactx->ctx.subkeys[i]->ptr)) {
+        if (!keep_data && hashTypeDelete(data->value,datactx->ctx.subkeys[i]->ptr)) {
             swapDataObjectMetaModifyLen(data,1);
         }
     }
@@ -1010,7 +1021,7 @@ int swapDataHashTest(int argc, char **argv, int accurate) {
         hashTypeDelete(hash1,f1);
         hashTypeDelete(hash1,f2);
         data->d.object_meta = NULL, data->d.new_meta = sm, sm->len = 2;
-        hashSwapOut((swapData*)data, hash1_ctx, NULL);
+        hashSwapOut((swapData*)data, hash1_ctx, 0, NULL);
         test_assert((m =lookupMeta(db,key1)) != NULL && m->len == 2);
         test_assert(lookupKey(db,key1,LOOKUP_NOTOUCH) != NULL);
         test_assert(lookupKey(db, key1, LOOKUP_NOTOUCH)->persistent);
@@ -1018,7 +1029,7 @@ int swapDataHashTest(int argc, char **argv, int accurate) {
         hashTypeDelete(hash1,f3);
         hashTypeDelete(hash1,f4);
         data->d.object_meta = sm, data->d.new_meta = NULL, sm->len = 2;
-        hashSwapOut((swapData*)data, hash1_ctx, NULL);
+        hashSwapOut((swapData*)data, hash1_ctx, 0, NULL);
         test_assert((m = lookupMeta(db,key1)) == NULL);
         test_assert((h = lookupKey(db,key1,LOOKUP_NOTOUCH)) == NULL);
 
@@ -1056,7 +1067,7 @@ int swapDataHashTest(int argc, char **argv, int accurate) {
         hashTypeDelete(hash1,f4);
         *data = *(hashSwapData*)hash1_data;
         data->d.object_meta = NULL, data->d.new_meta = sm2;
-        hashSwapOut((swapData*)data, hash1_ctx, NULL);
+        hashSwapOut((swapData*)data, hash1_ctx, 0, NULL);
         test_assert((m = lookupMeta(db,key1)) == NULL);
         test_assert((h = lookupKey(db,key1,LOOKUP_NOTOUCH)) == NULL);
 

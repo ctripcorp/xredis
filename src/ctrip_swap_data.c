@@ -188,9 +188,9 @@ inline int swapDataSwapIn(swapData *d, void *result, void *datactx) {
 }
 
 /* Main-thread: swap out data out of keyspace. */
-inline int swapDataSwapOut(swapData *d, void *datactx, int *totally_out) {
+inline int swapDataSwapOut(swapData *d, void *datactx, int keep_data, int *totally_out) {
     if (d->type->swapOut)
-        return d->type->swapOut(d, datactx, totally_out);
+        return d->type->swapOut(d, datactx, keep_data, totally_out);
     else
         return 0;
 }
@@ -215,9 +215,9 @@ inline void *swapDataCreateOrMergeObject(swapData *d, void *decoded,
 }
 
 /* Swap-thread: clean data.value. */
-inline int swapDataCleanObject(swapData *d, void *datactx) {
+inline int swapDataCleanObject(swapData *d, void *datactx, int keep_data) {
     if (d->type->cleanObject)
-        return d->type->cleanObject(d,datactx);
+        return d->type->cleanObject(d,datactx,keep_data);
     else
         return 0;
 }

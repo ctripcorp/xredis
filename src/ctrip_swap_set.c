@@ -39,7 +39,8 @@ static void createFakeSetForDeleteIfCold(swapData *data) {
 #define SELECT_DSS  1
 
 /* return 1 if noswap needed */
-static int setSwapAnaOutSelectSubkeys(swapData *data, setDataCtx *datactx) {
+static int setSwapAnaOutSelectSubkeys(swapData *data, setDataCtx *datactx,
+        int *may_keep_data) {
     int select_type, noswap;
     size_t count;
     robj *subkeys;
@@ -76,6 +77,7 @@ static int setSwapAnaOutSelectSubkeys(swapData *data, setDataCtx *datactx) {
     count = MIN(count,(size_t)server.swap_evict_step_max_subkeys);
     datactx->ctx.subkeys = zmalloc(count*sizeof(robj*));
 
+    *may_keep_data = 1;
     if (select_type == SELECT_MAIN) {
         sds vstr;
         setTypeIterator *si = setTypeInitIterator(subkeys);
@@ -104,7 +106,10 @@ static int setSwapAnaOutSelectSubkeys(swapData *data, setDataCtx *datactx) {
         while ((subkey = dirtySubkeysIteratorNext(&dss_iter,&sublen)) != NULL) {
             if ((size_t)datactx->ctx.num >= count ||
                     evict_memory >= server.swap_evict_step_max_memory) {
-                /* Evict big hash in small steps. */
+                /* Evict big hash in small steps.
+                 * There still may be dirty subkeys in memory, cant set clean
+                 * while keep data. */
+                if (!noswap) *may_keep_data = 0;
                 break;
             }
 
@@ -220,7 +225,11 @@ int setSwapAna(swapData *data, int thd, struct keyRequest *req,
                 *intention = SWAP_NOP;
                 *intention_flags = 0;
             } else {
-                int noswap = setSwapAnaOutSelectSubkeys(data,datactx);
+                /* may_keep_data is true if we could keep data in memory and clear dirty
+                 * after persisting data to rocksdb. */
+                int may_keep_data;
+                int noswap = setSwapAnaOutSelectSubkeys(data,datactx,&may_keep_data);
+                int keep_data = (cmd_intention_flags & SWAP_OUT_KEEP_DATA) && may_keep_data;
 
                 /* create new meta if needed */
                 if (!swapDataPersisted(data)) {
@@ -230,17 +239,17 @@ int setSwapAna(swapData *data, int thd, struct keyRequest *req,
 
                 if (noswap) {
                     /* directly evict value from db.dict if not dirty. */
-                    swapDataCleanObject(data, datactx);
+                    swapDataCleanObject(data,datactx,keep_data);
                     if (setTypeSize(data->value) == 0) {
                         swapDataTurnCold(data);
                     }
-                    swapDataSwapOut(data,datactx,NULL);
+                    swapDataSwapOut(data,datactx,keep_data,NULL);
 
                     *intention = SWAP_NOP;
                     *intention_flags = 0;
                 } else {
                     *intention = SWAP_OUT;
-                    *intention_flags = 0;
+                    *intention_flags = keep_data ? SWAP_EXEC_OUT_KEEP_DATA : 0;
                 }
             }
             break;
@@ -417,7 +426,7 @@ int setSwapIn(swapData *data, void *result_, void *datactx) {
 /* subkeys already cleaned by cleanObject(to save cpu usage of main thread),
  * swapout only updates db.dict keyspace, meta (db.meta/db.expire) swapped
  * out by swap framework. */
-int setSwapOut(swapData *data, void *datactx, int *totally_out) {
+int setSwapOut(swapData *data, void *datactx, int clear_dirty, int *totally_out) {
     UNUSED(datactx);
     serverAssert(!swapDataIsCold(data));
 
@@ -425,6 +434,8 @@ int setSwapOut(swapData *data, void *datactx, int *totally_out) {
             dirtySubkeysLength(data->dirty_subkeys) == 0) {
         dbDeleteDirtySubkeys(data->db,data->key);
     }
+
+    if (clear_dirty) clearObjectDataDirty(data->value);
 
     if (setTypeSize(data->value) == 0) {
         /* all fields swapped out, key turnning into cold:
@@ -498,7 +509,7 @@ void *setCreateOrMergeObject(swapData *data, void *decoded_, void *datactx) {
     return result;
 }
 
-int setCleanObject(swapData *data, void *datactx_) {
+int setCleanObject(swapData *data, void *datactx_, int keep_data) {
     setDataCtx *datactx = datactx_;
     if (swapDataIsCold(data)) return 0;
     for (int i = 0; i < datactx->ctx.num; i++) {
@@ -507,7 +518,7 @@ int setCleanObject(swapData *data, void *datactx_) {
                     datactx->ctx.subkeys[i]->ptr);
         }
 
-        if (setTypeRemove(data->value,datactx->ctx.subkeys[i]->ptr)) {
+        if (!keep_data && setTypeRemove(data->value,datactx->ctx.subkeys[i]->ptr)) {
             swapDataObjectMetaModifyLen(data,1);
         }
     }
@@ -1041,8 +1052,8 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         set1_data->new_meta = createSetObjectMeta(0,0);
         set1_ctx->ctx.num = 2;
         set1_ctx->ctx.subkeys = mockSubKeys(2, sdsdup(f1), sdsdup(f2));
-        setCleanObject(set1_data, set1_ctx);
-        setSwapOut(set1_data, set1_ctx, NULL);
+        setCleanObject(set1_data, set1_ctx, 0);
+        setSwapOut(set1_data, set1_ctx, 0, NULL);
         test_assert((m =lookupMeta(db,key1)) != NULL && m->len == 2);
         test_assert((s = lookupKey(db, key1, LOOKUP_NOTOUCH)) != NULL);
         test_assert(setTypeSize(s) == 2);
@@ -1050,8 +1061,8 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         set1_data->new_meta = NULL;
         set1_data->object_meta = m;
         set1_ctx->ctx.subkeys = mockSubKeys(2, sdsdup(f3), sdsdup(f4));
-        setCleanObject(set1_data, set1_ctx);
-        setSwapOut(set1_data, set1_ctx, NULL);
+        setCleanObject(set1_data, set1_ctx, 0);
+        setSwapOut(set1_data, set1_ctx, 0, NULL);
         test_assert(lookupKey(db,key1,LOOKUP_NOTOUCH) == NULL);
         test_assert(lookupMeta(db,key1) == NULL);
 
@@ -1085,8 +1096,8 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         set1_data->value = s;
         set1_ctx->ctx.num = 4;
         set1_ctx->ctx.subkeys = mockSubKeys(4, sdsdup(f1), sdsdup(f2), sdsdup(f3), sdsdup(f4));
-        setCleanObject(set1_data, set1_ctx);
-        setSwapOut(set1_data, set1_ctx, NULL);
+        setCleanObject(set1_data, set1_ctx, 0);
+        setSwapOut(set1_data, set1_ctx, 0, NULL);
         test_assert((m = lookupMeta(db,key1)) == NULL);
         test_assert((s = lookupKey(db,key1,LOOKUP_NOTOUCH)) == NULL);
 

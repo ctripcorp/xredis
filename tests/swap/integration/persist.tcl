@@ -1,5 +1,103 @@
 start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subkeys-enabled yes}} {
     r config set swap-debug-evict-keys 0
+
+    test {persist keep data (string)} {
+        r set mystring1 v1
+        after 100
+        assert [object_is_hot r mystring1]
+        assert_equal [r get mystring1] v1
+    }
+
+    test {persist keep data (hash)} {
+        r hmset myhash0 a a0 b b0 c c0 1 10 2 20
+        after 100
+        assert [object_is_hot r myhash0]
+        assert_equal [r hmget myhash0 a b c 1 2] {a0 b0 c0 10 20}
+        assert_equal [r hlen myhash0] 5
+
+        r swap.evict myhash0
+        wait_key_cold r myhash0
+        # hdel turn hot, mark data dirty, persist keep all subkeys & clear dirty
+        assert_equal [r hmget myhash0 a b c 1] {a0 b0 c0 10}
+        r hdel myhash0 2
+        after 100
+        assert [object_is_hot r myhash0]
+        assert_equal [r hlen myhash0] 4
+
+        r swap.evict myhash0
+        wait_key_cold r myhash0
+        set bak_evict_step [lindex [r config get swap-evict-step-max-subkeys] 1]
+        r config set swap-evict-step-max-subkeys 2
+        # hdel turn hot, mark data dirty, delete partial subkeys & clear dirty
+        assert_equal [r hmget myhash0 a b c] {a0 b0 c0}
+        r hdel myhash0 1
+        wait_key_clean r myhash0
+        assert [object_is_warm r myhash0]
+        assert_equal [r hlen myhash0] 3
+        r config set swap-evict-step-max-subkeys $bak_evict_step
+    }
+
+    test {persist keep data (set)} {
+        r sadd myset0 a b c 1 2
+        after 100
+        assert [object_is_hot r myset0]
+        assert_equal [r smismember myset0 a b c 1 2] {1 1 1 1 1}
+        assert_equal [r scard myset0] 5
+
+        r swap.evict myset0
+        wait_key_cold r myset0
+        # srem turn hot, mark data dirty, persist keep all subkeys & clear dirty
+        assert_equal [r smismember myset0 a b c 1] {1 1 1 1}
+        r srem myset0 2
+        after 100
+        assert [object_is_hot r myset0]
+        assert_equal [r scard myset0] 4
+
+        r swap.evict myset0
+        wait_key_cold r myset0
+        set bak_evict_step [lindex [r config get swap-evict-step-max-subkeys] 1]
+        r config set swap-evict-step-max-subkeys 2
+        # srem turn hot, mark data dirty, delete partial subkeys & clear dirty
+        assert_equal [r smismember myset0 a b c] {1 1 1}
+        r srem myset0 1
+        wait_key_clean r myset0
+        assert [object_is_warm r myset0]
+        assert_equal [r scard myset0] 3
+        r config set swap-evict-step-max-subkeys $bak_evict_step
+    }
+
+    test {persist keep data (zset)} {
+        r zadd myzset0 10 a 20 b 30 c 40 1 50 2
+        after 100
+        assert [object_is_hot r myzset0]
+        assert_equal [r zmscore myzset0 a b c 1 2] {10 20 30 40 50}
+        assert_equal [r zcard myzset0] 5
+
+        r swap.evict myzset0
+        wait_key_cold r myzset0
+        # srem turn hot, mark data dirty, persist keep all subkeys & clear dirty
+        assert_equal [r zmscore myzset0 a b c 1] {10 20 30 40}
+        r zrem myzset0 2
+        after 100
+        assert [object_is_hot r myzset0]
+        assert_equal [r zcard myzset0] 4
+
+        r swap.evict myzset0
+        wait_key_cold r myzset0
+        set bak_evict_step [lindex [r config get swap-evict-step-max-subkeys] 1]
+        r config set swap-evict-step-max-subkeys 2
+        # srem turn hot, mark data dirty, delete partial subkeys & clear dirty
+        assert_equal [r zmscore myzset0 a b c] {10 20 30}
+        r zrem myzset0 1
+        wait_key_clean r myzset0
+        assert [object_is_warm r myzset0]
+        assert_equal [r zcard myzset0] 3
+        r config set swap-evict-step-max-subkeys $bak_evict_step
+    }
+}
+
+start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subkeys-enabled yes}} {
+    r config set swap-debug-evict-keys 0
     # keep swap-debug-evict-keys config on restart
     r config rewrite
 
@@ -35,10 +133,10 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
 
     test {persist dirty keys triggered by swap} {
         r hmset myhash2 a a0 b b0 c c0 1 10 2 20
-        wait_key_cold r myhash2
+        wait_key_clean r myhash2
         assert_equal [lsort [r hkeys myhash2]] {1 2 a b c}
         r hdel myhash2 a
-        wait_key_cold r myhash2
+        wait_key_clean r myhash2
 
         restart_server 0 true false
 
@@ -52,10 +150,10 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         r rpush mylist3 a b c
         r zadd myzset3 10 a 20 b 30 c
 
-        wait_key_cold r mystring3
-        wait_key_cold r myhash3
-        wait_key_cold r myset3
-        wait_key_cold r myzset3
+        wait_key_clean r mystring3
+        wait_key_clean r myhash3
+        wait_key_clean r myset3
+        wait_key_clean r myzset3
 
         r get mystring3
         r hgetall myhash3
@@ -75,7 +173,7 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
     test {persist multiple times untill clean for big keys} {
         set bak_subkeys [lindex [r config get swap-evict-step-max-subkeys] 1]
         r hmset myhash4 a a0 b b0 c c0 1 10 2 20
-        wait_key_cold r myhash4
+        wait_key_clean r myhash4
 
         restart_server 0 true false
 
@@ -97,7 +195,7 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         foreach rd $rds {
             $rd read
         }
-        wait_key_cold r myhash5
+        wait_key_clean r myhash5
         set now [clock milliseconds]
         # wont persist across writes
         assert {[expr $now - $start] < 1000}
@@ -123,7 +221,7 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         for {set i 0} {$i < $num_subkeys} {incr i} {
             r hmset myhash6 $i $i
         }
-        wait_key_cold r myhash6
+        wait_key_clean r myhash6
 
         r bgsave
 
@@ -145,9 +243,12 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         r flushdb
         populate 10000 asdf1 256
         populate 10000 asdf2 256
-        wait_keyspace_cold r
+
+        r set foooooooooooo bar
+        wait_key_clean r foooooooooooo
+
         restart_server 0 true false
-        assert_equal [r dbsize] 20000
+        assert_equal [r dbsize] 20001
     }
 
     test {data stay similar across restart if swap persist enabled with write} {
@@ -164,7 +265,7 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         stop_bg_complex_data $load_handle2
 
         r set foooooooooooo bar
-        wait_key_cold r foooooooooooo
+        wait_key_clean r foooooooooooo
 
         set dbsize_before [r dbsize]
         restart_server 0 true false
