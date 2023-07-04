@@ -213,7 +213,6 @@ start_server {tags {"introspection"}} {
             swap-cuckoo-filter-estimated-keys
             ctrip-monitor-port
             swap-persist-enabled
-            swap-dirty-subkeys-enabled
         }
 
         if {!$::tls} {

@@ -438,6 +438,22 @@ static inline int keyLoadFixStart(struct keyLoadFixData *fix) {
     return 0;
 }
 
+#define PROGRESS_INTERVAL (2*1024*1024)
+static void persistLoadFixProgressCallback(decodedData *d) {
+    static long long prev_fixed_bytes, fixed_bytes;
+    long long progress_bytes = 48; /*overhead*/;
+
+    if (d && d->key) progress_bytes += sdslen(d->key);
+    if (d && d->rdbraw) progress_bytes += sdslen(d->rdbraw);
+    fixed_bytes += progress_bytes;
+
+    if (fixed_bytes - prev_fixed_bytes > PROGRESS_INTERVAL) {
+        prev_fixed_bytes = fixed_bytes;
+        loadingProgress(fixed_bytes);
+        processEventsWhileBlocked();
+    }
+}
+
 static inline void keyLoadFixFeed(struct keyLoadFixData *fix, decodedData *d) {
     /* skip obselete subkeys, note that this rule also works for string,
      * subkey version never equal string version (i.e. zero). */
@@ -669,6 +685,8 @@ int persistLoadFixDb(redisDb *db) {
 
             /* key not switched, continue scan current key. */
             keyLoadFixFeed(fix,(decodedData*)cur);
+
+            persistLoadFixProgressCallback((decodedData*)cur);
         }
 
         /* call save_end if save_start called, no matter error or not. */
@@ -705,6 +723,7 @@ err:
 
 /* scan meta cf to rebuild cold_keys/cold_filter & fix keys */
 void loadDataFromRocksdb() {
+    blockingOperationStarts();
     for (int i = 0; i < server.dbnum; i++) {
         redisDb *db = server.db+i;
         long long start_time = ustime();
@@ -716,6 +735,7 @@ void loadDataFromRocksdb() {
                     i,db->cold_keys,elapsed);
         }
     }
+    blockingOperationEnds();
 }
 
 static int keyspaceIsEmpty() {
