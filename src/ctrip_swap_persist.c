@@ -720,10 +720,21 @@ err:
     return C_ERR;
 }
 
+void startPersistLoadFix() {
+    server.loading = 1;
+    server.loading_start_time = time(NULL);
+    blockingOperationStarts();
+    serverLog(LL_NOTICE, "persist load fix start");
+}
+
+void stopPersistLoadFix() {
+    server.loading = 0;
+    blockingOperationEnds();
+}
 
 /* scan meta cf to rebuild cold_keys/cold_filter & fix keys */
 void loadDataFromRocksdb() {
-    blockingOperationStarts();
+    startPersistLoadFix();
     for (int i = 0; i < server.dbnum; i++) {
         redisDb *db = server.db+i;
         long long start_time = ustime();
@@ -735,7 +746,7 @@ void loadDataFromRocksdb() {
                     i,db->cold_keys,elapsed);
         }
     }
-    blockingOperationEnds();
+    stopPersistLoadFix();
 }
 
 static int keyspaceIsEmpty() {
