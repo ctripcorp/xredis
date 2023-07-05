@@ -98,7 +98,13 @@ int rocksInit() {
     rocksdb_readoptions_set_fill_cache(rocks->ropts, 1);
 
     rocks->wopts = rocksdb_writeoptions_create();
-    if (!server.swap_persist_enabled) rocksdb_writeoptions_disable_WAL(rocks->wopts, 1);
+    if (server.swap_persist_enabled) {
+        rocksdb_options_set_WAL_ttl_seconds(rocks->db_opts,server.rocksdb_WAL_ttl_seconds);
+        rocksdb_options_set_WAL_size_limit_MB(rocks->db_opts,server.rocksdb_WAL_size_limit_MB);
+        rocksdb_options_set_max_total_wal_size(rocks->db_opts,server.rocksdb_max_total_wal_size);
+    } else {
+        rocksdb_writeoptions_disable_WAL(rocks->wopts, 1);
+    }
 
 	if (server.rocksdb_ratelimiter_rate_per_sec > 0) {
 		rocksdb_ratelimiter_t *ratelimiter = rocksdb_ratelimiter_create(server.rocksdb_ratelimiter_rate_per_sec, 100*1000/*100ms*/, 10);

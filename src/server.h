@@ -1826,6 +1826,8 @@ struct redisServer {
     unsigned long long rocksdb_meta_block_cache_size;
     unsigned long long rocksdb_data_block_cache_size;
     int rocksdb_max_open_files;
+    int rocksdb_WAL_ttl_seconds;
+    int rocksdb_WAL_size_limit_MB;
     unsigned long long rocksdb_data_write_buffer_size;
     unsigned long long rocksdb_meta_write_buffer_size;
     unsigned long long rocksdb_data_target_file_size_base;
@@ -1836,6 +1838,7 @@ struct redisServer {
     unsigned long long rocksdb_meta_period_compaction_seconds;
     unsigned long long rocksdb_data_max_bytes_for_level_base;
     unsigned long long rocksdb_meta_max_bytes_for_level_base;
+    unsigned long long rocksdb_max_total_wal_size;
     int rocksdb_data_max_bytes_for_level_multiplier;
     int rocksdb_meta_max_bytes_for_level_multiplier;
     int rocksdb_data_compaction_dynamic_level_bytes;
