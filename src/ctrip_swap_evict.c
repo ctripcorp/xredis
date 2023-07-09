@@ -48,7 +48,10 @@ void evictClientKeyRequestFinished(client *c, swapCtx *ctx) {
     clientReleaseLocks(c,ctx);
     decrRefCount(key);
 
-    server.swap_eviction_ctx->inprogress_count--;
+    if (persist_version != SWAP_PERSIST_VERSION_NO)
+        server.swap_persist_ctx->inprogress_count--;
+    else
+        server.swap_eviction_ctx->inprogress_count--;
 }
 
 int submitEvictClientRequest(client *c, robj *key, uint64_t persist_version) {
@@ -65,7 +68,10 @@ int submitEvictClientRequest(client *c, robj *key, uint64_t persist_version) {
     releaseKeyRequests(&result);
     getKeyRequestsFreeResult(&result);
 
-    server.swap_eviction_ctx->inprogress_count++;
+    if (persist_version != SWAP_PERSIST_VERSION_NO)
+        server.swap_persist_ctx->inprogress_count++;
+    else
+        server.swap_eviction_ctx->inprogress_count++;
     return 1;
 }
 

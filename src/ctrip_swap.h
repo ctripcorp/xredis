@@ -343,6 +343,8 @@ typedef struct swapPersistStat {
 typedef struct swapPersistCtx {
   uint64_t version;
   persistingKeys **keys; /* one for each db */
+  long long inprogress_count; /* current inprogrss persist count */
+  long long inprogress_limit; /* current inprogress limit */
   swapPersistStat stat;
 } swapPersistCtx;
 

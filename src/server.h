@@ -1914,6 +1914,7 @@ struct redisServer {
     /* swap persist */
     int swap_persist_enabled;
     struct swapPersistCtx *swap_persist_ctx;
+    int swap_persist_inprogress_growth_rate;
     int swap_ratelimit_persist_lag;
     int swap_ratelimit_persist_pause_growth_rate;
 };

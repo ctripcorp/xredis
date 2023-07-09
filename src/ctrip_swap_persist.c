@@ -185,6 +185,8 @@ swapPersistCtx *swapPersistCtxNew() {
         ctx->keys[i] = persistingKeysNew();
     }
     ctx->version = SWAP_PERSIST_VERSION_INITIAL;
+    ctx->inprogress_count = 0;
+    ctx->inprogress_limit = 0;
     swapPersistStatInit(&ctx->stat);
     return ctx;
 }
@@ -258,8 +260,13 @@ static void tryPersistKey(swapPersistCtx *ctx, redisDb *db, robj *key,
 }
 
 static inline int reachedPersistInprogressLimit() {
-    return server.swap_eviction_ctx->inprogress_count >=
-        server.swap_evict_inprogress_limit;
+    return server.swap_persist_ctx->inprogress_count >=
+        server.swap_persist_ctx->inprogress_limit;
+}
+
+static inline void swapPersistCtxPersistKeysStart(swapPersistCtx *ctx) {
+    mstime_t lag_ms = swapPersistCtxLag(ctx);
+    ctx->inprogress_limit = 1 + lag_ms / server.swap_persist_inprogress_growth_rate;
 }
 
 void swapPersistCtxPersistKeys(swapPersistCtx *ctx) {
@@ -269,6 +276,8 @@ void swapPersistCtxPersistKeys(swapPersistCtx *ctx) {
 	persistingKeys *keys;
 	sds keyptr;
 	mstime_t mstime;
+
+    swapPersistCtxPersistKeysStart(ctx);
 
     for (int dbid = 0; dbid < server.dbnum; dbid++) {
         db = server.db+dbid;
