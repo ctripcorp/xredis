@@ -405,3 +405,19 @@ start_server {tags {"dirty subkeys"} overrides {swap-dirty-subkeys-enabled yes}}
     }
 }
 
+start_server {tags {"dirty subkeys"} overrides {swap-dirty-subkeys-enabled yes}} {
+    r config set swap-debug-evict-keys 0
+    test {dirty subkeys encoding convertion} {
+        r hmset myhash1 a a b b c c
+        r swap.evict myhash1
+        wait_key_cold r myhash1
+
+        for {set i 0} {$i < 1024} {incr i} {
+            r hset myhash1 field-$i value-$i
+        }
+
+        assert ![object_is_data_dirty r myhash1]
+        r swap.evict myhash1
+        wait_key_cold r myhash1
+    }
+}

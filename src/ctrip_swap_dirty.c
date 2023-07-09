@@ -123,9 +123,15 @@ robj *dirtySubkeysIteratorNext(dirtySubkeysIterator *it, size_t *len) {
     }
 
     hashTypeCurrentObject(it->iter,OBJ_HASH_VALUE,&vstr,&vlen,&vll);
-    serverAssert(vstr == NULL);
-
-    *len = vll;
+    if (vstr != NULL) {
+        long long value;
+        if (string2ll((char*)vstr,vlen,&value) && value > 0)
+            *len = (size_t)value;
+        else
+            *len = 0;
+    } else {
+        *len = vll;
+    }
     return subkey;
 }
 
