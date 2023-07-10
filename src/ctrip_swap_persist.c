@@ -352,13 +352,14 @@ inline int swapRatelimitPersistNeeded(int policy, int *pms) {
 sds genSwapPersistInfoString(sds info) {
     if (server.swap_persist_enabled) {
         swapPersistStat *stat = &server.swap_persist_ctx->stat;
+        long long count = server.swap_persist_ctx->inprogress_count;
         size_t keys = swapPersistCtxKeysCount(server.swap_persist_ctx);
         size_t mem = swapPersistCtxUsedMemory(server.swap_persist_ctx);
         mstime_t lag = swapPersistCtxLag(server.swap_persist_ctx);
         info = sdscatprintf(info,
                 "swap_persist_stat:add_succ=%lld,add_ignored=%lld,submit_succ=%lld,submit_blocked=%lld\r\n"
-                "swap_persist_inprogress:count=%lu,memory=%lu,lag_millis=%lld\r\n",
-                stat->add_succ,stat->add_ignored,stat->submit_succ,stat->submit_blocked,keys,mem,lag);
+                "swap_persist_inprogress:count=%lld,keys=%lu,memory=%lu,lag_millis=%lld\r\n",
+                stat->add_succ,stat->add_ignored,stat->submit_succ,stat->submit_blocked,count,keys,mem,lag);
     }
     return info;
 }

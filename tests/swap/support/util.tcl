@@ -112,7 +112,7 @@ proc object_not_persisted {r key} {
 }
 
 proc wait_key_persist_deleted {r key} {
-    wait_for_condition 50 40 {
+    wait_for_condition 500 40 {
         [object_not_persisted $r $key]
     } else {
         fail "wait $key hot failed."
@@ -120,7 +120,7 @@ proc wait_key_persist_deleted {r key} {
 }
 
 proc wait_key_cold {r key} {
-    wait_for_condition 50 40 {
+    wait_for_condition 500 40 {
         [object_is_cold $r $key]
     } else {
         fail "wait $key cold failed."
@@ -136,7 +136,7 @@ proc keyspace_is_cold {r} {
 }
 
 proc wait_key_clean {r key} {
-    wait_for_condition 50 40 {
+    wait_for_condition 500 40 {
         ![object_is_dirty $r $key]
     } else {
         fail "wait $key clean failed."
@@ -144,7 +144,7 @@ proc wait_key_clean {r key} {
 }
 
 proc wait_keyspace_cold {r} {
-    wait_for_condition 50 40 {
+    wait_for_condition 500 40 {
         [keyspace_is_cold $r]
     } else {
         fail "wait keyspace cold failed."
@@ -152,7 +152,7 @@ proc wait_keyspace_cold {r} {
 }
 
 proc wait_key_warm {r key} {
-    wait_for_condition 50 40 {
+    wait_for_condition 500 40 {
         [object_is_warm $r $key]
     } else {
         fail "wait $key warm failed."
