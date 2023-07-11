@@ -2527,9 +2527,6 @@ void beforeSleep(struct aeEventLoop *eventLoop) {
     /* submit buffered swap request in current batch */
     swapBatchCtxFlush(server.swap_batch_ctx,SWAP_BATCH_FLUSH_BEFORE_SLEEP);
 
-    /* persist keys if swap persist enabled. */
-    if (server.swap_persist_enabled) swapPersistCtxPersistKeys(server.swap_persist_ctx);
-
     /* Handle precise timeouts of blocked clients. */
     handleBlockedClientsTimeout();
 
@@ -4220,6 +4217,10 @@ void call(client *c, int flags) {
     size_t zmalloc_used = zmalloc_used_memory();
     if (zmalloc_used > server.stat_peak_memory)
         server.stat_peak_memory = zmalloc_used;
+
+    /* persist keys if swap persist enabled. */
+    if (server.swap_mode != SWAP_MODE_MEMORY && server.swap_persist_enabled)
+        swapPersistCtxPersistKeys(server.swap_persist_ctx);
 }
 
 /* Used when a command that is ready for execution needs to be rejected, due to
