@@ -47,7 +47,7 @@ robj *createObject(int type, void *ptr) {
     o->dirty_meta = 1;
     o->dirty_data = 1;
     o->persistent = 0;
-    o->reserved = 0;
+    o->persist_keep = 0;
 
     /* Set the LRU to the current lruclock (minutes resolution), or
      * alternatively the LFU counter. */
@@ -96,7 +96,7 @@ robj *createEmbeddedStringObject(const char *ptr, size_t len) {
     o->dirty_meta = 1;
     o->dirty_data = 1;
     o->persistent = 0;
-    o->reserved = 0;
+    o->persist_keep = 0;
 
     if (server.maxmemory_policy & MAXMEMORY_FLAG_LFU) {
         o->lru = (LFUGetTimeInMinutes()<<8) | LFU_INIT_VAL;

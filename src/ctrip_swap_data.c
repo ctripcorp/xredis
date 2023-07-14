@@ -81,6 +81,10 @@ int swapDataKeyRequestFinished(swapData *data) {
     if (data->persistence_deleted) {
         dbDeleteMeta(data->db, data->key);
     }
+
+    if (data->set_persist_keep && !getObjectPersistKeep(data->value)) {
+        setObjectPersistKeep(data->value);
+    }
     return 0;
 }
 
@@ -131,6 +135,9 @@ int swapDataAna(swapData *d, int thd, struct keyRequest *key_request,
             /* rocksdb and memory will diverge when swap finish. */
             d->set_dirty = 1;
         }
+
+        if (key_request->cmd_intention == SWAP_IN && !swapDataIsCold(d))
+            d->set_persist_keep = 1;
     }
 
     return retval;

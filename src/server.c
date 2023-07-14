@@ -2524,6 +2524,10 @@ void beforeSleep(struct aeEventLoop *eventLoop) {
         return;
     }
 
+    /* persist keys if swap persist enabled. */
+    if (server.swap_mode != SWAP_MODE_MEMORY && server.swap_persist_enabled)
+        swapPersistCtxPersistKeys(server.swap_persist_ctx);
+
     /* submit buffered swap request in current batch */
     swapBatchCtxFlush(server.swap_batch_ctx,SWAP_BATCH_FLUSH_BEFORE_SLEEP);
 

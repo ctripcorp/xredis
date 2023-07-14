@@ -54,13 +54,14 @@ void evictClientKeyRequestFinished(client *c, swapCtx *ctx) {
         server.swap_eviction_ctx->inprogress_count--;
 }
 
-int submitEvictClientRequest(client *c, robj *key, uint64_t persist_version) {
+int submitEvictClientRequest(client *c, robj *key, int persist_keep, uint64_t persist_version) {
     getKeyRequestsResult result = GET_KEYREQUESTS_RESULT_INIT;
     getKeyRequestsPrepareResult(&result,1);
     incrRefCount(key);
 
     uint32_t cmd_intention_flags = c->cmd->intention_flags;
-    if (persist_version > 0) cmd_intention_flags |= SWAP_OUT_KEEP_DATA;
+    if (persist_version > 0) cmd_intention_flags |= SWAP_OUT_PERSIST;
+    if (persist_keep) cmd_intention_flags |= SWAP_OUT_KEEP_DATA;
     getKeyRequestsAppendSubkeyResult(&result,REQUEST_LEVEL_KEY,key,0,NULL,
             c->cmd->intention,cmd_intention_flags,c->cmd->flags,c->db->id);
     c->keyrequests_count++;
@@ -92,7 +93,7 @@ int tryEvictKey(redisDb *db, robj *key, int *evict_result) {
 
     dirty = objectIsDirty(o);
     old_keyrequests_count = evict_client->keyrequests_count;
-    submitEvictClientRequest(evict_client,key,SWAP_PERSIST_VERSION_NO);
+    submitEvictClientRequest(evict_client,key,0,SWAP_PERSIST_VERSION_NO);
     /* Evit request finished right away, no swap triggered. */
     if (evict_client->keyrequests_count == old_keyrequests_count) {
         if (dirty) {

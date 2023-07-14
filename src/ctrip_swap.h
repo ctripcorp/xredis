@@ -76,8 +76,10 @@ extern const char *swap_cf_names[CF_COUNT];
 #define SWAP_METASCAN_RANDOMKEY (1U<<8)
 /* This is a metascan request for active-expire. */
 #define SWAP_METASCAN_EXPIRE (1U<<9)
-/* Keep data in memory when swap out if possible. */
-#define SWAP_OUT_KEEP_DATA (1U<<10)
+/* This is a persist requset. */
+#define SWAP_OUT_PERSIST (1U<<10)
+/* Keep data in memory because memory is sufficient. */
+#define SWAP_OUT_KEEP_DATA (1U<<11)
 
 /* --- swap intention flags --- */
 /* Delete rocksdb data key when swap in */
@@ -297,6 +299,7 @@ void getKeyRequestsAttachSwapTrace(getKeyRequestsResult * result, swapCmdTrace *
 
 void getKeyRequestsAppendRangeResult(getKeyRequestsResult *result, int level, MOVE robj *key, int arg_rewrite0, int arg_rewrite1, int num_ranges, MOVE range *ranges, int cmd_intention, int cmd_intention_flags, uint64_t cmd_flags, int dbid);
 
+
 #define SWAP_PERSIST_VERSION_NO      0
 #define SWAP_PERSIST_VERSION_INITIAL 1
 
@@ -341,6 +344,7 @@ typedef struct swapPersistStat {
 } swapPersistStat;
 
 typedef struct swapPersistCtx {
+  int keep;
   uint64_t version;
   persistingKeys **keys; /* one for each db */
   long long inprogress_count; /* current inprogrss persist count */
@@ -359,8 +363,22 @@ sds genSwapPersistInfoString(sds info);
 void swapPersistKeyRequestFinished(swapPersistCtx *ctx, int dbid, robj *key, uint64_t persist_version);
 void loadDataFromDisk(void);
 void ctripLoadDataFromDisk(void);
-int submitEvictClientRequest(client *c, robj *key, uint64_t persist_version);
+int submitEvictClientRequest(client *c, robj *key, int persist_keep, uint64_t persist_version);
 
+#define setObjectPersistKeep(o) do { \
+    if (o) o->persist_keep = 1; \
+} while(0)
+
+#define clearObjectPersistKeep(o) do { \
+    if (o) o->persist_keep = 0; \
+} while(0)
+
+#define overwriteObjectPersistKeep(o,pk) do { \
+    if (o) o->persist_keep = pk; \
+} while(0)
+
+
+#define getObjectPersistKeep(o) ((o) ? o->persist_keep : 0)
 
 #define setObjectMetaDirty(o) do { \
     if (o) o->dirty_meta = 1; \
@@ -537,7 +555,8 @@ typedef struct swapData {
   unsigned set_dirty:1;
   unsigned set_dirty_meta:1;
   unsigned persistence_deleted:1;
-  unsigned reserved:28;
+  unsigned set_persist_keep:1;
+  unsigned reserved:27;
   sds nextseek; /* own, moved from exec */
   swapDataAbsentSubkey *absent;
   robj *dirty_subkeys;
@@ -640,6 +659,13 @@ static inline void swapDataObjectMetaModifyLen(swapData *d, int delta) {
 static inline void swapDataObjectMetaSetPtr(swapData *d, void *ptr) {
     objectMeta *object_meta = swapDataObjectMeta(d);
     object_meta->ptr = (unsigned long long)(long)ptr;
+}
+/* persist request keeps value in memory when maxmemory not reached or
+ * data originally not cold (no need to swap in). */
+static inline int swapDataPersistKeepData(swapData *d, uint32_t cmd_intention_flags, int may_keep_data) {
+  return (cmd_intention_flags & SWAP_OUT_PERSIST) &&
+         (getObjectPersistKeep(d->value) || cmd_intention_flags&SWAP_OUT_KEEP_DATA) &&
+         may_keep_data;
 }
 void swapDataTurnWarmOrHot(swapData *data);
 void swapDataTurnCold(swapData *data);

@@ -603,6 +603,7 @@ void incrDecrCommand(client *c, long long incr) {
     } else {
         new = createStringObjectFromLongLongForValue(value);
         if (o) {
+            overwriteObjectPersistKeep(new,o->persist_keep);
             dbOverwrite(c->db,c->argv[1],new);
         } else {
             dbAdd(c->db,c->argv[1],new);
@@ -654,10 +655,12 @@ void incrbyfloatCommand(client *c) {
         return;
     }
     new = createStringObjectFromLongDouble(value,1);
-    if (o)
+    if (o) {
+        overwriteObjectPersistKeep(new,o->persist_keep);
         dbOverwrite(c->db,c->argv[1],new);
-    else
+    } else {
         dbAdd(c->db,c->argv[1],new);
+    }
     signalModifiedKey(c,c->db,c->argv[1]);
     notifyKeyspaceEventDirty(NOTIFY_STRING,"incrbyfloat",c->argv[1],c->db->id,new,NULL);
     server.dirty++;

@@ -716,7 +716,7 @@ typedef struct redisObject {
     unsigned dirty_meta:1;     /* set to 1 if rocksdb and redis meta differs */
     unsigned dirty_data:1;     /* set to 1 if rocksdb and redis data differs */
     unsigned persistent:1;
-    unsigned reserved:1;
+    unsigned persist_keep:1;   /* set to 1 if persist key should keep value in memory */
     int refcount:REFCOUNT_BITS;
     void *ptr;
 } robj;
@@ -1914,6 +1914,7 @@ struct redisServer {
     /* swap persist */
     int swap_persist_enabled;
     struct swapPersistCtx *swap_persist_ctx;
+    int swap_persist_lag_millis;
     int swap_persist_inprogress_growth_rate;
     int swap_ratelimit_persist_lag;
     int swap_ratelimit_persist_pause_growth_rate;

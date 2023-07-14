@@ -80,7 +80,7 @@ int wholeKeySwapAna(swapData *data, int thd, struct keyRequest *req,
     case SWAP_OUT:
         if (data->value) {
             /* we can always keep data and clear dirty after persist string */
-            int keep_data = cmd_intention_flags & SWAP_OUT_KEEP_DATA;
+            int keep_data = swapDataPersistKeepData(data,cmd_intention_flags,1);
 
             if (objectIsDirty(data->value)) {
                 *intention = SWAP_OUT;
@@ -203,6 +203,7 @@ static robj *createSwapInObject(MOVE robj *newval) {
     if (newval->refcount == OBJ_SHARED_REFCOUNT)
         swapin = dupSharedObject(newval);
     clearObjectDirty(swapin);
+    clearObjectPersistKeep(swapin);
     return swapin;
 }
 

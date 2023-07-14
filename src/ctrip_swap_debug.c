@@ -46,10 +46,10 @@ static sds getSwapObjectInfo(robj *o) {
     if (o) {
         return sdscatprintf(sdsempty(),
                 "at=%p,refcount=%d,type=%s,encoding=%s,dirty_meta=%d,dirty_data=%d,"
-                "lru=%d,lru_seconds_idle=%llu",
+                "persist_keep=%d,lru=%d,lru_seconds_idle=%llu",
                 (void*)o,o->refcount,strObjectType(o->type),
-                strEncoding(o->encoding),o->dirty_meta,o->dirty_data,o->lru,
-                estimateObjectIdleTime(o)/1000);
+                strEncoding(o->encoding),o->dirty_meta,o->dirty_data,
+                o->persist_keep,o->lru,estimateObjectIdleTime(o)/1000);
     } else {
         return sdsnew("<nil>");
     }

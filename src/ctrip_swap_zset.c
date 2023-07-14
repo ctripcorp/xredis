@@ -281,7 +281,7 @@ int zsetSwapAna(swapData *data, int thd, struct keyRequest *req,
         } else {
             int may_keep_data;
             int noswap = zsetSwapAnaOutSelectSubkeys(data,datactx,&may_keep_data);
-            int keep_data = (cmd_intention_flags & SWAP_OUT_KEEP_DATA) && may_keep_data;
+            int keep_data = swapDataPersistKeepData(data,cmd_intention_flags,may_keep_data);
 
             /* create new meta if needed */
             if (!swapDataPersisted(data)) {
@@ -613,6 +613,7 @@ static inline robj *createSwapInObject(robj *newval) {
     robj *swapin = newval;
     serverAssert(newval && newval->type == OBJ_ZSET);
     clearObjectDirty(swapin);
+    clearObjectPersistKeep(swapin);
     return swapin;
 }
 

@@ -500,7 +500,7 @@ sds genSwapHitInfoString(sds info) {
         keyspace_hit_perc = ((double)(attempt - notfound)/attempt)*100;
     }
     if (notfound) {
-        notfound_coldfilter_filt_perc = ((double)(notfound_absentcache_filt+notfound_absentcache_filt)/notfound)*100;
+        notfound_coldfilter_filt_perc = ((double)(notfound_absentcache_filt+notfound_cuckoofilter_filt)/notfound)*100;
     }
 
     info = sdscatprintf(info,

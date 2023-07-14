@@ -187,6 +187,7 @@ swapPersistCtx *swapPersistCtxNew() {
     ctx->version = SWAP_PERSIST_VERSION_INITIAL;
     ctx->inprogress_count = 0;
     ctx->inprogress_limit = 0;
+    ctx->keep = 1;
     swapPersistStatInit(&ctx->stat);
     return ctx;
 }
@@ -248,14 +249,14 @@ void swapPersistCtxAddKey(swapPersistCtx *ctx, redisDb *db, robj *key) {
 }
 
 static void tryPersistKey(swapPersistCtx *ctx, redisDb *db, robj *key,
-        uint64_t persist_version) {
+        int persist_keep, uint64_t persist_version) {
     client *evict_client = server.evict_clients[db->id];
     if (lockWouldBlock(server.swap_txid++, db, key)) {
         ctx->stat.submit_blocked++;
         return;
     } else {
         ctx->stat.submit_succ++;
-        submitEvictClientRequest(evict_client,key,persist_version);
+        submitEvictClientRequest(evict_client,key,persist_keep,persist_version);
     }
 }
 
@@ -264,9 +265,26 @@ static inline int reachedPersistInprogressLimit() {
         server.swap_persist_ctx->inprogress_limit;
 }
 
+#define SWAP_PERSIST_CHECK_KEEP_INTERVAL 16
+#define SWAP_PERSIST_KEEP_DATA_MEMORY_PERC 80
 static inline void swapPersistCtxPersistKeysStart(swapPersistCtx *ctx) {
+    static uint64_t counter;
     mstime_t lag_ms = swapPersistCtxLag(ctx);
-    ctx->inprogress_limit = 1 + lag_ms / server.swap_persist_inprogress_growth_rate;
+    if (lag_ms <= server.swap_persist_lag_millis) {
+        ctx->inprogress_limit = 0;
+    } else {
+        ctx->inprogress_limit = 1 + (lag_ms - server.swap_persist_lag_millis) / server.swap_persist_inprogress_growth_rate;
+    }
+    if (counter++ % SWAP_PERSIST_CHECK_KEEP_INTERVAL == 0) {
+        size_t mem_reported, mem_used, mem_keep_data, actual_maxmemory;
+        getMaxmemoryState(&mem_reported,&mem_used,NULL,NULL);
+        actual_maxmemory = calculateNextMemoryLimit(mem_used,server.maxmemory_scale_from,server.maxmemory);
+        mem_keep_data = actual_maxmemory*SWAP_PERSIST_KEEP_DATA_MEMORY_PERC/100;
+        if (mem_used <= mem_keep_data || mem_keep_data == 0)
+            ctx->keep = 1;
+        else
+            ctx->keep = 0;
+    }
 }
 
 void swapPersistCtxPersistKeys(swapPersistCtx *ctx) {
@@ -288,7 +306,7 @@ void swapPersistCtxPersistKeys(swapPersistCtx *ctx) {
                 !reachedPersistInprogressLimit() &&
                 count++ < SWAP_PERSIST_MAX_KEYS_PER_LOOP) {
             robj *key = createStringObject(keyptr,sdslen(keyptr));
-            tryPersistKey(ctx,db,key,persist_version);
+            tryPersistKey(ctx,db,key,ctx->keep,persist_version);
             decrRefCount(key);
         }
         persistingKeysDeinitIterator(&iter);

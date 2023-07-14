@@ -265,9 +265,11 @@ void dbOverwrite(redisDb *db, robj *key, robj *val) {
  * The client 'c' argument may be set to NULL if the operation is performed
  * in a context where there is no clear client performing the operation. */
 void genericSetKey(client *c, redisDb *db, robj *key, robj *val, int keepttl, int signal) {
-    if (lookupKeyWrite(db,key) == NULL) {
+    robj *oo;
+    if ((oo = lookupKeyWrite(db,key)) == NULL) {
         dbAdd(db,key,val);
     } else {
+        overwriteObjectPersistKeep(val,oo->persist_keep);
         dbOverwrite(db,key,val);
     }
     incrRefCount(val);
@@ -386,9 +388,11 @@ int dbDelete(redisDb *db, robj *key) {
 robj *dbUnshareStringValue(redisDb *db, robj *key, robj *o) {
     serverAssert(o->type == OBJ_STRING);
     if (o->refcount != 1 || o->encoding != OBJ_ENCODING_RAW) {
+        int persist_keep = o->persist_keep;
         robj *decoded = getDecodedObject(o);
         o = createRawStringObject(decoded->ptr, sdslen(decoded->ptr));
         decrRefCount(decoded);
+        overwriteObjectPersistKeep(o,persist_keep);
         dbOverwrite(db,key,o);
     }
     return o;

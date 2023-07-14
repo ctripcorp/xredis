@@ -2811,6 +2811,7 @@ standardConfig configs[] = {
     createIntConfig("swap-compaction-filter-skip-level", NULL, MODIFIABLE_CONFIG, -1, INT_MAX, server.swap_compaction_filter_skip_level, 0, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("swap-ratelimit-persist-lag", NULL, MODIFIABLE_CONFIG, 1, INT_MAX, server.swap_ratelimit_persist_lag, 60, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("swap-ratelimit-persist-pause-growth-rate", NULL, MODIFIABLE_CONFIG, 1, INT_MAX, server.swap_ratelimit_persist_pause_growth_rate, 10, INTEGER_CONFIG, NULL, NULL),
+    createIntConfig("swap-persist-lag-millis", NULL, MODIFIABLE_CONFIG, 0, INT_MAX, server.swap_persist_lag_millis, 0, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("swap-persist-inprogress-growth-rate", NULL, MODIFIABLE_CONFIG, 1, INT_MAX, server.swap_persist_inprogress_growth_rate, 500, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("rocksdb.max_open_files", NULL, IMMUTABLE_CONFIG, -1, INT_MAX, server.rocksdb_max_open_files, -1, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("rocksdb.data.max_write_buffer_number", "rocksdb.max_write_buffer_number", IMMUTABLE_CONFIG, 1, 256, server.rocksdb_data_max_write_buffer_number, 3, INTEGER_CONFIG, NULL, NULL),
