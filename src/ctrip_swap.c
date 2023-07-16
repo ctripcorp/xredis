@@ -560,8 +560,11 @@ int lockGlobalAndExec(clientKeyRequestFinished locked_op, uint64_t exclude_mark)
 
 int dbSwap(client *c) {
     int keyrequests_submit;
+    swapRatelimitCtx _rlctx = {0}, *rlctx = &_rlctx;
 
-    if (swapRateLimitReject(c)) return C_OK;
+    swapRatelimitStart(rlctx,c);
+
+    if (swapRateLimitReject(rlctx,c)) return C_OK;
 
     if (!(c->flags & CLIENT_MASTER)) {
         keyrequests_submit = submitNormalClientRequests(c);
@@ -569,7 +572,7 @@ int dbSwap(client *c) {
         keyrequests_submit = submitReplClientRequests(c);
     }
 
-    if (c->keyrequests_count) swapRateLimitPause(c);
+    swapRateLimitPause(rlctx,c);
 
     if (keyrequests_submit > 0) {
         /* Swapping command parsed but not processed, return C_ERR so that:

@@ -380,12 +380,24 @@ end:
 
 /* ----------------------------- ratelimit ------------------------------ */
 
-inline int swapRatelimitMaxmemoryNeeded(int policy, int *pms) {
+void swapRatelimitStart(swapRatelimitCtx *rlctx, client *c) {
+    rlctx->is_read_command = (c->cmd->flags & CMD_READONLY) ||
+                           (c->cmd->proc == execCommand && (c->mstate.cmd_flags & CMD_READONLY));
+    rlctx->is_write_command = (c->cmd->flags & CMD_WRITE) ||
+                           (c->cmd->proc == execCommand && (c->mstate.cmd_flags & CMD_WRITE));
+    rlctx->is_denyoom_command = (c->cmd->flags & CMD_DENYOOM) ||
+                             (c->cmd->proc == execCommand && (c->mstate.cmd_flags & CMD_DENYOOM));
+}
+
+inline int swapRatelimitMaxmemoryNeeded(swapRatelimitCtx *rlctx, int policy, int *pms) {
     int pause_ms;
     static mstime_t prev_logtime;
     size_t mem_reported, mem_used, mem_ratelimit, actual_maxmemory;
 
     if (pms) *pms = 0;
+
+    /* No need to pause hot read or management commands(ping/info/config) */
+    if (!rlctx->keyrequests_count && !rlctx->is_denyoom_command) return 0;
 
     /* mem_used are not returned if not overmaxmemory. */
     if (!getMaxmemoryState(&mem_reported,&mem_used,NULL,NULL)) return 0;
@@ -419,7 +431,7 @@ inline int swapRatelimitMaxmemoryNeeded(int policy, int *pms) {
 
 void rejectCommand(client *c, robj *reply);
 /* return 1 if command rejected */
-int swapRateLimitReject(client *c) {
+int swapRateLimitReject(swapRatelimitCtx *rlctx, client *c) {
     serverAssert(server.swap_mode != SWAP_MODE_MEMORY);
 
     if (server.swap_ratelimit_policy != SWAP_RATELIMIT_POLICY_REJECT_OOM &&
@@ -430,18 +442,11 @@ int swapRateLimitReject(client *c) {
     /* Never reject replicated commands from master */
     if (c->flags & CLIENT_MASTER) return 0;
 
-    int is_read_command = (c->cmd->flags & CMD_READONLY) ||
-                           (c->cmd->proc == execCommand && (c->mstate.cmd_flags & CMD_READONLY));
-    int is_write_command = (c->cmd->flags & CMD_WRITE) ||
-                           (c->cmd->proc == execCommand && (c->mstate.cmd_flags & CMD_WRITE));
-    int is_denyoom_command = (c->cmd->flags & CMD_DENYOOM) ||
-                             (c->cmd->proc == execCommand && (c->mstate.cmd_flags & CMD_DENYOOM));
-
     if ((server.swap_ratelimit_policy == SWAP_RATELIMIT_POLICY_REJECT_OOM &&
-                is_denyoom_command) ||
+                rlctx->is_denyoom_command) ||
         (server.swap_ratelimit_policy == SWAP_RATELIMIT_POLICY_REJECT_ALL &&
-               (is_read_command || is_write_command))) {
-        if (swapRatelimitNeeded(server.swap_ratelimit_policy,NULL)) {
+               (rlctx->is_read_command || rlctx->is_write_command))) {
+        if (swapRatelimitNeeded(rlctx,server.swap_ratelimit_policy,NULL)) {
             rejectCommand(c, shared.oomerr);
             server.stat_swap_ratelimit_rejected_cmd_count++;
             return 1;
@@ -459,13 +464,14 @@ static int unprotectClientdProc(
     return AE_NOMORE;
 }
 
-void swapRateLimitPause(client *c) {
+void swapRateLimitPause(swapRatelimitCtx *rlctx, client *c) {
     int pause_ms;
     serverAssert(server.swap_mode != SWAP_MODE_MEMORY);
+    rlctx->keyrequests_count = c->keyrequests_count;
 
     if (server.swap_ratelimit_policy != SWAP_RATELIMIT_POLICY_PAUSE) return;
 
-    if (swapRatelimitNeeded(server.swap_ratelimit_policy,&pause_ms) &&
+    if (swapRatelimitNeeded(rlctx,server.swap_ratelimit_policy,&pause_ms) &&
             pause_ms > 0) {
         protectClient(c);
         aeCreateTimeEvent(server.el,pause_ms,unprotectClientdProc,c,NULL);

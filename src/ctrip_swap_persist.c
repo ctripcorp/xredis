@@ -335,7 +335,7 @@ void swapPersistKeyRequestFinished(swapPersistCtx *ctx, int dbid, robj *key,
     }
 }
 
-inline int swapRatelimitPersistNeeded(int policy, int *pms) {
+inline int swapRatelimitPersistNeeded(swapRatelimitCtx *rlctx, int policy, int *pms) {
     int pause_ms;
     static mstime_t prev_logtime;
 
@@ -347,6 +347,7 @@ inline int swapRatelimitPersistNeeded(int policy, int *pms) {
     if (lag <= server.swap_ratelimit_persist_lag) return 0;
 
     if (policy == SWAP_RATELIMIT_POLICY_PAUSE) {
+        if (!rlctx->is_write_command) return 0;
         pause_ms = (lag - server.swap_ratelimit_persist_lag)/server.swap_ratelimit_persist_pause_growth_rate;
         pause_ms = pause_ms < SWAP_RATELIMIT_PAUSE_MAX_MS ? pause_ms : SWAP_RATELIMIT_PAUSE_MAX_MS;
         if (pms) *pms = pause_ms;

@@ -1574,20 +1574,28 @@ static inline int ctrip_evictionTimeProcGetDelayMillis() {
 #define SWAP_RATELIMIT_POLICY_REJECT_ALL 2
 #define SWAP_RATELIMIT_POLICY_DISABLED 3
 
-#define SWAP_RATELIMIT_PAUSE_MAX_MS 100
+#define SWAP_RATELIMIT_PAUSE_MAX_MS 200
 
-int swapRatelimitMaxmemoryNeeded(int policy, int *pms);
-int swapRatelimitPersistNeeded(int policy, int *pms);
-static inline int swapRatelimitNeeded(int policy, int *pms) {
+typedef struct swapRatelimitCtx {
+  int is_write_command;
+  int is_read_command;
+  int is_denyoom_command;
+  int keyrequests_count;
+} swapRatelimitCtx;
+
+void swapRatelimitStart(swapRatelimitCtx *rlctx, client *c);
+int swapRatelimitMaxmemoryNeeded(swapRatelimitCtx *rlctx, int policy, int *pms);
+int swapRatelimitPersistNeeded(swapRatelimitCtx *rlctx, int policy, int *pms);
+static inline int swapRatelimitNeeded(swapRatelimitCtx *rlctx, int policy, int *pms) {
   int pms0, pms1 = 0, pms2 = 0, maxmemory, persist;
-  maxmemory = swapRatelimitMaxmemoryNeeded(policy,&pms1);
-  persist = swapRatelimitPersistNeeded(policy,&pms2);
+  maxmemory = swapRatelimitMaxmemoryNeeded(rlctx,policy,&pms1);
+  persist = swapRatelimitPersistNeeded(rlctx,policy,&pms2);
   pms0 = MAX(pms1, pms2);
   if (pms) *pms = pms0;
   return maxmemory || persist;
 }
-int swapRateLimitReject(client *c);
-void swapRateLimitPause(client *c);
+int swapRateLimitReject(swapRatelimitCtx *rlctx, client *c);
+void swapRateLimitPause(swapRatelimitCtx *rlctx, client *c);
 void trackSwapRateLimitInstantaneousMetrics();
 void resetSwapRateLimitInstantaneousMetrics();
 sds genSwapRateLimitInfoString(sds info);
