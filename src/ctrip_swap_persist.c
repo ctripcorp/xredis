@@ -265,6 +265,15 @@ static inline int reachedPersistInprogressLimit() {
         server.swap_persist_ctx->inprogress_limit;
 }
 
+/* report memory used whether mem_used over maxmemory, see getMaxmemoryState
+ * for more details */
+size_t swapPersistGetUsedMemory() {
+    size_t mem_used = ctrip_getUsedMemory();
+    size_t overhead = freeMemoryGetNotCountedMemory();
+    mem_used = (mem_used > overhead) ? mem_used-overhead : 0;
+    return mem_used;
+}
+
 #define SWAP_PERSIST_CHECK_KEEP_INTERVAL 16
 #define SWAP_PERSIST_KEEP_DATA_MEMORY_PERC 80
 static inline void swapPersistCtxPersistKeysStart(swapPersistCtx *ctx) {
@@ -276,8 +285,8 @@ static inline void swapPersistCtxPersistKeysStart(swapPersistCtx *ctx) {
         ctx->inprogress_limit = 1 + (lag_ms - server.swap_persist_lag_millis) / server.swap_persist_inprogress_growth_rate;
     }
     if (counter++ % SWAP_PERSIST_CHECK_KEEP_INTERVAL == 0) {
-        size_t mem_reported, mem_used, mem_keep_data, actual_maxmemory;
-        getMaxmemoryState(&mem_reported,&mem_used,NULL,NULL);
+        size_t mem_used, mem_keep_data, actual_maxmemory;
+        mem_used = swapPersistGetUsedMemory();
         actual_maxmemory = calculateNextMemoryLimit(mem_used,server.maxmemory_scale_from,server.maxmemory);
         mem_keep_data = actual_maxmemory*SWAP_PERSIST_KEEP_DATA_MEMORY_PERC/100;
         if (mem_used <= mem_keep_data || mem_keep_data == 0)
