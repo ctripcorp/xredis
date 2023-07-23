@@ -476,7 +476,7 @@ static int isSafeToPerformEvictions(void) {
 }
 
 /* Algorithm for converting tenacity (0-100) to a time limit.  */
-static unsigned long evictionTimeLimitUs() {
+unsigned long evictionTimeLimitUs() {
     serverAssert(server.maxmemory_eviction_tenacity >= 0);
     serverAssert(server.maxmemory_eviction_tenacity <= 100);
 
@@ -667,7 +667,7 @@ int performEvictions(void) {
             decrRefCount(keyobj);
             keys_freed++;
 
-            if (keys_freed % 16 == 0) {
+            if (ctrip_performEvictionLoopCheckInterval(keys_freed)) {
                 /* When the memory to free starts to be big enough, we may
                  * start spending so much time here that is impossible to
                  * deliver data to the replicas fast enough, so we force the

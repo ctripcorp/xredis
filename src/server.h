@@ -1811,6 +1811,7 @@ struct redisServer {
     /* swap eviction */
     int swap_evict_inprogress_limit;
     int swap_evict_inprogress_growth_rate;
+    int swap_evict_loop_check_interval;
     struct swapEvictionCtx *swap_eviction_ctx;
 
     int swap_load_inprogress_count;

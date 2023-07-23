@@ -2804,6 +2804,7 @@ standardConfig configs[] = {
     createIntConfig("swap-rocksdb-stats-collect-interval-ms", NULL, MODIFIABLE_CONFIG, 1, INT_MAX, server.swap_rocksdb_stats_collect_interval_ms, 2000, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("swap-evict-inprogress-limit", NULL, MODIFIABLE_CONFIG, 4, INT_MAX, server.swap_evict_inprogress_limit, 128, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("swap-evict-inprogress-growth-rate", NULL, MODIFIABLE_CONFIG, 1, INT_MAX, server.swap_evict_inprogress_growth_rate, 5*1024*1024, MEMORY_CONFIG, NULL, NULL),
+    createIntConfig("swap-evict-loop-check-interval", NULL, MODIFIABLE_CONFIG, 1, 1024, server.swap_evict_loop_check_interval, 8, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("swap-ratelimit-maxmemory-percentage", NULL, MODIFIABLE_CONFIG, 100, INT_MAX, server.swap_ratelimit_maxmemory_percentage, 200, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("swap-ratelimit-maxmemory-pause-growth-rate", NULL, MODIFIABLE_CONFIG, 1, INT_MAX, server.swap_ratelimit_maxmemory_pause_growth_rate, 20*1024*1024, MEMORY_CONFIG, NULL, NULL),
     createIntConfig("swap-scan-session-bits", NULL, IMMUTABLE_CONFIG, 1, 16, server.swap_scan_session_bits, 7, INTEGER_CONFIG, NULL, NULL),

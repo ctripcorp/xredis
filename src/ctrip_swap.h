@@ -1566,6 +1566,19 @@ int ctrip_performEvictionLoopStartShouldBreak(swapEvictKeysCtx *sectx);
 size_t performEvictionSwapSelectedKey(swapEvictKeysCtx *sectx, redisDb *db, robj *keyobj);
 int ctrip_performEvictionLoopCheckShouldBreak(swapEvictKeysCtx *sectx);
 void ctrip_performEvictionEnd(swapEvictKeysCtx *sectx);
+static inline int ctrip_performEvictionLoopCheckInterval(int keys_freed) {
+  if (server.swap_mode == SWAP_MODE_MEMORY)
+    return keys_freed % 16 == 0;
+  else
+    return keys_freed % server.swap_evict_loop_check_interval == 0;
+}
+unsigned long evictionTimeLimitUs();
+static inline unsigned long ctirp_evictionTimeLimitUs() {
+  if (server.swap_mode == SWAP_MODE_MEMORY)
+    return evictionTimeLimitUs();
+  else
+    return 50uL * server.maxmemory_eviction_tenacity;
+}
 /* used memory in disk swap mode */
 size_t coldFiltersUsedMemory(); /* cuckoo filter not counted in maxmemory */
 static inline size_t ctrip_getUsedMemory() {
