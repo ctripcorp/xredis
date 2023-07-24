@@ -2515,6 +2515,7 @@ void beforeSleep(struct aeEventLoop *eventLoop) {
      * events to handle. */
     if (ProcessingEventsWhileBlocked) {
         uint64_t processed = 0;
+        if (server.swap_mode != SWAP_MODE_MEMORY) swapEvictionFreedInrowReset(server.swap_eviction_ctx);
         processed += swapBatchCtxFlush(server.swap_batch_ctx,SWAP_BATCH_FLUSH_BEFORE_SLEEP);
         processed += handleClientsWithPendingReadsUsingThreads();
         processed += tlsProcessPendingData();
@@ -2527,6 +2528,8 @@ void beforeSleep(struct aeEventLoop *eventLoop) {
     /* persist keys if swap persist enabled. */
     if (server.swap_mode != SWAP_MODE_MEMORY && server.swap_persist_enabled)
         swapPersistCtxPersistKeys(server.swap_persist_ctx);
+
+    if (server.swap_mode != SWAP_MODE_MEMORY) swapEvictionFreedInrowReset(server.swap_eviction_ctx);
 
     /* submit buffered swap request in current batch */
     swapBatchCtxFlush(server.swap_batch_ctx,SWAP_BATCH_FLUSH_BEFORE_SLEEP);

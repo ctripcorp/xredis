@@ -203,7 +203,7 @@ inline size_t ctrip_getMemoryToFree(size_t mem_used) {
 }
 
 inline int swapEvictionReachedInprogressLimit() {
-    return server.swap_eviction_ctx->inprogress_count >=
+    return server.swap_eviction_ctx->inprogress_count + server.swap_eviction_ctx->freed_inrow >=
         server.swap_eviction_ctx->inprogress_limit;
 }
 
@@ -256,6 +256,10 @@ inline size_t performEvictionSwapSelectedKey(swapEvictKeysCtx *sectx, redisDb *d
      * size beforehand. */
     mem_freed = keyEstimateSize(db, keyobj);
     sectx->swap_trigged += tryEvictKey(db, keyobj, &evict_result);
+
+    if (evictResultIsFreed(evict_result))
+        swapEvictionFreedInrowIncr(ctx);
+
     if (evictResultIsSucc(evict_result)) {
         ctx->failed_inrow = 0;
         notifyKeyspaceEvent(NOTIFY_EVICTED, "swap-evicted", keyobj, db->id);

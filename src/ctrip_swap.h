@@ -1512,6 +1512,10 @@ static inline int evictResultIsSucc(int evict_result) {
   return evict_result <= EVICT_SUCC_FREED;
 }
 
+static inline int evictResultIsFreed(int evict_result) {
+  return evict_result == EVICT_SUCC_FREED;
+}
+
 typedef struct swapEvictionStat {
     long long evict_result[EVICT_RESULT_TYPES];
 } swapEvictionStat;
@@ -1521,11 +1525,16 @@ typedef struct swapEvictionCtx {
     long long inprogress_limit; /* current inprogress limit,
                                    updated on performEviction start */
     long long failed_inrow;
+    long long freed_inrow;
     swapEvictionStat stat;
 } swapEvictionCtx;
 
+#define swapEvictionFreedInrowIncr(ctx) do { ctx->freed_inrow++; } while(0)
+#define swapEvictionFreedInrowReset(ctx) do { ctx->freed_inrow=0; } while(0)
+
 swapEvictionCtx *swapEvictionCtxCreate();
 void swapEvictionCtxFree(swapEvictionCtx *ctx);
+
 
 int tryEvictKey(redisDb *db, robj *key, int *evict_result);
 void tryEvictKeyAsapLater(redisDb *db, robj *key);
