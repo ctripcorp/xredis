@@ -331,6 +331,7 @@ int keyExpiredAndShouldDelete(redisDb *db, robj *key) {
 #define NOSWAP_REASON_SWAPANADECIDED 4
 #define NOSWAP_REASON_FILT_BY_CUCKOOFILTER 5
 #define NOSWAP_REASON_FILT_BY_ABSENTCACHE 6
+#define NOSWAP_REASON_ALREAY_SWAPPED_OUT 7
 #define NOSWAP_REASON_UNEXPECTED 100
 
 void keyRequestProceed(void *lock, int flush, redisDb *db, robj *key,
@@ -345,6 +346,7 @@ void keyRequestProceed(void *lock, int flush, redisDb *db, robj *key,
     void *msgs = NULL;
     uint32_t swap_intention_flags;
     long long expire;
+    int cmd_intention = ctx->key_request->cmd_intention;
     uint32_t cmd_intention_flags = ctx->key_request->cmd_intention_flags;
     int thread_idx = ctx->key_request->deferred ? server.swap_defer_thread_idx : -1;
     UNUSED(reason);
@@ -394,6 +396,13 @@ void keyRequestProceed(void *lock, int flush, redisDb *db, robj *key,
     }
 
     if (value == NULL) {
+        if (cmd_intention == SWAP_OUT) {
+            /* nothing to persist or evict. */
+            reason = "key already swapped out";
+            reason_num = NOSWAP_REASON_ALREAY_SWAPPED_OUT;
+            goto noswap;
+        }
+
         int filt_by;
         if (!coldFilterMayContainKey(db->cold_filter,key->ptr,&filt_by)) {
             reason = "key is absent";
