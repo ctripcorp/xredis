@@ -411,18 +411,21 @@ int submitEvictClientRequest(client *c, robj *key, int persist_keep, uint64_t pe
 } while (0)
 
 #define setObjectMetaDirtyPersist(dbid,key,o) do { \
+  int dirty = objectIsDirty(o); \
   setObjectMetaDirty(o); \
-  schedulePersistIfNeeded(dbid,key); \
+  if (!dirty) schedulePersistIfNeeded(dbid,key); \
 } while (0)
 
 #define setObjectDataDirtyPersist(dbid,key,o) do { \
+  int dirty = objectIsDirty(o); \
   setObjectDataDirty(o); \
-  schedulePersistIfNeeded(dbid,key); \
+  if (!dirty) schedulePersistIfNeeded(dbid,key); \
 } while (0)
 
 #define setObjectDirtyPersist(dbid,key,o) do { \
+  int dirty = objectIsDirty(o); \
   setObjectDirty(o); \
-  schedulePersistIfNeeded(dbid,key); \
+  if (!dirty) schedulePersistIfNeeded(dbid,key); \
 } while (0)
 
 #define objectIsMetaDirty(o) ((o)->dirty_meta)
