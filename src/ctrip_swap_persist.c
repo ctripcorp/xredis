@@ -175,6 +175,8 @@ static void swapPersistStatInit(swapPersistStat *stat) {
     stat->add_ignored = 0;
     stat->submit_succ = 0;
     stat->submit_blocked = 0;
+    stat->dont_keep = 0;
+    stat->keep_data = 0;
 }
 
 swapPersistCtx *swapPersistCtxNew() {
@@ -385,9 +387,10 @@ sds genSwapPersistInfoString(sds info) {
         size_t mem = swapPersistCtxUsedMemory(server.swap_persist_ctx);
         mstime_t lag = swapPersistCtxLag(server.swap_persist_ctx);
         info = sdscatprintf(info,
-                "swap_persist_stat:add_succ=%lld,add_ignored=%lld,submit_succ=%lld,submit_blocked=%lld\r\n"
+                "swap_persist_stat:add_succ=%lld,add_ignored=%lld,submit_succ=%lld,submit_blocked=%lld,keep_data=%lld,dont_keep=%lld\r\n"
                 "swap_persist_inprogress:count=%lld,keys=%lu,memory=%lu,lag_millis=%lld\r\n",
-                stat->add_succ,stat->add_ignored,stat->submit_succ,stat->submit_blocked,count,keys,mem,lag);
+                stat->add_succ,stat->add_ignored,stat->submit_succ,stat->submit_blocked,stat->keep_data,stat->dont_keep,
+                count,keys,mem,lag);
     }
     return info;
 }

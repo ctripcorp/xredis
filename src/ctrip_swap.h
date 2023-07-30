@@ -341,6 +341,8 @@ typedef struct swapPersistStat {
   long long add_ignored;
   long long submit_succ;
   long long submit_blocked;
+  long long keep_data;
+  long long dont_keep;
 } swapPersistStat;
 
 typedef struct swapPersistCtx {
@@ -663,9 +665,17 @@ static inline void swapDataObjectMetaSetPtr(swapData *d, void *ptr) {
 /* persist request keeps value in memory when maxmemory not reached or
  * data originally not cold (no need to swap in). */
 static inline int swapDataPersistKeepData(swapData *d, uint32_t cmd_intention_flags, int may_keep_data) {
-  return (cmd_intention_flags & SWAP_OUT_PERSIST) &&
+  int keep_data = (cmd_intention_flags & SWAP_OUT_PERSIST) &&
          (getObjectPersistKeep(d->value) || cmd_intention_flags&SWAP_OUT_KEEP_DATA) &&
          may_keep_data;
+  if (server.swap_persist_enabled && server.swap_persist_ctx) {
+    swapPersistStat *stat = &server.swap_persist_ctx->stat;
+    if (keep_data)
+      stat->keep_data++;
+    else
+      stat->dont_keep++;
+  }
+  return keep_data;
 }
 void swapDataTurnWarmOrHot(swapData *data);
 void swapDataTurnCold(swapData *data);
