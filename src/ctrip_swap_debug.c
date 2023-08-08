@@ -122,6 +122,8 @@ void swapCommand(client *c) {
 "    Reset swap stats.",
 "COMPACT",
 "   COMPACT rocksdb",
+"FLUSH [<cfname,cfname...>]",
+"   Flush rocksdb",
 "ROCKSDB-PROPERTY-INT <rocksdb-prop-name> [<cfname,cfname...>]",
 "    Get rocksdb property value (int type)",
 "ROCKSDB-PROPERTY-VALUE <rocksdb-prop-name> [<cfname,cfname...>]",
@@ -278,7 +280,15 @@ NULL
         addReply(c,shared.ok);
     } else if (!strcasecmp(c->argv[1]->ptr,"compact") && c->argc == 2) {
         sds error = NULL;
-        if (submitUtilTask(COMPACT_RANGE_TASK, NULL, &error)) {
+        if (submitUtilTask(ROCKSDB_COMPACT_RANGE_TASK, NULL, NULL, &error)) {
+            addReply(c,shared.ok);
+        } else {
+            addReplyErrorSds(c,error);
+        }
+    } else if (!strcasecmp(c->argv[1]->ptr,"flush") && c->argc >= 2) {
+        sds error = NULL;
+        const char *cfnames = c->argc > 2 ? c->argv[2]->ptr : NULL;
+        if (submitUtilTask(ROCKSDB_FLUSH_TASK, (void*)cfnames, NULL, &error)) {
             addReply(c,shared.ok);
         } else {
             addReplyErrorSds(c,error);

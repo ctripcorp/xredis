@@ -1828,7 +1828,7 @@ int rewriteAppendOnlyFileBackground(void) {
             rocksdbCreateCheckpointPayload *pd = zcalloc(sizeof(rocksdbCreateCheckpointPayload));
             pd->waiting_child = childpid;
             pd->checkpoint_dir_pipe_writing = checkpoint_dir_pipe_writing;
-            submitUtilTask(CREATE_CHECKPOINT, pd, NULL);
+            submitUtilTask(ROCKSDB_CREATE_CHECKPOINT, NULL, pd, NULL);
         }
 
         /* We set appendseldb to -1 in order to force the next call to the

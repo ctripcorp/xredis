@@ -82,11 +82,57 @@ void swapRequestExecuteUtil_CompactRange(swapRequest *req) {
 }
 
 void swapRequestExecuteUtil_GetRocksdbStats(swapRequest* req) {
-    char** result = zmalloc(sizeof(char*) * CF_COUNT);
+    rocksdbInternalStats *internal_stats = rocksdbInternalStatsNew();
+
     for(int i = 0; i < CF_COUNT; i++) {
-        result[i] = rocksdb_property_value_cf(server.rocks->db, server.rocks->cf_handles[i], "rocksdb.stats");
+        char *value;
+        uint64_t intval;
+        rocksdb_column_family_handle_t *cf;
+        rocksdbCFInternalStats *cf_stats;
+
+        cf = server.rocks->cf_handles[i];
+        cf_stats = internal_stats->cfs+i;
+
+        if ((value = rocksdb_property_value_cf(server.rocks->db,
+                        cf,"rocksdb.stats")) == NULL) {
+            goto err;
+        }
+
+        cf_stats->rocksdb_stats_cache = sdsnew(value);
+        zlibc_free(value);
+
+        if (rocksdb_property_int_cf(server.rocks->db,cf,
+                    "rocksdb.num-entries-imm-mem-tables",&intval)) {
+            goto err;
+        }
+        cf_stats->num_entries_imm_mem_tables = intval;
+
+        if (rocksdb_property_int_cf(server.rocks->db, cf,
+                    "rocksdb.num-deletes-imm-mem-tables",&intval)) {
+            goto err;
+        }
+        cf_stats->num_deletes_imm_mem_tables = intval;
+
+        if (rocksdb_property_int_cf(server.rocks->db, cf,
+                    "rocksdb.num-entries-active-mem-table",&intval)) {
+            goto err;
+        }
+        cf_stats->num_entries_active_mem_table = intval;
+
+        if (rocksdb_property_int_cf(server.rocks->db, cf,
+                    "rocksdb.num-deletes-active-mem-table",&intval)) {
+            goto err;
+        }
+        cf_stats->num_deletes_active_mem_table = intval;
     }
-    req->finish_pd = result;
+
+    req->finish_pd = internal_stats;
+    return;
+
+err:
+
+    rocksdbInternalStatsFree(internal_stats);
+    req->finish_pd = NULL;
 }
 
 void swapRequestExecuteUtil_CreateCheckpoint(swapRequest* req) {
@@ -118,15 +164,54 @@ error:
     pd->checkpoint_dir = NULL;
 }
 
+void swapRequestExecuteUtil_RocksdbFlush(swapRequest* req) {
+    char *err = NULL;
+    rocksdb_flushoptions_t *flush_opts = NULL;
+    swapData4RocksdbFlush *data = (swapData4RocksdbFlush*)req->data;
+
+    flush_opts = rocksdb_flushoptions_create();
+
+    for (int i = 0; i < CF_COUNT; i++) {
+        size_t name_len;
+        char *name = NULL;
+        rocksdb_column_family_handle_t *handle = data->cfhanles[i];
+
+        if (handle == NULL) continue;
+
+        name = rocksdb_column_family_handle_get_name(handle,&name_len);
+
+        ustime_t start = ustime(), elapsed;
+        rocksdb_flush_cf(server.rocks->db, flush_opts, handle, &err);
+        elapsed = ustime() - start;
+
+        if (err != NULL) {
+            swapRequestSetError(req, SWAP_ERR_EXEC_ROCKSDB_FLUSH_FAIL);
+            serverLog(LL_WARNING, "[rocks] flush %.*s cf failed:%s, took %lld us",
+                    (int)name_len, name, err, elapsed);
+            zlibc_free(name);
+        } else {
+            serverLog(LL_NOTICE, "[rocks] flush %.*s cf ok, took %lld us",
+                    (int)name_len, name, elapsed);
+        }
+
+        if (name != NULL) zlibc_free(name);
+    }
+
+    rocksdb_flushoptions_destroy(flush_opts);
+}
+
 void swapRequestExecuteUtil(swapRequest *req) {
     switch(req->intention_flags) {
-    case COMPACT_RANGE_TASK:
+    case ROCKSDB_COMPACT_RANGE_TASK:
         swapRequestExecuteUtil_CompactRange(req);
         break;
-    case GET_ROCKSDB_STATS_TASK:
+    case ROCKSDB_GET_STATS_TASK:
         swapRequestExecuteUtil_GetRocksdbStats(req);
         break;
-    case CREATE_CHECKPOINT:
+    case ROCKSDB_FLUSH_TASK:
+        swapRequestExecuteUtil_RocksdbFlush(req);
+        break;
+    case ROCKSDB_CREATE_CHECKPOINT:
         swapRequestExecuteUtil_CreateCheckpoint(req);
         break;
     default:

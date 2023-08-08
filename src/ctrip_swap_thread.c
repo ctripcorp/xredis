@@ -163,21 +163,18 @@ int isRunningUtilTask(rocksdbUtilTaskManager* manager, int type) {
 
 void compactRangeDone(swapData *data, void *pd, int errcode){
     UNUSED(data),UNUSED(pd),UNUSED(errcode);
-    server.util_task_manager->stats[COMPACT_RANGE_TASK].stat = ROCKSDB_UTILS_TASK_DONE;
+    server.util_task_manager->stats[ROCKSDB_COMPACT_RANGE_TASK].stat = ROCKSDB_UTILS_TASK_DONE;
 }
 
 void getRocksdbStatsDone(swapData *data, void *pd, int errcode) {
-    UNUSED(data),UNUSED(pd),UNUSED(errcode);
-    if (pd != NULL) {
-        if (server.rocks->rocksdb_stats_cache != NULL)  {
-            for(int i = 0; i < CF_COUNT; i++) {
-                zlibc_free(server.rocks->rocksdb_stats_cache[i]);
-            }
-        }
-        zfree(server.rocks->rocksdb_stats_cache);
-        server.rocks->rocksdb_stats_cache = pd;
+    UNUSED(data), UNUSED(errcode);
+    rocksdbInternalStats *internal_stats = pd;
+
+    if (internal_stats != NULL) {
+        rocksdbInternalStatsFree(server.rocks->internal_stats);
+        server.rocks->internal_stats = internal_stats;
     }
-    server.util_task_manager->stats[GET_ROCKSDB_STATS_TASK].stat = ROCKSDB_UTILS_TASK_DONE;
+    server.util_task_manager->stats[ROCKSDB_GET_STATS_TASK].stat = ROCKSDB_UTILS_TASK_DONE;
 }
 
 void checkpointDirPipeWriteHandler(struct aeEventLoop *eventLoop, int fd, void *clientData, int mask) {
@@ -250,7 +247,22 @@ void createCheckpointDone(swapData *data, void *_pd, int errcode) {
     zfree(pd);
 }
 
-int submitUtilTask(int type, void* pd, sds* error) {
+void rocksdbFlushDone(swapData *data_, void *pd, int errcode){
+    UNUSED(pd),UNUSED(errcode);
+    swapData4RocksdbFlush *data = (swapData4RocksdbFlush*)data_;
+    zfree(data);
+    server.util_task_manager->stats[ROCKSDB_FLUSH_TASK].stat = ROCKSDB_UTILS_TASK_DONE;
+}
+
+swapRequest *rocksdbFlushRequestFromArg(void *arg, void *pd) {
+    const char *cfnames = arg;
+    swapData4RocksdbFlush *data = zcalloc(sizeof(swapData4RocksdbFlush));
+    parseCfNames(cfnames,data->cfhanles,NULL);
+    return swapDataRequestNew(SWAP_UTILS,ROCKSDB_FLUSH_TASK,NULL,(swapData*)data,
+            NULL,NULL,rocksdbFlushDone,pd,NULL);
+}
+
+int submitUtilTask(int type, void *arg, void* pd, sds* error) {
     swapRequest *req = NULL;
 
     if (isUtilTaskExclusive(type)) {
@@ -262,18 +274,22 @@ int submitUtilTask(int type, void* pd, sds* error) {
     }
 
     switch (type) {
-        case COMPACT_RANGE_TASK:
-            req = swapDataRequestNew(SWAP_UTILS,COMPACT_RANGE_TASK,NULL,NULL,
+        case ROCKSDB_COMPACT_RANGE_TASK:
+            req = swapDataRequestNew(SWAP_UTILS,ROCKSDB_COMPACT_RANGE_TASK,NULL,NULL,
                     NULL,NULL,compactRangeDone,pd,NULL);
             submitSwapRequest(SWAP_MODE_ASYNC,req,server.swap_util_thread_idx);
             break;
-        case GET_ROCKSDB_STATS_TASK:
-            req = swapDataRequestNew(SWAP_UTILS,GET_ROCKSDB_STATS_TASK,NULL,
+        case ROCKSDB_GET_STATS_TASK:
+            req = swapDataRequestNew(SWAP_UTILS,ROCKSDB_GET_STATS_TASK,NULL,
                     NULL,NULL,NULL,getRocksdbStatsDone,pd,NULL);
             submitSwapRequest(SWAP_MODE_ASYNC,req,server.swap_util_thread_idx);
             break;
-        case CREATE_CHECKPOINT:
-            req = swapDataRequestNew(SWAP_UTILS,CREATE_CHECKPOINT,NULL,NULL,
+        case ROCKSDB_FLUSH_TASK:
+            req = rocksdbFlushRequestFromArg(arg, pd);
+            submitSwapRequest(SWAP_MODE_ASYNC,req,server.swap_util_thread_idx);
+            break;
+        case ROCKSDB_CREATE_CHECKPOINT:
+            req = swapDataRequestNew(SWAP_UTILS,ROCKSDB_CREATE_CHECKPOINT,NULL,NULL,
                     NULL,NULL,createCheckpointDone,pd,NULL);
             submitSwapRequest(SWAP_MODE_ASYNC,req,server.swap_util_thread_idx);
             break;

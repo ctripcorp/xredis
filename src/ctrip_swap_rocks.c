@@ -247,7 +247,7 @@ int rocksInit() {
         err = NULL;
     }
 
-    rocks->rocksdb_stats_cache = NULL;
+    rocks->internal_stats = NULL;
     server.rocks = rocks;
     return 0;
 }
@@ -266,10 +266,9 @@ void rocksRelease() {
         rocksdb_options_destroy(rocks->cf_opts[i]);
     for (i = 0; i < CF_COUNT; i++)
         rocksdb_column_family_handle_destroy(rocks->cf_handles[i]);
-    if (rocks->rocksdb_stats_cache != NULL) {
-        for (i = 0; i < CF_COUNT; i++)
-            zlibc_free(rocks->rocksdb_stats_cache[i]);
-        zfree(rocks->rocksdb_stats_cache);
+    if (rocks->internal_stats != NULL) {
+        rocksdbInternalStatsFree(rocks->internal_stats);
+        rocks->internal_stats = NULL;
     }
 
     rocksdb_options_destroy(rocks->db_opts);
@@ -419,7 +418,7 @@ int rocksFlushDB(int dbid) {
     return retval;
 }
 
-static int parseCfNames(const char *cfnames,
+int parseCfNames(const char *cfnames,
         rocksdb_column_family_handle_t *handles[CF_COUNT],
         const char *names[CF_COUNT+1]) {
     int i = 0, ret = 0;
@@ -1084,7 +1083,7 @@ sds genRocksdbInfoString(sds info) {
 	if (db) sequence = rocksdb_get_latest_sequence_number(db);
 	info = sdscatprintf(info,"rocksdb_sequence:%lu\r\n",sequence);
 
-    char* rocksdb_stats = server.rocks->rocksdb_stats_cache? server.rocks->rocksdb_stats_cache[DATA_CF]: NULL;
+    char* rocksdb_stats = server.rocks->internal_stats? server.rocks->internal_stats->cfs[DATA_CF].rocksdb_stats_cache: NULL;
     info = compactLevelsInfo(info, rocksdb_stats);
     info = cumulativeInfo(info, rocksdb_stats);
     info = intervalInfo(info, rocksdb_stats);
@@ -1093,9 +1092,9 @@ sds genRocksdbInfoString(sds info) {
 }
 
 sds infoCfStats(int cf, sds info) {
-    if (server.rocks->rocksdb_stats_cache) {
+    if (server.rocks->internal_stats) {
         info = sdscatfmt(info, "=================== %s rocksdb.stats ===================\n", swap_cf_names[cf]);
-        info = sdscat(info, server.rocks->rocksdb_stats_cache[cf]);
+        info = sdscat(info, server.rocks->internal_stats->cfs[cf].rocksdb_stats_cache);
     }
     return info;
 }
@@ -1181,7 +1180,11 @@ void rocksCron() {
     int collect_interval_second = server.swap_rocksdb_stats_collect_interval_ms/1000;
     if (collect_interval_second <= 0) collect_interval_second = 1;
     if (rocks_cron_loops % collect_interval_second == 0) {
-        submitUtilTask(GET_ROCKSDB_STATS_TASK, NULL, NULL);
+        if (swapShouldFlushMeta()) {
+            submitUtilTask(ROCKSDB_FLUSH_TASK, meta_cf_name, NULL, NULL);
+        }
+
+        submitUtilTask(ROCKSDB_GET_STATS_TASK, NULL, NULL, NULL);
     }
 
     rocks_cron_loops++;
@@ -1191,3 +1194,36 @@ char *rocksdbVersion(void) {
     return ROCKSDB_VERSION;
 }
 
+rocksdbInternalStats *rocksdbInternalStatsNew() {
+    rocksdbInternalStats *internal_stats = zcalloc(sizeof(rocksdbInternalStats));
+    return internal_stats;
+}
+
+void rocksdbInternalStatsFree(rocksdbInternalStats *internal_stats) {
+    if (internal_stats == NULL) return;
+    for (int i = 0; i < CF_COUNT; i++) {
+        if (internal_stats->cfs[i].rocksdb_stats_cache != NULL) {
+            sdsfree(internal_stats->cfs[i].rocksdb_stats_cache);
+            internal_stats->cfs[i].rocksdb_stats_cache = NULL;
+        }
+    }
+    zfree(internal_stats);
+}
+
+int swapShouldFlushMeta() {
+    double deletes_percentage = 0;
+    unsigned long long num_entries, num_deletes;
+    rocksdbCFInternalStats *cf_stats = NULL;
+
+    if (server.rocks == NULL || server.rocks->internal_stats == NULL)
+        return 0;
+
+    cf_stats = server.rocks->internal_stats->cfs+META_CF;
+
+    num_entries = cf_stats->num_entries_imm_mem_tables + cf_stats->num_entries_active_mem_table;
+    num_deletes = cf_stats->num_deletes_imm_mem_tables + cf_stats->num_deletes_active_mem_table;
+    if (num_entries > 0) deletes_percentage = (double)num_deletes / num_entries * 100;
+
+    return deletes_percentage >= server.swap_flush_meta_deletes_percentage &&
+            num_deletes >= server.swap_flush_meta_deletes_num;
+}

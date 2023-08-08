@@ -1514,7 +1514,7 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
             rocksdbCreateCheckpointPayload *pd = zcalloc(sizeof(rocksdbCreateCheckpointPayload));
             pd->waiting_child = childpid;
             pd->checkpoint_dir_pipe_writing = checkpoint_dir_pipe_writing;
-            submitUtilTask(CREATE_CHECKPOINT, pd, NULL);
+            submitUtilTask(ROCKSDB_CREATE_CHECKPOINT, NULL, pd, NULL);
         }
         return C_OK;
     }
@@ -3143,7 +3143,7 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
                 rocksdbCreateCheckpointPayload *pd = zcalloc(sizeof(rocksdbCreateCheckpointPayload));
                 pd->waiting_child = childpid;
                 pd->checkpoint_dir_pipe_writing = checkpoint_dir_pipe_writing;
-                submitUtilTask(CREATE_CHECKPOINT, pd, NULL);
+                submitUtilTask(ROCKSDB_CREATE_CHECKPOINT, NULL, pd, NULL);
             }
         }
         return (childpid == -1) ? C_ERR : C_OK;

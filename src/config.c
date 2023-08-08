@@ -2926,6 +2926,7 @@ standardConfig configs[] = {
     createIntConfig("swap-ratelimit-persist-pause-growth-rate", NULL, MODIFIABLE_CONFIG, 1, INT_MAX, server.swap_ratelimit_persist_pause_growth_rate, 10, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("swap-persist-lag-millis", NULL, MODIFIABLE_CONFIG, 0, INT_MAX, server.swap_persist_lag_millis, 0, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("swap-persist-inprogress-growth-rate", NULL, MODIFIABLE_CONFIG, 1, INT_MAX, server.swap_persist_inprogress_growth_rate, 500, INTEGER_CONFIG, NULL, NULL),
+    createIntConfig("swap-flush-meta-deletes-percentage", NULL, MODIFIABLE_CONFIG, 0, 100, server.swap_flush_meta_deletes_percentage, 40, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("rocksdb.max_open_files", NULL, IMMUTABLE_CONFIG, -1, INT_MAX, server.rocksdb_max_open_files, -1, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("rocksdb.data.max_write_buffer_number", "rocksdb.max_write_buffer_number", MODIFIABLE_CONFIG, 1, 256, server.rocksdb_data_max_write_buffer_number, 3, INTEGER_CONFIG, NULL, updateRocksdbDataMaxWriteBufferNumber),
     createIntConfig("rocksdb.meta.max_write_buffer_number", NULL, MODIFIABLE_CONFIG, 1, 256, server.rocksdb_meta_max_write_buffer_number, 3, INTEGER_CONFIG, NULL, updateRocksdbMetaMaxWriteBufferNumber),
@@ -2970,6 +2971,7 @@ standardConfig configs[] = {
     createULongLongConfig("swap-cuckoo-filter-estimated-keys", NULL, IMMUTABLE_CONFIG, 1, LLONG_MAX, server.swap_cuckoo_filter_estimated_keys, 32000000, INTEGER_CONFIG, NULL, NULL), /* Default: 32M */
     createULongLongConfig("swap-absent-cache-capacity", NULL, MODIFIABLE_CONFIG, 1, LLONG_MAX, server.swap_absent_cache_capacity, 64*1024, INTEGER_CONFIG, NULL, updateSwapAbsentCacheCapacity), /* Default: 64k */
     createULongLongConfig("swap-compaction-filter-disable-until", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.swap_compaction_filter_disable_until, 0, INTEGER_CONFIG, NULL, NULL),
+    createULongLongConfig("swap-flush-meta-deletes-num", NULL, MODIFIABLE_CONFIG, 1, LLONG_MAX, server.swap_flush_meta_deletes_num, 200000, INTEGER_CONFIG, NULL, NULL),
     createULongLongConfig("rocksdb.data.block_cache_size", "rocksdb.block_cache_size", IMMUTABLE_CONFIG, 0, ULLONG_MAX, server.rocksdb_data_block_cache_size, 8*1024*1024, MEMORY_CONFIG, NULL, NULL),
     createULongLongConfig("rocksdb.meta.block_cache_size", NULL, IMMUTABLE_CONFIG, 0, ULLONG_MAX, server.rocksdb_meta_block_cache_size, 512*1024*1024, MEMORY_CONFIG, NULL, NULL),
     createULongLongConfig("rocksdb.data.write_buffer_size", "rocksdb.write_buffer_size", MODIFIABLE_CONFIG, 0, ULLONG_MAX, server.rocksdb_data_write_buffer_size, 64*1024*1024, MEMORY_CONFIG, NULL, updateRocksdbDataWriteBufferSize),

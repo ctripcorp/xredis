@@ -1920,6 +1920,10 @@ struct redisServer {
     int swap_ratelimit_persist_lag;
     int swap_ratelimit_persist_pause_growth_rate;
     uint64_t swap_persist_load_fix_version;
+
+    /* swap meta flush */
+    int swap_flush_meta_deletes_percentage;
+    unsigned long long swap_flush_meta_deletes_num;
 };
 
 #define MAX_KEYS_BUFFER 256

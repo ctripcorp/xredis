@@ -2405,10 +2405,12 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
             server.rdb_bgsave_scheduled = 0;
     }
 
-    run_with_period(1000) rocksCron();
     run_with_period(1000) {
-        if (server.swap_mode != SWAP_MODE_MEMORY && server.maxmemory_scale_from > server.maxmemory) {
-            updateMaxMemoryScaleFrom();
+        if (server.swap_mode != SWAP_MODE_MEMORY) {
+            rocksCron();
+
+            if (server.maxmemory_scale_from > server.maxmemory)
+                updateMaxMemoryScaleFrom();
         }
     }
 

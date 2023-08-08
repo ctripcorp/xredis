@@ -736,7 +736,8 @@ void swapDebugMsgsDump(swapDebugMsgs *msgs);
 #define SWAP_ERR_DATA_WRONG_TYPE_ERROR -206
 #define SWAP_ERR_EXEC_FAIL -300
 #define SWAP_ERR_EXEC_UNEXPECTED_ACTION -302
-#define SWAP_ERR_EXEC_UNEXPECTED_UTIL -303
+#define SWAP_ERR_EXEC_ROCKSDB_FLUSH_FAIL -303
+#define SWAP_ERR_EXEC_UNEXPECTED_UTIL -304
 #define SWAP_ERR_METASCAN_FAIL -400
 #define SWAP_ERR_METASCAN_UNSUPPORTED_IN_MULTI -401
 #define SWAP_ERR_METASCAN_SESSION_UNASSIGNED -402
@@ -1641,6 +1642,28 @@ int submitExpireClientRequest(client *c, robj *key, int force);
 #define ROCKS_DATA "data.rocks"
 #define ROCKS_DISK_HEALTH_DETECT_FILE "disk_health_detect"
 
+typedef struct rocksdbCFInternalStats {
+  char* rocksdb_stats_cache;
+  uint64_t num_entries_imm_mem_tables;
+  uint64_t num_deletes_imm_mem_tables;
+  uint64_t num_entries_active_mem_table;
+  uint64_t num_deletes_active_mem_table;
+} rocksdbCFInternalStats;
+
+typedef struct rocksdbInternalStats {
+  rocksdbCFInternalStats cfs[CF_COUNT];
+}rocksdbInternalStats;
+
+rocksdbInternalStats *rocksdbInternalStatsNew();
+void rocksdbInternalStatsFree(rocksdbInternalStats *internal_stats);
+
+typedef struct swapData4RocksdbFlush {
+  rocksdb_column_family_handle_t *cfhanles[CF_COUNT];
+} swapData4RocksdbFlush;
+
+int parseCfNames(const char *cfnames, rocksdb_column_family_handle_t *handles[CF_COUNT], const char *names[CF_COUNT+1]);
+int swapShouldFlushMeta();
+
 /* Rocksdb engine */
 typedef struct rocks {
     rocksdb_t *db;
@@ -1648,7 +1671,6 @@ typedef struct rocks {
     rocksdb_block_based_table_options_t *block_opts[CF_COUNT];
     rocksdb_column_family_handle_t *cf_handles[CF_COUNT];
     rocksdb_compactionfilterfactory_t *cf_compactionfilterfatorys[CF_COUNT];
-    char** rocksdb_stats_cache;
     rocksdb_options_t *db_opts;
     rocksdb_readoptions_t *ropts;
     rocksdb_writeoptions_t *wopts;
@@ -1657,6 +1679,7 @@ typedef struct rocks {
     rocksdb_checkpoint_t* checkpoint;
     sds checkpoint_dir;
     sds rdb_checkpoint_dir; /* checkpoint dir use for rdb saved */
+    rocksdbInternalStats *internal_stats;
 } rocks;
 
 static inline rocksdb_column_family_handle_t *swapGetCF(int cf) {
@@ -2252,17 +2275,18 @@ static inline void clientSwapError(client *c, int swap_errcode) {
   }
 }
 
-#define COMPACT_RANGE_TASK 0
-#define GET_ROCKSDB_STATS_TASK 1
-#define EXCLUSIVE_TASK_COUNT 2
-#define CREATE_CHECKPOINT 2
+#define ROCKSDB_COMPACT_RANGE_TASK 0
+#define ROCKSDB_GET_STATS_TASK 1
+#define ROCKSDB_FLUSH_TASK 2
+#define EXCLUSIVE_TASK_COUNT 3
+#define ROCKSDB_CREATE_CHECKPOINT 3
 typedef struct rocksdbUtilTaskManager{
     struct {
         int stat;
     } stats[EXCLUSIVE_TASK_COUNT];
 } rocksdbUtilTaskManager;
 rocksdbUtilTaskManager* createRocksdbUtilTaskManager();
-int submitUtilTask(int type, void* ctx, sds* error);
+int submitUtilTask(int type, void *arg, void* pd, sds* error);
 
 typedef struct rocksdbCreateCheckpointPayload {
     rocksdb_checkpoint_t *checkpoint;
