@@ -1840,6 +1840,10 @@ struct redisServer {
     unsigned long long rocksdb_data_max_bytes_for_level_base;
     unsigned long long rocksdb_meta_max_bytes_for_level_base;
     unsigned long long rocksdb_max_total_wal_size;
+    unsigned long long rocksdb_data_suggest_compact_sliding_window_size;
+    unsigned long long rocksdb_data_suggest_compact_num_dels_trigger;
+    unsigned long long rocksdb_meta_suggest_compact_sliding_window_size;
+    unsigned long long rocksdb_meta_suggest_compact_num_dels_trigger;
     int rocksdb_data_max_bytes_for_level_multiplier;
     int rocksdb_meta_max_bytes_for_level_multiplier;
     int rocksdb_data_compaction_dynamic_level_bytes;

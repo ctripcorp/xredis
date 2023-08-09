@@ -187,6 +187,12 @@ start_server {tags {"introspection"}} {
             rocksdb.WAL_ttl_seconds
             rocksdb.WAL_size_limit_MB
             rocksdb.max_total_wal_size
+            rocksdb.suggest_compact_sliding_window_size
+            rocksdb.data.suggest_compact_sliding_window_size
+            rocksdb.meta.suggest_compact_sliding_window_size
+            rocksdb.suggest_compact_num_dels_trigger
+            rocksdb.data.suggest_compact_num_dels_trigger
+            rocksdb.meta.suggest_compact_num_dels_trigger
             swap-scan-session-bits
             swap-cuckoo-filter-bit-per-key
             swap-cuckoo-filter-estimated-keys
