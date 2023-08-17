@@ -472,7 +472,8 @@ typedef struct objectMeta {
 extern objectMetaType lenObjectMetaType;
 extern objectMetaType listObjectMetaType;
 
-static inline void swapInitVersion() { server.swap_key_version = 1; }
+static inline void swapInitVersion() { server.swap_key_version = 0; }
+static inline void swapSetVersion(uint64_t version) { server.swap_key_version = version; }
 static inline uint64_t swapGetAndIncrVersion() { return server.swap_key_version++; }
 
 int buildObjectMeta(int object_type, uint64_t version, const char *extend, size_t extlen, OUT objectMeta **pobject_meta);

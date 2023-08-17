@@ -414,6 +414,9 @@ int keyLoadFixDataInit(keyLoadFixData *fix, redisDb *db, decodedResult *dr) {
     objectMeta *cold_meta, *rebuild_meta;
     decodedMeta *dm = (decodedMeta*)dr;
 
+    server.swap_persist_load_fix_version = MAX(dm->version,
+            server.swap_persist_load_fix_version);
+
     size_t extlen = dm->extend ? sdslen(dm->extend) : 0;
     if (buildObjectMeta(dm->object_type,dm->version,dm->extend,
                 extlen, &cold_meta)) {
@@ -765,12 +768,17 @@ void startPersistLoadFix() {
     server.loading = 1;
     server.loading_start_time = time(NULL);
     blockingOperationStarts();
+    server.swap_persist_load_fix_version = 0;
     serverLog(LL_NOTICE, "persist load fix start");
 }
 
 void stopPersistLoadFix() {
     server.loading = 0;
     blockingOperationEnds();
+    server.swap_persist_load_fix_version++;
+    swapSetVersion(server.swap_persist_load_fix_version);
+    serverLog(LL_NOTICE, "persist load fix end (version start from %ld).",
+            server.swap_persist_load_fix_version);
 }
 
 /* scan meta cf to rebuild cold_keys/cold_filter & fix keys */

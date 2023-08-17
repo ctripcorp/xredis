@@ -1919,6 +1919,7 @@ struct redisServer {
     int swap_persist_inprogress_growth_rate;
     int swap_ratelimit_persist_lag;
     int swap_ratelimit_persist_pause_growth_rate;
+    uint64_t swap_persist_load_fix_version;
 };
 
 #define MAX_KEYS_BUFFER 256
