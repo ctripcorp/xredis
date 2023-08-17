@@ -123,6 +123,7 @@ static int zsetSwapAnaOutSelectSubkeys(swapData *data, zsetDataCtx *datactx,
                     if ((size_t)datactx->bdc.num >= count ||
                             evict_memory >= server.swap_evict_step_max_memory) {
                         /* Evict big zset in small steps. */
+                        if (!noswap) *may_keep_data = 0;
                         break;
                     }
                     sds skey = dictGetKey(de);
@@ -139,19 +140,38 @@ static int zsetSwapAnaOutSelectSubkeys(swapData *data, zsetDataCtx *datactx,
         robj *subkey;
         size_t sublen;
         dirtySubkeysIterator dss_iter;
+        list *redundent_subkeys = listCreate();
 
         dirtySubkeysIteratorInit(&dss_iter, subkeys);
         while ((subkey = dirtySubkeysIteratorNext(&dss_iter,&sublen)) != NULL) {
             if ((size_t)datactx->bdc.num >= count ||
                     evict_memory >= server.swap_evict_step_max_memory) {
                 /* Evict big object in small steps. */
+                if (!noswap) *may_keep_data = 0;
+                decrRefCount(subkey);
                 break;
             }
 
-            datactx->bdc.subkeys[datactx->bdc.num++] = subkey;
-            evict_memory += sublen;
+            /* check with lock hold so that evicting subkeys must exist. */
+            double score;
+            if (zsetScore(data->value,subkey->ptr, &score) == C_OK) {
+                datactx->bdc.subkeys[datactx->bdc.num++] = subkey;
+                evict_memory += sublen;
+            } else {
+                listAddNodeTail(redundent_subkeys, subkey);
+            }
         }
         dirtySubkeysIteratorDeinit(&dss_iter);
+
+        listIter li;
+        listNode *ln;
+        listRewind(redundent_subkeys, &li);
+        while ((ln = listNext(&li))) {
+            subkey = listNodeValue(ln);
+            dirtySubkeysRemove(subkeys, subkey->ptr);
+            decrRefCount(subkey);
+        }
+        listRelease(redundent_subkeys);
     }
 
     return noswap;

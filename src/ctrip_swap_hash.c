@@ -115,19 +115,37 @@ static int hashSwapAnaOutSelectSubkeys(swapData *data, hashDataCtx *datactx,
         robj *subkey;
         size_t sublen;
         dirtySubkeysIterator dss_iter;
+        list *redundent_subkeys = listCreate();
 
         dirtySubkeysIteratorInit(&dss_iter, subkeys);
         while ((subkey = dirtySubkeysIteratorNext(&dss_iter,&sublen)) != NULL) {
             if ((size_t)datactx->ctx.num >= count ||
                     evict_memory >= server.swap_evict_step_max_memory) {
                 /* Evict big hash in small steps. */
+                if (!noswap) *may_keep_data = 0;
+                decrRefCount(subkey);
                 break;
             }
 
-            datactx->ctx.subkeys[datactx->ctx.num++] = subkey;
-            evict_memory += sublen;
+            /* check with lock hold so that evicting subkeys must exist. */
+            if (hashTypeExists(data->value,subkey->ptr)) {
+                datactx->ctx.subkeys[datactx->ctx.num++] = subkey;
+                evict_memory += sublen;
+            } else {
+                listAddNodeTail(redundent_subkeys, subkey);
+            }
         }
         dirtySubkeysIteratorDeinit(&dss_iter);
+
+        listIter li;
+        listNode *ln;
+        listRewind(redundent_subkeys, &li);
+        while ((ln = listNext(&li))) {
+            subkey = listNodeValue(ln);
+            dirtySubkeysRemove(subkeys, subkey->ptr);
+            decrRefCount(subkey);
+        }
+        listRelease(redundent_subkeys);
     }
 
     return noswap;
