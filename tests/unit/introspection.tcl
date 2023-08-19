@@ -164,48 +164,24 @@ start_server {tags {"introspection"}} {
             rocksdb.data.cache_index_and_filter_blocks
             rocksdb.meta.cache_index_and_filter_blocks
             rocksdb.enable_pipelined_write
-            rocksdb.disable_auto_compactions
-            rocksdb.data.disable_auto_compactions
-            rocksdb.meta.disable_auto_compactions
             rocksdb.compaction_dynamic_level_bytes
             rocksdb.data.compaction_dynamic_level_bytes
             rocksdb.meta.compaction_dynamic_level_bytes
-            rocksdb.compression
-            rocksdb.data.compression
-            rocksdb.meta.compression
             rocksdb.max_open_files
-            rocksdb.max_write_buffer_number
-            rocksdb.data.max_write_buffer_number
-            rocksdb.meta.max_write_buffer_number
             rocksdb.max_background_compactions
             rocksdb.max_background_flushes
             rocksdb.max_subcompactions
             rocksdb.block_size
             rocksdb.data.block_size
             rocksdb.meta.block_size
-            rocksdb.level0_slowdown_writes_trigger
-            rocksdb.data.level0_slowdown_writes_trigger
-            rocksdb.meta.level0_slowdown_writes_trigger
-            rocksdb.max_bytes_for_level_multiplier
-            rocksdb.data.max_bytes_for_level_multiplier
-            rocksdb.meta.max_bytes_for_level_multiplier
             rocksdb.suggest_compact_deletion_percentage
             rocksdb.data.suggest_compact_deletion_percentage
             rocksdb.meta.suggest_compact_deletion_percentage
             rocksdb.block_cache_size
             rocksdb.data.block_cache_size
             rocksdb.meta.block_cache_size
-            rocksdb.write_buffer_size
-            rocksdb.data.write_buffer_size
-            rocksdb.meta.write_buffer_size
-            rocksdb.target_file_size_base
-            rocksdb.data.target_file_size_base
-            rocksdb.meta.target_file_size_base
             rocksdb.ratelimiter.rate_per_sec
             rocksdb.bytes_per_sync
-            rocksdb.max_bytes_for_level_base
-            rocksdb.data.max_bytes_for_level_base
-            rocksdb.meta.max_bytes_for_level_base
             rocksdb.max_background_jobs
             rocksdb.max_subcompactions
             rocksdb.WAL_ttl_seconds

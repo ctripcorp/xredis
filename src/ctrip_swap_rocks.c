@@ -224,7 +224,7 @@ int rocksInit() {
     /* init advanced options */
     const char* opt_comp_sec = "periodic_compaction_seconds";
     /* data cf */
-    sprintf(longlong_str, "%lld", server.rocksdb_data_period_compaction_seconds);
+    sprintf(longlong_str, "%lld", server.rocksdb_data_periodic_compaction_seconds);
     const char* const data_option_keys[] = {opt_comp_sec};
     const char* const data_option_vals[] = {longlong_str};
     rocksdb_set_options_cf(rocks->db, rocks->cf_handles[DATA_CF],
@@ -236,7 +236,7 @@ int rocksInit() {
     }
 
     /* meta cf */
-    sprintf(longlong_str, "%lld", server.rocksdb_meta_period_compaction_seconds);
+    sprintf(longlong_str, "%lld", server.rocksdb_meta_periodic_compaction_seconds);
     const char* const meta_option_keys[] = {opt_comp_sec};
     const char* const meta_option_vals[] = {longlong_str};
     rocksdb_set_options_cf(rocks->db, rocks->cf_handles[META_CF],
