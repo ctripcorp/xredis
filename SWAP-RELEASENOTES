@@ -1,4 +1,14 @@
 ================================================================================
+ror-1.2.1 Released Wed Jul 6 00:00:00 CST 2023
+================================================================================
+* [opt] suggest compaction: deletion_ratio change from 0.5 to 0.95; introduce
+         silding_window_size & num_dels_trigger to reduce false positive.
+* [opt] flush memtable when there are too much tombstones.
+* [opt] make cf options dynamic change as possible.
+* [fix] persist: dont persist redundent(may be delete previously) dirty subkeys.
+* [fix] persist: set swap version to biggest scanned version from persist fix.
+
+================================================================================
 ror-1.2.0 Released Wed Jul 6 00:00:00 CST 2023
 ================================================================================
 * [new] support persist, data could recovered across restarts if persist enabled
