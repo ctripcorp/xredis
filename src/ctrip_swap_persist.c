@@ -805,7 +805,7 @@ void startPersistLoadFix() {
     server.loading = 1;
     server.loading_start_time = time(NULL);
     blockingOperationStarts();
-    server.swap_persist_load_fix_version = 0;
+    server.swap_persist_load_fix_version = 1;
     serverLog(LL_NOTICE, "persist load fix start");
 }
 
