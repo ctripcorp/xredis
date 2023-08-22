@@ -34,6 +34,7 @@
 #include "atomicvar.h"
 #include "ctrip_lru_cache.h"
 #include "ctrip_cuckoo_filter.h"
+#include "ctrip_swap_adlist.h"
 
 #define IN        /* Input parameter */
 #define OUT       /* Output parameter */
@@ -307,40 +308,44 @@ typedef struct persistingKeyEntry {
     listNode *ln;
     uint64_t version;
     mstime_t mstime;
+    int state;
 } persistingKeyEntry;
 
 persistingKeyEntry *persistingKeyEntryNew(listNode *ln, uint64_t version, mstime_t mstime);
 void persistingKeyEntryFree(void *privdata, void *val);
 
 typedef struct persistingKeys {
-    list *list;
+    list *todo;
+    list *doing;
     dict *map;
 } persistingKeys;
 
-typedef struct persistingKeysIter {
+typedef struct persistingKeysTodoIter {
   persistingKeys *keys;
   listIter li;
-} persistingKeysIter;
+} persistingKeysTodoIter;
 
 persistingKeys *persistingKeysNew();
 void persistingKeysFree(persistingKeys *keys);
 int persistingKeysPut(persistingKeys *keys, sds key, uint64_t version, mstime_t time);
-int persistingKeysLookup(persistingKeys *keys, sds key, uint64_t *version, mstime_t *time);
+persistingKeyEntry *persistingKeysLookup(persistingKeys *keys, sds key);
 int persistingKeysDelete(persistingKeys *keys, sds key);
 size_t persistingKeysCount(persistingKeys *keys);
 size_t persistingKeysUsedMemory(persistingKeys *keys);
 
-void persistingKeysInitIterator(persistingKeysIter *iter, persistingKeys *keys);
-void persistingKeysDeinitIterator(persistingKeysIter *iter);
-sds persistingKeysIterNext(persistingKeysIter *iter, uint64_t *version, mstime_t *mstime);
+void persistingKeysInitTodoIterator(persistingKeysTodoIter *iter, persistingKeys *keys);
+void persistingKeysDeinitTodoIterator(persistingKeysTodoIter *iter);
+sds persistingKeysTodoIterNext(persistingKeysTodoIter *iter, persistingKeyEntry **entry);
 
 #define SWAP_PERSIST_MAX_KEYS_PER_LOOP 1024
 
 typedef struct swapPersistStat {
   long long add_succ;
   long long add_ignored;
-  long long submit_succ;
-  long long submit_blocked;
+  long long started;
+  long long rewind_dirty;
+  long long rewind_newer;
+  long long ended;
   long long keep_data;
   long long dont_keep;
 } swapPersistStat;

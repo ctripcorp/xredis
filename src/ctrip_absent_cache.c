@@ -28,9 +28,6 @@
 
 #include "ctrip_swap.h"
 
-void listUnlink(list *list, listNode *node);
-void listLinkHead(list *list, listNode *node);
-
 absentKeyMapEntry *absentKeyMapEntryNew(listNode *ln, dict *subkeys) {
     absentKeyMapEntry *entry = zmalloc(sizeof(absentKeyMapEntry));
     entry->ln = ln;

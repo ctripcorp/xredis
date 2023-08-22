@@ -27,6 +27,9 @@
 
 #include "ctrip_swap.h"
 
+#define SWAP_PERSIST_STATE_TODO  0
+#define SWAP_PERSIST_STATE_DOING 1
+
 #define PERSISTING_KEY_ENTRY_MEM (DEFAULT_KEY_SIZE+sizeof(persistingKeyEntry)+\
         sizeof(dictEntry)+sizeof(listNode))
 
@@ -36,6 +39,7 @@ persistingKeyEntry *persistingKeyEntryNew(listNode *ln, uint64_t version,
     e->ln = ln;
     e->version = version;
     e->mstime = mstime;
+    e->state = SWAP_PERSIST_STATE_TODO;
     return e;
 }
 
@@ -56,7 +60,8 @@ dictType persistingKeysDictType = {
 
 persistingKeys *persistingKeysNew() {
     persistingKeys *keys = zmalloc(sizeof(persistingKeys));
-    keys->list = listCreate();
+    keys->todo = listCreate();
+    keys->doing = listCreate();
     keys->map = dictCreate(&persistingKeysDictType,NULL);
     return keys;
 }
@@ -65,8 +70,10 @@ void persistingKeysFree(persistingKeys *keys) {
    if (keys == NULL) return;
    dictRelease(keys->map);
    keys->map = NULL;
-   listRelease(keys->list);
-   keys->list = NULL;
+   listRelease(keys->todo);
+   keys->todo = NULL;
+   listRelease(keys->doing);
+   keys->doing = NULL;
    zfree(keys);
 }
 
@@ -84,36 +91,31 @@ int persistingKeysPut(persistingKeys *keys, sds key, uint64_t version,
         return 0;
     } else {
         sds dup = sdsdup(key);
-        listAddNodeTail(keys->list,dup);
-        ln = listLast(keys->list);
+        listAddNodeTail(keys->todo,dup);
+        ln = listLast(keys->todo);
 		entry = persistingKeyEntryNew(ln,version,time);
 		dictAdd(keys->map,dup,entry);
         return 1;
     }
 }
 
-int persistingKeysLookup(persistingKeys *keys, sds key, uint64_t *version,
-		mstime_t *time) {
+persistingKeyEntry *persistingKeysLookup(persistingKeys *keys, sds key) {
 	dictEntry *de;
-	persistingKeyEntry *entry;
-
-	if ((de = dictFind(keys->map,key))) {
-		entry = dictGetVal(de);
-		if (version) *version = entry->version;
-		if (time) *time = entry->mstime;
-		return 1;
-	} else {
-		return 0;
-	}
+	if ((de = dictFind(keys->map,key)))
+		return dictGetVal(de);
+	else
+        return NULL;
 }
 
 int persistingKeysDelete(persistingKeys *keys, sds key) {
 	dictEntry *de;
 	persistingKeyEntry *entry;
+    list *list;
 
 	if ((de = dictUnlink(keys->map,key))) {
 		entry = dictGetVal(de);
-		listDelNode(keys->list,entry->ln);
+        list = entry->state == SWAP_PERSIST_STATE_TODO ? keys->todo : keys->doing;
+		listDelNode(list,entry->ln);
 		dictFreeUnlinkedEntry(keys->map,de);
 		return 1;
 	} else {
@@ -121,60 +123,96 @@ int persistingKeysDelete(persistingKeys *keys, sds key) {
 	}
 }
 
+void persistingKeyStart(persistingKeys *keys, persistingKeyEntry *entry) {
+    serverAssert(entry->state == SWAP_PERSIST_STATE_TODO);
+    listUnlink(keys->todo, entry->ln);
+    listLinkTail(keys->doing, entry->ln);
+    entry->state = SWAP_PERSIST_STATE_DOING;
+}
+
+void persistingKeyRewind(persistingKeys *keys, persistingKeyEntry *entry) {
+    serverAssert(entry->state == SWAP_PERSIST_STATE_DOING);
+    listUnlink(keys->doing, entry->ln);
+    listLinkHead(keys->todo, entry->ln);
+    entry->state = SWAP_PERSIST_STATE_TODO;
+}
+
 size_t persistingKeysCount(persistingKeys *keys) {
-    return listLength(keys->list);
+    return listLength(keys->todo) + listLength(keys->doing);
 }
 
 size_t persistingKeysUsedMemory(persistingKeys *keys) {
     return persistingKeysCount(keys)*PERSISTING_KEY_ENTRY_MEM;
 }
 
-sds persistingKeysEarliest(persistingKeys *keys, uint64_t *version,
-        mstime_t *mstime) {
-    if (persistingKeysCount(keys) > 0) {
-        dictEntry *de;
-        persistingKeyEntry *entry;
-        listNode *ln = listFirst(keys->list);
-        sds key = ln->value;
-        de = dictFind(keys->map,key);
-        entry = dictGetVal(de);
-        if (version) *version = entry->version;
-        if (mstime) *mstime = entry->mstime;
-        return key;
+static inline sds persistingKeysEarliest_(persistingKeys *keys, int state,
+        persistingKeyEntry **entry) {
+    list *list = state == SWAP_PERSIST_STATE_TODO ? keys->todo : keys->doing;
+    if (listLength(list) == 0) {
+        *entry = NULL;
+        return NULL;
     } else {
+        listNode *ln = listFirst(list);
+        sds key = listNodeValue(ln);
+        *entry = dictFetchValue(keys->map,key);
+        return key;
+    }
+}
+
+sds persistingKeysEarliest(persistingKeys *keys, persistingKeyEntry **entry) {
+    sds k1, k2;
+    persistingKeyEntry *e1, *e2;
+
+    k1 = persistingKeysEarliest_(keys,SWAP_PERSIST_STATE_TODO,&e1);
+    k2 = persistingKeysEarliest_(keys,SWAP_PERSIST_STATE_DOING,&e2);
+    if (k1 && k2) {
+        if (e1->mstime < e2->mstime) {
+            *entry = e1;
+            return k1;
+        } else {
+            *entry = e2;
+            return k2;
+        }
+    } else if (k1) {
+        *entry = e1;
+        return k1;
+    } else if (k2) {
+        *entry = e2;
+        return k2;
+    } else {
+        *entry = NULL;
         return NULL;
     }
 }
 
-void persistingKeysInitIterator(persistingKeysIter *iter,
+void persistingKeysInitTodoIterator(persistingKeysTodoIter *iter,
         persistingKeys *keys) {
     iter->keys = keys;
-    listRewind(keys->list,&iter->li);
+    listRewind(keys->todo,&iter->li);
 }
 
-void persistingKeysDeinitIterator(persistingKeysIter *iter) {
+void persistingKeysDeinitIterator(persistingKeysTodoIter *iter) {
     UNUSED(iter);
 }
 
-sds persistingKeysIterNext(persistingKeysIter *iter, uint64_t *version,
-		mstime_t *mstime) {
+sds persistingKeysTodoIterNext(persistingKeysTodoIter *iter, persistingKeyEntry **entry) {
     sds key;
     listNode *ln;
-	persistingKeyEntry *entry;
 
     if ((ln = listNext(&iter->li)) == NULL) return NULL;
     key = listNodeValue(ln);
-    entry = dictFetchValue(iter->keys->map,key);
-    if (version) *version = entry->version;
-    if (mstime) *mstime = entry->mstime;
-	return key;
+    *entry = dictFetchValue(iter->keys->map,key);
+    return key;
 }
+
 
 static void swapPersistStatInit(swapPersistStat *stat) {
     stat->add_succ = 0;
     stat->add_ignored = 0;
-    stat->submit_succ = 0;
-    stat->submit_blocked = 0;
+    stat->started = 0;
+    stat->rewind_dirty = 0;
+    stat->rewind_newer = 0;
+    stat->ended = 0;
     stat->dont_keep = 0;
     stat->keep_data = 0;
 }
@@ -231,11 +269,12 @@ inline size_t swapPersistCtxUsedMemory(swapPersistCtx *ctx) {
 }
 
 inline mstime_t swapPersistCtxLag(swapPersistCtx *ctx) {
-    mstime_t lag = 0, mstime;
+    mstime_t lag = 0;
     for (int dbid = 0; dbid < server.dbnum; dbid++) {
         persistingKeys *keys = ctx->keys[dbid];
-        if (persistingKeysEarliest(keys,NULL,&mstime)) {
-            lag = MAX(lag,server.mstime-mstime);
+        persistingKeyEntry *entry;
+        if (persistingKeysEarliest(keys,&entry)) {
+            lag = MAX(lag, server.mstime - entry->mstime);
         }
     }
     return lag;
@@ -248,18 +287,6 @@ void swapPersistCtxAddKey(swapPersistCtx *ctx, redisDb *db, robj *key) {
         ctx->stat.add_succ++;
     else
         ctx->stat.add_ignored++;
-}
-
-static void tryPersistKey(swapPersistCtx *ctx, redisDb *db, robj *key,
-        int persist_keep, uint64_t persist_version) {
-    client *evict_client = server.evict_clients[db->id];
-    if (lockWouldBlock(server.swap_txid++, db, key)) {
-        ctx->stat.submit_blocked++;
-        return;
-    } else {
-        ctx->stat.submit_succ++;
-        submitEvictClientRequest(evict_client,key,persist_keep,persist_version);
-    }
 }
 
 static inline int reachedPersistInprogressLimit() {
@@ -299,25 +326,30 @@ static inline void swapPersistCtxPersistKeysStart(swapPersistCtx *ctx) {
 }
 
 void swapPersistCtxPersistKeys(swapPersistCtx *ctx) {
-    uint64_t count = 0, persist_version;
-	persistingKeysIter iter;
+    uint64_t count = 0;
+	persistingKeysTodoIter iter;
 	redisDb *db;
 	persistingKeys *keys;
 	sds keyptr;
-	mstime_t mstime;
+    persistingKeyEntry *entry;
 
     swapPersistCtxPersistKeysStart(ctx);
 
     for (int dbid = 0; dbid < server.dbnum; dbid++) {
         db = server.db+dbid;
+        client *evict_client = server.evict_clients[db->id];
         keys = ctx->keys[dbid];
         if (persistingKeysCount(keys) == 0) continue;
-        persistingKeysInitIterator(&iter,keys);
-        while ((keyptr = persistingKeysIterNext(&iter,&persist_version,&mstime)) &&
+        persistingKeysInitTodoIterator(&iter,keys);
+        while ((keyptr = persistingKeysTodoIterNext(&iter,&entry)) &&
                 !reachedPersistInprogressLimit() &&
                 count++ < SWAP_PERSIST_MAX_KEYS_PER_LOOP) {
             robj *key = createStringObject(keyptr,sdslen(keyptr));
-            tryPersistKey(ctx,db,key,ctx->keep,persist_version);
+
+            ctx->stat.started++;
+            persistingKeyStart(keys,entry);
+            submitEvictClientRequest(evict_client,key,ctx->keep,entry->version);
+
             decrRefCount(key);
         }
         persistingKeysDeinitIterator(&iter);
@@ -326,23 +358,28 @@ void swapPersistCtxPersistKeys(swapPersistCtx *ctx) {
 
 void swapPersistKeyRequestFinished(swapPersistCtx *ctx, int dbid, robj *key,
         uint64_t persist_version) {
-    uint64_t current_version;
-    mstime_t mstime;
     redisDb *db = server.db+dbid;
     persistingKeys *keys = ctx->keys[dbid];
-    if (persistingKeysLookup(keys,key->ptr,&current_version,&mstime)) {
-        serverAssert(persist_version <= current_version);
-        if (current_version == persist_version) {
-            robj *o = lookupKey(db,key,LOOKUP_NOTOUCH);
-            if (o == NULL || !objectIsDirty(o)) {
-                /* key (with persis_version) persist finished. */
-                persistingKeysDelete(keys,key->ptr);
-            } else {
-                /* persist request will later started again */
-            }
+    persistingKeyEntry *entry;
+
+    entry = persistingKeysLookup(keys,key->ptr);
+    serverAssert(entry && entry->state == SWAP_PERSIST_STATE_DOING);
+    serverAssert(persist_version <= entry->version);
+
+    if (entry->version == persist_version) {
+        robj *o = lookupKey(db,key,LOOKUP_NOTOUCH);
+        if (o == NULL || !objectIsDirty(o)) {
+            ctx->stat.ended++;
+            persistingKeysDelete(keys,key->ptr);
         } else {
-            /* persist started by another attempt */
+            /* key still dirty: persist again. */
+            ctx->stat.rewind_dirty++;
+            persistingKeyRewind(keys, entry);
         }
+    } else {
+        /* newer persist registered: persist again*/
+        ctx->stat.rewind_newer++;
+        persistingKeyRewind(keys, entry);
     }
 }
 
@@ -387,9 +424,9 @@ sds genSwapPersistInfoString(sds info) {
         size_t mem = swapPersistCtxUsedMemory(server.swap_persist_ctx);
         mstime_t lag = swapPersistCtxLag(server.swap_persist_ctx);
         info = sdscatprintf(info,
-                "swap_persist_stat:add_succ=%lld,add_ignored=%lld,submit_succ=%lld,submit_blocked=%lld,keep_data=%lld,dont_keep=%lld\r\n"
+                "swap_persist_stat:add_succ=%lld,add_ignored=%lld,started=%lld,rewind_dirty=%lld,rewind_newer=%lld,ended=%lld,keep_data=%lld,dont_keep=%lld\r\n"
                 "swap_persist_inprogress:count=%lld,keys=%lu,memory=%lu,lag_millis=%lld\r\n",
-                stat->add_succ,stat->add_ignored,stat->submit_succ,stat->submit_blocked,stat->keep_data,stat->dont_keep,
+                stat->add_succ,stat->add_ignored,stat->started,stat->rewind_dirty,stat->rewind_newer,stat->ended,stat->keep_data,stat->dont_keep,
                 count,keys,mem,lag);
     }
     return info;
@@ -934,60 +971,94 @@ int swapPersistTest(int argc, char *argv[], int accurate) {
 	}
 
     TEST("persist: persistingKeys") {
-        mstime_t mstime;
-        uint64_t version;
         persistingKeys *keys;
-        persistingKeysIter iter;
+        persistingKeysTodoIter iter;
+        persistingKeyEntry *entry;
 
         sds key, key1 = sdsnew("key1"), key2 = sdsnew("key2");
 
         keys = persistingKeysNew();
         test_assert(persistingKeysCount(keys) == 0);
         test_assert(persistingKeysUsedMemory(keys) == 0);
-        test_assert(persistingKeysEarliest(keys,NULL,NULL) == 0);
+        test_assert(persistingKeysEarliest(keys,&entry) == NULL);
 
         persistingKeysPut(keys,key1,1,1001);
         test_assert(persistingKeysCount(keys) == 1);
-        test_assert(persistingKeysLookup(keys,key1,&version,&mstime));
-        test_assert(version == 1 && mstime == 1001);
-        test_assert(!persistingKeysLookup(keys,key2,&version,&mstime));
-        key = persistingKeysEarliest(keys,&version,&mstime);
-        test_assert(sdscmp(key, key1) == 0 && version == 1 && mstime == 1001);
+        test_assert((entry = persistingKeysLookup(keys,key1)));
+        test_assert(entry->version == 1 && entry->mstime == 1001);
+        test_assert(!persistingKeysLookup(keys,key2));
+        key = persistingKeysEarliest(keys,&entry);
+        test_assert(sdscmp(key, key1) == 0 && entry->version == 1 && entry->mstime == 1001);
 
         persistingKeysPut(keys,key2,2,1002);
         test_assert(persistingKeysCount(keys) == 2);
-        test_assert(persistingKeysLookup(keys,key1,&version,&mstime));
-        test_assert(version == 1 && mstime == 1001);
-        test_assert(persistingKeysLookup(keys,key2,&version,&mstime));
-        test_assert(version == 2 && mstime == 1002);
-        key = persistingKeysEarliest(keys,&version,&mstime);
-        test_assert(sdscmp(key, key1) == 0 && version == 1 && mstime == 1001);
+        test_assert((entry = persistingKeysLookup(keys,key1)));
+        test_assert(entry->version == 1 && entry->mstime == 1001);
+        test_assert((entry = persistingKeysLookup(keys,key2)));
+        test_assert(entry->version == 2 && entry->mstime == 1002);
+        key = persistingKeysEarliest(keys,&entry);
+        test_assert(sdscmp(key, key1) == 0 && entry->version == 1 && entry->mstime == 1001);
 
         persistingKeysPut(keys,key1,3,1003);
         test_assert(persistingKeysCount(keys) == 2);
-        test_assert(persistingKeysLookup(keys,key1,&version,&mstime));
-        test_assert(version == 3 && mstime == 1001);
-        test_assert(persistingKeysLookup(keys,key2,&version,&mstime));
-        test_assert(version == 2 && mstime == 1002);
-        key = persistingKeysEarliest(keys,&version,&mstime);
-        test_assert(sdscmp(key, key1) == 0 && version == 3 && mstime == 1001);
+        test_assert((entry = persistingKeysLookup(keys,key1)));
+        test_assert(entry->version == 3 && entry->mstime == 1001);
+        test_assert((entry = persistingKeysLookup(keys,key2)));
+        test_assert(entry->version == 2 && entry->mstime == 1002);
+        key = persistingKeysEarliest(keys,&entry);
+        test_assert(sdscmp(key, key1) == 0 && entry->version == 3 && entry->mstime == 1001);
 
-        persistingKeysInitIterator(&iter,keys);
-        key = persistingKeysIterNext(&iter, &version, &mstime);
-        test_assert(sdscmp(key, key1) == 0 && version == 3 && mstime == 1001);
-        key = persistingKeysIterNext(&iter, &version, &mstime);
-        test_assert(sdscmp(key, key2) == 0 && version == 2 && mstime == 1002);
-        key = persistingKeysIterNext(&iter, &version, &mstime);
+        persistingKeysInitTodoIterator(&iter,keys);
+        key = persistingKeysTodoIterNext(&iter, &entry);
+        test_assert(sdscmp(key, key1) == 0 && entry->version == 3 && entry->mstime == 1001);
+        persistingKeyStart(keys, entry);
+        key = persistingKeysTodoIterNext(&iter, &entry);
+        test_assert(sdscmp(key, key2) == 0 && entry->version == 2 && entry->mstime == 1002);
+        persistingKeyStart(keys, entry);
+        key = persistingKeysTodoIterNext(&iter, &entry);
+        test_assert(key == NULL);
+        persistingKeysDeinitIterator(&iter);
+
+        /* oerwrite doing key */
+        persistingKeysPut(keys, key1, 4, 1004);
+        entry = persistingKeysLookup(keys, key1);
+        test_assert(entry->state == SWAP_PERSIST_STATE_DOING && entry->version == 4 && entry->mstime == 1001);
+
+        /* lookup doing key */
+        entry = persistingKeysLookup(keys, key2);
+        test_assert(entry->state == SWAP_PERSIST_STATE_DOING && entry->version == 2 && entry->mstime == 1002);
+
+        /* iter skips doing key */
+        persistingKeysInitTodoIterator(&iter,keys);
+        key = persistingKeysTodoIterNext(&iter, &entry);
+        test_assert(key == NULL);
+        persistingKeysDeinitIterator(&iter);
+
+        /* rewind doing key */
+        entry = persistingKeysLookup(keys, key1);
+        persistingKeyRewind(keys, entry);
+        entry = persistingKeysLookup(keys, key2);
+        persistingKeyRewind(keys, entry);
+
+        /* iter and start again */
+        persistingKeysInitTodoIterator(&iter,keys);
+        key = persistingKeysTodoIterNext(&iter, &entry);
+        test_assert(sdscmp(key, key2) == 0 && entry->version == 2 && entry->mstime == 1002);
+        persistingKeyStart(keys, entry); /* simulate rewind dirty */
+        key = persistingKeysTodoIterNext(&iter, &entry);
+        test_assert(sdscmp(key, key1) == 0 && entry->version == 4 && entry->mstime == 1001);
+        persistingKeyStart(keys, entry); /* simulate rewind newer */
+        key = persistingKeysTodoIterNext(&iter, &entry);
         test_assert(key == NULL);
         persistingKeysDeinitIterator(&iter);
 
         persistingKeysDelete(keys,key1);
         test_assert(persistingKeysCount(keys) == 1);
-        test_assert(!persistingKeysLookup(keys,key1,&version,&mstime));
-        test_assert(persistingKeysLookup(keys,key2,&version,&mstime));
-        test_assert(version == 2 && mstime == 1002);
-        key = persistingKeysEarliest(keys,&version,&mstime);
-        test_assert(sdscmp(key, key2) == 0 && version == 2 && mstime == 1002);
+        test_assert(!persistingKeysLookup(keys,key1));
+        test_assert((entry = persistingKeysLookup(keys,key2)));
+        test_assert(entry->version == 2 && entry->mstime == 1002);
+        key = persistingKeysEarliest(keys,&entry);
+        test_assert(sdscmp(key, key2) == 0 && entry->version == 2 && entry->mstime == 1002);
 
         persistingKeysDelete(keys,key2);
         test_assert(persistingKeysCount(keys) == 0);

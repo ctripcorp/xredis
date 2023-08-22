@@ -28,32 +28,6 @@
 #include "ctrip_swap.h"
 #include "ctrip_lru_cache.h"
 
-/* extent list api so that list node re-allocate can be avoided. */
-void listUnlink(list *list, listNode *node) {
-    if (node->prev)
-        node->prev->next = node->next;
-    else
-        list->head = node->next;
-    if (node->next)
-        node->next->prev = node->prev;
-    else
-        list->tail = node->prev;
-    list->len--;
-}
-
-void listLinkHead(list *list, listNode *node) {
-    if (list->len == 0) {
-        list->head = list->tail = node;
-        node->prev = node->next = NULL;
-    } else {
-        node->prev = NULL;
-        node->next = list->head;
-        list->head->prev = node;
-        list->head = node;
-    }
-    list->len++;
-}
-
 /* holds most recently accessed keys that definitely not exists in rocksdb. */
 dictType lruCacheDictType = {
     dictSdsHash,               /* hash function */
