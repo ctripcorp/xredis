@@ -1025,6 +1025,7 @@ typedef struct client {
     int swap_errcode;
     struct argRewrites *swap_arg_rewrites;
     int gtid_in_merge; /* gtid full sync*/
+    int rate_limit_event_id; /* add time event when rate limit */
 } client;
 
 struct saveparam {

@@ -465,6 +465,7 @@ static int unprotectClientdProc(
     client *c = clientData;
     UNUSED(el), UNUSED(id);
     unprotectClient(c);
+    c->rate_limit_event_id = -1;
     return AE_NOMORE;
 }
 
@@ -476,9 +477,9 @@ void swapRateLimitPause(swapRatelimitCtx *rlctx, client *c) {
     if (server.swap_ratelimit_policy != SWAP_RATELIMIT_POLICY_PAUSE) return;
 
     if (swapRatelimitNeeded(rlctx,server.swap_ratelimit_policy,&pause_ms) &&
-            pause_ms > 0) {
+            pause_ms > 0 && c->rate_limit_event_id != -1) {
         protectClient(c);
-        aeCreateTimeEvent(server.el,pause_ms,unprotectClientdProc,c,NULL);
+        c->rate_limit_event_id = aeCreateTimeEvent(server.el,pause_ms,unprotectClientdProc,c,NULL);
         server.stat_swap_ratelimit_client_pause_count++;
         server.stat_swap_ratelimit_client_pause_ms += pause_ms;
     }

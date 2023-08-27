@@ -210,6 +210,7 @@ client *createClient(connection *conn) {
     c->swap_errcode = 0;
     c->swap_arg_rewrites = argRewritesCreate();
     c->gtid_in_merge = 0;
+    c->rate_limit_event_id = -1;
     c->duration = 0;
     listSetFreeMethod(c->pubsub_patterns,decrRefCountVoid);
     listSetMatchMethod(c->pubsub_patterns,listMatchObjects);
@@ -1341,6 +1342,11 @@ void unlinkClient(client *c) {
 
     /* Clear the tracking status. */
     if (c->flags & CLIENT_TRACKING) disableTracking(c);
+
+    if (c->rate_limit_event_id != -1) {
+        aeDeleteTimeEvent(server.el, c->rate_limit_event_id);
+        c->rate_limit_event_id = -1;
+    }
 }
 
 static void deferFreeClient(client *c) {
