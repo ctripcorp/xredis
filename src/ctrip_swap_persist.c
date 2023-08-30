@@ -439,7 +439,15 @@ sds genSwapPersistInfoString(sds info) {
 struct listMeta *listMetaCreate();
 
 int keyLoadFixDataInit(keyLoadFixData *fix, redisDb *db, decodedResult *dr) {
+    uint64_t version;
     serverAssert(db->id == dr->dbid);
+
+    if (dr->cf != META_CF)
+        version = ((decodedData*)dr)->version;
+    else
+        version = ((decodedMeta*)dr)->version;
+    server.swap_persist_load_fix_version = MAX(version,
+            server.swap_persist_load_fix_version);
 
     if (dr->cf != META_CF) {
         /* skip orphan (sub)data keys: note that meta key is prefix of data
@@ -450,9 +458,6 @@ int keyLoadFixDataInit(keyLoadFixData *fix, redisDb *db, decodedResult *dr) {
 
     objectMeta *cold_meta, *rebuild_meta;
     decodedMeta *dm = (decodedMeta*)dr;
-
-    server.swap_persist_load_fix_version = MAX(dm->version,
-            server.swap_persist_load_fix_version);
 
     size_t extlen = dm->extend ? sdslen(dm->extend) : 0;
     if (buildObjectMeta(dm->object_type,dm->version,dm->extend,

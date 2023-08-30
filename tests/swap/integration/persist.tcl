@@ -273,3 +273,20 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         assert {[expr $dbsize_before - $dbsize_after] < 1000}
     }
 }
+
+start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subkeys-enabled yes}} {
+    test {swap_version not correctly resumed after load fix} {
+        r hmset myhash0 a a b b c c
+        r swap.evict myhash0
+        wait_key_cold r myhash0
+        r del myhash0
+
+        restart_server 0 true false
+
+        r hmset myhash0 e e
+        r swap.evict myhash0
+        wait_key_cold r myhash0
+        r hgetall myhash0
+    }
+}
+
