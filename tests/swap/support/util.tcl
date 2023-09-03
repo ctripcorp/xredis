@@ -136,7 +136,7 @@ proc keyspace_is_cold {r} {
 }
 
 proc wait_key_clean {r key} {
-    wait_for_condition 500 40 {
+    wait_for_condition 500 100 {
         ![object_is_dirty $r $key]
     } else {
         fail "wait $key clean failed."

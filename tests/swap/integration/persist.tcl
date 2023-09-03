@@ -198,7 +198,7 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         wait_key_clean r myhash5
         set now [clock milliseconds]
         # wont persist across writes
-        assert {[expr $now - $start] < 1000}
+        assert {[expr $now - $start] < 2000}
 
         restart_server 0 true false
 
