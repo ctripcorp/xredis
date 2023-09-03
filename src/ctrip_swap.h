@@ -387,6 +387,20 @@ int submitEvictClientRequest(client *c, robj *key, int persist_keep, uint64_t pe
 
 #define getObjectPersistKeep(o) ((o) ? o->persist_keep : 0)
 
+#define setObjectPersistent(o) do { \
+    if (o) o->persistent = 1; \
+} while(0)
+
+#define clearObjectPersistent(o) do { \
+    if (o) o->persistent = 0; \
+} while(0)
+
+#define overwriteObjectPersistent(o,pk) do { \
+    if (o) o->persistent = pk; \
+} while(0)
+
+#define getObjectPersistent(o) ((o) ? o->persistent : 0)
+
 #define setObjectMetaDirty(o) do { \
     if (o) o->dirty_meta = 1; \
 } while(0)

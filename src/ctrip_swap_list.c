@@ -1718,7 +1718,7 @@ int listSwapIn(swapData *data, MOVE void *result_, void *datactx) {
         metaListMerge(&main,result);
         /* mark persistent after data swap in without
          * persistence deleted, or mark non-persistent else */
-        main.list->persistent = !data->persistence_deleted;
+        overwriteObjectPersistent(main.list,!data->persistence_deleted);
         /* cold key swapped in result (may be empty). */
         dbAdd(data->db,data->key,main.list);
         /* expire will be swapped in later by swap framework. */
@@ -1728,7 +1728,7 @@ int listSwapIn(swapData *data, MOVE void *result_, void *datactx) {
         metaListDestroy(result);
     } else {
         if (result) metaListDestroy(result);
-        if (data->value) data->value->persistent = !data->persistence_deleted;
+        if (data->value) overwriteObjectPersistent(data->value,!data->persistence_deleted);
     }
 
     return 0;
@@ -1763,8 +1763,8 @@ int listCleanObject(swapData *data, void *datactx_, int keep_data) {
 /* subkeys already cleaned by cleanObject(to save cpu usage of main thread),
  * swapout only updates db.dict keyspace, meta (db.meta/db.expire) swapped
  * out by swap framework. */
-int listSwapOut(swapData *data, void *datactx, int clear_dirty, int *totally_out) {
-    UNUSED(datactx), UNUSED(clear_dirty);
+int listSwapOut(swapData *data, void *datactx, int keep_data, int *totally_out) {
+    UNUSED(datactx), UNUSED(keep_data);
     serverAssert(!swapDataIsCold(data));
 
     if (listTypeLength(data->value) == 0) {
@@ -1784,7 +1784,7 @@ int listSwapOut(swapData *data, void *datactx, int clear_dirty, int *totally_out
         if (data->new_meta) {
             dbAddMeta(data->db,data->key,data->new_meta);
             data->new_meta = NULL; /* moved to db.meta */
-            data->value->persistent = 1; /* loss pure hot and persistent data exist. */
+            setObjectPersistent(data->value); /* loss pure hot and persistent data exist. */
         }
         if (totally_out) *totally_out = 0;
     }

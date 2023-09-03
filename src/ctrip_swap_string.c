@@ -214,16 +214,17 @@ int wholeKeySwapIn(swapData *data, MOVE void *result, void *datactx) {
     swapin = createSwapInObject(result);
     /* mark persistent after data swap in without
      * persistence deleted, or mark non-persistent else */
-    swapin->persistent = !data->persistence_deleted;
+    overwriteObjectPersistent(swapin,!data->persistence_deleted);
     dbAdd(data->db,data->key,swapin);
     return 0;
 }
 
-int wholeKeySwapOut(swapData *data, void *datactx, int clear_dirty, int *totally_out) {
+int wholeKeySwapOut(swapData *data, void *datactx, int keep_data, int *totally_out) {
     UNUSED(datactx);
     redisDb *db = data->db;
     robj *key = data->key;
-    if (clear_dirty) {
+    if (keep_data) {
+        setObjectPersistent(data->value);
         clearObjectDataDirty(data->value);
         if (totally_out) *totally_out = 0;
     } else {

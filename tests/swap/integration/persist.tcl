@@ -290,3 +290,19 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
     }
 }
 
+start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subkeys-enabled yes}} {
+    r config set swap-debug-evict-keys 0
+    test {persist keep data did not flag key persisted causing rocksdb data leak} {
+        r set mystring val
+        r hmset myhash a a b b c c
+        r sadd myset a b c
+        r zadd myzset 1 a 2 b 3 c
+        r expire mystring 1
+        r expire myhash 1
+        r expire myset 1
+        r expire myzset 1
+        after 1500
+        assert_equal [llength [r swap rio-scan meta {}]] 0
+    }
+}
+

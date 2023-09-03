@@ -102,7 +102,7 @@ int swapDataAna(swapData *d, int thd, struct keyRequest *key_request,
         key_request->cmd_intention_flags = 0;
     }
 
-    if (key_request->cmd_intention == SWAP_DEL && d->value && !d->value->persistent) {
+    if (key_request->cmd_intention == SWAP_DEL && d->value && !getObjectPersistent(d->value)) {
         // no persistent data, skip del
         key_request->cmd_intention = SWAP_NOP;
         key_request->cmd_intention_flags = 0;

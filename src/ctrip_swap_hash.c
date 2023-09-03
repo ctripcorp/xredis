@@ -451,7 +451,7 @@ int hashSwapIn(swapData *data, void *result, void *datactx) {
         robj *swapin = createSwapInObject(result);
         /* mark persistent after data swap in without
          * persistence deleted, or mark non-persistent else */
-        swapin->persistent = !data->persistence_deleted;
+        overwriteObjectPersistent(swapin,!data->persistence_deleted);
         dbAdd(data->db,data->key,swapin);
         /* expire will be swapped in later by swap framework. */
         if (data->cold_meta) {
@@ -460,7 +460,7 @@ int hashSwapIn(swapData *data, void *result, void *datactx) {
         }
     } else {
         if (result) decrRefCount(result);
-        if (data->value) data->value->persistent = !data->persistence_deleted;
+        if (data->value) overwriteObjectPersistent(data->value,!data->persistence_deleted);
     }
 
     return 0;
@@ -469,7 +469,7 @@ int hashSwapIn(swapData *data, void *result, void *datactx) {
 /* subkeys already cleaned by cleanObject(to save cpu usage of main thread),
  * swapout only updates db.dict keyspace, meta (db.meta/db.expire) swapped
  * out by swap framework. */
-int hashSwapOut(swapData *data, void *datactx, int clear_dirty, int *totally_out) {
+int hashSwapOut(swapData *data, void *datactx, int keep_data, int *totally_out) {
     UNUSED(datactx);
     serverAssert(!swapDataIsCold(data));
 
@@ -478,7 +478,10 @@ int hashSwapOut(swapData *data, void *datactx, int clear_dirty, int *totally_out
         dbDeleteDirtySubkeys(data->db,data->key);
     }
 
-    if (clear_dirty) clearObjectDataDirty(data->value);
+    if (keep_data) {
+        clearObjectDataDirty(data->value);
+        setObjectPersistent(data->value);
+    }
 
     if (hashTypeLength(data->value) == 0) {
         /* all fields swapped out, key turnning into cold:
@@ -497,7 +500,7 @@ int hashSwapOut(swapData *data, void *datactx, int clear_dirty, int *totally_out
         if (data->new_meta) {
             dbAddMeta(data->db,data->key,data->new_meta);
             data->new_meta = NULL; /* moved to db.meta */
-            data->value->persistent = 1; /* loss pure hot and persistent data exist. */
+            setObjectPersistent(data->value); /* loss pure hot and persistent data exist. */
         }
         if (totally_out) *totally_out = 0;
     }
