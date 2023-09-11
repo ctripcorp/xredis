@@ -1,65 +1,10 @@
-<!-- MarkdownTOC -->
-
-- [Introduction](#introduction)
-- [Features](#features)
-- [Details](#details)
-    - [xslaveof command](#xslaveof-command)
-    - [force full sync](#force-full-sync)
-    - [slave can replicate all commands to it's slaves](#slave-can-replicate-all-commands-to-its-slaves)
-    - [enhanced partial sync](#enhanced-partial-sync)
-
-<!-- /MarkdownTOC -->
-
-
-<a name="introduction"></a>
 # Introduction
-XRedis is [ctrip](http://www.ctrip.com/) redis branch. Ctrip is a leading provider of travel services including accommodation reservation, transportation ticketing, packaged tours and corporate travel management.
 
-<a name="features"></a>
-# Features
-* all features of redis 4.0.8 are inherited (from xredis 1.0.1)
-* xslaveof command support
-* force full sync
-* enhanced partial sync
+ROR is a more cost-effective alternative to redis, uses RocksDB as the storage engine and can save about 2/3 of the cost.
 
-<a name="details"></a>
-# Details
+ROR extends SWAP feature based on redis codebase, it is compatible with almost all redis commands (including lua and multi/exec) and redis replication (RDB +RESP).
 
-<a name="xslaveof-command"></a>
-## xslaveof command
-
-Suppose that redis slave is connectted to redis master(`ip1 port1`). When command `slaveof ip2 port2` is sent to this slave, redis will do the following:
-
-Slave try partial resynchronization at the cron time(one time per second by default).
-
-`xslaveof ip port` is a promotion for `slaveof`. Using the new command, slave will try partial resynchronization as soon as possible
-
-<a name="force-full-sync"></a>
-## force full sync
-    * 命令 `refullsync`
-    force all slaves reconnect itself, and fullsync with slaves
-<a name="slave-can-replicate-all-commands-to-its-slaves"></a>
-## slave can replicate all commands to it's slaves
-**WARN: dangerous, you have to know what you are doing when using this command**
-
-    config set slave-repl-all yes
-    config set slave-repl-all no
-
-1. Config remain in memory, never persist to disk
-2. Cofig will automatically become yes when server become master
-
-<a name="enhanced-partial-sync"></a>
-## enhanced partial sync
-- Do not free replication log right after slave become master
-
-Normally if master has no longer connected slave for `repl-backlog-ttl` seconds, it will free replication log.  
-When slave becomes master, we hope that redis will restart the timer. Actually offical redis doesn't do this. So it may free replication log immediately.
-
-- Whatever fail message master returns, slave will always try partial sync.
-
-## Build with swap feature
-
-redis-server with swap feature depends on rocksdb (>=5.17).
+## Build
 
 1. ubuntu
 
@@ -72,8 +17,24 @@ cd /path/to/redis && make
 
 ```
 yum install snappy zlib gflags libstdc++
-cd /path/to/rocksdb
-make shared_lib
-cd /path/to/redis && CFLAGS=-I/path/to/rocksdb/include LDFLAGS=-L/path/to/rocksdb/lib make
+cd /path/to/redis && make
 ```
+
+# Details
+
+## SWAP
+
+ROR stores hot and cold data in redis and RocksDB respectively, and exchanges hot and cold data automatically:
+
+- SWAP IN: If key is cold, ROR reads cold key from RocksDB to redis, and then processes the command.
+- SWAP OUT: If maxmemory is reached, ROR picks least frequently used key(LFU), and then writes the key to RocksDB.
+
+![SWAP](docs/images/ROR.png)
+
+## Replication
+
+ROR replication process is almost the same with redis, the only difference lies in RDB generation for cold data: RocksDB CHECKPOINT is obtained first, and then the cold data is scanned and converted into RDB format.
+
+![SWAP-REPL](docs/images/ROR-REPL.png)
+
 
