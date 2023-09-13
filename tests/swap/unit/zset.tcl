@@ -2004,3 +2004,13 @@ start_server {tags {"zsetConvert bug ziplist"}} {
     }
     
 }
+
+start_server {} {
+    r config set swap-debug-evict-keys 0
+    test {zremrangebyscore crash} {
+        r ZADD myzset 17600000000000 a 
+        r swap.evict myzset 
+        wait_key_cold r myzset 
+        assert_equal [r zremrangebyscore myzset "0" "17600000000000"] 1
+    }
+}

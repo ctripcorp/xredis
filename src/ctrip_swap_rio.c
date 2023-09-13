@@ -240,6 +240,7 @@ static void RIODoIterate(RIO *rio) {
     int high_bound_exclude = rio->iterate.flags & ROCKS_ITERATE_HIGH_BOUND_EXCLUDE;
     int next_seek = rio->iterate.flags & ROCKS_ITERATE_CONTINUOUSLY_SEEK;
     int disable_cache = rio->iterate.flags & ROCKS_ITERATE_DISABLE_CACHE;
+    int prefix_match = rio->iterate.flags & ROCKS_ITERATE_PREFIX_MATCH;
 
     size_t numalloc = ROCKS_ITERATE_NO_LIMIT == limit ? RIO_ITERATE_NUMKEYS_ALLOC_INIT : limit;
     numalloc = numalloc > RIO_ITERATE_NUMKEYS_ALLOC_LINER ? RIO_ITERATE_NUMKEYS_ALLOC_LINER : numalloc;
@@ -266,13 +267,31 @@ static void RIODoIterate(RIO *rio) {
 
     if (reverse && high_bound_exclude) {
         rawkey = rocksdb_iter_key(iter, &klen);
-        if (end_len == klen && 0 == memcmp(rawkey, end, end_len)) {
-            rocksdb_iter_prev(iter);
+        if (prefix_match) {
+            while (0 == memcmp(rawkey, end, end_len)) {
+                rocksdb_iter_prev(iter);
+                if (!rocksdb_iter_valid(iter)) break;
+                rawkey = rocksdb_iter_key(iter, &klen);
+            }
+        } else {
+            if (end_len == klen && 0 == memcmp(rawkey, end, end_len)) {
+                rocksdb_iter_prev(iter);
+            }
         }
+        
     } else if (!reverse && low_bound_exclude) {
         rawkey = rocksdb_iter_key(iter, &klen);
-        if (start_len == klen && 0 == memcmp(rawkey, start, start_len))
-            rocksdb_iter_next(iter);
+        if (prefix_match) {
+            while (0 == memcmp(rawkey, start, start_len)) {
+                rocksdb_iter_next(iter);
+                if (!rocksdb_iter_valid(iter)) break;
+                rawkey = rocksdb_iter_key(iter, &klen);
+            }
+        } else {
+            if (start_len == klen && 0 == memcmp(rawkey, start, start_len)) {
+                rocksdb_iter_next(iter);
+            }
+        }
     }
 
     sds bound = reverse ? start : end;
@@ -289,7 +308,7 @@ static void RIODoIterate(RIO *rio) {
         if (bound) {
             int cmp_result = memcmp(rawkey, bound, MIN(bound_len, klen));
             if (0 == cmp_result) {
-                if (bound_len != klen) cmp_result = klen > bound_len;
+                if (!prefix_match && bound_len != klen) cmp_result = klen > bound_len;
                 else if (bound_exclude) break;
             }
             if ((reverse && cmp_result < 0) || (!reverse && cmp_result > 0)) break;

@@ -488,24 +488,17 @@ int zsetEncodeRange(struct swapData *data, int intention, void *datactx_, int *l
     *flags = 0;
     if (datactx->type != TYPE_NONE) {
         if (datactx->type == TYPE_ZS) {
+            *flags |= ROCKS_ITERATE_PREFIX_MATCH;
             *limit = datactx->zs.limit;
             *pcf = SCORE_CF;
             if (datactx->zs.reverse) *flags |= ROCKS_ITERATE_REVERSE;
             if (datactx->zs.rangespec->minex) *flags |= ROCKS_ITERATE_LOW_BOUND_EXCLUDE;
+            if (datactx->zs.rangespec->maxex) *flags |= ROCKS_ITERATE_HIGH_BOUND_EXCLUDE;
 
             *start = zsetEncodeScoreKey(data->db, data->key->ptr, version,
                                         shared.emptystring->ptr, datactx->zs.rangespec->min);
-            if (datactx->zs.rangespec->maxex) {
-                *end = zsetEncodeScoreKey(data->db, data->key->ptr, version,
+            *end = zsetEncodeScoreKey(data->db, data->key->ptr, version,
                                           shared.emptystring->ptr, datactx->zs.rangespec->max);
-            } else {
-                /* key saved as "xxxx[score][subkey]", but end_key formatted as "xxxx[score]".
-                 * So if we want keys with score datactx->zs.rangespec->max, we need search for score a bit wider.
-                 * The logic after swap will filter key with wanted score exactly. */
-                *end = zsetEncodeScoreKey(data->db, data->key->ptr, version,
-                                          shared.emptystring->ptr, datactx->zs.rangespec->max + SCORE_DEVIATION);
-            }
-
         }
     } else {
         *pcf = DATA_CF;

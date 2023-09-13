@@ -1281,6 +1281,7 @@ typedef struct RIO {
 #define ROCKS_ITERATE_LOW_BOUND_EXCLUDE (1<<2)
 #define ROCKS_ITERATE_HIGH_BOUND_EXCLUDE (1<<3)
 #define ROCKS_ITERATE_DISABLE_CACHE (1<<4)
+#define ROCKS_ITERATE_PREFIX_MATCH (1<<5)
 
 void RIOInitGet(RIO *rio, int numkeys, int *cfs, sds *rawkeys);
 void RIOInitPut(RIO *rio, int numkeys, int *cfs, sds *rawkeys, sds *rawvals);
