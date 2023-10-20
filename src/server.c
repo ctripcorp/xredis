@@ -2580,9 +2580,6 @@ void beforeSleep(struct aeEventLoop *eventLoop) {
     if (listLength(server.unblocked_clients))
         processUnblockedClients();
 
-    if (listLength(server.swap_resumed_keyrequests))
-        processResumedClientKeyRequests();
-
     /* Send all the slaves an ACK request if at least one client blocked
      * during the previous event loop iteration. Note that we do this after
      * processUnblockedClients(), so if there are multiple pipelined WAITs
@@ -3675,9 +3672,9 @@ void InitServerLast() {
     server.rocksdb_disk_error_since = 0;
     server.swap_rocksdb_stats_collect_interval_ms = 2000;
     server.swap_txid = 0;
-    server.swap_pause_type = CLIENT_PAUSE_OFF;
-    server.swap_paused_keyrequests = listCreate();
-    server.swap_resumed_keyrequests = listCreate();
+    server.swap_rewind_type = SWAP_REWIND_OFF;
+    server.swap_torewind_clients = listCreate();
+    server.swap_rewinding_clients = listCreate();
     server.rocksdb_checkpoint = NULL;
     server.rocksdb_checkpoint_dir = NULL;
     server.rocksdb_rdb_checkpoint_dir = NULL;
