@@ -2822,12 +2822,12 @@ void replicaofCommand(client *c) {
      * configured using the current address of the master node. */
     if (server.cluster_enabled) {
         addReplyError(c,"REPLICAOF not allowed in cluster mode.");
-        return;
+        goto endrewind;
     }
 
     if (server.failover_state != NO_FAILOVER) {
         addReplyError(c,"REPLICAOF not allowed while failing over.");
-        return;
+        goto endrewind;
     }
 
     /* The special host/port combination "NO" "ONE" turns the instance
@@ -2850,11 +2850,11 @@ void replicaofCommand(client *c) {
              * because it involves flushing all replicas (including this
              * client) */
             addReplyError(c, "Command is not valid when client is a replica.");
-            return;
+            goto endrewind;
         }
 
         if ((getLongFromObjectOrReply(c, c->argv[2], &port, NULL) != C_OK))
-            return;
+            goto endrewind;
 
         /* Check if we are already attached to the specified master */
         if (server.masterhost && !strcasecmp(server.masterhost,c->argv[1]->ptr)
@@ -2864,7 +2864,7 @@ void replicaofCommand(client *c) {
                                 "with. No operation performed.");
             addReplySds(c,sdsnew("+OK Already connected to specified "
                                  "master\r\n"));
-            return;
+            goto endrewind;
         }
         /* There was no previous master or the user specified a different one,
          * we can continue. */
@@ -2875,6 +2875,9 @@ void replicaofCommand(client *c) {
         sdsfree(client);
     }
     addReply(c,shared.ok);
+
+endrewind:
+    endSwapRewind();
 }
 
 /* ROLE command: provide information about the role of the instance
@@ -3707,7 +3710,7 @@ void clearFailoverState() {
     server.target_replica_port = 0;
     server.failover_state = NO_FAILOVER;
     unpauseClients();
-    resumeClientSwap();
+    endSwapRewind();
 }
 
 /* Abort an ongoing failover if one is going on. */
@@ -3757,19 +3760,19 @@ void failoverCommand(client *c) {
     if (server.cluster_enabled) {
         addReplyError(c,"FAILOVER not allowed in cluster mode. "
                         "Use CLUSTER FAILOVER command instead.");
-        goto resumeswap;
+        goto endrewind;
     }
     
     /* Handle special case for abort */
     if ((c->argc == 2) && !strcasecmp(c->argv[1]->ptr,"abort")) {
         if (server.failover_state == NO_FAILOVER) {
             addReplyError(c, "No failover in progress.");
-            goto resumeswap;
+            goto endrewind;
         }
 
         abortFailover("Failover manually aborted");
         addReply(c,shared.ok);
-        goto resumeswap;
+        goto endrewind;
     }
 
     long timeout_in_ms = 0;
@@ -3783,46 +3786,46 @@ void failoverCommand(client *c) {
             timeout_in_ms == 0)
         {
             if (getLongFromObjectOrReply(c,c->argv[j + 1],
-                        &timeout_in_ms,NULL) != C_OK) goto resumeswap;
+                        &timeout_in_ms,NULL) != C_OK) goto endrewind;
             if (timeout_in_ms <= 0) {
                 addReplyError(c,"FAILOVER timeout must be greater than 0");
-                goto resumeswap;
+                goto endrewind;
             }
             j++;
         } else if (!strcasecmp(c->argv[j]->ptr,"to") && (j + 2 < c->argc) &&
             !host) 
         {
             if (getLongFromObjectOrReply(c,c->argv[j + 2],&port,NULL) != C_OK)
-                goto resumeswap;
+                goto endrewind;
             host = c->argv[j + 1]->ptr;
             j += 2;
         } else if (!strcasecmp(c->argv[j]->ptr,"force") && !force_flag) {
             force_flag = 1;
         } else {
             addReplyErrorObject(c,shared.syntaxerr);
-            goto resumeswap;
+            goto endrewind;
         }
     }
 
     if (server.failover_state != NO_FAILOVER) {
         addReplyError(c,"FAILOVER already in progress.");
-        goto resumeswap;
+        goto endrewind;
     }
 
     if (server.masterhost) {
         addReplyError(c,"FAILOVER is not valid when server is a replica.");
-        goto resumeswap;
+        goto endrewind;
     }
 
     if (listLength(server.slaves) == 0) {
         addReplyError(c,"FAILOVER requires connected replicas.");
-        goto resumeswap; 
+        goto endrewind;
     }
 
     if (force_flag && (!timeout_in_ms || !host)) {
         addReplyError(c,"FAILOVER with force option requires both a timeout "
             "and target HOST and IP.");
-        goto resumeswap;     
+        goto endrewind;
     }
 
     /* If a replica address was provided, validate that it is connected. */
@@ -3832,13 +3835,13 @@ void failoverCommand(client *c) {
         if (replica == NULL) {
             addReplyError(c,"FAILOVER target HOST and PORT is not "
                             "a replica.");
-            goto resumeswap;
+            goto endrewind;
         }
 
         /* Check if requested replica is online */
         if (replica->replstate != SLAVE_STATE_ONLINE) {
             addReplyError(c,"FAILOVER target replica is not online.");
-            goto resumeswap;
+            goto endrewind;
         }
 
         server.target_replica_host = zstrdup(host);
@@ -3860,9 +3863,8 @@ void failoverCommand(client *c) {
     addReply(c,shared.ok);
     return;
 
-resumeswap:
-    resumeClientSwap();
-    return;
+endrewind:
+    endSwapRewind();
 }
 
 /* Failover cron function, checks coordinated failover state. 

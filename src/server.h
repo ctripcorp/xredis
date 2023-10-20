@@ -1804,9 +1804,9 @@ struct redisServer {
     unsigned long long swap_evict_step_max_memory; /* max memory evict in one step. */
     unsigned long long swap_repl_max_rocksdb_read_bps; /* max rocksdb iterator read bps. */ 
     int64_t swap_txid; /* swap txid. */
-    int swap_pause_type;
-    list *swap_paused_keyrequests;
-    list *swap_resumed_keyrequests;
+    int swap_rewind_type;
+    list *swap_torewind_clients;
+    list *swap_rewinding_clients;
     uint64_t swap_key_version;
 
     /* swap eviction */

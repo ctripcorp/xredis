@@ -791,9 +791,14 @@ swapCtx *swapCtxCreate(client *c, keyRequest *key_request, clientKeyRequestFinis
 void swapCtxSetSwapData(swapCtx *ctx, MOVE swapData *data, MOVE void *datactx);
 void swapCtxFree(swapCtx *ctx);
 
-void pauseClientSwap(int pause_type);
-void resumeClientSwap(void);
-void processResumedClientKeyRequests(void);
+typedef enum {
+    SWAP_REWIND_OFF = 0, /* rewind off */
+    SWAP_REWIND_WRITE,   /* rewind client with write commands */
+    SWAP_REWIND_ALL,     /* rewind client with any commands */
+} swap_rewind_type;
+
+void startSwapRewind(swap_rewind_type rewind_type);
+void endSwapRewind(void);
 
 /* see server.req_submitted */
 #define REQ_SUBMITTED_NONE 0

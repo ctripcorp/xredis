@@ -80,92 +80,74 @@ void clientReleaseLocks(client *c, swapCtx *ctx) {
     }
 }
 
-/* Pause swap */
-typedef struct clientKeyRequests {
-    client *c;
-    clientKeyRequestFinished cb;
-    getKeyRequestsResult result[1];
-} clientKeyRequests;
+/* Swap Rewind
+ *
+ * If write commands comes right after slaveof/failover command, it will be
+ * waiting in lock queue (after processCommand). when slaveof/failover execute
+ * finished, server will change state (slaveof command makes server readonly,
+ * failover command makes server pause write), but those commands will not
+ * go through processCommand to check server status again, resulting unexepcted
+ * server status:
+ * - slaveof command will execute those inflight commands, making it's
+ *   replication history longer than other replica and will result in fullresync
+ *   if try to sync with other replica.
+ * - failover command will execute those inflight commands, making it not
+ *   effectly paused, thus it's data will be inconsist with the new master.
+ *
+ * We introduce swap rewind feature to address these issue: if any client is
+ * about to change server status, we register upcomming clients and rewind
+ * those clients to go through processCommand again.
+ *
+ * Note that:
+ *  - master client should not rewind: master worker client are kept in order,
+ *   rewind might mess with it's order.
+ *  - evict/expire client currently dont need to rewind, because those client
+ *   did not go through processCommands.
+ */
 
-static void initKeyRequestsResult(getKeyRequestsResult *result) {
-    result->key_requests = result->buffer;
-    result->num = 0;
-    result->size = MAX_KEYREQUESTS_BUFFER;
+void startSwapRewind(swap_rewind_type rewind_type) {
+    server.swap_rewind_type = rewind_type;
+    serverAssert(rewind_type != SWAP_REWIND_OFF);
+    serverLog(LL_WARNING,"Start swap rewind(%d)", rewind_type);
 }
 
-static void dupKeyRequestsResult(getKeyRequestsResult *to,
-        getKeyRequestsResult *from) {
-    getKeyRequestsPrepareResult(to,from->size);
-    for (int i = 0; i < from->num; i++) {
-        keyRequest *from_kr = from->key_requests+i;
-        keyRequest *to_kr = to->key_requests+i;
-        copyKeyRequest(to_kr,from_kr);
-    }
-    to->num = from->num;
+void endSwapRewind() {
+    server.swap_rewind_type = SWAP_REWIND_OFF;
+    listJoin(server.swap_rewinding_clients,server.swap_torewind_clients);
+    serverLog(LL_WARNING,"End swap rewind");
 }
 
-clientKeyRequests *createClientKeyRequests(client *c, getKeyRequestsResult *result,
-        clientKeyRequestFinished cb) {
-    clientKeyRequests *ckr = zcalloc(sizeof(clientKeyRequests));
-    ckr->c = c;
-    ckr->cb = cb;
-    initKeyRequestsResult(ckr->result);
-    dupKeyRequestsResult(ckr->result,result);
-    return ckr;
-}
-
-void freeClientKeyRequests(clientKeyRequests *ckr) {
-    releaseKeyRequests(ckr->result);
-    getKeyRequestsFreeResult(ckr->result);
-    zfree(ckr);
-}
-
-void pauseClientSwap(int pause_type) {
-    serverAssert(pause_type != CLIENT_PAUSE_OFF);
-    server.swap_pause_type = pause_type;
-    serverLog(LL_WARNING,"Pause client swap, type=%d", pause_type);
-}
-
-void resumeClientSwap() {
-    server.swap_pause_type = CLIENT_PAUSE_OFF;
-    listJoin(server.swap_resumed_keyrequests,server.swap_paused_keyrequests);
-    serverLog(LL_WARNING,"Resume client swap");
-}
-
-void processResumedClientKeyRequests(void) {
+void processSwapRewindingClients(void) {
     listNode *ln;
-    while (listLength(server.swap_resumed_keyrequests)) {
-        ln = listFirst(server.swap_resumed_keyrequests);
+    while (listLength(server.swap_rewinding_clients)) {
+        ln = listFirst(server.swap_rewinding_clients);
         serverAssert(ln != NULL);
-        clientKeyRequests *ckr = listNodeValue(ln);
-        listDelNode(server.swap_resumed_keyrequests,ln);
-        submitClientKeyRequests(ckr->c,ckr->result,ckr->cb,NULL);
-        freeClientKeyRequests(ckr);
+        client *c = listNodeValue(ln);
+        listDelNode(server.swap_rewinding_clients,ln);
+        c->flags &= ~CLIENT_SWAPPING;
+        queueClientForReprocessing(c);
     }
 }
 
-static void pauseClientSwapIfNeeded(client *c) {
-    if (c->cmd && c->cmd->proc == failoverCommand) {
-        pauseClientSwap(CLIENT_PAUSE_WRITE);
+static void startSwapRewindIfNeeded(client *c) {
+    if (c->cmd && (c->cmd->proc == failoverCommand ||
+                c->cmd->proc == replicaofCommand)) {
+        startSwapRewind(SWAP_REWIND_WRITE);
     }
 }
 
-static void pauseClientKeyRequests(client *c, getKeyRequestsResult *result,
-        clientKeyRequestFinished cb) {
+static void registerSwapToRewindClient(client *c) {
     serverAssert(c->cmd);
-    clientKeyRequests *ckr = createClientKeyRequests(c,result,cb);
-    listAddNodeTail(server.swap_paused_keyrequests,ckr);
+    listAddNodeTail(server.swap_torewind_clients,c);
 }
 
-/* See processCommand for details. */
-static int pauseClientKeyRequestsIfNeeded(client *c, getKeyRequestsResult *result,
-        clientKeyRequestFinished cb) {
+static int registerSwapToRewindClientIfNeeded(client *c) {
     int is_may_replicate_command = (c->cmd->flags & (CMD_WRITE | CMD_MAY_REPLICATE)) ||
                                    (c->cmd->proc == execCommand && (c->mstate.cmd_flags & (CMD_WRITE | CMD_MAY_REPLICATE)));
     if (!(c->flags & CLIENT_SLAVE) &&
-        ((server.swap_pause_type == CLIENT_PAUSE_ALL) ||
-        (server.swap_pause_type == CLIENT_PAUSE_WRITE && is_may_replicate_command))) {
-        pauseClientKeyRequests(c,result,cb);
+        ((server.swap_rewind_type == SWAP_REWIND_ALL) ||
+        (server.swap_rewind_type == SWAP_REWIND_WRITE && is_may_replicate_command))) {
+        registerSwapToRewindClient(c);
         return 1;
     } else {
         return 0;
@@ -495,11 +477,6 @@ void _submitClientKeyRequests(client *c, getKeyRequestsResult *result,
         clientKeyRequestFinished cb, void* ctx_pd, int deferred) {
     int64_t txid = server.swap_txid++;
 
-    if (pauseClientKeyRequestsIfNeeded(c,result,cb))
-        return;
-
-    pauseClientSwapIfNeeded(c);
-
     if (result->swap_cmd) swapCmdSwapSubmitted(result->swap_cmd);
     for (int i = 0; i < result->num; i++) {
         void *msgs = NULL;
@@ -539,6 +516,8 @@ int submitNormalClientRequests(client *c) {
     getKeyRequestsResult result = GET_KEYREQUESTS_RESULT_INIT;
     getKeyRequests(c,&result);
     c->keyrequests_count = result.num;
+    if (registerSwapToRewindClientIfNeeded(c)) return result.num;
+    startSwapRewindIfNeeded(c);
     submitClientKeyRequests(c,&result,normalClientKeyRequestFinished,NULL);
     releaseKeyRequests(&result);
     getKeyRequestsFreeResult(&result);
