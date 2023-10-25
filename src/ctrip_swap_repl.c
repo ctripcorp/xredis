@@ -28,32 +28,47 @@
 
 #include "ctrip_swap.h"
 
-/* ----------------------------- repl swap ------------------------------ */
-int replClientDiscardDispatchedCommands(client *c) {
-    int discarded = 0, scanned = 0;
-    listIter li;
-    listNode *ln;
+/* See replicationCacheMaster for more details */
+void replicationCacheSwapDrainingMaster(client *c) {
+    serverAssert(server.swap_draining_master != NULL && server.cached_master == NULL);
+    serverLog(LL_NOTICE,"Caching the disconnected swap draining master state.");
 
-    serverAssert(c);
+    /* Unlink the client from the server structures. */
+    unlinkClient(c);
 
-    listRewind(server.repl_worker_clients_used,&li);
-    while ((ln = listNext(&li))) {
-        client *wc = listNodeValue(ln);
-        if (wc->repl_client == c) {
-            wc->CLIENT_REPL_CMD_DISCARDED = 1;
-            discarded++;
-            serverLog(LL_NOTICE, "discarded: cmd_reploff(%lld)", wc->cmd_reploff);
-        }
-        scanned++;
+    /* Reset the master client so that's ready to accept new commands:
+     * we want to discard te non processed query buffers and non processed
+     * offsets, including pending transactions, already populated arguments,
+     * pending outputs to the master. */
+    sdsclear(server.swap_draining_master->querybuf);
+    sdsclear(server.swap_draining_master->pending_querybuf);
+    server.swap_draining_master->read_reploff = server.swap_draining_master->reploff;
+    if (c->flags & CLIENT_MULTI) discardTransaction(c);
+    listEmpty(c->reply);
+    c->sentlen = 0;
+    c->reply_bytes = 0;
+    c->bufpos = 0;
+    resetClient(c);
+
+    /* Save the master. Server.master will be set to null later by
+     * replicationHandleMasterDisconnection(). */
+    server.cached_master = server.swap_draining_master;
+
+    /* Invalidate the Peer ID cache. */
+    if (c->peerid) {
+        sdsfree(c->peerid);
+        c->peerid = NULL;
+    }
+    /* Invalidate the Sock Name cache. */
+    if (c->sockname) {
+        sdsfree(c->sockname);
+        c->sockname = NULL;
     }
 
-    if (discarded) {
-        serverLog(LL_NOTICE,
-            "discard (%d/%d) dispatched but not executed commands for repl client(reploff:%lld, read_reploff:%lld)",
-            discarded, scanned, c->reploff, c->read_reploff);
-    }
-
-    return discarded;
+    /* Caching the master happens instead of the actual freeClient() call,
+     * so make sure to adjust the replication state. This function will
+     * also set server.master to NULL. */
+    replicationHandleMasterDisconnection();
 }
 
 void replClientDiscardSwappingState(client *c) {
@@ -146,20 +161,7 @@ static void processFinishedReplCommands() {
         listDelNode(server.repl_worker_clients_used, ln);
         listAddNodeTail(server.repl_worker_clients_free, wc);
 
-        /* Discard dispatched but not executed commands like we never reveived, if
-         * - repl client is closing: client close defered untill all swapping
-         *   dispatched cmds finished, those cmds will be discarded.
-         * - repl client is cached: client cached but read_reploff will shirnk
-         *   back and dispatched cmd will be discared. */
-        if (wc->CLIENT_REPL_CMD_DISCARDED) {
-            commandProcessed(wc);
-            serverAssert(wc->client_hold_mode == CLIENT_HOLD_MODE_REPL);
-            clientReleaseLocks(wc,NULL/*ctx unused*/);
-            wc->CLIENT_REPL_CMD_DISCARDED = 0;
-            continue;
-        } else {
-            serverAssert(c->flags&CLIENT_MASTER);
-        }
+        serverAssert(c->flags&CLIENT_MASTER);
 
         backup_cmd = c->cmd;
         c->cmd = wc->cmd;

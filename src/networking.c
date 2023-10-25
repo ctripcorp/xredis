@@ -204,7 +204,6 @@ client *createClient(connection *conn) {
     c->client_hold_mode = CLIENT_HOLD_MODE_CMD;
     c->CLIENT_DEFERED_CLOSING = 0;
     c->CLIENT_REPL_SWAPPING = 0;
-    c->CLIENT_REPL_CMD_DISCARDED = 0;
     c->swap_locks = listCreate();
     c->swap_metas = NULL;
     c->swap_errcode = 0;
@@ -1386,9 +1385,6 @@ void freeClientsInDeferedQueue(void) {
 void freeClient(client *c) {
     listNode *ln;
 
-    /* Discard dispatched commands if client is (or was) a repl client. */ 
-    replClientDiscardDispatchedCommands(c);
-
     /* Unlinked repl client from server.repl_swapping_clients. */
     replClientDiscardSwappingState(c);
 
@@ -1419,6 +1415,32 @@ void freeClient(client *c) {
         listDelNode(server.clients_to_close,ln);
     }
 
+    serverAssert(!(server.swap_draining_master && server.master));
+
+    if (c->keyrequests_count) {
+        if (server.master && c->flags & CLIENT_MASTER) {
+            serverLog(LL_WARNING, "Connection with master lost (defer start with %d key requests).", c->keyrequests_count);
+            server.swap_draining_master = server.master;
+            server.master = NULL;
+            server.repl_state = REPL_STATE_CONNECT;
+        }
+        deferFreeClient(c);
+        return;
+    }
+
+    if (server.swap_draining_master && c->flags & CLIENT_MASTER) {
+        serverLog(LL_WARNING, "Connection with master lost (defer done, discard cache=%s).",
+                (c->flags & CLIENT_SWAP_DISCARD_CACHED_MASTER) ? "yes" : "no");
+        if (!(c->flags & (CLIENT_PROTOCOL_ERROR|CLIENT_BLOCKED|CLIENT_SWAP_DISCARD_CACHED_MASTER))) {
+            c->flags &= ~(CLIENT_CLOSE_ASAP|CLIENT_CLOSE_AFTER_REPLY);
+            replicationCacheSwapDrainingMaster(c);
+            server.swap_draining_master = NULL;
+            return;
+        } else {
+            server.swap_draining_master = NULL;
+        }
+    }
+
     /* If it is our master that's being disconnected we should make sure
      * to cache the state to try a partial resynchronization later.
      *
@@ -1431,11 +1453,6 @@ void freeClient(client *c) {
             replicationCacheMaster(c);
             return;
         }
-    }
-
-    if (c->keyrequests_count) {
-        deferFreeClient(c);
-        return;
     }
 
     /* Log link disconnection with slave */
@@ -2103,7 +2120,7 @@ void commandProcessed(client *c) {
      *    The client will be reset in unblockClient().
      * 2. Don't update replication offset or propagate commands to replicas,
      *    since we have not applied the command. */
-    if (!(c->flags & CLIENT_BLOCKED) && !(c->flags & CLIENT_SWAPPING)) {
+    if (!(c->flags & CLIENT_BLOCKED) && !(c->flags & CLIENT_SWAPPING) && !(c->flags & CLIENT_SWAP_REWINDING)) {
         resetClient(c);
     }
 
@@ -2191,7 +2208,7 @@ void processInputBuffer(client *c) {
         if (c->flags & CLIENT_BLOCKED) break;
 
         /* Also abort if the client is swapping. */
-        if (c->flags&CLIENT_SWAPPING) break;
+        if (c->flags&CLIENT_SWAPPING || c->flags&CLIENT_SWAP_REWINDING) break;
 
         /* Don't process more buffers from clients that have already pending
          * commands to execute in c->argv. */
@@ -2277,7 +2294,7 @@ void readQueryFromClient(connection *conn) {
      * the event loop. This is the case if threaded I/O is enabled. */
     if (postponeClientRead(c)) return;
 
-    if (c->flags&CLIENT_SWAPPING) return;
+    if (c->flags&CLIENT_SWAPPING || c->flags&CLIENT_SWAP_REWINDING) return;
 
     /* Update total number of reads on server */
     atomicIncr(server.stat_total_reads_processed, 1);
