@@ -108,25 +108,26 @@ void clientReleaseLocks(client *c, swapCtx *ctx) {
 void startSwapRewind(swap_rewind_type rewind_type) {
     server.swap_rewind_type = rewind_type;
     serverAssert(rewind_type != SWAP_REWIND_OFF);
-    serverLog(LL_WARNING,"Start swap rewind(%d)", rewind_type);
+    serverLog(LL_WARNING,"Start swap rewind(%d), current master_repl_offset:%lld", rewind_type, server.master_repl_offset);
 }
 
-void endSwapRewind() {
-    server.swap_rewind_type = SWAP_REWIND_OFF;
-    listJoin(server.swap_rewinding_clients,server.swap_torewind_clients);
-    serverLog(LL_WARNING,"End swap rewind");
-}
-
-void processSwapRewindingClients(void) {
+static void processSwapRewindingClients(void) {
     listNode *ln;
     while (listLength(server.swap_rewinding_clients)) {
         ln = listFirst(server.swap_rewinding_clients);
         serverAssert(ln != NULL);
         client *c = listNodeValue(ln);
         listDelNode(server.swap_rewinding_clients,ln);
-        c->flags &= ~CLIENT_SWAPPING;
+        c->flags &= ~CLIENT_SWAP_REWINDING;
         queueClientForReprocessing(c);
     }
+}
+
+void endSwapRewind() {
+    server.swap_rewind_type = SWAP_REWIND_OFF;
+    listJoin(server.swap_rewinding_clients,server.swap_torewind_clients);
+    processSwapRewindingClients();
+    serverLog(LL_WARNING,"End swap rewind, current master_repl_offset:%lld", server.master_repl_offset);
 }
 
 static void startSwapRewindIfNeeded(client *c) {
@@ -138,6 +139,7 @@ static void startSwapRewindIfNeeded(client *c) {
 
 static void registerSwapToRewindClient(client *c) {
     serverAssert(c->cmd);
+    c->flags |= CLIENT_SWAP_REWINDING;
     listAddNodeTail(server.swap_torewind_clients,c);
 }
 
@@ -563,7 +565,10 @@ int dbSwap(client *c) {
 
     swapRateLimitPause(rlctx,c);
 
-    if (keyrequests_submit > 0) {
+    if (c->flags & CLIENT_SWAP_REWINDING) {
+        /* Rewinding command parsed but not processed, See below */
+        return C_ERR;
+    } else if (keyrequests_submit > 0) {
         /* Swapping command parsed but not processed, return C_ERR so that:
          * 1. repl stream will not propagate to sub-slaves
          * 2. client will not reset

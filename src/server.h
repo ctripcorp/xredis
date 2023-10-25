@@ -295,6 +295,8 @@ extern int configOOMScoreAdjValuesDefaults[CONFIG_OOM_COUNT];
 #define CLIENT_SWAPPING (1ULL<<43) /* The client is waiting swap. */
 #define CLIENT_SWAP_UNLOCKING (1ULL<<44) /* Client is releasing swap lock. */
 #define CLIENT_CTRIP_MONITOR (1ULL<<45) /* Client for ctrip monitor. */
+#define CLIENT_SWAP_REWINDING (1ULL<<46) /* The client is waiting rewind. */
+#define CLIENT_SWAP_DISCARD_CACHED_MASTER (1ULL<<47) /* The client will not be saved as cached_master. */
 
 /* Client block type (btype field in client structure)
  * if CLIENT_BLOCKED flag is set. */
@@ -1013,7 +1015,6 @@ typedef struct client {
     int client_hold_mode; /* indicates how client should hold key */
     int CLIENT_DEFERED_CLOSING;
     int CLIENT_REPL_SWAPPING;
-    int CLIENT_REPL_CMD_DISCARDED;
     long long cmd_reploff; /* Command replication offset when dispatch if this is a repl worker */
     struct client *repl_client; /* Master or peer client if this is a repl worker */
     list *swap_locks; /* swap locks */
@@ -1944,6 +1945,8 @@ struct redisServer {
 
     /* swap rordb */
     int swap_repl_rordb_sync;
+
+    client *swap_draining_master;
 };
 
 #define MAX_KEYS_BUFFER 256

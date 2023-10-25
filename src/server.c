@@ -3679,6 +3679,7 @@ void InitServerLast() {
     server.rocksdb_checkpoint_dir = NULL;
     server.rocksdb_rdb_checkpoint_dir = NULL;
     server.rocksdb_internal_stats = NULL;
+    server.swap_draining_master = NULL;
     serverRocksInit();
     server.util_task_manager = createRocksdbUtilTaskManager();
     asyncCompleteQueueInit();

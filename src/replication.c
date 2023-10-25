@@ -2606,7 +2606,7 @@ write_error: /* Handle sendCommand() errors. */
     goto error;
 }
 
-int connectWithMaster(void) {
+int doConnectWithMaster(void) {
     server.repl_transfer_s = server.tls_replication ? connCreateTLS() : connCreateSocket();
     if (connConnect(server.repl_transfer_s, server.masterhost, server.masterport,
                 NET_FIRST_BIND_ADDR, syncWithMaster) == C_ERR) {
@@ -2622,6 +2622,42 @@ int connectWithMaster(void) {
     server.repl_state = REPL_STATE_CONNECTING;
     serverLog(LL_NOTICE,"MASTER <-> REPLICA sync started");
     return C_OK;
+}
+
+#define SWAP_WAIT_DRAINING_MASTER_INTERVAL_MS 100
+
+int connectWithMaster(void);
+
+int waitSwapDrainingMaster(struct aeEventLoop *eventLoop, long long id, void *clientData) {
+    static mstime_t logged_time = 0;
+
+    UNUSED(eventLoop), UNUSED(id), UNUSED(clientData);
+
+    if (server.swap_draining_master == NULL) {
+            serverLog(LL_WARNING, "Wait swap master drain done");
+        if (server.repl_state == REPL_STATE_CONNECT) connectWithMaster();
+        return AE_NOMORE;
+    } else {
+        if (server.mstime - logged_time > 1000) {
+            logged_time = server.mstime;
+            sds client_desc = catClientInfoString(sdsempty(), server.swap_draining_master);
+            serverLog(LL_WARNING, "Wait swap master drainning: %s.", client_desc);
+            sdsfree(client_desc);
+        }
+        return SWAP_WAIT_DRAINING_MASTER_INTERVAL_MS;
+    }
+}
+
+int connectWithMaster(void) {
+    if (server.swap_draining_master != NULL) {
+        if (aeCreateTimeEvent(server.el,SWAP_WAIT_DRAINING_MASTER_INTERVAL_MS,
+                    waitSwapDrainingMaster,NULL,NULL) != AE_ERR)
+            return C_OK;
+        else
+            return C_ERR;
+    } else {
+        return doConnectWithMaster();
+    }
 }
 
 /* This function can be called when a non blocking connection is currently
@@ -2877,7 +2913,9 @@ void replicaofCommand(client *c) {
     addReply(c,shared.ok);
 
 endrewind:
-    endSwapRewind();
+    if (server.swap_mode != SWAP_MODE_MEMORY) {
+        endSwapRewind();
+    }
 }
 
 /* ROLE command: provide information about the role of the instance
@@ -3057,6 +3095,10 @@ void replicationDiscardCachedMaster(void) {
     server.cached_master->flags &= ~CLIENT_MASTER;
     freeClient(server.cached_master);
     server.cached_master = NULL;
+
+    if (server.swap_draining_master) {
+        server.swap_draining_master->flags |= CLIENT_SWAP_DISCARD_CACHED_MASTER;
+    }
 }
 
 /* Turn the cached master into the current master, using the file descriptor
