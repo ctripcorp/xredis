@@ -1,4 +1,4 @@
-# Introduction
+## Introduction
 
 ROR is a more cost-effective alternative to redis, uses RocksDB as the storage engine and can save about 2/3 of the cost.
 
@@ -6,23 +6,32 @@ ROR extends SWAP feature based on redis codebase, it is compatible with almost a
 
 ## Build
 
+### prerequisites
+
 1. ubuntu
 
 ```
 apt install librocksdb-dev libsnappy-dev zlib1g-dev libgflags-dev libstdc++6
-cd /path/to/redis && make
 ```
 
 2. centos
 
 ```
 yum install snappy zlib gflags libstdc++
-cd /path/to/redis && make
 ```
 
-# Details
+### build
 
-## SWAP
+```
+git clone https://github.com/ctripcorp/Redis-On-Rocks.git
+git submodule upadate --init
+cd redis
+make
+```
+
+## Details
+
+### SWAP
 
 ROR stores hot and cold data in redis and RocksDB respectively, and exchanges hot and cold data automatically:
 
@@ -31,7 +40,7 @@ ROR stores hot and cold data in redis and RocksDB respectively, and exchanges ho
 
 ![SWAP](docs/images/ROR.png)
 
-## Replication
+### Replication
 
 ROR replication process is almost the same with redis, the only difference lies in RDB generation for cold data: RocksDB CHECKPOINT is obtained first, and then the cold data is scanned and converted into RDB format.
 
