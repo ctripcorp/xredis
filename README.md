@@ -11,7 +11,7 @@ ROR extends SWAP feature based on redis codebase, it is compatible with almost a
 1. ubuntu
 
 ```
-apt install librocksdb-dev libsnappy-dev zlib1g-dev libgflags-dev libstdc++6
+apt install libsnappy-dev zlib1g-dev libgflags-dev libstdc++6
 ```
 
 2. centos
