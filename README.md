@@ -17,7 +17,7 @@ apt install libsnappy-dev zlib1g-dev libgflags-dev libstdc++6
 2. centos
 
 ```
-yum install snappy zlib gflags libstdc++
+yum install snappy-devel zlib-devel gflags-devel libstdc++
 ```
 
 ### build
