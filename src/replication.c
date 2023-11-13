@@ -2429,6 +2429,7 @@ void syncWithMaster(connection *conn) {
         server.gtid_enabled = enabled;
         sdsfree(yesno), yesno = NULL;
         server.repl_state = REPL_STATE_RECEIVE_PORT_REPLY;
+        return;
     }
 
     /* Receive REPLCONF listening-port reply. */
