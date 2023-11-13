@@ -1845,6 +1845,10 @@ struct redisServer {
     unsigned long long rocksdb_data_suggest_compact_num_dels_trigger;
     unsigned long long rocksdb_meta_suggest_compact_sliding_window_size;
     unsigned long long rocksdb_meta_suggest_compact_num_dels_trigger;
+    unsigned long long rocksdb_data_min_blob_size;
+    unsigned long long rocksdb_meta_min_blob_size;
+    unsigned long long rocksdb_data_blob_file_size;
+    unsigned long long rocksdb_meta_blob_file_size;
     int rocksdb_data_max_bytes_for_level_multiplier;
     int rocksdb_meta_max_bytes_for_level_multiplier;
     int rocksdb_data_compaction_dynamic_level_bytes;
@@ -1868,6 +1872,14 @@ struct redisServer {
     int rocksdb_meta_disable_auto_compactions;
     int rocksdb_data_compression; /* rocksdb compresssion type: no/snappy/zlib. */
     int rocksdb_meta_compression;
+    int rocksdb_data_enable_blob_files;
+    int rocksdb_meta_enable_blob_files;
+    int rocksdb_data_enable_blob_garbage_collection;
+    int rocksdb_meta_enable_blob_garbage_collection;
+    int rocksdb_data_blob_garbage_collection_age_cutoff_percentage;
+    int rocksdb_meta_blob_garbage_collection_age_cutoff_percentage;
+    int rocksdb_data_blob_garbage_collection_force_threshold_percentage;
+    int rocksdb_meta_blob_garbage_collection_force_threshold_percentage;
 
     /* swap block*/
     struct swapUnblockCtx* swap_dependency_block_ctx;

@@ -136,6 +136,12 @@ int rocksInit() {
     rocks_init_option_compression(rocks->cf_opts[DATA_CF],server.rocksdb_data_compression);
     rocksdb_options_set_level0_slowdown_writes_trigger(rocks->cf_opts[DATA_CF],server.rocksdb_data_level0_slowdown_writes_trigger);
     rocksdb_options_set_disable_auto_compactions(rocks->cf_opts[DATA_CF],server.rocksdb_data_disable_auto_compactions);
+    rocksdb_options_set_enable_blob_files(rocks->cf_opts[DATA_CF],server.rocksdb_data_enable_blob_files);
+    rocksdb_options_set_enable_blob_gc(rocks->cf_opts[DATA_CF],server.rocksdb_data_enable_blob_garbage_collection);
+    rocksdb_options_set_min_blob_size(rocks->cf_opts[DATA_CF],server.rocksdb_data_min_blob_size);
+    rocksdb_options_set_blob_file_size(rocks->cf_opts[DATA_CF],server.rocksdb_data_blob_file_size);
+    rocksdb_options_set_blob_gc_age_cutoff(rocks->cf_opts[DATA_CF], (double)server.rocksdb_data_blob_garbage_collection_age_cutoff_percentage / 100);
+    rocksdb_options_set_blob_gc_force_threshold(rocks->cf_opts[DATA_CF], (double)server.rocksdb_data_blob_garbage_collection_force_threshold_percentage / 100);
     rocksdb_options_set_max_write_buffer_number(rocks->cf_opts[DATA_CF], server.rocksdb_data_max_write_buffer_number);
     rocksdb_options_set_target_file_size_base(rocks->cf_opts[DATA_CF], server.rocksdb_data_target_file_size_base);
     rocksdb_options_set_write_buffer_size(rocks->cf_opts[DATA_CF],server.rocksdb_data_write_buffer_size);
@@ -168,6 +174,12 @@ int rocksInit() {
     rocks_init_option_compression(rocks->cf_opts[SCORE_CF],server.rocksdb_data_compression);
     rocksdb_options_set_level0_slowdown_writes_trigger(rocks->cf_opts[SCORE_CF],server.rocksdb_data_level0_slowdown_writes_trigger);
     rocksdb_options_set_disable_auto_compactions(rocks->cf_opts[SCORE_CF],server.rocksdb_data_disable_auto_compactions);
+    rocksdb_options_set_enable_blob_files(rocks->cf_opts[SCORE_CF],server.rocksdb_data_enable_blob_files);
+    rocksdb_options_set_enable_blob_gc(rocks->cf_opts[SCORE_CF],server.rocksdb_data_enable_blob_garbage_collection);
+    rocksdb_options_set_min_blob_size(rocks->cf_opts[SCORE_CF],server.rocksdb_data_min_blob_size);
+    rocksdb_options_set_blob_file_size(rocks->cf_opts[SCORE_CF],server.rocksdb_data_blob_file_size);
+    rocksdb_options_set_blob_gc_age_cutoff(rocks->cf_opts[SCORE_CF], (double)server.rocksdb_data_blob_garbage_collection_age_cutoff_percentage / 100);
+    rocksdb_options_set_blob_gc_force_threshold(rocks->cf_opts[SCORE_CF], (double)server.rocksdb_data_blob_garbage_collection_force_threshold_percentage / 100);
     rocksdb_options_set_max_write_buffer_number(rocks->cf_opts[SCORE_CF], server.rocksdb_data_max_write_buffer_number);
     rocksdb_options_set_target_file_size_base(rocks->cf_opts[SCORE_CF], server.rocksdb_data_target_file_size_base);
     rocksdb_options_set_write_buffer_size(rocks->cf_opts[SCORE_CF],server.rocksdb_data_write_buffer_size);
@@ -200,6 +212,12 @@ int rocksInit() {
     rocks_init_option_compression(rocks->cf_opts[META_CF],server.rocksdb_meta_compression);
     rocksdb_options_set_level0_slowdown_writes_trigger(rocks->cf_opts[META_CF],server.rocksdb_meta_level0_slowdown_writes_trigger);
     rocksdb_options_set_disable_auto_compactions(rocks->cf_opts[META_CF],server.rocksdb_meta_disable_auto_compactions);
+    rocksdb_options_set_enable_blob_files(rocks->cf_opts[META_CF],server.rocksdb_meta_enable_blob_files);
+    rocksdb_options_set_enable_blob_gc(rocks->cf_opts[META_CF],server.rocksdb_meta_enable_blob_garbage_collection);
+    rocksdb_options_set_min_blob_size(rocks->cf_opts[META_CF],server.rocksdb_meta_min_blob_size);
+    rocksdb_options_set_blob_file_size(rocks->cf_opts[META_CF],server.rocksdb_meta_blob_file_size);
+    rocksdb_options_set_blob_gc_age_cutoff(rocks->cf_opts[META_CF], (double)server.rocksdb_meta_blob_garbage_collection_age_cutoff_percentage / 100);
+    rocksdb_options_set_blob_gc_force_threshold(rocks->cf_opts[META_CF], (double)server.rocksdb_meta_blob_garbage_collection_force_threshold_percentage / 100);
     rocksdb_options_set_max_write_buffer_number(rocks->cf_opts[META_CF], server.rocksdb_meta_max_write_buffer_number);
     rocksdb_options_set_target_file_size_base(rocks->cf_opts[META_CF], server.rocksdb_meta_target_file_size_base);
     rocksdb_options_set_write_buffer_size(rocks->cf_opts[META_CF],server.rocksdb_meta_write_buffer_size);
