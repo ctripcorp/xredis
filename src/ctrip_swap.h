@@ -799,6 +799,7 @@ typedef enum {
 
 void startSwapRewind(swap_rewind_type rewind_type);
 void endSwapRewind(void);
+void freeClientSwapCmdTrace(client *c);
 
 /* see server.req_submitted */
 #define REQ_SUBMITTED_NONE 0

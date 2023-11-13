@@ -119,6 +119,8 @@ static void processSwapRewindingClients(void) {
         client *c = listNodeValue(ln);
         listDelNode(server.swap_rewinding_clients,ln);
         c->flags &= ~CLIENT_SWAP_REWINDING;
+        /* Mark this client to execute its command */
+        c->flags |= CLIENT_PENDING_COMMAND;
         queueClientForReprocessing(c);
     }
 }
@@ -140,6 +142,7 @@ static void startSwapRewindIfNeeded(client *c) {
 static void registerSwapToRewindClient(client *c) {
     serverAssert(c->cmd);
     c->flags |= CLIENT_SWAP_REWINDING;
+
     listAddNodeTail(server.swap_torewind_clients,c);
 }
 
@@ -518,9 +521,12 @@ int submitNormalClientRequests(client *c) {
     getKeyRequestsResult result = GET_KEYREQUESTS_RESULT_INIT;
     getKeyRequests(c,&result);
     c->keyrequests_count = result.num;
-    if (registerSwapToRewindClientIfNeeded(c)) return result.num;
-    startSwapRewindIfNeeded(c);
-    submitClientKeyRequests(c,&result,normalClientKeyRequestFinished,NULL);
+    if (registerSwapToRewindClientIfNeeded(c)) {
+        freeClientSwapCmdTrace(c);
+    } else {
+        startSwapRewindIfNeeded(c);
+        submitClientKeyRequests(c,&result,normalClientKeyRequestFinished,NULL);
+    }
     releaseKeyRequests(&result);
     getKeyRequestsFreeResult(&result);
     return result.num;

@@ -367,6 +367,20 @@ static inline int clientSwitchDb(client *c, int argidx) {
     return C_OK;
 }
 
+void freeClientSwapCmdTrace(client *c) {
+    for (int i = 0; i < c->mstate.count; i++) {
+        if (c->mstate.commands[i].swap_cmd) {
+            swapCmdTraceFree(c->mstate.commands[i].swap_cmd);
+            c->mstate.commands[i].swap_cmd = NULL;
+        }
+    }
+
+    if (c->swap_cmd) {
+        swapCmdTraceFree(c->swap_cmd);
+        c->swap_cmd = NULL;
+    }
+}
+
 void getKeyRequests(client *c, getKeyRequestsResult *result) {
     getKeyRequestsPrepareResult(result, MAX_KEYREQUESTS_BUFFER);
     swapCmdTrace *swap_cmd;
