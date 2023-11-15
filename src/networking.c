@@ -1382,6 +1382,8 @@ void freeClientsInDeferedQueue(void) {
     }
 }
 
+void shiftReplicationId(void);
+
 void freeClient(client *c) {
     listNode *ln;
 
@@ -1431,6 +1433,13 @@ void freeClient(client *c) {
     if (server.swap_draining_master && c->flags & CLIENT_MASTER) {
         serverLog(LL_WARNING, "Connection with master lost (defer done, discard cache=%s).",
                 (c->flags & CLIENT_SWAP_DISCARD_CACHED_MASTER) ? "yes" : "no");
+
+        if (c->flags & CLIENT_SWAP_SHIFT_REPL_ID) {
+            c->flags &= ~CLIENT_SWAP_SHIFT_REPL_ID;
+            serverLog(LL_WARNING, "Replication id shift defer done.");
+            shiftReplicationId();
+        }
+
         if (!(c->flags & (CLIENT_PROTOCOL_ERROR|CLIENT_BLOCKED|CLIENT_SWAP_DISCARD_CACHED_MASTER))) {
             c->flags &= ~(CLIENT_CLOSE_ASAP|CLIENT_CLOSE_AFTER_REPLY);
             replicationCacheSwapDrainingMaster(c);

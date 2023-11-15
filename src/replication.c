@@ -761,6 +761,13 @@ void syncCommand(client *c) {
         }
     }
 
+    /* Refuse replca sync while replid shift in progress. */
+    if (server.swap_draining_master != NULL &&
+            server.swap_draining_master->flags & CLIENT_SWAP_SHIFT_REPL_ID) {
+        addReplyError(c,"-NOMASTERLINK Can't SYNC while replid shift in progress");
+        return;
+    }
+
     /* Don't let replicas sync with us while we're failing over */
     if (server.failover_state != NO_FAILOVER) {
         addReplyError(c,"-NOMASTERLINK Can't SYNC while failing over");
@@ -2627,8 +2634,9 @@ int doConnectWithMaster(void) {
 
 #define SWAP_WAIT_DRAINING_MASTER_INTERVAL_MS 100
 
-int connectWithMaster(void);
+static int isWaitSwapDrainingMasterRunning = 0;
 
+int connectWithMaster(void);
 int waitSwapDrainingMaster(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     static mstime_t logged_time = 0;
 
@@ -2637,6 +2645,7 @@ int waitSwapDrainingMaster(struct aeEventLoop *eventLoop, long long id, void *cl
     if (server.swap_draining_master == NULL) {
             serverLog(LL_WARNING, "Wait swap master drain done");
         if (server.repl_state == REPL_STATE_CONNECT) connectWithMaster();
+        isWaitSwapDrainingMasterRunning = 0;
         return AE_NOMORE;
     } else {
         if (server.mstime - logged_time > 1000) {
@@ -2650,12 +2659,11 @@ int waitSwapDrainingMaster(struct aeEventLoop *eventLoop, long long id, void *cl
 }
 
 int connectWithMaster(void) {
-    if (server.swap_draining_master != NULL) {
-        if (aeCreateTimeEvent(server.el,SWAP_WAIT_DRAINING_MASTER_INTERVAL_MS,
-                    waitSwapDrainingMaster,NULL,NULL) != AE_ERR)
-            return C_OK;
-        else
-            return C_ERR;
+    if (server.swap_draining_master != NULL && !isWaitSwapDrainingMasterRunning) {
+        isWaitSwapDrainingMasterRunning = 1;
+        aeCreateTimeEvent(server.el,SWAP_WAIT_DRAINING_MASTER_INTERVAL_MS,
+                    waitSwapDrainingMaster,NULL,NULL);
+        return C_OK;
     } else {
         return doConnectWithMaster();
     }
@@ -2792,7 +2800,12 @@ void replicationUnsetMaster(void) {
      * NOTE: this function MUST be called after we call
      * freeClient(server.master), since there we adjust the replication
      * offset trimming the final PINGs. See Github issue #7320. */
-    shiftReplicationId();
+    if (server.swap_draining_master) {
+        server.swap_draining_master->flags |= CLIENT_SWAP_SHIFT_REPL_ID;
+        serverLog(LL_WARNING, "Replication id shift defer start (wait untill master swap drain).");
+    } else {
+        shiftReplicationId();
+    }
     /* Disconnecting all the slaves is required: we need to inform slaves
      * of the replication ID change (see shiftReplicationId() call). However
      * the slaves will be able to partially resync with us, so it will be
