@@ -3005,7 +3005,7 @@ standardConfig configs[] = {
     createIntConfig("swap-persist-inprogress-growth-rate", NULL, MODIFIABLE_CONFIG, 1, INT_MAX, server.swap_persist_inprogress_growth_rate, 500, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("swap-flush-meta-deletes-percentage", NULL, MODIFIABLE_CONFIG, 0, 100, server.swap_flush_meta_deletes_percentage, 40, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("rocksdb.max_open_files", NULL, IMMUTABLE_CONFIG, -1, INT_MAX, server.rocksdb_max_open_files, -1, INTEGER_CONFIG, NULL, NULL),
-    createIntConfig("rocksdb.data.max_write_buffer_number", "rocksdb.max_write_buffer_number", MODIFIABLE_CONFIG, 1, 256, server.rocksdb_data_max_write_buffer_number, 3, INTEGER_CONFIG, NULL, updateRocksdbDataMaxWriteBufferNumber),
+    createIntConfig("rocksdb.data.max_write_buffer_number", "rocksdb.max_write_buffer_number", MODIFIABLE_CONFIG, 1, 256, server.rocksdb_data_max_write_buffer_number, 4, INTEGER_CONFIG, NULL, updateRocksdbDataMaxWriteBufferNumber),
     createIntConfig("rocksdb.meta.max_write_buffer_number", NULL, MODIFIABLE_CONFIG, 1, 256, server.rocksdb_meta_max_write_buffer_number, 3, INTEGER_CONFIG, NULL, updateRocksdbMetaMaxWriteBufferNumber),
     createIntConfig("rocksdb.max_background_compactions", NULL, IMMUTABLE_CONFIG, 1, 64, server.rocksdb_max_background_compactions, 2, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("rocksdb.max_background_flushes", NULL, IMMUTABLE_CONFIG, -1, 64, server.rocksdb_max_background_flushes, -1, INTEGER_CONFIG, NULL, NULL),
