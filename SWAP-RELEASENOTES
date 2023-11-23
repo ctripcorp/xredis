@@ -1,4 +1,10 @@
 ================================================================================
+ror-1.2.4 Released Thu Nov 23 00:00:00 CST 2023
+================================================================================
+* [new] support blob db (to reduce write amplification for big key)
+* [opt] reduce flush stall by increasing rocksdb.max_write_buffer_number
+
+================================================================================
 ror-1.2.3 Released Wed Sep 13 00:00:00 CST 2023
 ================================================================================
 * [fix] code crash when executing zremrangebyscore command
