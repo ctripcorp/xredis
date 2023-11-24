@@ -28,6 +28,17 @@
 
 #include "ctrip_swap.h"
 
+/* See replicationHandleMasterDisconnection for more details */
+void replicationHandleMasterDisconnectionWithoutReconnect(void) {
+    /* Fire the master link modules event. */
+    if (server.repl_state == REPL_STATE_CONNECTED)
+        moduleFireServerEvent(REDISMODULE_EVENT_MASTER_LINK_CHANGE,
+                              REDISMODULE_SUBEVENT_MASTER_LINK_DOWN,
+                              NULL);
+    server.master = NULL;
+    server.repl_down_since = server.unixtime;
+}
+
 /* See replicationCacheMaster for more details */
 void replicationCacheSwapDrainingMaster(client *c) {
     serverAssert(server.swap_draining_master != NULL && server.cached_master == NULL);

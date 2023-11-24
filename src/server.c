@@ -4505,6 +4505,17 @@ int processCommand(client *c) {
         return C_OK;
     }
 
+    /* Don't accept write commands if this is a master with previous
+     * master client draining: replid shift defered and write command
+     * would mix replication log from prev and current replid. */
+    if (server.masterhost == NULL && server.swap_draining_master &&
+        server.swap_draining_master->flags & CLIENT_SWAP_SHIFT_REPL_ID &&
+        !(c->flags & CLIENT_MASTER) && is_write_command)
+    {
+        rejectCommandFormat(c, "Previous master draining.");
+        return C_OK;
+    }
+
     /* Only allow a subset of commands in the context of Pub/Sub if the
      * connection is in RESP2 mode. With RESP3 there are no limits. */
     if ((c->flags & CLIENT_PUBSUB && c->resp == 2) &&
@@ -5484,7 +5495,7 @@ sds genRedisInfoString(const char *section) {
                 "slave_repl_offset:%lld\r\n"
                 ,server.masterhost,
                 server.masterport,
-                (server.repl_state == REPL_STATE_CONNECTED) ?
+                (server.repl_state == REPL_STATE_CONNECTED && server.master) ?
                     "up" : "down",
                 server.master ?
                 ((int)(server.unixtime-server.master->lastinteraction)) : -1,

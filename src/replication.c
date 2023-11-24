@@ -2643,7 +2643,7 @@ int waitSwapDrainingMaster(struct aeEventLoop *eventLoop, long long id, void *cl
     UNUSED(eventLoop), UNUSED(id), UNUSED(clientData);
 
     if (server.swap_draining_master == NULL) {
-            serverLog(LL_WARNING, "Wait swap master drain done");
+            serverLog(LL_NOTICE, "Wait master client drain done");
         if (server.repl_state == REPL_STATE_CONNECT) connectWithMaster();
         isWaitSwapDrainingMasterRunning = 0;
         return AE_NOMORE;
@@ -2651,7 +2651,7 @@ int waitSwapDrainingMaster(struct aeEventLoop *eventLoop, long long id, void *cl
         if (server.mstime - logged_time > 1000) {
             logged_time = server.mstime;
             sds client_desc = catClientInfoString(sdsempty(), server.swap_draining_master);
-            serverLog(LL_WARNING, "Wait swap master drainning: %s.", client_desc);
+            serverLog(LL_NOTICE, "Wait master client drain before connect: %s.", client_desc);
             sdsfree(client_desc);
         }
         return SWAP_WAIT_DRAINING_MASTER_INTERVAL_MS;
@@ -2659,10 +2659,12 @@ int waitSwapDrainingMaster(struct aeEventLoop *eventLoop, long long id, void *cl
 }
 
 int connectWithMaster(void) {
-    if (server.swap_draining_master != NULL && !isWaitSwapDrainingMasterRunning) {
-        isWaitSwapDrainingMasterRunning = 1;
-        aeCreateTimeEvent(server.el,SWAP_WAIT_DRAINING_MASTER_INTERVAL_MS,
+    if (server.swap_draining_master != NULL) {
+        if (!isWaitSwapDrainingMasterRunning) {
+            isWaitSwapDrainingMasterRunning = 1;
+            aeCreateTimeEvent(server.el,SWAP_WAIT_DRAINING_MASTER_INTERVAL_MS,
                     waitSwapDrainingMaster,NULL,NULL);
+        }
         return C_OK;
     } else {
         return doConnectWithMaster();
@@ -2755,6 +2757,12 @@ void replicationSetMaster(char *ip, int port) {
     if (was_master) {
         replicationDiscardCachedMaster();
         replicationCacheMasterUsingMyself();
+
+        /* dont trigger connect master when drain, master connection is
+         * started right below. */
+        if (server.swap_draining_master) {
+            server.swap_draining_master->flags |= CLIENT_SWAP_DONT_RECONNECT_MASTER;
+        }
     }
 
     /* Fire the role change modules event. */
@@ -2802,7 +2810,9 @@ void replicationUnsetMaster(void) {
      * offset trimming the final PINGs. See Github issue #7320. */
     if (server.swap_draining_master) {
         server.swap_draining_master->flags |= CLIENT_SWAP_SHIFT_REPL_ID;
-        serverLog(LL_WARNING, "Replication id shift defer start (wait untill master swap drain).");
+        server.swap_draining_master->flags |= CLIENT_SWAP_DONT_RECONNECT_MASTER;
+        serverLog(LL_NOTICE, "Replication id shift defer start(replid=%s, master_repl_offset=%lld).",
+                server.replid, server.master_repl_offset);
     } else {
         shiftReplicationId();
     }
@@ -3103,16 +3113,15 @@ void replicationCacheMasterUsingMyself(void) {
 /* Free a cached master, called when there are no longer the conditions for
  * a partial resync on reconnection. */
 void replicationDiscardCachedMaster(void) {
+    if (server.swap_draining_master)
+        server.swap_draining_master->flags |= CLIENT_SWAP_DISCARD_CACHED_MASTER;
+
     if (server.cached_master == NULL) return;
 
     serverLog(LL_NOTICE,"Discarding previously cached master state.");
     server.cached_master->flags &= ~CLIENT_MASTER;
     freeClient(server.cached_master);
     server.cached_master = NULL;
-
-    if (server.swap_draining_master) {
-        server.swap_draining_master->flags |= CLIENT_SWAP_DISCARD_CACHED_MASTER;
-    }
 }
 
 /* Turn the cached master into the current master, using the file descriptor
@@ -3446,6 +3455,7 @@ void replicationCron(void) {
 
     /* Timed out master when we are an already connected slave? */
     if (server.masterhost && server.repl_state == REPL_STATE_CONNECTED &&
+        server.master &&
         (time(NULL)-server.master->lastinteraction) > server.repl_timeout)
     {
         serverLog(LL_WARNING,"MASTER timeout: no data nor PING received...");
