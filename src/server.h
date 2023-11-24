@@ -298,6 +298,7 @@ extern int configOOMScoreAdjValuesDefaults[CONFIG_OOM_COUNT];
 #define CLIENT_SWAP_REWINDING (1ULL<<46) /* The client is waiting rewind. */
 #define CLIENT_SWAP_DISCARD_CACHED_MASTER (1ULL<<47) /* The client will not be saved as cached_master. */
 #define CLIENT_SWAP_SHIFT_REPL_ID (1ULL<<48) /* shift repl id when this client (drainning master) drained. */
+#define CLIENT_SWAP_DONT_RECONNECT_MASTER (1ULL<<49) /* shift repl id when this client (drainning master) drained. */
 
 /* Client block type (btype field in client structure)
  * if CLIENT_BLOCKED flag is set. */

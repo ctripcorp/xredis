@@ -1820,6 +1820,7 @@ int clientSwap(client *c);
 void continueProcessCommand(client *c);
 int replClientSwap(client *c);
 void replicationCacheSwapDrainingMaster(client *c);
+void replicationHandleMasterDisconnectionWithoutReconnect(void);
 void replClientDiscardSwappingState(client *c);
 void submitDeferredClientKeyRequests(client *c, getKeyRequestsResult *result, clientKeyRequestFinished cb, void* ctx_pd);
 void submitClientKeyRequests(client *c, getKeyRequestsResult *result, clientKeyRequestFinished cb, void* ctx_pd);

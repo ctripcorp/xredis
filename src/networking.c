@@ -1250,7 +1250,13 @@ void disconnectSlaves(void) {
     while((ln = listNext(&li))) {
         /* Flush pending output to slaves before disconnect so it will be
          * more likely to psync when failover. */
-        writeToClient((client*)ln->value,0);
+        client *slave = (client *)ln->value;
+        writeToClient(slave,0);
+        if (clientHasPendingReplies(slave)) {
+            sds client_desc = catClientInfoString(sdsempty(), slave);
+            serverLog(LL_NOTICE, "Slave still have pending replies when disconnect: %s", client_desc);
+            sdsfree(client_desc);
+        }
         freeClient((client*)ln->value);
     }
 }
@@ -1424,7 +1430,6 @@ void freeClient(client *c) {
             serverLog(LL_WARNING, "Connection with master lost (defer start with %d key requests).", c->keyrequests_count);
             server.swap_draining_master = server.master;
             server.master = NULL;
-            server.repl_state = REPL_STATE_CONNECT;
         }
         deferFreeClient(c);
         return;
@@ -1436,7 +1441,8 @@ void freeClient(client *c) {
 
         if (c->flags & CLIENT_SWAP_SHIFT_REPL_ID) {
             c->flags &= ~CLIENT_SWAP_SHIFT_REPL_ID;
-            serverLog(LL_WARNING, "Replication id shift defer done.");
+            serverLog(LL_NOTICE, "Replication id shift defer done(replid=%s, master_repl_offset=%lld).",
+                    server.replid, server.master_repl_offset);
             shiftReplicationId();
         }
 
@@ -1540,7 +1546,12 @@ void freeClient(client *c) {
 
     /* Master/slave cleanup Case 2:
      * we lost the connection with the master. */
-    if (c->flags & CLIENT_MASTER) replicationHandleMasterDisconnection();
+    if (c->flags & CLIENT_MASTER) {
+        if (c->flags & CLIENT_SWAP_DONT_RECONNECT_MASTER)
+            replicationHandleMasterDisconnectionWithoutReconnect();
+        else
+            replicationHandleMasterDisconnection();
+    }
 
    /* Remove the contribution that this client gave to our
      * incrementally computed memory usage. */
