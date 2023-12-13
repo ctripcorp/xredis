@@ -2510,6 +2510,7 @@ int swapBatchTest(int argc, char *argv[], int accurate);
 int cuckooFilterTest(int argc, char *argv[], int accurate);
 int swapPersistTest(int argc, char *argv[], int accurate);
 int swapRordbTest(int argc, char *argv[], int accurate);
+int roaringBitmapTest(int argc, char *argv[], int accurate);
 
 int swapTest(int argc, char **argv, int accurate);
 
