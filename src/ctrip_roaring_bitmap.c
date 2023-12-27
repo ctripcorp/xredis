@@ -1688,7 +1688,8 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
 
         } */
 
-        /* 500W QPS: [set]: 1/3 [get]: 2/3  total time = 1410622ms  */
+        /* 500W QPS: [set]: 1/3 [get]: 2/3  total time = 1410622us  */
+
         TEST("roaring bitmap: perf") {
             size_t querytimes = 500000;
 
@@ -1711,6 +1712,70 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             }
             printf("[bitmap set get]: %lld\n", ustime() - start);
 
+            rbmDestory(rbm);
+        }
+
+        /* 单测接口性能数据 , 单位 TIME/OP (ns)：
+            [bitmap single set]: 48
+            [bitmap single get]: 32
+            [bitmap range get]: 118
+            [bitmap single clear]: 13
+            [bitmap range set]: 179
+            [bitmap range clear]: 74 */
+
+        TEST("roaring bitmap: single api perf") {
+            size_t querytimes = 500000;
+
+            long long start = ustime();
+            roaringBitmap* rbm = rbmCreate();
+            uint32_t maxBitNum = 131072;
+
+            for (uint32_t i = 0; i < querytimes; i++) {
+                uint32_t bitIdx = i % maxBitNum;
+                rbmSetBitRange(rbm, bitIdx, bitIdx);
+            }
+            printf("[bitmap single set]: %lld\n", (ustime() - start) / 500);
+
+            start = ustime();
+            for (uint32_t i = 0; i < querytimes; i++) {
+                uint32_t bitIdx = i % maxBitNum;
+
+                uint32_t bitNum = rbmGetBitRange(rbm, bitIdx, bitIdx);
+                UNUSED(bitNum);
+            }
+            printf("[bitmap single get]: %lld\n", (ustime() - start) / 500);
+
+            start = ustime();
+            for (uint32_t i = 0; i < querytimes; i++) {
+                uint32_t bitIdx = i % maxBitNum;
+
+                uint32_t bitNum = rbmGetBitRange(rbm, 0, bitIdx);
+                UNUSED(bitNum);
+            }
+            printf("[bitmap range get]: %lld\n", (ustime() - start) / 500);
+
+            start = ustime();
+            for (uint32_t i = 0; i < querytimes; i++) {
+                uint32_t bitIdx = i % maxBitNum;
+
+                rbmClearBitRange(rbm, bitIdx, bitIdx);
+            }
+            printf("[bitmap single clear]: %lld\n", (ustime() - start) / 500);
+
+            start = ustime();
+            for (uint32_t i = 0; i < querytimes; i++) {
+                uint32_t bitIdx = i % maxBitNum;
+                rbmSetBitRange(rbm, 0, bitIdx);
+            }
+            printf("[bitmap range set]: %lld\n", (ustime() - start) / 500);
+
+            start = ustime();
+            for (uint32_t i = 0; i < querytimes; i++) {
+                uint32_t bitIdx = i % maxBitNum;
+
+                rbmClearBitRange(rbm, 0, bitIdx);
+            }
+            printf("[bitmap range clear]: %lld\n", (ustime() - start) / 500);
             rbmDestory(rbm);
         }
 
