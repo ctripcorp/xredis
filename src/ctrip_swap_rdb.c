@@ -246,6 +246,7 @@ static int rdbKeySaveDataInitCold(rdbKeySaveData *save, redisDb *db,
         serverAssert(dm->extend != NULL);
         retval = zsetSaveInit(save,dm->version,dm->extend,sdslen(dm->extend));
         break;
+    /* todo case OBJ_BITMAP: */
     default:
         retval = INIT_SAVE_ERR;
         break;

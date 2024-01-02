@@ -171,11 +171,12 @@ int wholeKeyEncodeData(swapData *data, int intention, void *datactx,
 
 /* decoded move to exec module */
 int wholeKeyDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
-        sds *rawvals, void **pdecoded) {
+        sds *rawvals, void *datactx, void **pdecoded) {
     serverAssert(num == 1);
     UNUSED(data);
     UNUSED(rawkeys);
     UNUSED(cfs);
+    UNUSED(datactx);
     sds rawval = rawvals[0];
     *pdecoded = rocksDecodeValRdb(rawval);
     return 0;
@@ -184,6 +185,7 @@ int wholeKeyDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
 /* If maxmemory policy is not LRU/LFU, rdbLoadObject might return shared
  * object, but swap needs individual object to track dirty/evict flags. */
 robj *dupSharedObject(robj *o) {
+    // 此处type 在decodeData 时确定, 无须扩展
     switch(o->type) {
     case OBJ_STRING:
         return dupStringObject(o);

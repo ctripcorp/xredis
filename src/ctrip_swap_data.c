@@ -79,7 +79,15 @@ int swapDataKeyRequestFinished(swapData *data) {
     }
 
     if (data->persistence_deleted) {
-        dbDeleteMeta(data->db, data->key);
+        /* todo bitmap type*/
+        if (data->object_type == OBJ_STRING) {
+            objectMeta *object_meta = swapDataObjectMeta(data);
+            serverAssert(object_meta != NULL);
+            bitmapMetaFree(objectMetaGetPtr(object_meta));
+            objectMetaSetPtr(object_meta, NULL);
+        } else {
+            dbDeleteMeta(data->db, data->key);
+        }
     }
 
     if (data->set_persist_keep && !getObjectPersistKeep(data->value)) {
@@ -332,6 +340,7 @@ int swapDataSetupMeta(swapData *d, int object_type, long long expire,
 
     if (datactx) *datactx = NULL;
 
+    /* 须扩展 */
     switch (d->object_type) {
     case OBJ_STRING:
         retval = swapDataSetupWholeKey(d,datactx);
@@ -351,6 +360,9 @@ int swapDataSetupMeta(swapData *d, int object_type, long long expire,
     case OBJ_STREAM:
         retval = SWAP_ERR_SETUP_UNSUPPORTED;
         break;
+/*    case OBJ_BITMAP:
+        retval = swapDataSetupBitmap(d, datactx);
+        break;*/
     default:
         retval = SWAP_ERR_SETUP_FAIL;
         break;

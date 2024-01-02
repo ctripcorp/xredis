@@ -56,7 +56,7 @@ extern const char *swap_cf_names[CF_COUNT];
 /* --- cmd intention flags --- */
 /* Delete key in rocksdb when swap in. */
 #define SWAP_IN_DEL (1U<<0)
-/* Only need to swap meta for hash/set/zset/list  */
+/* Only need to swap meta for hash/set/zset/list/bitmap  */
 #define SWAP_IN_META (1U<<1)
 /* Delete key in rocksdb and mock value needed to be swapped in. */
 #define SWAP_IN_DEL_MOCK_VALUE (1U<<2)
@@ -81,6 +81,8 @@ extern const char *swap_cf_names[CF_COUNT];
 #define SWAP_OUT_PERSIST (1U<<10)
 /* Keep data in memory because memory is sufficient. */
 #define SWAP_OUT_KEEP_DATA (1U<<11)
+/* Swap in for write operation (only used in bitmap object). */
+#define SWAP_IN_WRITE (1U<<12)
 
 /* --- swap intention flags --- */
 /* Delete rocksdb data key when swap in */
@@ -153,8 +155,8 @@ static inline const char *requestLevelName(int level) {
 
 /* Both start and end are inclusive, see addListRangeReply for details. */
 typedef struct range {
-  long start;
-  long end;
+  long long start;
+  long long end;
 } range;
 
 #define KEYREQUEST_TYPE_KEY    0
@@ -178,7 +180,7 @@ typedef struct keyRequest{
   int cmd_intention;
   int cmd_intention_flags;
   uint64_t cmd_flags;
-  int type;
+  int type; /* request type */
   int deferred;
   robj *key;
   union {
@@ -189,14 +191,14 @@ typedef struct keyRequest{
     struct {
       int num_ranges;
       range *ranges;
-    } l; /* range: list */
+    } l; /* range: list, bitmap */
     struct {
       zrangespec* rangespec;
       int reverse;
       int limit;
     } zs; /* zset score*/
   };
-  argRewriteRequest list_arg_rewrite[2];
+  argRewriteRequest arg_rewrite[2];
   swapCmdTrace *swap_cmd;
   swapTrace *trace;
 } keyRequest;
@@ -282,6 +284,12 @@ int getKeyRequestsGtid(int dbid, struct redisCommand *cmd, robj **argv, int argc
 int getKeyRequestsGtidAuto(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 
 int getKeyRequestsDebug(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsSetbit(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsGetbit(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsBitcount(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsBitpos(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsBitop(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsBitField(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 
 #define GET_KEYREQUESTS_RESULT_INIT { {{0}}, NULL, NULL, 0, MAX_KEYREQUESTS_BUFFER}
 
@@ -481,7 +489,7 @@ typedef struct objectMetaType {
 
 typedef struct objectMeta {
   uint64_t version;
-  unsigned object_type:4;
+  unsigned object_type:4; /* 须扩展 */
   union {
     long long len:60;
     unsigned long long ptr:60;
@@ -490,6 +498,7 @@ typedef struct objectMeta {
 
 extern objectMetaType lenObjectMetaType;
 extern objectMetaType listObjectMetaType;
+extern objectMetaType bitmapObjectMetaType;
 
 static inline void swapInitVersion(void) { server.swap_key_version = 1; }
 static inline void swapSetVersion(uint64_t version) { server.swap_key_version = version; }
@@ -569,10 +578,12 @@ typedef struct swapData {
   robj *key; /*own*/
   robj *value; /*own*/
   long long expire;
+  /* todo hot 或者 warm data 直接查到的 Meta */
   objectMeta *object_meta; /* ref */
+  /* todo  cold data SWAP 时拿到的 Meta */
   objectMeta *cold_meta; /* own, moved from exec */
   objectMeta *new_meta; /* own */
-  int object_type;
+  int object_type; /* 须扩展 */
   unsigned propagate_expire:1;
   unsigned set_dirty:1;
   unsigned set_dirty_meta:1;
@@ -596,7 +607,7 @@ typedef struct swapDataType {
   int (*encodeKeys)(struct swapData *data, int intention, void *datactx, OUT int *num, OUT int **cfs, OUT sds **rawkeys);
   int (*encodeRange)(struct swapData *data, int intention, void *datactx, OUT int *limit, OUT uint32_t *flags, OUT int *cf, OUT sds *start, OUT sds *end);
   int (*encodeData)(struct swapData *data, int intention, void *datactx, OUT int *num, OUT int **cfs, OUT sds **rawkeys, OUT sds **rawvals);
-  int (*decodeData)(struct swapData *data, int num, int *cfs, sds *rawkeys, sds *rawvals, OUT void **decoded);
+  int (*decodeData)(struct swapData *data, int num, int *cfs, sds *rawkeys, sds *rawvals, void *datactx, OUT void **decoded);
   int (*swapIn)(struct swapData *data, MOVE void *result, void *datactx);
   int (*swapOut)(struct swapData *data, void *datactx, int keep_data, OUT int *totally_out);
   int (*swapDel)(struct swapData *data, void *datactx, int async);
@@ -671,6 +682,12 @@ static inline uint64_t swapDataObjectVersion(swapData *d) {
 }
 
 static inline int swapDataPersisted(swapData *d) {
+    if (d->object_type == OBJ_STRING) {
+        /* todo bitmap type */
+        if (d->object_meta) {
+            return !d->omtype->objectIsHot(d->object_meta);
+        }
+    }
     return d->object_meta || d->cold_meta;
 }
 static inline void swapDataObjectMetaModifyLen(swapData *d, int delta) {
@@ -819,7 +836,8 @@ typedef struct hashSwapData {
 } hashSwapData;
 
 #define BIG_DATA_CTX_FLAG_NONE 0
-#define BIG_DATA_CTX_FLAG_MOCK_VALUE (1U<<0)
+#define BIG_DATA_CTX_FLAG_MOCK_VALUE 1
+
 typedef struct baseBigDataCtx {
     int num;
     robj **subkeys;
@@ -909,13 +927,21 @@ int swapDataSetupZSet(swapData *d, OUT void **datactx);
 #define zsetObjectMetaType lenObjectMetaType
 
 
+/* bitmap */
+
+objectMeta *createBitmapObjectMeta(uint64_t version, MOVE struct bitmapMeta *bitmap_meta);
+
+int swapDataSetupBitmap(swapData *d, void **pdatactx);
+
+void bitmapMetaFree(bitmapMeta *bitmap_meta);
+
 /* MetaScan */
 #define DEFAULT_SCANMETA_BUFFER 16
 
 typedef struct scanMeta {
   sds key;
   long long expire;
-  int object_type;
+  int object_type; /* 须扩展 */
 } scanMeta;
 
 int scanMetaExpireIfNeeded(redisDb *db, scanMeta *meta);
@@ -1089,6 +1115,7 @@ typedef struct swapRequest {
 swapRequest *swapRequestNew(keyRequest *key_request, int intention,
     uint32_t intention_flags, swapCtx *ctx, swapData *data, void *datactx,
     swapTrace *trace, swapRequestFinishedCallback cb, void *pd, void *msgs);
+
 static inline swapRequest *swapDataRequestNew(
     int intention, uint32_t intention_flags, swapCtx *ctx, swapData *data,
     void *datactx, swapTrace *trace, swapRequestFinishedCallback cb, void *pd,
@@ -2045,7 +2072,7 @@ typedef struct decodedMeta {
   int dbid;
   sds key;
   uint64_t version;
-  int object_type;
+  int object_type; /* 须扩展 */
   long long expire;
   sds extend;
 } decodedMeta;
@@ -2436,7 +2463,26 @@ int getKeyRequestsSwapBlockedLmove(int dbid, int intention, int intention_flags,
             robj *key, struct getKeyRequestsResult *result, int arg_rewrite0,
             int arg_rewrite1, int num_ranges, ...);
 int serveClientBlockedOnList(client *receiver, robj *key, robj *dstkey, redisDb *db, robj *value, int wherefrom, int whereto,list* swap_wrong_type_error_keys);
+void incrSwapUnBlockCtxVersion();
 void incrSwapUnBlockCtxVersion(void);
+
+/* swap argv rewrite */
+void clientArgRewrite(client *c, argRewriteRequest arg_req, MOVE robj *new_arg) {
+    robj *orig_arg;
+    if (arg_req.mstate_idx < 0) {
+        serverAssert(arg_req.arg_idx < c->argc);
+        orig_arg = c->argv[arg_req.arg_idx];
+        c->argv[arg_req.arg_idx] = new_arg;
+        argRewritesAdd(c->swap_arg_rewrites,arg_req,orig_arg);
+    } else {
+        serverAssert(arg_req.mstate_idx < c->mstate.count);
+        serverAssert(arg_req.arg_idx < c->mstate.commands[arg_req.mstate_idx].argc);
+        orig_arg = c->mstate.commands[arg_req.mstate_idx].argv[arg_req.arg_idx];
+        c->mstate.commands[arg_req.mstate_idx].argv[arg_req.arg_idx] = new_arg;
+        argRewritesAdd(c->mstate.commands[arg_req.mstate_idx].swap_arg_rewrites,arg_req,orig_arg);
+    }
+}
+
 #ifndef __APPLE__
 typedef struct swapThreadCpuUsage{
     /* CPU usage Cacluation */

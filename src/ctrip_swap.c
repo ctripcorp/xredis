@@ -410,6 +410,7 @@ void keyRequestProceed(void *lock, int flush, redisDb *db, robj *key,
 
     expire = getExpire(db,key);
 
+    /* value->type 须扩展 */
     retval = swapDataSetupMeta(data,value->type,expire,&datactx);
     swapCtxSetSwapData(ctx,data,datactx);
     if (retval) {

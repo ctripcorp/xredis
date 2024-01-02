@@ -1350,7 +1350,7 @@ int listSwapAna(swapData *data, int thd, struct keyRequest *req,
             *intention_flags = 0;
         } else if (req->l.num_ranges == 0) {
             if (cmd_intention_flags == SWAP_IN_DEL_MOCK_VALUE) {
-                datactx->ctx_flag |= BIG_DATA_CTX_FLAG_MOCK_VALUE;
+                datactx->ctx_flag = BIG_DATA_CTX_FLAG_MOCK_VALUE;
                 *intention = SWAP_DEL;
                 *intention_flags = SWAP_FIN_DEL_SKIP;
             } else if (cmd_intention_flags == SWAP_IN_META) {
@@ -1457,8 +1457,8 @@ int listSwapAna(swapData *data, int thd, struct keyRequest *req,
         break;
     }
 
-    datactx->arg_reqs[0] = req->list_arg_rewrite[0];
-    datactx->arg_reqs[1] = req->list_arg_rewrite[1];
+    datactx->arg_reqs[0] = req->arg_rewrite[0];
+    datactx->arg_reqs[1] = req->arg_rewrite[1];
 
     return 0;
 }
@@ -1617,7 +1617,7 @@ int listEncodeRange(struct swapData *data, int intention, void *datactx_, int *l
 }
 
 int listDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
-        sds *rawvals, void **pdecoded) {
+        sds *rawvals, void *datactx, void **pdecoded) {
     listMeta *meta = listMetaCreate();
     robj *list = createQuicklistObject();
     metaList *delta = metaListBuild(meta,list);
@@ -1625,6 +1625,7 @@ int listDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
 
     serverAssert(num >= 0);
     UNUSED(cfs);
+    UNUSED(datactx);
 
     for (int i = 0; i < num; i++) {
         int dbid;
@@ -1794,7 +1795,7 @@ int listSwapOut(swapData *data, void *datactx, int keep_data, int *totally_out) 
 
 int listSwapDel(swapData *data, void *datactx_, int del_skip) {
     listDataCtx* datactx = (listDataCtx*)datactx_;
-    if (datactx->ctx_flag & BIG_DATA_CTX_FLAG_MOCK_VALUE) {
+    if (datactx->ctx_flag == BIG_DATA_CTX_FLAG_MOCK_VALUE) {
         mockListForDeleteIfCold(data);
     }
     if (del_skip) {
@@ -1848,22 +1849,6 @@ void clientArgRewritesRestore(client *c) {
         }
     }
     argRewritesReset(c->swap_arg_rewrites);
-}
-
-void clientArgRewrite(client *c, argRewriteRequest arg_req, MOVE robj *new_arg) {
-    robj *orig_arg;
-    if (arg_req.mstate_idx < 0) {
-        serverAssert(arg_req.arg_idx < c->argc);
-        orig_arg = c->argv[arg_req.arg_idx];
-        c->argv[arg_req.arg_idx] = new_arg;
-        argRewritesAdd(c->swap_arg_rewrites,arg_req,orig_arg);
-    } else {
-        serverAssert(arg_req.mstate_idx < c->mstate.count);
-        serverAssert(arg_req.arg_idx < c->mstate.commands[arg_req.mstate_idx].argc);
-        orig_arg = c->mstate.commands[arg_req.mstate_idx].argv[arg_req.arg_idx];
-        c->mstate.commands[arg_req.mstate_idx].argv[arg_req.arg_idx] = new_arg;
-        argRewritesAdd(c->mstate.commands[arg_req.mstate_idx].swap_arg_rewrites,arg_req,orig_arg);
-    }
 }
 
 int listBeforeCall(swapData *data, client *c, void *datactx_) {
@@ -1969,7 +1954,7 @@ int listMetaMergedIsHot(listMeta *main_meta, listMeta *delta_meta) {
 
 int listMergedIsHot(swapData *d, void *result, void *datactx) {
     listMeta *main_meta, *delta_meta;
-    metaList *delta = result;
+    metaList *delta = result; /* 如果是 merge 了, 为null， 如果是create的，不为 null*/
     UNUSED(datactx);
     main_meta = swapDataGetListMeta(d);
     delta_meta = delta ? delta->meta : NULL;

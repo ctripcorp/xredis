@@ -216,7 +216,7 @@ int zsetSwapAna(swapData *data, int thd, struct keyRequest *req,
         } else if (req->b.num_subkeys == 0) {
             if (cmd_intention_flags == SWAP_IN_DEL_MOCK_VALUE) {
                 /* DEL/UNLINK: Lazy delete current key. */
-                datactx->bdc.ctx_flag |= BIG_DATA_CTX_FLAG_MOCK_VALUE;
+                datactx->bdc.ctx_flag = BIG_DATA_CTX_FLAG_MOCK_VALUE;
 
                 *intention = SWAP_DEL;
                 *intention_flags = SWAP_FIN_DEL_SKIP;
@@ -603,8 +603,9 @@ int zsetDecodeScoreData(swapData *data, int num, sds *rawkeys,
 
 /* decoded object move to exec module */
 int zsetDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
-        sds *rawvals, void **pdecoded_) {
-   robj **pdecoded = (robj**)pdecoded_;
+        sds *rawvals, void *datactx, void **pdecoded_) {
+    UNUSED(datactx);
+    robj **pdecoded = (robj**)pdecoded_;
 
     serverAssert(num >= 0);
     if (num == 0) {
@@ -700,7 +701,7 @@ int zsetSwapOut(swapData *data, void *datactx, int keep_data, int *totally_out) 
 
 int zsetSwapDel(swapData *data, void *datactx_, int del_skip) {
     zsetDataCtx *datactx = datactx_;
-    if (datactx->bdc.ctx_flag & BIG_DATA_CTX_FLAG_MOCK_VALUE) {
+    if (datactx->bdc.ctx_flag == BIG_DATA_CTX_FLAG_MOCK_VALUE) {
         createFakeZsetForDeleteIfCold(data);
     }
     if (del_skip) {

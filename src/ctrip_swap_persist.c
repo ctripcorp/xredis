@@ -437,6 +437,7 @@ sds genSwapPersistInfoString(sds info) {
 #define INIT_FIX_SKIP -2
 
 struct listMeta *listMetaCreate();
+struct bitmapMeta *bitmapMetaCreate();
 
 int keyLoadFixDataInit(keyLoadFixData *fix, redisDb *db, decodedResult *dr) {
     uint64_t version;
@@ -466,7 +467,7 @@ int keyLoadFixDataInit(keyLoadFixData *fix, redisDb *db, decodedResult *dr) {
     }
 
 
-    switch (dm->object_type) {
+    switch (dm->object_type) { /* 须扩展 */
     case OBJ_STRING:
         rebuild_meta = NULL;
         break;
@@ -478,6 +479,9 @@ int keyLoadFixDataInit(keyLoadFixData *fix, redisDb *db, decodedResult *dr) {
     case OBJ_LIST:
         rebuild_meta = createListObjectMeta(dm->version,listMetaCreate());
         break;
+/*    case OBJ_BITMAP:
+        rebuild_meta = createBitmapObjectMeta(dm->version, bitmapMetaCreate());
+        break;*/
     default:
         rebuild_meta = NULL;
         break;

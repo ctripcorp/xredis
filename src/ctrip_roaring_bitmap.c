@@ -901,6 +901,9 @@ roaringBitmap* rbmCreate(void)
 
 void rbmDestory(roaringBitmap* rbm)
 {
+    if (rbm == NULL) {
+        return;
+    }
     roaring_free(rbm->buckets);
     for (int i = 0; i < rbm->bucketsNum; i++) {
         clearContainer(rbm->containers[i]);
@@ -1025,6 +1028,66 @@ void rbmClearBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit)
     if (firstWholeBucket <= lastWholeBucket) {
         rbmSetBucketsEmpty(rbm, firstWholeBucket, lastWholeBucket);
     }
+}
+
+void containersDup(roaringContainer **destContainers, roaringContainer **srcContainers, uint32_t num)
+{
+    for (uint32_t i = 0; i < num; i++) {
+        destContainers[i] = roaring_malloc(sizeof(roaringContainer));
+        destContainers[i]->elementsNum = srcContainers[i]->elementsNum;
+        destContainers[i]->type = srcContainers[i]->type;
+        if (destContainers[i]->type == CONTAINER_TYPE_BITMAP) {
+            destContainers[i]->b.bitmap = roaring_malloc(BITMAP_CONTAINER_SIZE);
+            memcpy(destContainers[i]->b.bitmap, srcContainers[i]->b.bitmap, BITMAP_CONTAINER_SIZE);
+        } else if (destContainers[i]->type == CONTAINER_TYPE_ARRAY) {
+            destContainers[i]->a.capacity = srcContainers[i]->a.capacity;
+            destContainers[i]->a.array = roaring_malloc(destContainers[i]->a.capacity);
+            memcpy(destContainers[i]->a.array, srcContainers[i]->a.array, destContainers[i]->a.capacity);
+        }
+    }
+}
+
+void rbmdup(roaringBitmap* destRbm, roaringBitmap* srcRbm)
+{
+    if (destRbm == NULL || srcRbm == NULL) {
+        return;
+    }
+    destRbm->bucketsNum = srcRbm->bucketsNum;
+    destRbm->buckets = roaring_malloc(destRbm->bucketsNum * sizeof(uint8_t));
+    memcpy(destRbm->buckets, srcRbm->buckets, sizeof(uint8_t) * destRbm->bucketsNum);
+    destRbm->containers = roaring_calloc(destRbm->bucketsNum * sizeof(roaringContainer *));
+    containersDup(destRbm->containers, srcRbm->containers, destRbm->bucketsNum);
+}
+
+int containersAreEqual(roaringContainer **destContainers, roaringContainer **srcContainers, uint32_t num)
+{
+    for (uint32_t i = 0; i < num; i++) {
+        if (destContainers[i]->elementsNum != srcContainers[i]->elementsNum || destContainers[i]->type != srcContainers[i]->type) {
+            return 0;
+        }
+        if (destContainers[i]->type == CONTAINER_TYPE_BITMAP) {
+            if (!memcmp(destContainers[i]->b.bitmap, srcContainers[i]->b.bitmap, BITMAP_CONTAINER_SIZE)) {
+                return 0;
+            }
+        } else if (destContainers[i]->type == CONTAINER_TYPE_ARRAY) {
+            if (!memcmp(destContainers[i]->a.array, srcContainers[i]->a.array, destContainers[i]->elementsNum * sizeof(arrayContainer))) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+int rbmIsEqual(roaringBitmap* destRbm, roaringBitmap* srcRbm)
+{
+    if (destRbm == NULL || srcRbm == NULL) {
+        return 0;
+    }
+    if (destRbm->bucketsNum != srcRbm->bucketsNum || !memcmp(destRbm->buckets, srcRbm->buckets, destRbm->bucketsNum *
+            sizeof(uint8_t))) {
+        return 0;
+    }
+    return containersAreEqual(destRbm->containers, srcRbm->containers, destRbm->bucketsNum);
 }
 
 #ifdef REDIS_TEST

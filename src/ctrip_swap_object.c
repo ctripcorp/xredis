@@ -35,6 +35,7 @@
 /* objectMeta */
 static inline objectMetaType *getObjectMetaType(int object_type) {
     objectMetaType *omtype = NULL;
+    /* 须扩展 */
     switch (object_type) {
     case OBJ_STRING:
         omtype = NULL;
@@ -47,6 +48,9 @@ static inline objectMetaType *getObjectMetaType(int object_type) {
     case OBJ_LIST:
         omtype = &listObjectMetaType;
         break;
+/*    case OBJ_BITMAP:
+        omtype = &bitmapObjectMetaType;
+        break;*/
     default:
         break;
     }
@@ -83,6 +87,7 @@ objectMeta *dupObjectMeta(objectMeta *object_meta) {
     return dup_meta;
 }
 
+/* object_type 参数须 扩展 */
 int buildObjectMeta(int object_type, uint64_t version, const char *extend,
         size_t extlen, OUT objectMeta **pobject_meta) {
     objectMeta *object_meta;

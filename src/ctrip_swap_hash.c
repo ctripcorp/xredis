@@ -174,7 +174,7 @@ int hashSwapAna(swapData *data, int thd, struct keyRequest *req,
         } else if (req->b.num_subkeys == 0) {
             if (cmd_intention_flags == SWAP_IN_DEL_MOCK_VALUE) {
                 /* DEL/UNLINK: Lazy delete current key. */
-                datactx->ctx.ctx_flag |= BIG_DATA_CTX_FLAG_MOCK_VALUE;
+                datactx->ctx.ctx_flag = BIG_DATA_CTX_FLAG_MOCK_VALUE;
                 *intention = SWAP_DEL;
                 *intention_flags = SWAP_FIN_DEL_SKIP;
             } else if (cmd_intention_flags & SWAP_IN_DEL
@@ -376,13 +376,14 @@ int hashEncodeData(swapData *data, int intention, void *datactx_,
 
 /* decoded object move to exec module */
 int hashDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
-        sds *rawvals, void **pdecoded) {
+        sds *rawvals, void *datactx, void **pdecoded) {
     int i;
     robj *decoded;
     uint64_t version = swapDataObjectVersion(data);
 
     serverAssert(num >= 0);
     UNUSED(cfs);
+    UNUSED(datactx);
 
     /* Note that event if all subkeys are not found, still an empty hash
      * object will be returned: empty *warm* hash could can meta in memory,
@@ -510,7 +511,7 @@ int hashSwapOut(swapData *data, void *datactx, int keep_data, int *totally_out) 
 
 int hashSwapDel(swapData *data, void *datactx_, int del_skip) {
     hashDataCtx* datactx = (hashDataCtx*)datactx_;
-    if (datactx->ctx.ctx_flag & BIG_DATA_CTX_FLAG_MOCK_VALUE) {
+    if (datactx->ctx.ctx_flag == BIG_DATA_CTX_FLAG_MOCK_VALUE) {
         createFakeHashForDeleteIfCold(data);
     }
     if (del_skip) {

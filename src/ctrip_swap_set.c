@@ -162,7 +162,7 @@ int setSwapAna(swapData *data, int thd, struct keyRequest *req,
             } else if (req->b.num_subkeys == 0) {
                 if (cmd_intention_flags == SWAP_IN_DEL_MOCK_VALUE) {
                     /* DEL/UNLINK: Lazy delete current key. */
-                    datactx->ctx.ctx_flag |= BIG_DATA_CTX_FLAG_MOCK_VALUE;
+                    datactx->ctx.ctx_flag = BIG_DATA_CTX_FLAG_MOCK_VALUE;
                     *intention = SWAP_DEL;
                     *intention_flags = SWAP_FIN_DEL_SKIP;
                 } else if (cmd_intention_flags & SWAP_IN_DEL
@@ -369,13 +369,14 @@ int setEncodeRange(struct swapData *data, int intention, void *datactx, int *lim
 
 /* decoded object move to exec module */
 int setDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
-                   sds *rawvals, void **pdecoded) {
+                   sds *rawvals, void *datactx, void **pdecoded) {
     int i;
     robj *decoded;
     uint64_t version = swapDataObjectVersion(data);
 
     serverAssert(num >= 0);
     UNUSED(cfs);
+    UNUSED(datactx);
 
     decoded = NULL;
     for (i = 0; i < num; i++) {
@@ -486,7 +487,7 @@ int setSwapOut(swapData *data, void *datactx, int clear_dirty, int *totally_out)
 
 int setSwapDel(swapData *data, void *datactx_, int del_skip) {
     setDataCtx* datactx = (setDataCtx*)datactx_;
-    if (datactx->ctx.ctx_flag & BIG_DATA_CTX_FLAG_MOCK_VALUE) {
+    if (datactx->ctx.ctx_flag == BIG_DATA_CTX_FLAG_MOCK_VALUE) {
         createFakeSetForDeleteIfCold(data);
     }
     if (del_skip) {

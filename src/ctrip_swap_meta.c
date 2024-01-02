@@ -358,7 +358,8 @@ int metaScanEncodeRange(struct swapData *data, int intention, void *datactx_, in
 }
 
 int metaScanDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
-        sds *rawvals, void **pdecoded) {
+        sds *rawvals, void *datactx, void **pdecoded) {
+    UNUSED(datactx);
     int i, retval = 0;
     metaScanResult *result = metaScanResultCreate();
     sds nextseek_rawkey = data->nextseek;

@@ -228,6 +228,7 @@ extern int configOOMScoreAdjValuesDefaults[CONFIG_OOM_COUNT];
 #define CMD_SWAP_DATATYPE_SET (1ULL<<43)
 #define CMD_SWAP_DATATYPE_ZSET (1ULL<<44)
 #define CMD_SWAP_DATATYPE_LIST (1ULL<<45)
+#define CMD_SWAP_DATATYPE_BITMAP (1ULL<<45)
 
 
 /* AOF states */

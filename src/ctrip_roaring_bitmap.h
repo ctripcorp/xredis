@@ -79,5 +79,12 @@ void rbmClearBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit);
 
 uint32_t rbmGetBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit);
 
+void rbmdup(roaringBitmap* destRbm, roaringBitmap* srcRbm);
+
+int rbmIsEqual(roaringBitmap* destRbm, roaringBitmap* srcRbm);
+
+/* return pos of the nth one bit, from the startPos*/
+/* todo imp */
+uint32_t rbmGetBitPos(roaringBitmap* rbm, uint32_t startPos, uint32_t nthBit);
 
 #endif // __CTRIP_ROARING_BITMAP_H__
