@@ -1738,6 +1738,7 @@ void rocksReleaseCheckpoint(void);
 void rocksReleaseSnapshot(void);
 int rocksCreateSnapshot(void);
 int readCheckpointDirFromPipe(int pipe);
+int rocksRestore(const char *checkpoint_dir);
 struct rocksdbMemOverhead *rocksGetMemoryOverhead();
 void rocksFreeMemoryOverhead(struct rocksdbMemOverhead *mh);
 sds genRocksdbInfoString(sds info);
@@ -2445,6 +2446,7 @@ int swapRIOTest(int argc, char *argv[], int accurate);
 int swapBatchTest(int argc, char *argv[], int accurate);
 int cuckooFilterTest(int argc, char *argv[], int accurate);
 int swapPersistTest(int argc, char *argv[], int accurate);
+int swapRordbTest(int argc, char *argv[], int accurate);
 
 int swapTest(int argc, char **argv, int accurate);
 

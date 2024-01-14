@@ -369,6 +369,7 @@ typedef enum {
 #define SLAVE_CAPA_NONE 0
 #define SLAVE_CAPA_EOF (1<<0)    /* Can parse the RDB EOF streaming format. */
 #define SLAVE_CAPA_PSYNC2 (1<<1) /* Supports PSYNC2 protocol. */
+#define SLAVE_CAPA_RORDB (1<<2) /* Can parse RORDB format. */
 
 /* Synchronous read timeout - slave side */
 #define CONFIG_REPL_SYNCIO_TIMEOUT 5
@@ -1188,9 +1189,14 @@ typedef struct rdbSaveInfo {
     int repl_id_is_set;  /* True if repl_id field is set. */
     char repl_id[CONFIG_RUN_ID_SIZE+1];     /* Replication ID. */
     long long repl_offset;                  /* Replication offset. */
+    int use_rordb;
 } rdbSaveInfo;
 
-#define RDB_SAVE_INFO_INIT {-1,0,"0000000000000000000000000000000000000000",-1}
+#define RDB_SAVE_INFO_INIT {-1,0,"0000000000000000000000000000000000000000",-1, 0}
+
+static inline void rdbSaveInfoSetUseRorDb(rdbSaveInfo *rsi) {
+  rsi->use_rordb = 1;
+}
 
 struct malloc_stats {
     size_t zmalloc_used;
@@ -1941,6 +1947,9 @@ struct redisServer {
     /* swap meta flush */
     int swap_flush_meta_deletes_percentage;
     unsigned long long swap_flush_meta_deletes_num;
+
+    /* swap rordb */
+    int swap_repl_rordb_sync;
 };
 
 #define MAX_KEYS_BUFFER 256
