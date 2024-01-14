@@ -130,6 +130,8 @@ void swapCommand(client *c) {
 "    Get rocksdb property value (string type)",
 "SCAN-SESSION [<cursor>]",
 "    List assigned scan sesions",
+"RORDB BGSAVE",
+"    bgsave in rordb mode",
 NULL
         };
         addReplyHelp(c, help);
@@ -321,6 +323,25 @@ NULL
         sds o = getAllSwapScanSessionsInfoString(outer_cursor);
         addReplyVerbatim(c,o,sdslen(o),"txt");
         sdsfree(o);
+    } else if (!strcasecmp(c->argv[1]->ptr,"rordb") && c->argc == 3) {
+        if (!strcasecmp(c->argv[2]->ptr,"bgsave")) {
+            rdbSaveInfo rsi, *rsiptr;
+            rsiptr = rdbPopulateSaveInfo(&rsi);
+            rdbSaveInfoSetUseRorDb(rsiptr);
+
+            if (server.child_type == CHILD_TYPE_RDB || hasActiveChildProcess()) {
+                addReplyError(c,"Background child already in progress");
+                return;
+            }
+
+            if (rdbSaveBackground(server.rdb_filename,rsiptr) == C_OK) {
+                addReplyStatus(c,"Background saving started");
+            } else {
+                addReplyErrorObject(c,shared.err);
+            }
+        } else {
+            addReplySubcommandSyntaxError(c);
+        }
     } else {
         addReplySubcommandSyntaxError(c);
         return;

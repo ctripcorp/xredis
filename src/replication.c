@@ -657,6 +657,13 @@ int startBgsaveForReplication(int mincapa) {
 
     rdbSaveInfo rsi, *rsiptr;
     rsiptr = rdbPopulateSaveInfo(&rsi);
+
+    if (server.swap_mode != SWAP_MODE_MEMORY && server.swap_repl_rordb_sync &&
+            (mincapa & SLAVE_CAPA_RORDB)) {
+        rdbSaveInfoSetUseRorDb(rsiptr);
+        serverLog(LL_NOTICE, "[rordb] repl sync in rordb mode");
+    }
+
     /* Only do rdbSave* when rsiptr is not NULL,
      * otherwise slave will miss repl-stream-db. */
     if (rsiptr) {
@@ -959,6 +966,8 @@ void replconfCommand(client *c) {
                 c->slave_capa |= SLAVE_CAPA_EOF;
             else if (!strcasecmp(c->argv[j+1]->ptr,"psync2"))
                 c->slave_capa |= SLAVE_CAPA_PSYNC2;
+            else if (!strcasecmp(c->argv[j+1]->ptr,"rordb"))
+                c->slave_capa |= SLAVE_CAPA_RORDB;
         } else if (!strcasecmp(c->argv[j]->ptr,"ack")) {
             /* REPLCONF ACK is used by slave to inform the master the amount
              * of replication stream that it processed so far. It is an
@@ -2353,7 +2362,7 @@ void syncWithMaster(connection *conn) {
          *
          * The master will ignore capabilities it does not understand. */
         err = sendCommand(conn,"REPLCONF",
-                "capa","eof","capa","psync2",NULL);
+                "capa","eof","capa","psync2","capa","rordb",NULL);
         if (err) goto write_error;
 
         server.repl_state = REPL_STATE_RECEIVE_AUTH_REPLY;

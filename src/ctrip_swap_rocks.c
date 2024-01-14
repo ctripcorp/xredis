@@ -317,6 +317,35 @@ void rocksRelease() {
     server.rocks = NULL;
 }
 
+int rocksRestore(const char *checkpoint_dir) {
+    char dir[ROCKS_DIR_MAX_LEN];
+    int next_epoch = server.rocksdb_epoch+1;
+
+    snprintf(dir, ROCKS_DIR_MAX_LEN, "%s/%d", ROCKS_DATA, next_epoch);
+    if (rename(checkpoint_dir,dir)) {
+        serverLog(LL_WARNING,
+                "rename checkpoint_dir(%s) to db dir(%s) failed: %s,%d",
+                checkpoint_dir, dir, strerror(errno), errno);
+        return C_ERR;
+    }
+    rocksRelease();
+    server.rocksdb_epoch++;
+    if (rocksInit()) {
+        serverLog(LL_WARNING, "rocksdb restore from dir(%s) failed.",dir);
+        /* rollback to previous epoch */
+        server.rocksdb_epoch--;
+        if (rocksInit()) serverPanic("rocksdb restore rollback failed.");
+        return C_ERR;
+    }
+
+    snprintf(dir, ROCKS_DIR_MAX_LEN, "%s/%d", ROCKS_DATA, server.rocksdb_epoch-1);
+    if (rmdirRecursive(dir)) {
+        serverLog(LL_WARNING, "purge deprecated db(%s) failed: %s,%d.",
+                dir,strerror(errno),errno);
+    }
+    return C_OK;
+}
+
 void rocksReleaseCheckpoint() {
     rocks *rocks = server.rocks;
     char* err = NULL;

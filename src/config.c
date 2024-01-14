@@ -2578,24 +2578,24 @@ static int updateRocksdbMetaEnableBlobGarbageCollection(int val, int prev, const
     return updateRocksdbCFOptionBoolean(META_CF, "enable_blob_garbage_collection", val, err);
 }
 
-static int updateRocksdbDataBlobGarbageCollectionAgeCutoffPercentage(int val, int prev, const char **err) {
+static int updateRocksdbDataBlobGarbageCollectionAgeCutoffPercentage(long long val, long long prev, const char **err) {
     UNUSED(prev);
     return updateRocksdbCFOptionPersent(DATA_CF, "blob_garbage_collection_age_cutoff", val, err);
            updateRocksdbCFOptionPersent(SCORE_CF, "blob_garbage_collection_age_cutoff", val, err);
 }
 
-static int updateRocksdbMetaBlobGarbageCollectionAgeCutoffPercentage(int val, int prev, const char **err) {
+static int updateRocksdbMetaBlobGarbageCollectionAgeCutoffPercentage(long long val, long long prev, const char **err) {
     UNUSED(prev);
     return updateRocksdbCFOptionPersent(META_CF, "blob_garbage_collection_age_cutoff", val, err);
 }
 
-static int updateRocksdbDataBlobGarbageCollectionForceThresholdPercentage(int val, int prev, const char **err) {
+static int updateRocksdbDataBlobGarbageCollectionForceThresholdPercentage(long long val, long long prev, const char **err) {
     UNUSED(prev);
     return updateRocksdbCFOptionPersent(DATA_CF, "blob_garbage_collection_force_threshold", val, err);
            updateRocksdbCFOptionPersent(SCORE_CF, "blob_garbage_collection_force_threshold", val, err);
 }
 
-static int updateRocksdbMetaBlobGarbageCollectionForceThresholdPercentage(int val, int prev, const char **err) {
+static int updateRocksdbMetaBlobGarbageCollectionForceThresholdPercentage(long long val, long long prev, const char **err) {
     UNUSED(prev);
     return updateRocksdbCFOptionPersent(META_CF, "blob_garbage_collection_force_threshold", val, err);
 }
@@ -2893,6 +2893,7 @@ standardConfig configs[] = {
     createBoolConfig("swap-bgsave-fix-metalen-mismatch", NULL, MODIFIABLE_CONFIG, server.swap_bgsave_fix_metalen_mismatch, 0, NULL, NULL),
     createBoolConfig("swap-dirty-subkeys-enabled", NULL, MODIFIABLE_CONFIG, server.swap_dirty_subkeys_enabled, 0, NULL, NULL),
     createBoolConfig("swap-persist-enabled", NULL, IMMUTABLE_CONFIG, server.swap_persist_enabled, 0, NULL, NULL),
+    createBoolConfig("swap-repl-rordb-sync", NULL, MODIFIABLE_CONFIG, server.swap_repl_rordb_sync, 1, NULL, NULL),
     createBoolConfig("rocksdb.data.cache_index_and_filter_blocks", "rocksdb.cache_index_and_filter_blocks", IMMUTABLE_CONFIG, server.rocksdb_data_cache_index_and_filter_blocks, 0, NULL, NULL),
     createBoolConfig("rocksdb.meta.cache_index_and_filter_blocks", NULL, IMMUTABLE_CONFIG, server.rocksdb_meta_cache_index_and_filter_blocks, 0, NULL, NULL),
     createBoolConfig("rocksdb.enable_pipelined_write", NULL, IMMUTABLE_CONFIG, server.rocksdb_enable_pipelined_write, 0, NULL, NULL),

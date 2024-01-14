@@ -32,6 +32,7 @@
 #include "zipmap.h"
 #include "endianconv.h"
 #include "stream.h"
+#include "ctrip_swap_rordb.h"
 
 #include <math.h>
 #include <fcntl.h>
@@ -1254,6 +1255,7 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi) {
     char magic[10];
     uint64_t cksum;
     int j;
+    int is_rordb = rsi->use_rordb;
 
     /* start saving */
     rdb_load_key_count = 0;
@@ -1265,6 +1267,9 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi) {
     if (rdbWriteRaw(rdb,magic,9) == -1) goto werr;
     if (rdbSaveInfoAuxFields(rdb,rdbflags,rsi) == -1) goto werr;
     if (rdbSaveModulesAux(rdb, REDISMODULE_AUX_BEFORE_RDB) == -1) goto werr;
+
+    if (is_rordb && rordbSaveAuxFields(rdb) == -1) goto werr;
+    if (is_rordb && rordbSaveSST(rdb) == -1) goto werr;
 
     for (j = 0; j < server.dbnum; j++) {
         redisDb *db = server.db+j;
@@ -1291,13 +1296,12 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi) {
         while((de = dictNext(di)) != NULL) {
             sds keystr = dictGetKey(de);
             robj key, *o = dictGetVal(de);
-            objectMeta *object_meta;
             long long expire;
 
             initStaticStringObject(key,keystr);
+
             /* cold or warm bighash will be saved later in rdbSaveRocks. */
-            object_meta = lookupMeta(db,&key);
-            if (!keyIsHot(object_meta,o)) {
+            if (!is_rordb && !keyIsHot(lookupMeta(db,&key),o)) {
 #ifdef ROCKS_DEBUG
                 serverLog(LL_NOTICE, "[rdbSaveRio] key(%s) not hot: skipped.",keystr);
 #endif
@@ -1316,8 +1320,12 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi) {
         dictReleaseIterator(di);
         di = NULL;
 
-        /* Iterate DB.rocks writing every entry */
-        if (rdbSaveRocks(rdb, error, db, rdbflags)) goto werr;
+        if (is_rordb) {
+            if (rordbSaveDbRio(rdb,db) == -1) goto werr;
+        } else {
+            /* Iterate DB.rocks writing every entry */
+            if (rdbSaveRocks(rdb,error,db,rdbflags)) goto werr;
+        }
 
         dbResumeRehash(db);
     }
@@ -2516,6 +2524,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
     int error;
     long long empty_keys_skipped = 0, expired_keys_skipped = 0, keys_loaded = 0;
     int reopen_filter = 0;
+    int is_rordb = 0;
 
     rdb->update_cksum = rdbLoadProgressCallback;
     rdb->max_processing_chunk = server.loading_process_events_interval_bytes;
@@ -2655,6 +2664,10 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
                 /* Just ignored. */
             } else if (LoadGtidInfoAuxFields(auxkey, auxval)) {
                 /* Load gtid info AUX field. */
+            } else if (server.swap_mode != SWAP_MODE_MEMORY && rordbLoadAuxFields(auxkey, auxval)) {
+                is_rordb = 1;
+                if (rordbLoadSSTStart(rdb)) goto eoferr;
+                serverLog(LL_NOTICE, "[rordb] loading in rordb mode.");
             } else {
                 /* We ignore fields we don't understand, as by AUX field
                  * contract. */
@@ -2718,7 +2731,16 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
                 decrRefCount(aux);
                 continue; /* Read next opcode. */
             }
+        } else if (server.swap_mode != SWAP_MODE_MEMORY && is_rordb && rordbOpcodeIsValid(type)) {
+            if (rordbOpcodeIsSSTType(type)) {
+                if (rordbLoadSSTType(rdb,type)) goto eoferr;
+            } else if (rordbOpcodeIsDbType(type)) {
+                if (rordbLoadDbType(rdb,db,type)) goto eoferr;
+            }
+            continue;
         }
+
+        if (is_rordb && rordbLoadSSTFinished(rdb)) goto eoferr;
 
         /* Read key */
         if ((key = rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL)) == NULL)
@@ -2726,7 +2748,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
 
         /* Read value */
         int swap_unsupported = 0;
-        if (server.swap_mode != SWAP_MODE_MEMORY) {
+        if (server.swap_mode != SWAP_MODE_MEMORY && !is_rordb) {
             rdbKeyLoadData _keydata = {0}, *keydata = &_keydata;
             int swap_load_error = ctripRdbLoadObject(type,rdb,db,key,
                     expiretime,now,keydata);
@@ -2747,7 +2769,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
             rdbKeyLoadDataDeinit(keydata);
         }
 
-        if (server.swap_mode == SWAP_MODE_MEMORY || swap_unsupported) {
+        if (server.swap_mode == SWAP_MODE_MEMORY || swap_unsupported || is_rordb) {
             val = rdbLoadObject(type,rdb,key,&error);
         }
 
@@ -2780,7 +2802,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
             initStaticStringObject(keyobj,key);
             moduleNotifyKeyspaceEvent(NOTIFY_LOADED, "loaded", &keyobj, db->id);
             sdsfree(key);
-        } else if (iAmMaster() &&
+        } else if (iAmMaster() && !is_rordb &&
             !(rdbflags&RDBFLAGS_AOF_PREAMBLE) &&
             expiretime != -1 && expiretime < now)
         {
