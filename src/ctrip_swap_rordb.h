@@ -58,7 +58,7 @@ static inline int rordbOpcodeIsValid(int type) {
 }
 
 static inline int rordbOpcodeIsSSTType(int type) {
-  return type == RORDB_OPCODE_SST && type == RORDB_OPCODE_SWAP_VERSION;
+  return type == RORDB_OPCODE_SWAP_VERSION || type == RORDB_OPCODE_SST;
 }
 
 static inline int rordbOpcodeIsDbType(int type) {

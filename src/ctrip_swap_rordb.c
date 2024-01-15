@@ -123,7 +123,7 @@ static int rordbSaveSSTFiles(rio *rdb, char* path) {
             goto werr;
         } else {
             saved++;
-            serverLog(LL_DEBUG, "[rordb] saved sst file: %s", filepath);
+            serverLog(LL_NOTICE, "[rordb] saved sst file: %s", filepath); //TODO DEBUG
         }
 
 		zfree(filepath);
@@ -148,7 +148,7 @@ werr:
 int rordbSaveSST(rio *rdb) {
     if (rdbSaveType(rdb,RORDB_OPCODE_SWAP_VERSION) == -1) goto err;
     if (rdbSaveLen(rdb,server.swap_key_version) == -1) goto err;
-    if (rordbSaveSSTFiles(rdb,server.rocks->checkpoint_dir) == -1) goto err;
+    if (rordbSaveSSTFiles(rdb,server.rocks->rdb_checkpoint_dir) == -1) goto err;
     return C_OK;
 err:
     return C_ERR;
@@ -200,7 +200,7 @@ static int rordbLoadSSTFile(rio *rdb, char* path) {
         }
     }
 
-    serverLog(LL_DEBUG, "[rordb] saved sst file(%s) ok.", filepath);
+    serverLog(LL_NOTICE, "[rordb] load sst file(%s) ok.", filepath); //TODO NOTICE => DEBUG
 
     if (filename) sdsfree(filename);
     if (fp) fclose(fp);
@@ -219,13 +219,29 @@ err:
 int rmdirRecursive(const char *path);
 int rordbLoadSSTStart(rio *rdb) {
     UNUSED(rdb);
-    if (rmdirRecursive(RORDB_CHECKPOINT_DIR)) {
+    struct stat st;
+
+    if (stat(RORDB_CHECKPOINT_DIR, &st) != 0) {
+        /* it's ok that prev checkpoint dir not exists */
+    } else if (rmdirRecursive(RORDB_CHECKPOINT_DIR)) {
         serverLog(LL_WARNING, "[rordb] cleanup rordb checkpoint dir failed.");
-        return C_ERR;
+        goto err;
     } else {
-        serverLog(LL_WARNING, "[rordb] cleanup rordb checkpoint dir ok.");
-        return C_OK;
+        serverLog(LL_NOTICE, "[rordb] cleanup rordb checkpoint dir ok.");
     }
+
+    if (mkdir(RORDB_CHECKPOINT_DIR,0755)) {
+        serverLog(LL_WARNING, "[rordb] create checkpoint dir(%s) failed:%s,%d.",
+                RORDB_CHECKPOINT_DIR,strerror(errno),errno);
+        goto err;
+    } else {
+        serverLog(LL_WARNING, "[rordb] create checkpoint dir(%s) ok.",
+                RORDB_CHECKPOINT_DIR);
+    }
+    return C_OK;
+
+err:
+    return C_ERR;
 }
 
 int rordbLoadSSTType(rio *rdb, int type) {
@@ -247,7 +263,7 @@ int rordbLoadSSTFinished(rio *rdb) {
         serverLog(LL_WARNING, "[rordb] restore from checkpoint(%s) failed.", RORDB_CHECKPOINT_DIR);
         return C_ERR;
     } else {
-        serverLog(LL_NOTICE, "[rordb] restore from checkpoint(%s) failed.", RORDB_CHECKPOINT_DIR);
+        serverLog(LL_NOTICE, "[rordb] restore from checkpoint(%s) ok.", RORDB_CHECKPOINT_DIR);
         return C_OK;
     }
 }

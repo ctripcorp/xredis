@@ -211,8 +211,12 @@ static const char* dataFilterFactoryName(void* arg) {
   return "data_cf_filter_factory";
 }
 
+void filterFactoryDestructor(void *state) {
+    UNUSED(state);
+}
+
 rocksdb_compactionfilterfactory_t* createDataCfCompactionFilterFactory() {
-    return rocksdb_compactionfilterfactory_create(NULL,NULL,
+    return rocksdb_compactionfilterfactory_create(NULL,filterFactoryDestructor,
             createDataCfCompactionFilter,dataFilterFactoryName);
 }
 
@@ -256,7 +260,7 @@ static const char* scoreFilterFactoryName(void* arg) {
 }
 
 rocksdb_compactionfilterfactory_t* createScoreCfCompactionFilterFactory() {
-    return rocksdb_compactionfilterfactory_create(NULL,NULL,
+    return rocksdb_compactionfilterfactory_create(NULL,filterFactoryDestructor,
             createScoreCfCompactionFilter,scoreFilterFactoryName);
 }
 
