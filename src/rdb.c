@@ -2524,7 +2524,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
     int error;
     long long empty_keys_skipped = 0, expired_keys_skipped = 0, keys_loaded = 0;
     int reopen_filter = 0;
-    int is_rordb = 0;
+    int is_rordb = 0, rordb_finished = 0;
 
     rdb->update_cksum = rdbLoadProgressCallback;
     rdb->max_processing_chunk = server.loading_process_events_interval_bytes;
@@ -2737,10 +2737,14 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
             } else if (rordbOpcodeIsDbType(type)) {
                 if (rordbLoadDbType(rdb,db,type)) goto eoferr;
             }
+
             continue;
         }
 
-        if (is_rordb && rordbLoadSSTFinished(rdb)) goto eoferr;
+        if (server.swap_mode != SWAP_MODE_MEMORY && is_rordb && !rordb_finished) {
+            if (rordbLoadSSTFinished(rdb)) goto eoferr;
+            rordb_finished = 1;
+        }
 
         /* Read key */
         if ((key = rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL)) == NULL)

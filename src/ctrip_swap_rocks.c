@@ -324,25 +324,27 @@ int rocksRestore(const char *checkpoint_dir) {
     snprintf(dir, ROCKS_DIR_MAX_LEN, "%s/%d", ROCKS_DATA, next_epoch);
     if (rename(checkpoint_dir,dir)) {
         serverLog(LL_WARNING,
-                "rename checkpoint_dir(%s) to db dir(%s) failed: %s,%d",
+                "[ROCKS] rename checkpoint_dir(%s) to db dir(%s) failed: %s,%d",
                 checkpoint_dir, dir, strerror(errno), errno);
         return C_ERR;
     }
     rocksRelease();
     server.rocksdb_epoch++;
     if (rocksInit()) {
-        serverLog(LL_WARNING, "rocksdb restore from dir(%s) failed.",dir);
+        serverLog(LL_WARNING, "[ROCKS] rocksdb restore from dir(%s) failed.",dir);
         /* rollback to previous epoch */
         server.rocksdb_epoch--;
-        if (rocksInit()) serverPanic("rocksdb restore rollback failed.");
+        if (rocksInit()) serverPanic("[ROCKS] rocksdb restore rollback failed.");
         return C_ERR;
+    } else {
+        serverLog(LL_NOTICE, "[ROCKS] rocksdb restore from dir(%s) ok.",dir);
     }
 
-    snprintf(dir, ROCKS_DIR_MAX_LEN, "%s/%d", ROCKS_DATA, server.rocksdb_epoch-1);
-    if (rmdirRecursive(dir)) {
-        serverLog(LL_WARNING, "purge deprecated db(%s) failed: %s,%d.",
-                dir,strerror(errno),errno);
-    }
+    /* snprintf(dir, ROCKS_DIR_MAX_LEN, "%s/%d", ROCKS_DATA, server.rocksdb_epoch-1); */
+    /* if (rmdirRecursive(dir)) { */
+        /* serverLog(LL_WARNING, "[ROCKS] purge deprecated db(%s) failed: %s,%d.", */
+                /* dir,strerror(errno),errno); */
+    /* } */
     return C_OK;
 }
 
