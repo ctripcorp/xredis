@@ -28,6 +28,7 @@ git submodule upadate --init
 cd redis
 make
 ```
+* Tips: Macos silicon chips users plz refer to [manual](build_support_on_mac_silicon/build_support_on_mac_silicon_manual.md)
 
 ## Details
 

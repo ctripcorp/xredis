@@ -111,7 +111,11 @@ endif
 
 FINAL_CFLAGS=$(STD) $(WARN) $(OPT) $(DEBUG) $(CFLAGS) $(REDIS_CFLAGS)
 FINAL_LDFLAGS=$(LDFLAGS) $(REDIS_LDFLAGS) $(DEBUG)
+ifeq ($(shell uname),Darwin)
+FINAL_LIBS=-lm -lstdc++ -pthread -lsnappy -lz
+else
 FINAL_LIBS=-lm -lrt -lstdc++ -pthread -lsnappy -lz
+endif
 DEBUG=-g -ggdb -fno-omit-frame-pointer
 
 # Linux ARM32 needs -latomic at linking time
