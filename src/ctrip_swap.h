@@ -64,7 +64,7 @@ extern const char *swap_cf_names[CF_COUNT];
  * same as SWAP_IN_DEL for collection type(SET, ZSET, LISH, HASH...), same as SWAP_IN for STRING */
 #define SWAP_IN_OVERWRITE (1U<<3)
 /* When swap finished, meta will be deleted(so that key will turn pure hot).*/
-#define SWAP_IN_FORCE_HOT (1U<<4)
+#define SWAP_IN_FORCE_HOT (1U<<4)   /* TODO unknown。。。。*/
 /* whether to expire Keys with generated in writtable slave is decided
  * before submitExpireClientRequest and should not skip expire even
  * if current role is slave. */
@@ -81,8 +81,6 @@ extern const char *swap_cf_names[CF_COUNT];
 #define SWAP_OUT_PERSIST (1U<<10)
 /* Keep data in memory because memory is sufficient. */
 #define SWAP_OUT_KEEP_DATA (1U<<11)
-/* Swap in for write operation (only used in bitmap object). */
-#define SWAP_IN_WRITE (1U<<12)
 
 /* --- swap intention flags --- */
 /* Delete rocksdb data key when swap in */
@@ -92,7 +90,7 @@ extern const char *swap_cf_names[CF_COUNT];
 /* check whether oom would happend during RIO */
 #define SWAP_EXEC_OOM_CHECK (1U<<2)
 /* Don't delete key in keyspace when swap (Delete key in rocksdb) finish. */
-#define SWAP_FIN_DEL_SKIP (1U<<3)
+#define SWAP_FIN_DEL_SKIP (1U<<3)  /* TODO 与 SWAP_DEL 相配合*/
 /* Reserve data when swap out. */
 #define SWAP_EXEC_OUT_KEEP_DATA (1U<<4)
 
@@ -685,7 +683,7 @@ static inline int swapDataPersisted(swapData *d) {
     if (d->object_type == OBJ_STRING) {
         /* todo bitmap type */
         if (d->object_meta) {
-            return !d->omtype->objectIsHot(d->object_meta);
+            return objectMetaGetPtr(d->object_meta) != NULL;
         }
     }
     return d->object_meta || d->cold_meta;

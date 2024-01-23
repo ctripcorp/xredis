@@ -35,7 +35,8 @@
 
 typedef struct bitmapMeta {
     int bitsSum;
-    int subkeysSum; /* num of all subkeys, include subkeys in redis, in rocksDb, empty subkeys */
+    int subkeysSum; /* num of all subkeys, include subkeys in redis, in rocksDb, empty subkeys */   /* todo 新增了成员， */
+    int subkeysNumOnlyRocks;
     roaringBitmap *subkeysInRedis;
 } bitmapMeta;
 
@@ -54,12 +55,10 @@ void bitmapMetaFree(bitmapMeta *bitmap_meta) {
 
 typedef struct bitmapDataCtx {
     baseBigDataCtx ctx;
-    int subkeysSizeOutorDelete;  /* used in swap out */
-    int subkeysNumOutorDelete;   /* used in swap out, include subKey type, 1、 swap out, 2、 Delete directly.  */
-    int *subkeysIdxOutorDelete;  /* used in swap out , physic subkey idx in redis. 1、 may be swapped out , 2、 deleted directly.*/
-    bool *subkeysIsEmpty;    /* used in swap out, empty subkey(bits are all zero) will be directly delete, won't be swap out*/
-    int keepHotSubkeysNum; /* used in swap out, subkeys num kept in redis after swap out. */
-    int subkeysNumSwapout; /* used in swap out, subkeys confirmed to swap out. */
+    int subkeysSizeOut;  /* used in swap out */
+    int subkeysNumOut;   /* used in swap out, include subKey type, 1、 swap out, 2、 Delete directly.  */
+    int *subkeysPhyIdxOut;  /* used in swap out , physic subkey idx in redis. 1、 may be swapped out , 2、 deleted directly.*/
+    int *subkeysLogicIdxOut;  /* used in swap out. */
     bitmapMeta *deltaMeta;  /* only used in SWAP in . */
     argRewriteRequest arg_reqs[2];
 } bitmapDataCtx;
@@ -189,7 +188,7 @@ static inline void getSubKeysRequired(bitmapDataCtx *datactx, bitmapMeta *bm, bo
         }
     } else {
         if (requiredSubkeyStartIdx > bm->subkeysSum - 1) {
-            datactx->ctx.ctx_flag = BIG_DATA_CTX_FLAG_NONE;
+            datactx->ctx.num = 0;
             return;
         }
         if (requiredSubkeyEndIdx > bm->subkeysSum - 1) {
@@ -202,7 +201,7 @@ static inline void getSubKeysRequired(bitmapDataCtx *datactx, bitmapMeta *bm, bo
     /* subkeys required are all in redis */
     if (subkeyNumSwapin == 0) {
         /* subkeys required have been in redis.*/
-        datactx->ctx.ctx_flag = BIG_DATA_CTX_FLAG_NONE;
+        datactx->ctx.num = 0;
         return;
     }
 
@@ -225,29 +224,52 @@ static inline void getSubKeysRequired(bitmapDataCtx *datactx, bitmapMeta *bm, bo
     datactx->ctx.num = cursor;
 }
 
-static inline bool subvalIsAllZero(robj *o, int idx, int subValSize)
-{
-    uint8_t *ptr = o->ptr + idx * BITMAP_SUBKEY_SIZE;
-    if (*ptr == 0 && memcmp(ptr, ptr + 1, subValSize - 1) == 0) {
-        return true;
-    }
-    return false;
-}
-
 /* todo 注释添加, 接口， 变量命名 */
 
-static inline void bitmapSwapAnaOutSelectSubkeys(swapData *data, bitmapMeta *bm, bitmapDataCtx *datactx)
-{
-    int hotSubkeysNum = rbmGetBitRange(bm->subkeysInRedis, 0, bm->subkeysSum - 1);
-    int subkeysNumMaySwapout = MIN(server.swap_evict_step_max_subkeys, hotSubkeysNum);
+static inline int decodeSubkeyIdx(const char *str, size_t len) {
+    if (len != sizeof(int)) {
+        return -1;
+    }
+    int idx = *(int*)str;
+    return idx;
+}
 
-    datactx->subkeysIdxOutorDelete = zmalloc(sizeof(int) * subkeysNumMaySwapout);
-    datactx->subkeysIsEmpty = zmalloc(sizeof(bool) * subkeysNumMaySwapout);
+#define SELECT_MAIN 0
+#define SELECT_DSS  1
+
+static int bitmapSwapAnaOutSelectSubkeys(swapData *data, bitmapDataCtx *datactx, int *may_keep_data)
+{
+    int noswap;
+    bitmapMeta *meta = swapDataGetBitmapMeta(data);
+
+    int hotSubkeysNum = rbmGetBitRange(meta->subkeysInRedis, 0, meta->subkeysSum - 1);
+    int subkeysNumMaySwapout = 0;
+
+    /* only SELECT_MAIN */
+    if (objectIsDataDirty(data->value)) { /* all subkeys might be dirty */
+        subkeysNumMaySwapout = hotSubkeysNum;
+        noswap = 0;
+    } else {
+        /* If data dirty, meta will be persisted as an side effect.
+         * If just meta dirty, we still persists meta.
+         * If data & meta clean, we persists nothing (just free). */
+        if (objectIsMetaDirty(data->value)) { /* meta dirty */
+            /* meta dirty */
+            subkeysNumMaySwapout = 0;
+            noswap = 0;
+        } else { /* clean */
+            subkeysNumMaySwapout = hotSubkeysNum;
+            noswap = 1;
+        }
+    }
+
+    subkeysNumMaySwapout = MIN(server.swap_evict_step_max_subkeys, subkeysNumMaySwapout);
+    if (!noswap) *may_keep_data = 0;
+
+    datactx->subkeysPhyIdxOut = zmalloc(sizeof(int) * subkeysNumMaySwapout);
 
     int cursor = 0;
-    int keepHotSubkeysNum = hotSubkeysNum;
-    int swapoutSubkeysNum = 0;
-    int swapoutSubkeysSize = 0;
+    long long swapoutSubkeysBufSize = 0;
 
     /* from left to right to select subkeys */
     for (int i = 0; i < subkeysNumMaySwapout; i++) {
@@ -260,38 +282,30 @@ static inline void bitmapSwapAnaOutSelectSubkeys(swapData *data, bitmapMeta *bm,
             subValSize = BITMAP_SUBKEY_SIZE;
         }
 
-        if (subvalIsAllZero(data->value, i, subValSize)) {
-            /* empty subval will not swap out, just free it directly later. */
-            datactx->subkeysIsEmpty[i] = true;
-        } else {
-            if (swapoutSubkeysSize + subValSize > server.swap_evict_step_max_memory) {
-                break;
-            }
-
-            datactx->subkeysIsEmpty[i] = false;
-            swapoutSubkeysNum++;
-            swapoutSubkeysSize += subValSize;
+        if (swapoutSubkeysBufSize + subValSize > server.swap_evict_step_max_memory) {
+            break;
         }
+        swapoutSubkeysBufSize += subValSize;
 
-        datactx->subkeysSizeOutorDelete += subValSize;
-        datactx->subkeysIdxOutorDelete[cursor++] = i;
-        keepHotSubkeysNum = hotSubkeysNum - i - 1;
+        datactx->subkeysSizeOut += subValSize;
+        datactx->subkeysPhyIdxOut[i] = i;
+        cursor = i;
     }
-
-    datactx->subkeysNumSwapout = swapoutSubkeysNum;
-    datactx->keepHotSubkeysNum = keepHotSubkeysNum;
-    datactx->subkeysNumOutorDelete = cursor;
+    datactx->subkeysNumOut = cursor;
 }
 
 static inline void bitmapModifyMetaIfNeed(bitmapMeta *meta, robj *value)
 {
     int actualBitmapSize = stringObjectLen(value);
     /* the size that meta could cover， do not means the real bitmap size. */
-    int bitmapSizeInMeta = rbmGetBitRange(meta->subkeysInRedis, 0, meta->subkeysSum - 1) * BITMAP_SUBKEY_SIZE;
+    int bitmapSizeInRedis = rbmGetBitRange(meta->subkeysInRedis, 0, meta->subkeysSum - 1) * BITMAP_SUBKEY_SIZE;
+
+    /* todo 必须判断last subkey 是否在redis 中， 否则可能会出现 last subkey 分裂情况. */
+
     if (rbmGetBitRange(meta->subkeysInRedis, meta->subkeysSum - 1, meta->subkeysSum - 1) &&
-        bitmapSizeInMeta < actualBitmapSize) {
-        int extendedSubkeysNum = (actualBitmapSize - bitmapSizeInMeta - 1) / BITMAP_SUBKEY_SIZE + 1;
-        rbmSetBitRange(meta->subkeysInRedis, meta->subkeysSum, meta->subkeysSum + extendedSubkeysNum);
+        bitmapSizeInRedis < actualBitmapSize) {
+        int extendedSubkeysNum = (actualBitmapSize - bitmapSizeInRedis - 1) / BITMAP_SUBKEY_SIZE + 1;
+        rbmSetBitRange(meta->subkeysInRedis, meta->subkeysSum, meta->subkeysSum + extendedSubkeysNum - 1);
         meta->subkeysSum += extendedSubkeysNum;
     }
 }
@@ -334,6 +348,24 @@ int bitmapSwapAna(swapData *data, int thd, struct keyRequest *req,
                     datactx->ctx.ctx_flag = BIG_DATA_CTX_FLAG_MOCK_VALUE;
                     *intention = SWAP_DEL;
                     *intention_flags = SWAP_FIN_DEL_SKIP;
+                } else if (cmd_intention_flags & SWAP_IN_DEL  /* cmd rename... */
+                    || cmd_intention_flags & SWAP_IN_OVERWRITE
+                    || cmd_intention_flags & SWAP_IN_FORCE_HOT) {
+                    if (meta->subkeysNumOnlyRocks == 0) {
+                        /* the same subkeys in redis get dirty, delete the subkeys in rocksDb.*/
+                        *intention = SWAP_DEL;
+                        *intention_flags = SWAP_FIN_DEL_SKIP;
+                    } else {
+                        *intention = SWAP_IN;
+                        *intention_flags = SWAP_EXEC_IN_DEL;
+                    }
+                    if (cmd_intention_flags & SWAP_IN_FORCE_HOT) {
+                        *intention_flags |= SWAP_EXEC_FORCE_HOT;
+                    }
+                } else if (swapDataIsHot(data)) {
+                    /* No need to do swap for hot key(execept for SWAP_IN_DEl). */
+                    *intention = SWAP_NOP;
+                    *intention_flags = 0;
                 } else if (cmd_intention_flags == SWAP_IN_META) {
                     if (!swapDataIsCold(data)) {
                         *intention = SWAP_NOP;
@@ -346,23 +378,22 @@ int bitmapSwapAna(swapData *data, int thd, struct keyRequest *req,
                         *intention_flags = 0;
                     }
                 } else {
-                    /* get operation */
-                    /* swap in all subkeys */
+                    /* string, keyspace ... operation */
+                    /* swap in all subkeys, and keep them in rocks. */
                     datactx->ctx.num = 0;
+                    datactx->ctx.subkeys = NULL;
                     *intention = SWAP_IN;
-                    *intention_flags = SWAP_EXEC_IN_DEL;
+                    *intention_flags = 0;
                 }
             } else { /* range requests */
-                bitmapMeta *bm = swapDataGetBitmapMeta(data);
-                getSubKeysRequired(datactx, bm, cmd_intention_flags == SWAP_IN_WRITE,  req->l.ranges->start, req->l.ranges->end);
+                getSubKeysRequired(datactx, meta, cmd_intention_flags == SWAP_IN_DEL,  req->l.ranges->start, req->l.ranges->end);
 
-                if (datactx->ctx.ctx_flag == BIG_DATA_CTX_FLAG_NONE) {
-                    *intention = SWAP_NOP;
-                    *intention_flags = 0;
-                } else {
-                    *intention = SWAP_IN;
+                *intention = datactx->ctx.num > 0 ? SWAP_IN : SWAP_NOP;
+                if (cmd_intention_flags == SWAP_IN_DEL)
                     *intention_flags = SWAP_EXEC_IN_DEL;
-                }
+                else
+                    *intention_flags = 0;
+
             }
             if (cmd_intention_flags & SWAP_OOM_CHECK) {
                 *intention_flags |= SWAP_EXEC_OOM_CHECK;
@@ -383,8 +414,25 @@ int bitmapSwapAna(swapData *data, int thd, struct keyRequest *req,
                     objectMetaSetPtr(object_meta, bm);
                 }
 
-                bitmapMeta *bm = swapDataGetBitmapMeta(data);
-                bitmapSwapAnaOutSelectSubkeys(data, bm, datactx);
+                int may_keep_data;
+
+                int noswap = bitmapSwapAnaOutSelectSubkeys(data, datactx, &may_keep_data);
+                int keep_data = swapDataPersistKeepData(data,cmd_intention_flags,may_keep_data);
+
+                if (noswap) {
+                    /* directly evict value from db.dict if not dirty. */
+                    swapDataCleanObject(data, datactx, keep_data);
+                    if (stringObjectLen(data->value) == 0) {
+                        swapDataTurnCold(data);
+                    }
+                    swapDataSwapOut(data,datactx,keep_data,NULL);
+
+                    *intention = SWAP_NOP;
+                    *intention_flags = 0;
+                } else {
+                    *intention = SWAP_OUT;
+                    *intention_flags = keep_data ? SWAP_EXEC_OUT_KEEP_DATA : 0;
+                }
 
                 *intention = SWAP_OUT;
                 *intention_flags = 0;
@@ -494,40 +542,36 @@ int bitmapEncodeData(swapData *data, int intention, void *datactx_,
                    int *numkeys, int **pcfs, sds **prawkeys, sds **prawvals) {
     bitmapDataCtx *datactx = datactx_;
 
-    if (datactx->subkeysNumSwapout == 0) {
+    if (datactx->subkeysNumOut == 0) {
         return 0;
     }
 
-    int *cfs = zmalloc(datactx->subkeysNumSwapout * sizeof(int));
-    sds *rawkeys = zmalloc(datactx->subkeysNumSwapout * sizeof(sds));
-    sds *rawvals = zmalloc(datactx->subkeysNumSwapout * sizeof(sds));
+    int *cfs = zmalloc(datactx->subkeysNumOut * sizeof(int));
+    sds *rawkeys = zmalloc(datactx->subkeysNumOut * sizeof(sds));
+    sds *rawvals = zmalloc(datactx->subkeysNumOut * sizeof(sds));
     uint64_t version = swapDataObjectVersion(data);
 
     bitmapMeta *meta = swapDataGetBitmapMeta(data);
 
     serverAssert(intention == SWAP_OUT);
 
-    int cursor = 0;
-    for (int i = 0; i < datactx->subkeysNumOutorDelete; i++) {
+    for (int i = 0; i < datactx->subkeysNumOut; i++) {
 
-        if (datactx->subkeysIsEmpty[i]) {
-            continue;
-        }
+        cfs[i] = DATA_CF;
 
-        cfs[cursor] = DATA_CF;
-
-        int physubIdx = datactx->subkeysIdxOutorDelete[i];
+        int physubIdx = datactx->subkeysPhyIdxOut[i];
         int logicIdx = rbmGetBitPos(meta->subkeysInRedis, 0, physubIdx);
+        datactx->subkeysLogicIdxOut[i] = logicIdx;
+
         sds keyStr = sdsnewlen(&logicIdx, sizeof(int));
 
         robj *subval = bitmapGetSubVal(data->value, physubIdx);
         serverAssert(subval);
-        rawvals[cursor] = bitmapEncodeSubval(subval);
-        rawkeys[cursor] = bitmapEncodeSubkey(data->db, data->key->ptr, version, keyStr);
+        rawvals[i] = bitmapEncodeSubval(subval);
+        rawkeys[i] = bitmapEncodeSubkey(data->db, data->key->ptr, version, keyStr);
         decrRefCount(subval);
-        cursor++;
     }
-    *numkeys = datactx->subkeysNumSwapout;
+    *numkeys = datactx->subkeysNumOut;
     *pcfs = cfs;
     *prawkeys = rawkeys;
     *prawvals = rawvals;
@@ -544,14 +588,6 @@ typedef struct deltaBitmap {
     subkeyInterval *subkeyIntervals;
     sds *subvalIntervals;
 } deltaBitmap;
-
-static inline int decodeSubkeyIdx(const char *str, size_t len) {
-    if (len != sizeof(int)) {
-        return -1;
-    }
-    int idx = *(int*)str;
-    return idx;
-}
 
 /* decoded object move to exec module */
 int bitmapDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
@@ -716,7 +752,6 @@ static inline robj *createSwapInBitmapObject(robj *newval) {
 }
 
 int bitmapSwapIn(swapData *data, void *result, void *datactx) {
-    UNUSED(datactx);
     /* hot key no need to swap in, this must be a warm or cold key. */
     serverAssert(swapDataPersisted(data));
 
@@ -724,6 +759,10 @@ int bitmapSwapIn(swapData *data, void *result, void *datactx) {
         if (data->value) overwriteObjectPersistent(data->value,!data->persistence_deleted);
         return 0;
     }
+
+    bitmapDataCtx* bmCtx = (bitmapDataCtx*)datactx;
+    bitmapMeta *meta = swapDataGetBitmapMeta(data);
+    meta->subkeysNumOnlyRocks += bmCtx->ctx.num;
 
     if (swapDataIsCold(data) /* may be empty */) {
         /* cold key swapped in result. */
@@ -734,14 +773,12 @@ int bitmapSwapIn(swapData *data, void *result, void *datactx) {
         dbAdd(data->db,data->key,swapin);
         /* expire will be swapped in later by swap framework. */
         if (data->cold_meta) {
-            dbAddMeta(data->db,data->key,data->cold_meta);
+            dbAddMeta(data->db, data->key, data->cold_meta);
             data->cold_meta = NULL; /* moved */
         }
     } else {
         /* update meta */
-        bitmapMeta *oldMeta = swapDataGetBitmapMeta(data);
-        bitmapDataCtx* bmCtx = (bitmapDataCtx*)datactx;
-        mergeBitmapMeta(oldMeta, bmCtx->deltaMeta);  /* todo */
+        mergeBitmapMeta(meta, bmCtx->deltaMeta);  /* todo */
 
         /* update bitmap obj */
         robj *swapin = createSwapInBitmapObject(result);
@@ -756,27 +793,28 @@ static inline robj *bitmapObjectFreeColdSubkeys(robj *value, bitmapDataCtx *data
 {
     size_t bitmapSize = stringObjectLen(value);
 
-    sds newbuf = sdsnewlen(value->ptr + datactx->subkeysSizeOutorDelete, bitmapSize - datactx->subkeysSizeOutorDelete);
+    sds newbuf = sdsnewlen(value->ptr + datactx->subkeysSizeOut, bitmapSize - datactx->subkeysSizeOut);
     return createStringObject(newbuf, sdslen(newbuf));
 }
 
 int bitmapCleanObject(swapData *data, void *datactx_, int keep_data) {
-    UNUSED(keep_data);
 
     bitmapDataCtx *datactx = datactx_;
-    bitmapMeta *bm = swapDataGetBitmapMeta(data);
 
-    /* not all subkeys swapped out.  should free the persistent subkeys to update bitmap*/
-    if (datactx->keepHotSubkeysNum != 0 && datactx->subkeysNumOutorDelete != 0) {
+    bitmapMeta *meta = swapDataGetBitmapMeta(data);
+    if (!keep_data) {
+        meta->subkeysNumOnlyRocks += datactx->subkeysNumOut;
+
         robj *newbitmap = bitmapObjectFreeColdSubkeys(data->value, datactx);
         dbOverwrite(data->db, data->key, newbitmap);
         data->value = newbitmap;
     }
+
     setObjectPersistent(data->value); /* loss pure hot and persistent data exist. */
 
     /* update the subkey status in meta*/
-    for (int i = 0; i < datactx->subkeysNumOutorDelete; i++) {
-        rbmClearBitRange(bm->subkeysInRedis, datactx->subkeysIdxOutorDelete[i], datactx->subkeysIdxOutorDelete[i]);
+    for (int i = 0; i < datactx->subkeysNumOut; i++) {  /* todo 在这里 可能早了 . */
+        rbmClearBitRange(meta->subkeysInRedis, datactx->subkeysLogicIdxOut[i], datactx->subkeysLogicIdxOut[i]);
     }
 }
 
@@ -787,9 +825,12 @@ int bitmapSwapOut(swapData *data, void *datactx_, int keep_data, int *totally_ou
     UNUSED(datactx_), UNUSED(keep_data);
     serverAssert(!swapDataIsCold(data));
 
-    bitmapMeta *meta = swapDataGetBitmapMeta(data);
+    if (keep_data) {
+        clearObjectDataDirty(data->value);
+        setObjectPersistent(data->value);
+    }
 
-    if (rbmGetBitRange(meta, 0, meta->subkeysSum - 1) == 0) {
+    if (stringObjectLen(data->value) == 0) {
         /* all subkeys swapped out, key turnning into cold:
          * - rocks-meta should have already persisted.
          * - object_meta and value will be deleted by dbDelete, expire already
@@ -816,12 +857,16 @@ int bitmapSwapDel(swapData *data, void *datactx_, int del_skip) {
         mockBitmapForDeleteIfCold(data);
     }
 
-    /* del_skip: only delete data in rocks, perserve data in keyspace */
-    if (!del_skip && !swapDataIsCold(data)) {
-        /* both value/object_meta/expire are deleted */
-        dbDelete(data->db,data->key);
+    if (del_skip) {
+        if (!swapDataIsCold(data))
+            dbDeleteMeta(data->db,data->key);
+        return 0;
+    } else {
+        if (!swapDataIsCold(data))
+            /* both value/object_meta/expire are deleted */
+            dbDelete(data->db,data->key);
+        return 0;
     }
-    return 0;
 }
 
 int bitmapMergedIsHot(swapData *d, void *result, void *datactx)

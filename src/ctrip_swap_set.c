@@ -89,7 +89,7 @@ static int setSwapAnaOutSelectSubkeys(swapData *data, setDataCtx *datactx,
                     evict_memory >= server.swap_evict_step_max_memory) {
                 /* Evict in small steps. */
                 if (vstr) sdsfree(vstr);
-                if (!noswap) *may_keep_data = 0;
+                if (!noswap) *may_keep_data = 0; /* TODO MAIN 方式中， 不感知 SubKeys dirty 情况， 然后 就不keep， keep 与否 不是 跟 内存 是否充足 相关嘛 ?  只要可能有 dirty subkey 存在就 不Keep ？ */
                 break;
             }
 
@@ -165,13 +165,13 @@ int setSwapAna(swapData *data, int thd, struct keyRequest *req,
                     datactx->ctx.ctx_flag = BIG_DATA_CTX_FLAG_MOCK_VALUE;
                     *intention = SWAP_DEL;
                     *intention_flags = SWAP_FIN_DEL_SKIP;
-                } else if (cmd_intention_flags & SWAP_IN_DEL
+                } else if (cmd_intention_flags & SWAP_IN_DEL  /* TODO rename 等， 需要将rocks 中的get出来， 然后修改name， 所以rocks中需要 删除掉 */
                     || cmd_intention_flags & SWAP_IN_OVERWRITE
                     || cmd_intention_flags & SWAP_IN_FORCE_HOT) {
                     objectMeta *meta = swapDataObjectMeta(data);
                     if (meta->len == 0) {
                         *intention = SWAP_DEL;
-                        *intention_flags = SWAP_FIN_DEL_SKIP;
+                        *intention_flags = SWAP_FIN_DEL_SKIP;  /* TODO  hash set 等 key ,Redis 中与 rocks 中有 重叠 部分， 此时删除 rocks 中的， Redis 等待改写 */
                     } else {
                         *intention = SWAP_IN;
                         *intention_flags = SWAP_EXEC_IN_DEL;
@@ -207,7 +207,14 @@ int setSwapAna(swapData *data, int thd, struct keyRequest *req,
                      * need to do ROCKS_DEL on those fields. */
                     for (int i = 0; i < req->b.num_subkeys; i++) {
                         robj *subkey = req->b.subkeys[i];
-                        if (swapDataMayContainSubkey(data,thd,subkey)) {
+                        /* todo 对于 可能存在于 rocks 中的 SubKey， 都需要 IN_DEL  */
+                        /* todo absent 到底是个啥 结构？？ */
+                        /* todo swap_data.c  445 */
+                        /* todo bitmap 中， 对于实际不存在的， 会malloc 一个， 所以 用法 有区别*/
+                        /* todo coldfilter 和 absent  会 添加 Bitmap SubKey 进去吗？  看上去 会 */
+
+
+                        if (swapDataMayContainSubkey(data,thd,subkey)) { /* TODO 可能存在的SubKey 才会去 rocksDb 里找 */
                             incrRefCount(subkey);
                             datactx->ctx.subkeys[datactx->ctx.num++] = subkey;
                         }
@@ -223,6 +230,7 @@ int setSwapAna(swapData *data, int thd, struct keyRequest *req,
                     for (int i = 0; i < req->b.num_subkeys; i++) {
                         robj *subkey = req->b.subkeys[i];
                         if (data->value == NULL || !setTypeIsMember(data->value, subkey->ptr)) {
+                            /* todo cold  或者 warm， 且确认 不会覆盖 Redis上的 脏数据 */
                             if (swapDataMayContainSubkey(data,thd,subkey)) {
                                 incrRefCount(subkey);
                                 datactx->ctx.subkeys[datactx->ctx.num++] = subkey;
@@ -246,7 +254,10 @@ int setSwapAna(swapData *data, int thd, struct keyRequest *req,
                 /* may_keep_data is true if we could keep data in memory and clear dirty
                  * after persisting data to rocksdb. */
                 int may_keep_data;
+                /* TODO may_keep_data 只是一个初步结论， 基本与noswap 关联，  noswap = 0， 则 may_keep_data = 0， 也就是， 只要有swap, 则 不会Keep data .*/
                 int noswap = setSwapAnaOutSelectSubkeys(data,datactx,&may_keep_data);
+
+                /* todo may_keep_data 为0 ，keep_data 必为0， may_keep_data为1， keep_data不一定为1 */
                 int keep_data = swapDataPersistKeepData(data,cmd_intention_flags,may_keep_data);
 
                 /* create new meta if needed */

@@ -427,6 +427,9 @@ void swapDataRetainAbsentSubkeys(swapData *data, int num, int *cfs,
     /* string dont have subkey */
     if (version <= 0) return;
 
+    /* bitmap subkey is exclued out of this operation. */
+    if (data->object_type == OBJ_STRING) return;
+
     for (int i = 0; i < num; i++) {
         int dbid;
         const char *keystr, *subkeystr;

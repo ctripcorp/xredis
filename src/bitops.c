@@ -558,6 +558,7 @@ void setbitCommand(client *c) {
     byteval |= ((on & 0x1) << bit);
     ((uint8_t*)o->ptr)[byte] = byteval;
     signalModifiedKey(c,c->db,c->argv[1]);
+    /* TODO Bitmap 引入SubKey概念，  此处需要 适配, 对于 hot 场景， 可以 直接 算出 subkey idx, 否则需要 Meta.   notifyKeyspaceEventDirtySubkeys */
     notifyKeyspaceEventDirty(NOTIFY_STRING,"setbit",c->argv[1],c->db->id,o,NULL);
     server.dirty++;
     addReply(c, bitval ? shared.cone : shared.czero);
