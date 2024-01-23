@@ -48,3 +48,5 @@ tags
 compile_commands.json
 repack/*
 tests/tmp.tcl
+
+src/data.rocks/*
