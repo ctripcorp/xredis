@@ -24,7 +24,7 @@ yum install snappy-devel zlib-devel gflags-devel libstdc++
 
 ```
 git clone https://github.com/ctripcorp/Redis-On-Rocks.git
-git submodule upadate --init
+git submodule update --init
 cd redis
 make
 ```

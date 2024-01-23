@@ -94,9 +94,14 @@ jemalloc: .make-prerequisites
 
 .PHONY: jemalloc
 
+# -Wno-unused-but-set-variable: meaning do not report warning when meeting unused but set variable
+# -Wno-error: meaning do not report error when meeting warnings
+CFLAGS += -Wno-unused-but-set-variable -Wno-error
+ROCKSDB_CFLAGS = $(CFLAGS)
+
 rocksdb: .make-prerequisites
 	@printf '%b %b\n' $(MAKECOLOR)MAKE$(ENDCOLOR) $(BINCOLOR)$@$(ENDCOLOR)
-	cd rocksdb && ROCKSDB_DISABLE_BZIP=1 ROCKSDB_DISABLE_LZ4=1 ROCKSDB_DISABLE_ZSTD=1 ROCKSDB_DISABLE_MALLOC_USABLE_SIZE=1 ROCKSDB_DISABLE_MEMKIND=1 PORTABLE=1 $(MAKE) static_lib
+	cd rocksdb && ROCKSDB_DISABLE_BZIP=1 ROCKSDB_DISABLE_LZ4=1 ROCKSDB_DISABLE_ZSTD=1 ROCKSDB_DISABLE_MALLOC_USABLE_SIZE=1 ROCKSDB_DISABLE_MEMKIND=1 PORTABLE=1 $(MAKE) CFLAGS="$(ROCKSDB_CFLAGS)" static_lib
 
 .PHONY: rocksdb
 
