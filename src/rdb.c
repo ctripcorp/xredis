@@ -1463,7 +1463,7 @@ werr:
 
 int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
     pid_t childpid;
-    int pipefds[2], checkpoint_dir_pipe = 0, checkpoint_dir_pipe_writing = 0;
+    swapForkRocksdbCtx *ctx = NULL;
 
     if (hasActiveChildProcess()) return C_ERR;
 
@@ -1471,14 +1471,9 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
     server.lastbgsave_try = time(NULL);
 
     if (server.swap_mode != SWAP_MODE_MEMORY) {
-        if (pipe(pipefds) == -1) return C_ERR;
-        checkpoint_dir_pipe = pipefds[0];
-        checkpoint_dir_pipe_writing = pipefds[1];
-        anetNonBlock(NULL, checkpoint_dir_pipe_writing);
-
-        if (rocksCreateSnapshot() != C_OK) {
-            close(checkpoint_dir_pipe);
-            close(checkpoint_dir_pipe_writing);
+        ctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_SNAPSHOT,0);
+        if (swapForkRocksdbBefore(ctx)) {
+            swapForkRocksdbCtxRelease(ctx);
             return C_ERR;
         }
     }
@@ -1491,12 +1486,11 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
         redisSetCpuAffinity(server.bgsave_cpulist);
 
         if (server.swap_mode != SWAP_MODE_MEMORY) {
-            close(checkpoint_dir_pipe_writing);
-            if (C_ERR == readCheckpointDirFromPipe(checkpoint_dir_pipe)) {
-                serverLog(LL_WARNING, "wait checkpoint dir fail, exit.");
+            if (swapForkRocksdbAfterChild(ctx)) {
                 exit(1);
+            } else {
+                swapForkRocksdbCtxRelease(ctx);
             }
-            close(checkpoint_dir_pipe);
         }
 
         retval = rdbSave(filename,rsi);
@@ -1506,24 +1500,20 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
         exitFromChild((retval == C_OK) ? 0 : 1);
     } else {
         /* Parent */
+        if (server.swap_mode != SWAP_MODE_MEMORY) {
+            swapForkRocksdbAfterParent(ctx,childpid);
+            swapForkRocksdbCtxRelease(ctx);
+        }
+
         if (childpid == -1) {
             server.lastbgsave_status = C_ERR;
             serverLog(LL_WARNING,"Can't save in background: fork: %s",
                 strerror(errno));
-            if (checkpoint_dir_pipe) close(checkpoint_dir_pipe);
-            if (checkpoint_dir_pipe_writing) close(checkpoint_dir_pipe_writing);
             return C_ERR;
         }
         serverLog(LL_NOTICE,"Background saving started by pid %ld",(long) childpid);
         server.rdb_save_time_start = time(NULL);
         server.rdb_child_type = RDB_CHILD_TYPE_DISK;
-        if (server.swap_mode != SWAP_MODE_MEMORY) {
-            close(checkpoint_dir_pipe);
-            rocksdbCreateCheckpointPayload *pd = zcalloc(sizeof(rocksdbCreateCheckpointPayload));
-            pd->waiting_child = childpid;
-            pd->checkpoint_dir_pipe_writing = checkpoint_dir_pipe_writing;
-            submitUtilTask(ROCKSDB_CREATE_CHECKPOINT, NULL, pd, NULL);
-        }
         return C_OK;
     }
     return C_OK; /* unreached */
@@ -3027,7 +3017,7 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
     listIter li;
     pid_t childpid;
     int pipefds[2], rdb_pipe_write, safe_to_exit_pipe;
-    int checkpoint_dir_pipe = 0, checkpoint_dir_pipe_writing = 0;
+    swapForkRocksdbCtx *ctx = NULL;
 
     if (hasActiveChildProcess()) return C_ERR;
 
@@ -3055,24 +3045,13 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
     server.rdb_child_exit_pipe = pipefds[1]; /* write end */
 
     if (server.swap_mode != SWAP_MODE_MEMORY) {
-        if (pipe(pipefds) == -1) {
+        ctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_SNAPSHOT,0);
+        if (swapForkRocksdbBefore(ctx)) {
+            swapForkRocksdbCtxRelease(ctx);
             close(rdb_pipe_write);
             close(server.rdb_pipe_read);
             close(safe_to_exit_pipe);
             close(server.rdb_child_exit_pipe);
-            return C_ERR;
-        }
-        checkpoint_dir_pipe = pipefds[0];
-        checkpoint_dir_pipe_writing = pipefds[1];
-        anetNonBlock(NULL, checkpoint_dir_pipe_writing);
-
-        if (rocksCreateSnapshot() != C_OK) {
-            close(rdb_pipe_write);
-            close(server.rdb_pipe_read);
-            close(safe_to_exit_pipe);
-            close(server.rdb_child_exit_pipe);
-            close(checkpoint_dir_pipe);
-            close(checkpoint_dir_pipe_writing);
             return C_ERR;
         }
     }
@@ -3098,20 +3077,17 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
         rio rdb;
 
         if (server.swap_mode != SWAP_MODE_MEMORY) {
-            close(checkpoint_dir_pipe_writing);
-            if (C_ERR == readCheckpointDirFromPipe(checkpoint_dir_pipe)) {
-                serverLog(LL_WARNING, "wait checkpoint dir fail, exit.");
+            if (swapForkRocksdbAfterChild(ctx)) {
                 exit(1);
+            } else {
+                swapForkRocksdbCtxRelease(ctx);
             }
-            close(checkpoint_dir_pipe);
         }
 
         rioInitWithFd(&rdb,rdb_pipe_write);
 
         redisSetProcTitle("redis-rdb-to-slaves");
         redisSetCpuAffinity(server.bgsave_cpulist);
-
-
 
         retval = rdbSaveRioWithEOFMark(&rdb,NULL,rsi);
         if (retval == C_OK && rioFlush(&rdb) == 0)
@@ -3132,6 +3108,11 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
         exitFromChild((retval == C_OK) ? 0 : 1);
     } else {
         /* Parent */
+        if (server.swap_mode != SWAP_MODE_MEMORY) {
+            swapForkRocksdbAfterParent(ctx,childpid);
+            swapForkRocksdbCtxRelease(ctx);
+        }
+
         close(safe_to_exit_pipe);
         if (childpid == -1) {
             serverLog(LL_WARNING,"Can't save in background: fork: %s",
@@ -3149,8 +3130,6 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
             }
             close(rdb_pipe_write);
             close(server.rdb_pipe_read);
-            if (checkpoint_dir_pipe) close(checkpoint_dir_pipe);
-            if (checkpoint_dir_pipe_writing) close(checkpoint_dir_pipe_writing);
             zfree(server.rdb_pipe_conns);
             server.rdb_pipe_conns = NULL;
             server.rdb_pipe_numconns = 0;
@@ -3163,13 +3142,6 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
             close(rdb_pipe_write); /* close write in parent so that it can detect the close on the child. */
             if (aeCreateFileEvent(server.el, server.rdb_pipe_read, AE_READABLE, rdbPipeReadHandler,NULL) == AE_ERR) {
                 serverPanic("Unrecoverable error creating server.rdb_pipe_read file event.");
-            }
-            if (server.swap_mode != SWAP_MODE_MEMORY) {
-                close(checkpoint_dir_pipe);
-                rocksdbCreateCheckpointPayload *pd = zcalloc(sizeof(rocksdbCreateCheckpointPayload));
-                pd->waiting_child = childpid;
-                pd->checkpoint_dir_pipe_writing = checkpoint_dir_pipe_writing;
-                submitUtilTask(ROCKSDB_CREATE_CHECKPOINT, NULL, pd, NULL);
             }
         }
         return (childpid == -1) ? C_ERR : C_OK;
