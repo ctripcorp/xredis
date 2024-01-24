@@ -1768,19 +1768,15 @@ void aofClosePipes(void) {
  */
 int rewriteAppendOnlyFileBackground(void) {
     pid_t childpid;
-    int pipefds[2], checkpoint_dir_pipe = 0, checkpoint_dir_pipe_writing = 0;
+    swapForkRocksdbCtx *ctx = NULL;
 
     if (hasActiveChildProcess()) return C_ERR;
     if (aofCreatePipes() != C_OK) return C_ERR;
 
     if (server.swap_mode != SWAP_MODE_MEMORY) {
-        if (pipe(pipefds) == -1) return C_ERR;
-        checkpoint_dir_pipe = pipefds[0];
-        checkpoint_dir_pipe_writing = pipefds[1];
-
-        if (rocksCreateSnapshot() != C_OK) {
-            close(checkpoint_dir_pipe);
-            close(checkpoint_dir_pipe_writing);
+        ctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_SNAPSHOT,0);
+        if (swapForkRocksdbBefore(ctx)) {
+            swapForkRocksdbCtxRelease(ctx);
             return C_ERR;
         }
     }
@@ -1789,12 +1785,11 @@ int rewriteAppendOnlyFileBackground(void) {
         char tmpfile[256];
 
         if (server.swap_mode != SWAP_MODE_MEMORY) {
-            close(checkpoint_dir_pipe_writing);
-            if (C_ERR == readCheckpointDirFromPipe(checkpoint_dir_pipe)) {
-                serverLog(LL_WARNING, "wait checkpoint dir fail, exit.");
+            if (swapForkRocksdbAfterChild(ctx)) {
                 exit(1);
+            } else {
+                swapForkRocksdbCtxRelease(ctx);
             }
-            close(checkpoint_dir_pipe);
         }
 
         /* Child */
@@ -1809,27 +1804,22 @@ int rewriteAppendOnlyFileBackground(void) {
         }
     } else {
         /* Parent */
+        if (server.swap_mode != SWAP_MODE_MEMORY) {
+            swapForkRocksdbAfterParent(ctx,childpid);
+            swapForkRocksdbCtxRelease(ctx);
+        }
+
         if (childpid == -1) {
             serverLog(LL_WARNING,
                 "Can't rewrite append only file in background: fork: %s",
                 strerror(errno));
             aofClosePipes();
-            if (checkpoint_dir_pipe) close(checkpoint_dir_pipe);
-            if (checkpoint_dir_pipe_writing) close(checkpoint_dir_pipe_writing);
             return C_ERR;
         }
         serverLog(LL_NOTICE,
             "Background append only file rewriting started by pid %ld",(long) childpid);
         server.aof_rewrite_scheduled = 0;
         server.aof_rewrite_time_start = time(NULL);
-
-        if (server.swap_mode != SWAP_MODE_MEMORY) {
-            close(checkpoint_dir_pipe);
-            rocksdbCreateCheckpointPayload *pd = zcalloc(sizeof(rocksdbCreateCheckpointPayload));
-            pd->waiting_child = childpid;
-            pd->checkpoint_dir_pipe_writing = checkpoint_dir_pipe_writing;
-            submitUtilTask(ROCKSDB_CREATE_CHECKPOINT, NULL, pd, NULL);
-        }
 
         /* We set appendseldb to -1 in order to force the next call to the
          * feedAppendOnlyFile() to issue a SELECT command, so the differences

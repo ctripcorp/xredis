@@ -1720,6 +1720,39 @@ typedef struct rocksdbMemOverhead {
   size_t pinned_blocks;
 } rocksdbMemOverhead;
 
+
+#define SWAP_FORK_ROCKSDB_TYPE_CHECKPOINT 0
+#define SWAP_FORK_ROCKSDB_TYPE_SNAPSHOT   1
+
+struct swapForkRocksdbCtx;
+
+typedef struct swapForkRocksdbType {
+  void (*init)(struct swapForkRocksdbCtx *ctx);
+  int (*beforeFork)(struct swapForkRocksdbCtx *ctx);
+  int (*afterForkChild)(struct swapForkRocksdbCtx *ctx);
+  int (*afterForkParent)(struct swapForkRocksdbCtx *ctx, int childpid);
+  void (*deinit)(struct swapForkRocksdbCtx *ctx);
+} swapForkRocksdbType;
+
+typedef struct swapForkRocksdbCtx {
+  swapForkRocksdbType *type;
+  int rordb;
+  void *extend;
+} swapForkRocksdbCtx;
+
+swapForkRocksdbCtx *swapForkRocksdbCtxCreate(int mode, int rordb);
+void swapForkRocksdbCtxRelease(swapForkRocksdbCtx *ctx);
+
+static inline int swapForkRocksdbBefore(swapForkRocksdbCtx *ctx) {
+  return ctx->type->beforeFork(ctx);
+}
+static inline int swapForkRocksdbAfterChild(swapForkRocksdbCtx *ctx) {
+  return ctx->type->afterForkChild(ctx);
+}
+static inline int swapForkRocksdbAfterParent(swapForkRocksdbCtx *ctx, int childpid) {
+  return ctx->type->afterForkParent(ctx,childpid);
+}
+
 /* compaction filter */
 typedef enum {
   FILTER_STATE_CLOSE = 0,
@@ -1736,6 +1769,7 @@ int rocksFlushDB(int dbid);
 void rocksCron(void);
 void rocksReleaseCheckpoint(void);
 void rocksReleaseSnapshot(void);
+int rocksCreateCheckpoint(sds checkpoint_dir);
 int rocksCreateSnapshot(void);
 int readCheckpointDirFromPipe(int pipe);
 int rocksRestore(const char *checkpoint_dir);
