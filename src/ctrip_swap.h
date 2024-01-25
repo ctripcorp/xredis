@@ -1679,6 +1679,7 @@ void rocksdbInternalStatsFree(rocksdbInternalStats *internal_stats);
 
 typedef struct swapData4RocksdbFlush {
   rocksdb_column_family_handle_t *cfhanles[CF_COUNT];
+  mstime_t start_time;
 } swapData4RocksdbFlush;
 
 int parseCfNames(const char *cfnames, rocksdb_column_family_handle_t *handles[CF_COUNT], const char *names[CF_COUNT+1]);
@@ -1727,30 +1728,29 @@ typedef struct rocksdbMemOverhead {
 struct swapForkRocksdbCtx;
 
 typedef struct swapForkRocksdbType {
-  void (*init)(struct swapForkRocksdbCtx *ctx);
-  int (*beforeFork)(struct swapForkRocksdbCtx *ctx);
-  int (*afterForkChild)(struct swapForkRocksdbCtx *ctx);
-  int (*afterForkParent)(struct swapForkRocksdbCtx *ctx, int childpid);
-  void (*deinit)(struct swapForkRocksdbCtx *ctx);
+  void (*init)(struct swapForkRocksdbCtx *sfrctx);
+  int (*beforeFork)(struct swapForkRocksdbCtx *sfrctx);
+  int (*afterForkChild)(struct swapForkRocksdbCtx *sfrctx);
+  int (*afterForkParent)(struct swapForkRocksdbCtx *sfrctx, int childpid);
+  void (*deinit)(struct swapForkRocksdbCtx *sfrctx);
 } swapForkRocksdbType;
 
 typedef struct swapForkRocksdbCtx {
   swapForkRocksdbType *type;
-  int rordb;
   void *extend;
 } swapForkRocksdbCtx;
 
-swapForkRocksdbCtx *swapForkRocksdbCtxCreate(int mode, int rordb);
-void swapForkRocksdbCtxRelease(swapForkRocksdbCtx *ctx);
+swapForkRocksdbCtx *swapForkRocksdbCtxCreate(int mode);
+void swapForkRocksdbCtxRelease(swapForkRocksdbCtx *sfrctx);
 
-static inline int swapForkRocksdbBefore(swapForkRocksdbCtx *ctx) {
-  return ctx->type->beforeFork(ctx);
+static inline int swapForkRocksdbBefore(swapForkRocksdbCtx *sfrctx) {
+  return sfrctx->type->beforeFork(sfrctx);
 }
-static inline int swapForkRocksdbAfterChild(swapForkRocksdbCtx *ctx) {
-  return ctx->type->afterForkChild(ctx);
+static inline int swapForkRocksdbAfterChild(swapForkRocksdbCtx *sfrctx) {
+  return sfrctx->type->afterForkChild(sfrctx);
 }
-static inline int swapForkRocksdbAfterParent(swapForkRocksdbCtx *ctx, int childpid) {
-  return ctx->type->afterForkParent(ctx,childpid);
+static inline int swapForkRocksdbAfterParent(swapForkRocksdbCtx *sfrctx, int childpid) {
+  return sfrctx->type->afterForkParent(sfrctx,childpid);
 }
 
 /* compaction filter */

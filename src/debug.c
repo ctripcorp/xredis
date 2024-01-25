@@ -556,7 +556,7 @@ NULL
             rdbSaveInfo rsi, *rsiptr;
 
             rsiptr = rdbPopulateSaveInfo(&rsi);
-            if (rdbSave(server.rdb_filename,rsiptr) != C_OK) {
+            if (rdbSave(server.rdb_filename,rsiptr,0) != C_OK) {
                 addReplyErrorObject(c,shared.err);
                 return;
             }

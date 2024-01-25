@@ -1249,13 +1249,12 @@ void rdbSaveProgress(rio *rdb, int rdbflags) {
  * When the function returns C_ERR and if 'error' is not NULL, the
  * integer pointed by 'error' is set to the value of errno just after the I/O
  * error. */
-int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi) {
+int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi, int rordb) {
     dictIterator *di = NULL;
     dictEntry *de;
     char magic[10];
     uint64_t cksum;
     int j;
-    int is_rordb = rsi->use_rordb;
 
     /* start saving */
     rdb_load_key_count = 0;
@@ -1268,8 +1267,8 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi) {
     if (rdbSaveInfoAuxFields(rdb,rdbflags,rsi) == -1) goto werr;
     if (rdbSaveModulesAux(rdb, REDISMODULE_AUX_BEFORE_RDB) == -1) goto werr;
 
-    if (is_rordb && rordbSaveAuxFields(rdb) == -1) goto werr;
-    if (is_rordb && rordbSaveSST(rdb) == -1) goto werr;
+    if (rordb && rordbSaveAuxFields(rdb) == -1) goto werr;
+    if (rordb && rordbSaveSST(rdb) == -1) goto werr;
 
     for (j = 0; j < server.dbnum; j++) {
         redisDb *db = server.db+j;
@@ -1301,7 +1300,7 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi) {
             initStaticStringObject(key,keystr);
 
             /* cold or warm bighash will be saved later in rdbSaveRocks. */
-            if (!is_rordb && !keyIsHot(lookupMeta(db,&key),o)) {
+            if (!rordb && !keyIsHot(lookupMeta(db,&key),o)) {
 #ifdef ROCKS_DEBUG
                 serverLog(LL_NOTICE, "[rdbSaveRio] key(%s) not hot: skipped.",keystr);
 #endif
@@ -1320,7 +1319,7 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi) {
         dictReleaseIterator(di);
         di = NULL;
 
-        if (is_rordb) {
+        if (rordb) {
             if (rordbSaveDbRio(rdb,db) == -1) goto werr;
         } else {
             /* Iterate DB.rocks writing every entry */
@@ -1371,7 +1370,7 @@ werr:
  * While the suffix is the 40 bytes hex string we announced in the prefix.
  * This way processes receiving the payload can understand when it ends
  * without doing any processing of the content. */
-int rdbSaveRioWithEOFMark(rio *rdb, int *error, rdbSaveInfo *rsi) {
+int rdbSaveRioWithEOFMark(rio *rdb, int *error, rdbSaveInfo *rsi, int rordb) {
     char eofmark[RDB_EOF_MARK_SIZE];
 
     startSaving(RDBFLAGS_REPLICATION);
@@ -1380,7 +1379,7 @@ int rdbSaveRioWithEOFMark(rio *rdb, int *error, rdbSaveInfo *rsi) {
     if (rioWrite(rdb,"$EOF:",5) == 0) goto werr;
     if (rioWrite(rdb,eofmark,RDB_EOF_MARK_SIZE) == 0) goto werr;
     if (rioWrite(rdb,"\r\n",2) == 0) goto werr;
-    if (rdbSaveRio(rdb,error,RDBFLAGS_NONE,rsi) == C_ERR) goto werr;
+    if (rdbSaveRio(rdb,error,RDBFLAGS_NONE,rsi,rordb) == C_ERR) goto werr;
     if (rioWrite(rdb,eofmark,RDB_EOF_MARK_SIZE) == 0) goto werr;
     stopSaving(1);
     return C_OK;
@@ -1393,7 +1392,7 @@ werr: /* Write error. */
 }
 
 /* Save the DB on disk. Return C_ERR on error, C_OK on success. */
-int rdbSave(char *filename, rdbSaveInfo *rsi) {
+int rdbSave(char *filename, rdbSaveInfo *rsi,int rordb) {
     char tmpfile[256];
     char cwd[MAXPATHLEN]; /* Current working dir path for error messages. */
     FILE *fp = NULL;
@@ -1419,7 +1418,7 @@ int rdbSave(char *filename, rdbSaveInfo *rsi) {
     if (server.rdb_save_incremental_fsync)
         rioSetAutoSync(&rdb,REDIS_AUTOSYNC_BYTES);
 
-    if (rdbSaveRio(&rdb,&error,RDBFLAGS_NONE,rsi) == C_ERR) {
+    if (rdbSaveRio(&rdb,&error,RDBFLAGS_NONE,rsi,rordb) == C_ERR) {
         errno = error;
         goto werr;
     }
@@ -1461,9 +1460,8 @@ werr:
     return C_ERR;
 }
 
-int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
+int rdbSaveBackground(char *filename, rdbSaveInfo *rsi, struct swapForkRocksdbCtx *sfrctx, int rordb) {
     pid_t childpid;
-    swapForkRocksdbCtx *ctx = NULL;
 
     if (hasActiveChildProcess()) return C_ERR;
 
@@ -1471,9 +1469,9 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
     server.lastbgsave_try = time(NULL);
 
     if (server.swap_mode != SWAP_MODE_MEMORY) {
-        ctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_SNAPSHOT,0);
-        if (swapForkRocksdbBefore(ctx)) {
-            swapForkRocksdbCtxRelease(ctx);
+        sfrctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_SNAPSHOT);
+        if (swapForkRocksdbBefore(sfrctx)) {
+            swapForkRocksdbCtxRelease(sfrctx);
             return C_ERR;
         }
     }
@@ -1486,14 +1484,14 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
         redisSetCpuAffinity(server.bgsave_cpulist);
 
         if (server.swap_mode != SWAP_MODE_MEMORY) {
-            if (swapForkRocksdbAfterChild(ctx)) {
+            if (swapForkRocksdbAfterChild(sfrctx)) {
                 exit(1);
             } else {
-                swapForkRocksdbCtxRelease(ctx);
+                swapForkRocksdbCtxRelease(sfrctx);
             }
         }
 
-        retval = rdbSave(filename,rsi);
+        retval = rdbSave(filename,rsi,rordb);
         if (retval == C_OK) {
             sendChildCowInfo(CHILD_INFO_TYPE_RDB_COW_SIZE, "RDB");
         }
@@ -1501,8 +1499,8 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
     } else {
         /* Parent */
         if (server.swap_mode != SWAP_MODE_MEMORY) {
-            swapForkRocksdbAfterParent(ctx,childpid);
-            swapForkRocksdbCtxRelease(ctx);
+            swapForkRocksdbAfterParent(sfrctx,childpid);
+            swapForkRocksdbCtxRelease(sfrctx);
         }
 
         if (childpid == -1) {
@@ -2514,7 +2512,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
     int error;
     long long empty_keys_skipped = 0, expired_keys_skipped = 0, keys_loaded = 0;
     int reopen_filter = 0;
-    int is_rordb = 0, rordb_finished = 0;
+    int rordb = 0, rordb_finished = 0;
 
     rdb->update_cksum = rdbLoadProgressCallback;
     rdb->max_processing_chunk = server.loading_process_events_interval_bytes;
@@ -2655,7 +2653,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
             } else if (LoadGtidInfoAuxFields(auxkey, auxval)) {
                 /* Load gtid info AUX field. */
             } else if (server.swap_mode != SWAP_MODE_MEMORY && rordbLoadAuxFields(auxkey, auxval)) {
-                is_rordb = 1;
+                rordb = 1;
                 if (rordbLoadSSTStart(rdb)) goto eoferr;
                 serverLog(LL_NOTICE, "[rordb] loading in rordb mode.");
             } else {
@@ -2721,7 +2719,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
                 decrRefCount(aux);
                 continue; /* Read next opcode. */
             }
-        } else if (server.swap_mode != SWAP_MODE_MEMORY && is_rordb && rordbOpcodeIsValid(type)) {
+        } else if (server.swap_mode != SWAP_MODE_MEMORY && rordb && rordbOpcodeIsValid(type)) {
             if (rordbOpcodeIsSSTType(type)) {
                 if (rordbLoadSSTType(rdb,type)) goto eoferr;
             } else if (rordbOpcodeIsDbType(type)) {
@@ -2731,7 +2729,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
             continue;
         }
 
-        if (server.swap_mode != SWAP_MODE_MEMORY && is_rordb && !rordb_finished) {
+        if (server.swap_mode != SWAP_MODE_MEMORY && rordb && !rordb_finished) {
             if (rordbLoadSSTFinished(rdb)) goto eoferr;
             rordb_finished = 1;
         }
@@ -2742,7 +2740,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
 
         /* Read value */
         int swap_unsupported = 0;
-        if (server.swap_mode != SWAP_MODE_MEMORY && !is_rordb) {
+        if (server.swap_mode != SWAP_MODE_MEMORY && !rordb) {
             rdbKeyLoadData _keydata = {0}, *keydata = &_keydata;
             int swap_load_error = ctripRdbLoadObject(type,rdb,db,key,
                     expiretime,now,keydata);
@@ -2763,7 +2761,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
             rdbKeyLoadDataDeinit(keydata);
         }
 
-        if (server.swap_mode == SWAP_MODE_MEMORY || swap_unsupported || is_rordb) {
+        if (server.swap_mode == SWAP_MODE_MEMORY || swap_unsupported || rordb) {
             val = rdbLoadObject(type,rdb,key,&error);
         }
 
@@ -2796,7 +2794,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
             initStaticStringObject(keyobj,key);
             moduleNotifyKeyspaceEvent(NOTIFY_LOADED, "loaded", &keyobj, db->id);
             sdsfree(key);
-        } else if (iAmMaster() && !is_rordb &&
+        } else if (iAmMaster() && !rordb &&
             !(rdbflags&RDBFLAGS_AOF_PREAMBLE) &&
             expiretime != -1 && expiretime < now)
         {
@@ -3012,12 +3010,11 @@ void killRDBChild(void) {
 
 /* Spawn an RDB child that writes the RDB to the sockets of the slaves
  * that are currently in SLAVE_STATE_WAIT_BGSAVE_START state. */
-int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
+int rdbSaveToSlavesSockets(rdbSaveInfo *rsi, swapForkRocksdbCtx *sfrctx, int rordb) {
     listNode *ln;
     listIter li;
     pid_t childpid;
     int pipefds[2], rdb_pipe_write, safe_to_exit_pipe;
-    swapForkRocksdbCtx *ctx = NULL;
 
     if (hasActiveChildProcess()) return C_ERR;
 
@@ -3045,9 +3042,8 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
     server.rdb_child_exit_pipe = pipefds[1]; /* write end */
 
     if (server.swap_mode != SWAP_MODE_MEMORY) {
-        ctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_SNAPSHOT,0);
-        if (swapForkRocksdbBefore(ctx)) {
-            swapForkRocksdbCtxRelease(ctx);
+        if (swapForkRocksdbBefore(sfrctx)) {
+            swapForkRocksdbCtxRelease(sfrctx);
             close(rdb_pipe_write);
             close(server.rdb_pipe_read);
             close(safe_to_exit_pipe);
@@ -3077,10 +3073,10 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
         rio rdb;
 
         if (server.swap_mode != SWAP_MODE_MEMORY) {
-            if (swapForkRocksdbAfterChild(ctx)) {
+            if (swapForkRocksdbAfterChild(sfrctx)) {
                 exit(1);
             } else {
-                swapForkRocksdbCtxRelease(ctx);
+                swapForkRocksdbCtxRelease(sfrctx);
             }
         }
 
@@ -3089,7 +3085,7 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
         redisSetProcTitle("redis-rdb-to-slaves");
         redisSetCpuAffinity(server.bgsave_cpulist);
 
-        retval = rdbSaveRioWithEOFMark(&rdb,NULL,rsi);
+        retval = rdbSaveRioWithEOFMark(&rdb,NULL,rsi,rordb);
         if (retval == C_OK && rioFlush(&rdb) == 0)
             retval = C_ERR;
 
@@ -3109,8 +3105,8 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
     } else {
         /* Parent */
         if (server.swap_mode != SWAP_MODE_MEMORY) {
-            swapForkRocksdbAfterParent(ctx,childpid);
-            swapForkRocksdbCtxRelease(ctx);
+            swapForkRocksdbAfterParent(sfrctx,childpid);
+            swapForkRocksdbCtxRelease(sfrctx);
         }
 
         close(safe_to_exit_pipe);
@@ -3156,7 +3152,7 @@ void saveCommand(client *c) {
     }
     rdbSaveInfo rsi, *rsiptr;
     rsiptr = rdbPopulateSaveInfo(&rsi);
-    if (rdbSave(server.rdb_filename,rsiptr) == C_OK) {
+    if (rdbSave(server.rdb_filename,rsiptr,0) == C_OK) {
         addReply(c,shared.ok);
     } else {
         addReplyErrorObject(c,shared.err);
@@ -3193,10 +3189,15 @@ void bgsaveCommand(client *c) {
             "Use BGSAVE SCHEDULE in order to schedule a BGSAVE whenever "
             "possible.");
         }
-    } else if (rdbSaveBackground(server.rdb_filename,rsiptr) == C_OK) {
-        addReplyStatus(c,"Background saving started");
     } else {
-        addReplyErrorObject(c,shared.err);
+        swapForkRocksdbCtx *sfrctx = NULL;
+        if (server.swap_mode != SWAP_MODE_MEMORY)
+            sfrctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_SNAPSHOT);
+        if (rdbSaveBackground(server.rdb_filename,rsiptr,sfrctx,0) == C_OK) {
+            addReplyStatus(c,"Background saving started");
+        } else {
+            addReplyErrorObject(c,shared.err);
+        }
     }
 }
 

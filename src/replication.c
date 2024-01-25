@@ -651,6 +651,8 @@ int startBgsaveForReplication(int mincapa) {
     int socket_target = server.repl_diskless_sync && (mincapa & SLAVE_CAPA_EOF);
     listIter li;
     listNode *ln;
+    swapForkRocksdbCtx *sfrctx = NULL;
+    int rordb = 0;
 
     serverLog(LL_NOTICE,"Starting BGSAVE for SYNC with target: %s",
         socket_target ? "replicas sockets" : "disk");
@@ -658,19 +660,24 @@ int startBgsaveForReplication(int mincapa) {
     rdbSaveInfo rsi, *rsiptr;
     rsiptr = rdbPopulateSaveInfo(&rsi);
 
-    if (server.swap_mode != SWAP_MODE_MEMORY && server.swap_repl_rordb_sync &&
-            (mincapa & SLAVE_CAPA_RORDB)) {
-        rdbSaveInfoSetUseRorDb(rsiptr);
-        serverLog(LL_NOTICE, "[rordb] repl sync in rordb mode");
+    if (server.swap_mode != SWAP_MODE_MEMORY) {
+        if (server.swap_repl_rordb_sync && (mincapa & SLAVE_CAPA_RORDB)) {
+            rordb = 1;
+            sfrctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_CHECKPOINT);
+            serverLog(LL_NOTICE, "start replcation sync in rordb mode.");
+        } else {
+            sfrctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_SNAPSHOT);
+            serverLog(LL_NOTICE, "start replcation sync in rdb mode.");
+        }
     }
 
     /* Only do rdbSave* when rsiptr is not NULL,
      * otherwise slave will miss repl-stream-db. */
     if (rsiptr) {
         if (socket_target)
-            retval = rdbSaveToSlavesSockets(rsiptr);
+            retval = rdbSaveToSlavesSockets(rsiptr,sfrctx,rordb);
         else
-            retval = rdbSaveBackground(server.rdb_filename,rsiptr);
+            retval = rdbSaveBackground(server.rdb_filename,rsiptr,sfrctx,rordb);
     } else {
         serverLog(LL_WARNING,"BGSAVE for replication: replication information not available, can't generate the RDB file right now. Try later.");
         retval = C_ERR;
@@ -3556,6 +3563,15 @@ void _replicationStartPendingFork(client *c, swapCtx *ctx) {
     clientReleaseLocks(c,ctx);
 }
 
+void rocksdbFlushForCheckpointTaskDone(void *pd, int errcode) {
+    swapData4RocksdbFlush *data = pd;
+    UNUSED(errcode);
+    serverLog(LL_NOTICE,"rocksdb flush before checkpoint finished, took %lld ms",
+            mstime() - data->start_time);
+    rocksdbFlushTaskArgRelease(data);
+    lockGlobalAndExec(_replicationStartPendingFork, REQ_SUBMITTED_REPL_START);
+}
+
 void ctrip_replicationStartPendingFork(void) {
     if (!hasActiveChildProcess()) {
         time_t idle, max_idle = 0;
@@ -3583,7 +3599,24 @@ void ctrip_replicationStartPendingFork(void) {
             if (server.swap_mode == SWAP_MODE_MEMORY) {
                 startBgsaveForReplication(mincapa);
             } else {
-                lockGlobalAndExec(_replicationStartPendingFork, REQ_SUBMITTED_REPL_START);
+                if (mincapa & SLAVE_CAPA_RORDB) {
+                    sds error;
+                    swapData4RocksdbFlush *data = rocksdbFlushTaskArgCreate(NULL);
+                    /* we can save rordb only when rocksdb fork mode is
+                     * checkpoint (sst files in snapshot mode might contain
+                     * more write).
+                     * so we flush memtable asynchronously to reduce latency
+                     * when taking checkpoint before fork. */
+                    if (!submitUtilTask(ROCKSDB_FLUSH_TASK,data,rocksdbFlushForCheckpointTaskDone,data,&error)) {
+                        serverLog(LL_WARNING,"Submit rocksdb flush before checkpoint task failed: %s", error);
+                        rocksdbFlushTaskArgRelease(data);
+                        if (error) sdsfree(error);
+                    } else {
+                        serverLog(LL_NOTICE,"rocksdb flush before checkpoint started.");
+                    }
+                } else {
+                    lockGlobalAndExec(_replicationStartPendingFork, REQ_SUBMITTED_REPL_START);
+                }
             }
         }
     }

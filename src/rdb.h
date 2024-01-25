@@ -132,6 +132,8 @@
 #define RDB_LOAD_ERR_EMPTY_KEY  1   /* Error of empty key */
 #define RDB_LOAD_ERR_OTHER      2   /* Any other errors */
 
+struct swapForkRocksdbCtx;
+
 int rdbSaveType(rio *rdb, unsigned char type);
 int rdbLoadType(rio *rdb);
 int rdbSaveTime(rio *rdb, time_t t);
@@ -144,10 +146,10 @@ int rdbLoadLenByRef(rio *rdb, int *isencoded, uint64_t *lenptr);
 int rdbSaveObjectType(rio *rdb, robj *o);
 int rdbLoadObjectType(rio *rdb);
 int rdbLoad(char *filename, rdbSaveInfo *rsi, int rdbflags);
-int rdbSaveBackground(char *filename, rdbSaveInfo *rsi);
-int rdbSaveToSlavesSockets(rdbSaveInfo *rsi);
+int rdbSaveBackground(char *filename, rdbSaveInfo *rsi, struct swapForkRocksdbCtx *sfrctx, int rordb);
+int rdbSaveToSlavesSockets(rdbSaveInfo *rsi, struct swapForkRocksdbCtx *sfrctx, int rordb);
 void rdbRemoveTempFile(pid_t childpid, int from_signal);
-int rdbSave(char *filename, rdbSaveInfo *rsi);
+int rdbSave(char *filename, rdbSaveInfo *rsi, int rordb);
 ssize_t rdbSaveObject(rio *rdb, robj *o, robj *key);
 size_t rdbSavedObjectLen(robj *o, robj *key);
 robj *rdbLoadObject(int type, rio *rdb, sds key, int *error);
@@ -165,7 +167,7 @@ int rdbLoadDoubleValue(rio *rdb, double *val);
 int rdbSaveBinaryFloatValue(rio *rdb, float val);
 int rdbLoadBinaryFloatValue(rio *rdb, float *val);
 int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi);
-int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi);
+int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi,int rordb);
 rdbSaveInfo *rdbPopulateSaveInfo(rdbSaveInfo *rsi);
 
 #endif
