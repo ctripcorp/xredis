@@ -89,7 +89,7 @@ static int setSwapAnaOutSelectSubkeys(swapData *data, setDataCtx *datactx,
                     evict_memory >= server.swap_evict_step_max_memory) {
                 /* Evict in small steps. */
                 if (vstr) sdsfree(vstr);
-                if (!noswap) *may_keep_data = 0; /* TODO MAIN 方式中， 不感知 SubKeys dirty 情况， 然后 就不keep， keep 与否 不是 跟 内存 是否充足 相关嘛 ?  只要可能有 dirty subkey 存在就 不Keep ？ */
+                if (!noswap) *may_keep_data = 0;
                 break;
             }
 

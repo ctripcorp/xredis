@@ -26,9 +26,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "ctrip_roaring_bitmap.h"
-#include <assert.h>
 #include "ctrip_swap.h"
+#include <assert.h>
 #include "ctrip_roaring_malloc.h"
 
 #define CONTAINER_BITS 12  // default save the lower 12 bits in the container, no more than 16
@@ -40,6 +39,16 @@
 #define CONTAINER_MASK ((1 << CONTAINER_BITS) - 1)
 #define ARRAY_CONTAINER_EXPAND_SPEED 2
 #define MOD_8_MASK 0x7
+
+/* There are 3 kinds of container:
+ *   arrray Container: sorted array of uint16_t (bit index)
+ *   bitmap container: raw bitmap
+ *   full container: when all bits set, containerInside is NULL
+ */
+
+#define CONTAINER_TYPE_ARRAY 0
+#define CONTAINER_TYPE_BITMAP 1
+#define CONTAINER_TYPE_FULL 2
 
 static uint8_t bitsNumTable[256] =
         {
@@ -915,7 +924,9 @@ void rbmDestory(roaringBitmap* rbm)
 
 void rbmSetBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit)
 {
-    assert(minBit <= maxBit);
+    if (minBit > maxBit) {
+        return;
+    }
 
     uint32_t firstBucketIdx = minBit >> CONTAINER_BITS;
     uint32_t lastBucketIdx = maxBit >> CONTAINER_BITS;
@@ -957,7 +968,9 @@ void rbmSetBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit)
 
 uint32_t rbmGetBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit)
 {
-    assert(minBit <= maxBit);
+    if (minBit > maxBit) {
+        return 0;
+    }
     uint32_t firstBucketIdx = minBit >> CONTAINER_BITS;
     uint32_t lastBucketIdx = maxBit >> CONTAINER_BITS;
 
@@ -990,7 +1003,9 @@ uint32_t rbmGetBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit)
 
 void rbmClearBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit)
 {
-    assert(minBit <= maxBit);
+    if (minBit > maxBit) {
+        return;
+    }
     uint32_t firstBucketIdx = minBit >> CONTAINER_BITS;
     uint32_t lastBucketIdx = maxBit >> CONTAINER_BITS;
 
@@ -1088,6 +1103,11 @@ int rbmIsEqual(roaringBitmap* destRbm, roaringBitmap* srcRbm)
         return 0;
     }
     return containersAreEqual(destRbm->containers, srcRbm->containers, destRbm->bucketsNum);
+}
+
+uint32_t rbmGetBitPos(roaringBitmap* rbm, uint32_t startPos, uint32_t nthBit)
+{
+    return 0;
 }
 
 #ifdef REDIS_TEST

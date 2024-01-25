@@ -413,7 +413,7 @@ void getKeyRequests(client *c, getKeyRequestsResult *result) {
             c->argv = c->mstate.commands[i].argv;
             c->cmd = c->mstate.commands[i].cmd;
 
-            getSingleCmdKeyRequests(c, result, 0);
+            getSingleCmdKeyRequests(c, result);
 
             int requests_delta = result->num - prev_keyrequest_num;
             if (requests_delta) {
@@ -440,7 +440,7 @@ void getKeyRequests(client *c, getKeyRequestsResult *result) {
         if (need_swap) c->swap_cmd = createSwapCmdTrace();
     } else {
         int prev_keyrequest_num = result->num;
-        getSingleCmdKeyRequests(c, result, 0);
+        getSingleCmdKeyRequests(c, result);
         int requests_delta = result->num - prev_keyrequest_num;
         if (requests_delta) {
             swap_cmd = createSwapCmdTrace();
@@ -512,11 +512,6 @@ int getKeyRequestsOneDestKeyMultiSrcKeys(int dbid, struct redisCommand *cmd, rob
     }
 
     return 0;
-}
-
-int getKeyRequestsBitop(int dbid, struct redisCommand *cmd, robj **argv,
-        int argc, struct getKeyRequestsResult *result) {
-    return getKeyRequestsOneDestKeyMultiSrcKeys(dbid, cmd, argv, argc, result, 2, 3, -1);
 }
 
 int getKeyRequestsSort(int dbid, struct redisCommand *cmd, robj **argv,
@@ -1078,7 +1073,7 @@ int getKeyRequestsGtid(int dbid, struct redisCommand *cmd, robj **argv,
 
     exec_cmd = lookupCommandByCString(argv[start_index]->ptr);
     if (_getSingleCmdKeyRequests(exec_dbid,exec_cmd,argv+start_index,
-            argc-start_index,result, 0)) return C_ERR;
+            argc-start_index,result)) return C_ERR;
 
     getKeyRequestsGtidArgRewriteAdjust(result,orig_num,start_index);
     return C_OK;
@@ -1089,7 +1084,7 @@ int getKeyRequestsGtidAuto(int dbid, struct redisCommand *cmd, robj **argv,
     UNUSED(cmd);
     int orig_num = result->num, start_index = 2;
     struct redisCommand* exec_cmd = lookupCommandByCString(argv[2]->ptr);
-    if (_getSingleCmdKeyRequests(dbid,exec_cmd,argv+start_index,argc-start_index,result, 0))
+    if (_getSingleCmdKeyRequests(dbid,exec_cmd,argv+start_index,argc-start_index,result))
         return C_ERR;
     getKeyRequestsGtidArgRewriteAdjust(result,orig_num,start_index);
     return C_OK;
@@ -1169,13 +1164,15 @@ int getKeyRequestsBitpos(int dbid, struct redisCommand *cmd, robj **argv,
     return 0;
 }
 
+int getKeyRequestsBitop(int dbid, struct redisCommand *cmd, robj **argv,
+                        int argc, struct getKeyRequestsResult *result) {
+    return getKeyRequestsOneDestKeyMultiSrcKeys(dbid, cmd, argv, argc, result, 2, 3, -1);
+}
+
 int getKeyRequestsBitField(int dbid, struct redisCommand *cmd, robj **argv,
                          int argc, struct getKeyRequestsResult *result) {
 
-    getKeyRequestsSingleKeyWithRanges(dbid, cmd, argv, argc,
-                                      result, 1, -1, -1, 1/*num_ranges*/, -1, -1); /* source */
-    /* todo 待进一步确认 */
-    getKeyRequestsSingleKey(result, argv[2], SWAP_IN, SWAP_IN_META, cmd->flags | CMD_SWAP_DATATYPE_KEYSPACE, dbid);
+    /* TODO 待调整*/
     return 0;
 }
 

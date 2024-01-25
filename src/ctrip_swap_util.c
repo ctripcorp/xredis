@@ -533,6 +533,64 @@ long get_dir_size(char *dirname)
     return total_size;
 }
 
+/* arg rewrite */
+argRewrites *argRewritesCreate() {
+    argRewrites *arg_rewrites = zmalloc(sizeof(argRewrites));
+    argRewritesReset(arg_rewrites);
+    return arg_rewrites;
+}
+
+void argRewritesAdd(argRewrites *arg_rewrites, argRewriteRequest arg_req, MOVE robj *orig_arg) {
+    serverAssert(arg_rewrites->num < ARG_REWRITES_MAX);
+    argRewrite *rewrite = arg_rewrites->rewrites + arg_rewrites->num;
+    rewrite->arg_req = arg_req;
+    rewrite->orig_arg = orig_arg;
+    arg_rewrites->num++;
+}
+
+void argRewritesReset(argRewrites *arg_rewrites) {
+    memset(arg_rewrites,0,sizeof(argRewrites));
+}
+
+void argRewritesFree(argRewrites *arg_rewrites) {
+    if (arg_rewrites) zfree(arg_rewrites);
+}
+
+void clientArgRewritesRestore(client *c) {
+    for (int i = 0; i < c->swap_arg_rewrites->num; i++) {
+        argRewrite *rewrite = c->swap_arg_rewrites->rewrites+i;
+        int mstate_idx = rewrite->arg_req.mstate_idx, arg_idx = rewrite->arg_req.arg_idx;
+        if (mstate_idx < 0) {
+            serverAssert(arg_idx < c->argc);
+            decrRefCount(c->argv[arg_idx]);
+            c->argv[arg_idx] = rewrite->orig_arg;
+        } else {
+            serverAssert(mstate_idx < c->mstate.count);
+            serverAssert(arg_idx < c->mstate.commands[mstate_idx].argc);
+            decrRefCount(c->mstate.commands[mstate_idx].argv[arg_idx]);
+            c->mstate.commands[mstate_idx].argv[arg_idx] = rewrite->orig_arg;
+        }
+    }
+    argRewritesReset(c->swap_arg_rewrites);
+}
+
+/* swap argv rewrite */
+void clientArgRewrite(client *c, argRewriteRequest arg_req, MOVE robj *new_arg) {
+    robj *orig_arg;
+    if (arg_req.mstate_idx < 0) {
+        serverAssert(arg_req.arg_idx < c->argc);
+        orig_arg = c->argv[arg_req.arg_idx];
+        c->argv[arg_req.arg_idx] = new_arg;
+        argRewritesAdd(c->swap_arg_rewrites,arg_req,orig_arg);
+    } else {
+        serverAssert(arg_req.mstate_idx < c->mstate.count);
+        serverAssert(arg_req.arg_idx < c->mstate.commands[arg_req.mstate_idx].argc);
+        orig_arg = c->mstate.commands[arg_req.mstate_idx].argv[arg_req.arg_idx];
+        c->mstate.commands[arg_req.mstate_idx].argv[arg_req.arg_idx] = new_arg;
+        argRewritesAdd(c->mstate.commands[arg_req.mstate_idx].swap_arg_rewrites,arg_req,orig_arg);
+    }
+}
+
 #ifdef REDIS_TEST
 
 int swapUtilTest(int argc, char **argv, int accurate) {

@@ -64,7 +64,7 @@ extern const char *swap_cf_names[CF_COUNT];
  * same as SWAP_IN_DEL for collection type(SET, ZSET, LISH, HASH...), same as SWAP_IN for STRING */
 #define SWAP_IN_OVERWRITE (1U<<3)
 /* When swap finished, meta will be deleted(so that key will turn pure hot).*/
-#define SWAP_IN_FORCE_HOT (1U<<4)   /* TODO unknown。。。。*/
+#define SWAP_IN_FORCE_HOT (1U<<4)
 /* whether to expire Keys with generated in writtable slave is decided
  * before submitExpireClientRequest and should not skip expire even
  * if current role is slave. */
@@ -210,7 +210,6 @@ int getKeyRequestsNone(int dbid, struct redisCommand *cmd, robj **argv, int argc
 int getKeyRequestsGlobal(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 int getKeyRequestsMetaScan(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 
-int getKeyRequestsBitop(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 int getKeyRequestsSort(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 
 #define getKeyRequestsHsetnx getKeyRequestsHset
@@ -545,8 +544,8 @@ typedef struct swapObjectMeta {
 
 static inline int swapObjectMetaIsHot(swapObjectMeta *som) {
     if (som->value == NULL) return 0;
-    if (som->object_meta == NULL) return 1;
-    serverAssert(som->object_meta->object_type == som->value->type);
+    /* todo type 拓展， OBJ_BITMAP */
+    serverAssert((som->object_meta->object_type == OBJ_STRING && som->value->type == OBJ_STRING) || som->object_meta->object_type == som->value->type);
     if (som->omtype->objectIsHot) {
       return som->omtype->objectIsHot(som->object_meta,som->value);
     } else {
@@ -576,9 +575,7 @@ typedef struct swapData {
   robj *key; /*own*/
   robj *value; /*own*/
   long long expire;
-  /* todo hot 或者 warm data 直接查到的 Meta */
   objectMeta *object_meta; /* ref */
-  /* todo  cold data SWAP 时拿到的 Meta */
   objectMeta *cold_meta; /* own, moved from exec */
   objectMeta *new_meta; /* own */
   int object_type; /* 须扩展 */
@@ -630,7 +627,7 @@ int swapDataEncodeKeys(swapData *d, int intention, void *datactx, int *num, int 
 int swapDataEncodeData(swapData *d, int intention, void *datactx, int *num, int **cfs, sds **rawkeys, sds **rawvals);
 int swapDataEncodeRange(struct swapData *data, int intention, void *datactx_, int *limit, uint32_t *flags, int *pcf, sds *start, sds *end);
 int swapDataDecodeAndSetupMeta(swapData *d, sds rawval, OUT void **datactx);
-int swapDataDecodeData(swapData *d, int num, int *cfs, sds *rawkeys, sds *rawvals, void **decoded);
+int swapDataDecodeData(swapData *d, int num, int *cfs, sds *rawkeys, sds *rawvals, void *datactx, void **decoded);
 int swapDataSwapIn(swapData *d, void *result, void *datactx);
 int swapDataSwapOut(swapData *d, void *datactx, int keep_data, OUT int *totally_out);
 int swapDataSwapDel(swapData *d, void *datactx, int async);
@@ -721,7 +718,7 @@ int swapDataObjectMergedIsHot(swapData *data, void *result, void *datactx);
 #define hashMergedIsHot swapDataObjectMergedIsHot
 #define zsetMergedIsHot swapDataObjectMergedIsHot
 #define wholeKeyMergedIsHot swapDataObjectMergedIsHot
-
+#define bitmapMergedIsHot swapDataObjectMergedIsHot
 
 /* Debug msgs */
 #ifdef SWAP_DEBUG
@@ -894,8 +891,11 @@ argRewrites *argRewritesCreate(void);
 void argRewritesAdd(argRewrites *arg_rewrites, argRewriteRequest arg_req, MOVE robj *orig_arg);
 void argRewritesReset(argRewrites *arg_rewrites);
 void argRewritesFree(argRewrites *arg_rewrites);
+void argRewritesAdd(argRewrites *arg_rewrites, argRewriteRequest arg_req, MOVE robj *orig_arg);
 
 void clientArgRewritesRestore(client *c);
+void clientArgRewrite(client *c, argRewriteRequest arg_req, MOVE robj *new_arg);
+
 
 long ctripListTypeLength(robj *list, objectMeta *object_meta);
 void ctripListTypePush(robj *subject, robj *value, int where, redisDb *db, robj *key);
@@ -926,12 +926,15 @@ int swapDataSetupZSet(swapData *d, OUT void **datactx);
 
 
 /* bitmap */
+struct bitmapMeta;
+
+void bitmapMetaFree(struct bitmapMeta *bitmap_meta);
+
+sds ctripGrowBitmap(client *c, sds s, size_t byte);
 
 objectMeta *createBitmapObjectMeta(uint64_t version, MOVE struct bitmapMeta *bitmap_meta);
 
 int swapDataSetupBitmap(swapData *d, void **pdatactx);
-
-void bitmapMetaFree(bitmapMeta *bitmap_meta);
 
 /* MetaScan */
 #define DEFAULT_SCANMETA_BUFFER 16
@@ -2303,6 +2306,54 @@ void coldFilterSubkeyAdded(coldFilter *filter, sds key);
 void coldFilterSubkeyNotFound(coldFilter *filter, sds key, sds subkey);
 int coldFilterMayContainSubkey(coldFilter *filter, sds key, sds subkey);
 
+/* roaring bitmap */
+
+typedef uint16_t arrayContainer;
+typedef uint8_t bitmapContainer;
+
+typedef struct roaringContainer {
+    uint16_t elementsNum;
+    unsigned type:2;
+    union {
+        struct {
+            unsigned padding:14;
+            bitmapContainer *bitmap;
+        } b;
+        struct {
+            unsigned capacity:14;
+            arrayContainer *array;
+        } a;
+        struct {
+            unsigned padding:14;
+            void *none;
+        } f;
+    };
+} roaringContainer;
+
+typedef struct roaringBitmap {
+    uint8_t bucketsNum;
+    uint8_t* buckets;
+    roaringContainer** containers;
+} roaringBitmap;
+
+roaringBitmap* rbmCreate(void);
+
+void rbmDestory(roaringBitmap* rbm);
+
+void rbmSetBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit);
+
+void rbmClearBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit);
+
+uint32_t rbmGetBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit);
+
+void rbmdup(roaringBitmap* destRbm, roaringBitmap* srcRbm);
+
+int rbmIsEqual(roaringBitmap* destRbm, roaringBitmap* srcRbm);
+
+/* return pos of the nth one bit, from the startPos*/
+/* todo imp */
+uint32_t rbmGetBitPos(roaringBitmap* rbm, uint32_t startPos, uint32_t nthBit);
+
 /* Util */
 
 #define ROCKS_KEY_FLAG_NONE 0x0
@@ -2463,23 +2514,6 @@ int getKeyRequestsSwapBlockedLmove(int dbid, int intention, int intention_flags,
 int serveClientBlockedOnList(client *receiver, robj *key, robj *dstkey, redisDb *db, robj *value, int wherefrom, int whereto,list* swap_wrong_type_error_keys);
 void incrSwapUnBlockCtxVersion();
 void incrSwapUnBlockCtxVersion(void);
-
-/* swap argv rewrite */
-void clientArgRewrite(client *c, argRewriteRequest arg_req, MOVE robj *new_arg) {
-    robj *orig_arg;
-    if (arg_req.mstate_idx < 0) {
-        serverAssert(arg_req.arg_idx < c->argc);
-        orig_arg = c->argv[arg_req.arg_idx];
-        c->argv[arg_req.arg_idx] = new_arg;
-        argRewritesAdd(c->swap_arg_rewrites,arg_req,orig_arg);
-    } else {
-        serverAssert(arg_req.mstate_idx < c->mstate.count);
-        serverAssert(arg_req.arg_idx < c->mstate.commands[arg_req.mstate_idx].argc);
-        orig_arg = c->mstate.commands[arg_req.mstate_idx].argv[arg_req.arg_idx];
-        c->mstate.commands[arg_req.mstate_idx].argv[arg_req.arg_idx] = new_arg;
-        argRewritesAdd(c->mstate.commands[arg_req.mstate_idx].swap_arg_rewrites,arg_req,orig_arg);
-    }
-}
 
 #ifndef __APPLE__
 typedef struct swapThreadCpuUsage{

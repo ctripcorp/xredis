@@ -272,6 +272,7 @@ int hashSwapAna(swapData *data, int thd, struct keyRequest *req,
         }
         break;
     case SWAP_DEL:
+        /* TODO add if branch refer to list. */
         *intention = SWAP_DEL;
         *intention_flags = 0;
         break;

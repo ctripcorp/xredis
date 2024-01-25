@@ -1810,47 +1810,6 @@ int listSwapDel(swapData *data, void *datactx_, int del_skip) {
     }
 }
 
-/* arg rewrite */
-argRewrites *argRewritesCreate() {
-    argRewrites *arg_rewrites = zmalloc(sizeof(argRewrites));
-    argRewritesReset(arg_rewrites);
-    return arg_rewrites;
-}
-
-void argRewritesAdd(argRewrites *arg_rewrites, argRewriteRequest arg_req, MOVE robj *orig_arg) {
-    serverAssert(arg_rewrites->num < ARG_REWRITES_MAX);
-    argRewrite *rewrite = arg_rewrites->rewrites + arg_rewrites->num;
-    rewrite->arg_req = arg_req;
-    rewrite->orig_arg = orig_arg;
-    arg_rewrites->num++;
-}
-
-void argRewritesReset(argRewrites *arg_rewrites) {
-    memset(arg_rewrites,0,sizeof(argRewrites));
-}
-
-void argRewritesFree(argRewrites *arg_rewrites) {
-    if (arg_rewrites) zfree(arg_rewrites);
-}
-
-void clientArgRewritesRestore(client *c) {
-    for (int i = 0; i < c->swap_arg_rewrites->num; i++) {
-        argRewrite *rewrite = c->swap_arg_rewrites->rewrites+i;
-        int mstate_idx = rewrite->arg_req.mstate_idx, arg_idx = rewrite->arg_req.arg_idx;
-        if (mstate_idx < 0) {
-            serverAssert(arg_idx < c->argc);
-            decrRefCount(c->argv[arg_idx]);
-            c->argv[arg_idx] = rewrite->orig_arg;
-        } else {
-            serverAssert(mstate_idx < c->mstate.count);
-            serverAssert(arg_idx < c->mstate.commands[mstate_idx].argc);
-            decrRefCount(c->mstate.commands[mstate_idx].argv[arg_idx]);
-            c->mstate.commands[mstate_idx].argv[arg_idx] = rewrite->orig_arg;
-        }
-    }
-    argRewritesReset(c->swap_arg_rewrites);
-}
-
 int listBeforeCall(swapData *data, client *c, void *datactx_) {
     listDataCtx *datactx = datactx_;
     objectMeta *object_meta;
@@ -1878,7 +1837,7 @@ int listBeforeCall(swapData *data, client *c, void *datactx_) {
         serverAssert(ret == C_OK);
         long midx = listMetaGetMidx(meta,index);
         robj *new_arg = createObject(OBJ_STRING,sdsfromlonglong(midx));
-        clientArgRewrite(c,arg_req,new_arg);
+        clientArgRewrite(c, arg_req, new_arg);
     }
 
     return 0;
