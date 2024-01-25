@@ -1275,10 +1275,11 @@ void rocksCron() {
     if (collect_interval_second <= 0) collect_interval_second = 1;
     if (rocks_cron_loops % collect_interval_second == 0) {
         if (swapShouldFlushMeta()) {
-            submitUtilTask(ROCKSDB_FLUSH_TASK, meta_cf_name, NULL, NULL);
+            swapData4RocksdbFlush *data = rocksdbFlushTaskArgCreate(meta_cf_name);
+            submitUtilTask(ROCKSDB_FLUSH_TASK, data, rocksdbFlushTaskDone, data, NULL);
         }
 
-        submitUtilTask(ROCKSDB_GET_STATS_TASK, NULL, NULL, NULL);
+        submitUtilTask(ROCKSDB_GET_STATS_TASK, NULL, rocksdbGetStatsTaskDone, NULL, NULL);
     }
 
     rocks_cron_loops++;
@@ -1386,7 +1387,7 @@ int swapForkRocksdbSnapshotAfterForkParent(struct swapForkRocksdbCtx *ctx, int c
         rocksdbCreateCheckpointPayload *pd = zcalloc(sizeof(rocksdbCreateCheckpointPayload));
         pd->waiting_child = childpid;
         pd->checkpoint_dir_pipe_writing = snapshot_ctx->checkpoint_dir_pipe_writing;
-        submitUtilTask(ROCKSDB_CREATE_CHECKPOINT, NULL, pd, NULL);
+        submitUtilTask(ROCKSDB_CREATE_CHECKPOINT, NULL, rocksdbCreateCheckpointTaskDone, pd, NULL);
     }
     return C_OK;
 }
@@ -1469,3 +1470,98 @@ void swapForkRocksdbCtxRelease(swapForkRocksdbCtx *ctx) {
     swapForkRocksdbCtxDeinit(ctx);
     zfree(ctx);
 }
+
+void rocksdbGetStatsTaskDone(void *pd, int errcode) {
+    UNUSED(errcode);
+    rocksdbInternalStats *internal_stats = pd;
+    if (internal_stats != NULL) {
+        rocksdbInternalStatsFree(server.rocks->internal_stats);
+        server.rocks->internal_stats = internal_stats;
+    }
+}
+
+swapData4RocksdbFlush *rocksdbFlushTaskArgCreate(const char *cfnames) {
+    swapData4RocksdbFlush *data = zcalloc(sizeof(swapData4RocksdbFlush));
+    parseCfNames(cfnames,data->cfhanles,NULL);
+    return data;
+}
+
+void rocksdbFlushTaskArgRelease(swapData4RocksdbFlush *data) {
+    zfree(data);
+}
+
+void rocksdbFlushTaskDone(void *pd, int errcode){
+    UNUSED(errcode);
+    rocksdbFlushTaskArgRelease(pd);
+}
+
+void checkpointDirPipeWriteHandler(struct aeEventLoop *eventLoop, int fd, void *clientData, int mask) {
+    UNUSED(eventLoop),UNUSED(mask);
+    checkpointDirPipeWritePayload *pd = clientData;
+    ssize_t nwritten;
+    if (server.child_pid != pd->waiting_child) {
+        serverLog(LL_WARNING, "[rocks] waiting child exit, skip checkpoint dir write");
+        goto end;
+    }
+
+    ssize_t total = sdslen(pd->data);
+    while (1) {
+        nwritten = write(fd, pd->data, total - pd->written);
+        if (nwritten < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+            serverLog(LL_WARNING, "[rocks] write checkpoint dir fail: %s", strerror(errno));
+            if (server.child_type == CHILD_TYPE_RDB) killRDBChild();
+            else if (server.child_type == CHILD_TYPE_AOF) killAppendOnlyChild();
+            goto end;
+        }
+
+        pd->written += nwritten;
+        if (pd->written == total) {
+            serverLog(LL_NOTICE, "[rocks] write checkpoint dir done, %s.", pd->data);
+            goto end;
+        }
+    }
+
+    end:
+    aeDeleteFileEvent(server.el, fd, AE_WRITABLE);
+    close(fd);
+    sdsfree(pd->data);
+    zfree(pd);
+}
+
+void rocksdbCreateCheckpointTaskDone(void *_pd, int errcode) {
+    UNUSED(errcode);
+    rocksdbCreateCheckpointPayload *pd = _pd;
+    rocks *rocks = server.rocks;
+    if (NULL != rocks->checkpoint) {
+        serverLog(LL_WARNING, "[rocks] release old checkpoint.");
+        rocksReleaseCheckpoint();
+    }
+    if (NULL != pd->checkpoint) {
+        serverLog(LL_NOTICE, "[rocks] create checkpoint %s.", pd->checkpoint_dir);
+        rocks->checkpoint = pd->checkpoint;
+        rocks->checkpoint_dir = pd->checkpoint_dir;
+    }
+
+    if (pd->waiting_child && server.child_pid == pd->waiting_child) {
+        if (NULL == pd->checkpoint_dir) {
+            /* create checkpoint fail, send empty str. */
+            close(pd->checkpoint_dir_pipe_writing);
+        } else {
+            sds write_data = sdsdup(pd->checkpoint_dir);
+            checkpointDirPipeWritePayload *write_payload = zcalloc(sizeof(checkpointDirPipeWritePayload));
+            write_payload->data = write_data;
+            write_payload->waiting_child = pd->waiting_child;
+            if (aeCreateFileEvent(server.el, pd->checkpoint_dir_pipe_writing,
+                                  AE_WRITABLE, checkpointDirPipeWriteHandler,write_payload) == AE_ERR) {
+                serverPanic("Unrecoverable error creating checkpoint_dir_pipe_writing file event.");
+            }
+        }
+        /* parent process release snapshot so that rocksdb can continue compacting. */
+        /* child process still maintain snapshot copy. */
+        rocksReleaseSnapshot();
+    }
+
+    zfree(pd);
+}
+

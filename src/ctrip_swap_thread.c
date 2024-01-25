@@ -148,122 +148,37 @@ int swapThreadsDrained() {
 
 rocksdbUtilTaskManager* createRocksdbUtilTaskManager() {
     rocksdbUtilTaskManager * manager = zmalloc(sizeof(rocksdbUtilTaskManager));
-    for(int i = 0; i < EXCLUSIVE_TASK_COUNT;i++) {
+    for(int i = 0; i < ROCKSDB_EXCLUSIVE_TASK_COUNT;i++) {
         manager->stats[i].stat = ROCKSDB_UTILS_TASK_DONE;
     }
     return manager;
 }
 int isUtilTaskExclusive(int type) {
-    return type < EXCLUSIVE_TASK_COUNT;
+    return type < ROCKSDB_EXCLUSIVE_TASK_COUNT;
 }
 int isRunningUtilTask(rocksdbUtilTaskManager* manager, int type) {
-    serverAssert(type < EXCLUSIVE_TASK_COUNT);
+    serverAssert(type < ROCKSDB_EXCLUSIVE_TASK_COUNT);
     return manager->stats[type].stat == ROCKSDB_UTILS_TASK_DOING;
 }
 
-void compactRangeDone(swapData *data, void *pd, int errcode){
-    UNUSED(data),UNUSED(pd),UNUSED(errcode);
-    server.util_task_manager->stats[ROCKSDB_COMPACT_RANGE_TASK].stat = ROCKSDB_UTILS_TASK_DONE;
+typedef struct rocksdbUtilTaskCtx {
+    int type;
+    rocksdbUtilTaskCallback cb;
+    void *pd;
+} rocksdbUtilTaskCtx;
+
+void rocksdbUtilTaskSwapFinished(swapData *data_, void *ctx_, int errcode) {
+    rocksdbUtilTaskCtx *ctx = ctx_;
+    UNUSED(data_);
+    if (ctx->cb) ctx->cb(ctx->pd, errcode);
+    if (isUtilTaskExclusive(ctx->type))
+        server.util_task_manager->stats[ctx->type].stat = ROCKSDB_UTILS_TASK_DONE;
+    zfree(ctx);
 }
 
-void getRocksdbStatsDone(swapData *data, void *pd, int errcode) {
-    UNUSED(data), UNUSED(errcode);
-    rocksdbInternalStats *internal_stats = pd;
-
-    if (internal_stats != NULL) {
-        rocksdbInternalStatsFree(server.rocks->internal_stats);
-        server.rocks->internal_stats = internal_stats;
-    }
-    server.util_task_manager->stats[ROCKSDB_GET_STATS_TASK].stat = ROCKSDB_UTILS_TASK_DONE;
-}
-
-void checkpointDirPipeWriteHandler(struct aeEventLoop *eventLoop, int fd, void *clientData, int mask) {
-    UNUSED(eventLoop),UNUSED(mask);
-    checkpointDirPipeWritePayload *pd = clientData;
-    ssize_t nwritten;
-    if (server.child_pid != pd->waiting_child) {
-        serverLog(LL_WARNING, "[rocks] waiting child exit, skip checkpoint dir write");
-        goto end;
-    }
-
-    ssize_t total = sdslen(pd->data);
-    while (1) {
-        nwritten = write(fd, pd->data, total - pd->written);
-        if (nwritten < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) return;
-            serverLog(LL_WARNING, "[rocks] write checkpoint dir fail: %s", strerror(errno));
-            if (server.child_type == CHILD_TYPE_RDB) killRDBChild();
-            else if (server.child_type == CHILD_TYPE_AOF) killAppendOnlyChild();
-            goto end;
-        }
-
-        pd->written += nwritten;
-        if (pd->written == total) {
-            serverLog(LL_NOTICE, "[rocks] write checkpoint dir done, %s.", pd->data);
-            goto end;
-        }
-    }
-
-    end:
-    aeDeleteFileEvent(server.el, fd, AE_WRITABLE);
-    close(fd);
-    sdsfree(pd->data);
-    zfree(pd);
-}
-
-void createCheckpointDone(swapData *data, void *_pd, int errcode) {
-    UNUSED(data), UNUSED(errcode);
-    rocksdbCreateCheckpointPayload *pd = _pd;
-    rocks *rocks = server.rocks;
-    if (NULL != rocks->checkpoint) {
-        serverLog(LL_WARNING, "[rocks] release old checkpoint.");
-        rocksReleaseCheckpoint();
-    }
-    if (NULL != pd->checkpoint) {
-        serverLog(LL_NOTICE, "[rocks] create checkpoint %s.", pd->checkpoint_dir);
-        rocks->checkpoint = pd->checkpoint;
-        rocks->checkpoint_dir = pd->checkpoint_dir;
-    }
-
-    if (pd->waiting_child && server.child_pid == pd->waiting_child) {
-        if (NULL == pd->checkpoint_dir) {
-            /* create checkpoint fail, send empty str. */
-            close(pd->checkpoint_dir_pipe_writing);
-        } else {
-            sds write_data = sdsdup(pd->checkpoint_dir);
-            checkpointDirPipeWritePayload *write_payload = zcalloc(sizeof(checkpointDirPipeWritePayload));
-            write_payload->data = write_data;
-            write_payload->waiting_child = pd->waiting_child;
-            if (aeCreateFileEvent(server.el, pd->checkpoint_dir_pipe_writing,
-                                  AE_WRITABLE, checkpointDirPipeWriteHandler,write_payload) == AE_ERR) {
-                serverPanic("Unrecoverable error creating checkpoint_dir_pipe_writing file event.");
-            }
-        }
-        /* parent process release snapshot so that rocksdb can continue compacting. */
-        /* child process still maintain snapshot copy. */
-        rocksReleaseSnapshot();
-    }
-
-    zfree(pd);
-}
-
-void rocksdbFlushDone(swapData *data_, void *pd, int errcode){
-    UNUSED(pd),UNUSED(errcode);
-    swapData4RocksdbFlush *data = (swapData4RocksdbFlush*)data_;
-    zfree(data);
-    server.util_task_manager->stats[ROCKSDB_FLUSH_TASK].stat = ROCKSDB_UTILS_TASK_DONE;
-}
-
-swapRequest *rocksdbFlushRequestFromArg(void *arg, void *pd) {
-    const char *cfnames = arg;
-    swapData4RocksdbFlush *data = zcalloc(sizeof(swapData4RocksdbFlush));
-    parseCfNames(cfnames,data->cfhanles,NULL);
-    return swapDataRequestNew(SWAP_UTILS,ROCKSDB_FLUSH_TASK,NULL,(swapData*)data,
-            NULL,NULL,rocksdbFlushDone,pd,NULL);
-}
-
-int submitUtilTask(int type, void *arg, void* pd, sds* error) {
+int submitUtilTask(int type, void *arg, rocksdbUtilTaskCallback cb, void* pd, sds* error) {
     swapRequest *req = NULL;
+    rocksdbUtilTaskCtx *ctx = NULL;
 
     if (isUtilTaskExclusive(type)) {
         if (isRunningUtilTask(server.util_task_manager, type)) {
@@ -273,31 +188,14 @@ int submitUtilTask(int type, void *arg, void* pd, sds* error) {
         server.util_task_manager->stats[type].stat = ROCKSDB_UTILS_TASK_DOING;
     }
 
-    switch (type) {
-        case ROCKSDB_COMPACT_RANGE_TASK:
-            req = swapDataRequestNew(SWAP_UTILS,ROCKSDB_COMPACT_RANGE_TASK,NULL,NULL,
-                    NULL,NULL,compactRangeDone,pd,NULL);
-            submitSwapRequest(SWAP_MODE_ASYNC,req,server.swap_util_thread_idx);
-            break;
-        case ROCKSDB_GET_STATS_TASK:
-            req = swapDataRequestNew(SWAP_UTILS,ROCKSDB_GET_STATS_TASK,NULL,
-                    NULL,NULL,NULL,getRocksdbStatsDone,pd,NULL);
-            submitSwapRequest(SWAP_MODE_ASYNC,req,server.swap_util_thread_idx);
-            break;
-        case ROCKSDB_FLUSH_TASK:
-            req = rocksdbFlushRequestFromArg(arg, pd);
-            submitSwapRequest(SWAP_MODE_ASYNC,req,server.swap_util_thread_idx);
-            break;
-        case ROCKSDB_CREATE_CHECKPOINT:
-            req = swapDataRequestNew(SWAP_UTILS,ROCKSDB_CREATE_CHECKPOINT,NULL,NULL,
-                    NULL,NULL,createCheckpointDone,pd,NULL);
-            submitSwapRequest(SWAP_MODE_ASYNC,req,server.swap_util_thread_idx);
-            break;
-        default:
-            if (error != NULL)
-                *error = sdscatprintf(sdsempty(),"unknown util type %d.",type);
-            return 0;
-    }
+    ctx = zmalloc(sizeof(rocksdbUtilTaskCtx));
+    ctx->type = type;
+    ctx->cb = cb;
+    ctx->pd = pd;
+
+    req = swapDataRequestNew(SWAP_UTILS,type,NULL,arg,NULL,NULL,
+            rocksdbUtilTaskSwapFinished,ctx,NULL);
+    submitSwapRequest(SWAP_MODE_ASYNC,req,server.swap_util_thread_idx);
     return 1;
 }
 

@@ -282,7 +282,7 @@ NULL
         addReply(c,shared.ok);
     } else if (!strcasecmp(c->argv[1]->ptr,"compact") && c->argc == 2) {
         sds error = NULL;
-        if (submitUtilTask(ROCKSDB_COMPACT_RANGE_TASK, NULL, NULL, &error)) {
+        if (submitUtilTask(ROCKSDB_COMPACT_RANGE_TASK, NULL, NULL, NULL, &error)) {
             addReply(c,shared.ok);
         } else {
             addReplyErrorSds(c,error);
@@ -290,7 +290,8 @@ NULL
     } else if (!strcasecmp(c->argv[1]->ptr,"flush") && c->argc >= 2) {
         sds error = NULL;
         const char *cfnames = c->argc > 2 ? c->argv[2]->ptr : NULL;
-        if (submitUtilTask(ROCKSDB_FLUSH_TASK, (void*)cfnames, NULL, &error)) {
+        swapData4RocksdbFlush *data = rocksdbFlushTaskArgCreate(cfnames);
+        if (submitUtilTask(ROCKSDB_FLUSH_TASK, data, rocksdbFlushTaskDone, data, &error)) {
             addReply(c,shared.ok);
         } else {
             addReplyErrorSds(c,error);
