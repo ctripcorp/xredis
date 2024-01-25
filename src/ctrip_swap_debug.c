@@ -130,8 +130,6 @@ void swapCommand(client *c) {
 "    Get rocksdb property value (string type)",
 "SCAN-SESSION [<cursor>]",
 "    List assigned scan sesions",
-"RORDB BGSAVE",
-"    bgsave in rordb mode",
 NULL
         };
         addReplyHelp(c, help);
@@ -324,24 +322,59 @@ NULL
         sds o = getAllSwapScanSessionsInfoString(outer_cursor);
         addReplyVerbatim(c,o,sdslen(o),"txt");
         sdsfree(o);
+    } else {
+        addReplySubcommandSyntaxError(c);
+        return;
+    }
+}
+
+/* swap.debug will requires global lock. */
+void swapDebugCommand(client *c) {
+    if (c->argc == 2 && !strcasecmp(c->argv[1]->ptr,"help")) {
+        const char *help[] = {
+"RORDB BGSAVE|RELOAD",
+"    Background save or reload with rordb format.",
+NULL
+        };
+        addReplyHelp(c, help);
     } else if (!strcasecmp(c->argv[1]->ptr,"rordb") && c->argc == 3) {
         if (!strcasecmp(c->argv[2]->ptr,"bgsave")) {
             rdbSaveInfo rsi, *rsiptr;
             swapForkRocksdbCtx *sfrctx = NULL;
 
             rsiptr = rdbPopulateSaveInfo(&rsi);
-
             if (server.child_type == CHILD_TYPE_RDB || hasActiveChildProcess()) {
                 addReplyError(c,"Background child already in progress");
                 return;
             }
-
             sfrctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_CHECKPOINT);
             if (rdbSaveBackground(server.rdb_filename,rsiptr,sfrctx,1) == C_OK) {
-                addReplyStatus(c,"Background saving started");
+                addReplyStatus(c,"Background saving started(rordb mode)");
             } else {
                 addReplyErrorObject(c,shared.err);
             }
+        } else if (!strcasecmp(c->argv[2]->ptr,"reload")) {
+            rdbSaveInfo rsi, *rsiptr;
+            rsiptr = rdbPopulateSaveInfo(&rsi);
+            sds checkpoint_dir = sdscatprintf(sdsempty(),"%s/tmp_%lld",ROCKS_DATA,ustime());
+            if (rocksCreateCheckpoint(checkpoint_dir) != C_OK) {
+                addReplyError(c,"Error creating checkpoint");
+                return;
+            }
+            if (rdbSave(server.rdb_filename,rsiptr,1) != C_OK) {
+                addReplyError(c,"Error saving rordb");
+                return;
+            }
+            emptyDb(-1,EMPTYDB_NO_FLAGS,NULL);
+            protectClient(c);
+            int ret = rdbLoad(server.rdb_filename,NULL,RDBFLAGS_NONE);
+            unprotectClient(c);
+            if (ret != C_OK) {
+                addReplyError(c,"Error trying to load RORDB");
+                return;
+            }
+            serverLog(LL_WARNING,"DB reloaded by SWAP.DEBUG RORDB RELOAD");
+            addReply(c,shared.ok);
         } else {
             addReplySubcommandSyntaxError(c);
         }
