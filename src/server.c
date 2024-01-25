@@ -2140,8 +2140,10 @@ void cronUpdateMemoryStats() {
 
 void _rdbSaveBackground(client *c, swapCtx *ctx) {
     rdbSaveInfo rsi, *rsiptr;
+    swapForkRocksdbCtx *sfrctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_SNAPSHOT);
+    serverAssert(server.swap_mode != SWAP_MODE_MEMORY);
     rsiptr = rdbPopulateSaveInfo(&rsi);
-    rdbSaveBackground(server.rdb_filename,rsiptr);
+    rdbSaveBackground(server.rdb_filename,rsiptr,sfrctx,0);
     server.req_submitted &= ~REQ_SUBMITTED_BGSAVE;
     clientReleaseLocks(c,ctx);
 }
@@ -2303,7 +2305,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
                               sp->changes, (int)sp->seconds);
                     rdbSaveInfo rsi, *rsiptr;
                     rsiptr = rdbPopulateSaveInfo(&rsi);
-                    rdbSaveBackground(server.rdb_filename,rsiptr);
+                    rdbSaveBackground(server.rdb_filename,rsiptr,NULL,0);
                 } else {
                     lockGlobalAndExec(_rdbSaveBackground, REQ_SUBMITTED_BGSAVE);
                 }
@@ -2397,7 +2399,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
         if (server.swap_mode == SWAP_MODE_MEMORY) {
             rdbSaveInfo rsi, *rsiptr;
             rsiptr = rdbPopulateSaveInfo(&rsi);
-            bgsaved = rdbSaveBackground(server.rdb_filename,rsiptr) == C_OK;
+            bgsaved = rdbSaveBackground(server.rdb_filename,rsiptr,NULL,0) == C_OK;
         } else {
             bgsaved = lockGlobalAndExec(_rdbSaveBackground, REQ_SUBMITTED_BGSAVE);
         }
@@ -4700,7 +4702,7 @@ int prepareForShutdown(int flags) {
         /* Snapshotting. Perform a SYNC SAVE and exit */
         rdbSaveInfo rsi, *rsiptr;
         rsiptr = rdbPopulateSaveInfo(&rsi);
-        if (rdbSave(server.rdb_filename,rsiptr) != C_OK) {
+        if (rdbSave(server.rdb_filename,rsiptr,0) != C_OK) {
             /* Ooops.. error saving! The best we can do is to continue
              * operating. Note that if there was a background saving process,
              * in the next cron() Redis will be notified that the background

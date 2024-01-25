@@ -327,15 +327,17 @@ NULL
     } else if (!strcasecmp(c->argv[1]->ptr,"rordb") && c->argc == 3) {
         if (!strcasecmp(c->argv[2]->ptr,"bgsave")) {
             rdbSaveInfo rsi, *rsiptr;
+            swapForkRocksdbCtx *sfrctx = NULL;
+
             rsiptr = rdbPopulateSaveInfo(&rsi);
-            rdbSaveInfoSetUseRorDb(rsiptr);
 
             if (server.child_type == CHILD_TYPE_RDB || hasActiveChildProcess()) {
                 addReplyError(c,"Background child already in progress");
                 return;
             }
 
-            if (rdbSaveBackground(server.rdb_filename,rsiptr) == C_OK) {
+            sfrctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_CHECKPOINT);
+            if (rdbSaveBackground(server.rdb_filename,rsiptr,sfrctx,1) == C_OK) {
                 addReplyStatus(c,"Background saving started");
             } else {
                 addReplyErrorObject(c,shared.err);

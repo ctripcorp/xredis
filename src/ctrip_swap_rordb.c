@@ -148,7 +148,7 @@ werr:
 int rordbSaveSST(rio *rdb) {
     if (rdbSaveType(rdb,RORDB_OPCODE_SWAP_VERSION) == -1) goto err;
     if (rdbSaveLen(rdb,server.swap_key_version) == -1) goto err;
-    if (rordbSaveSSTFiles(rdb,server.rocks->rdb_checkpoint_dir) == -1) goto err;
+    if (rordbSaveSSTFiles(rdb,server.rocks->checkpoint_dir) == -1) goto err;
     return C_OK;
 err:
     return C_ERR;

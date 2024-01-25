@@ -351,9 +351,11 @@ int rocksRestore(const char *checkpoint_dir) {
 int rocksCreateCheckpoint(sds checkpoint_dir) {
     rocksdb_checkpoint_t* checkpoint = NULL;
     rocks *rocks = server.rocks;
+    ustime_t start_time = mstime();
+    serverLog(LL_NOTICE, "[rocks] create checkpoint start.");
     if (rocks->checkpoint != NULL) {
-        serverLog(LL_WARNING, "[rocks] release checkpoint before create.");
         rocksReleaseCheckpoint();
+        serverLog(LL_NOTICE, "[rocks] released old checkpoint.");
     }
     char* err = NULL;
     checkpoint = rocksdb_checkpoint_object_create(rocks->db, &err);
@@ -366,13 +368,14 @@ int rocksCreateCheckpoint(sds checkpoint_dir) {
         serverLog(LL_WARNING, "[rocks] checkpoint %s create fail: %s", checkpoint_dir, err);
         goto error;
     }
+    serverLog(LL_NOTICE,"[rocks] create checkpoint finish(%lld ms).", mstime() - start_time);
     rocks->checkpoint = checkpoint;
     rocks->checkpoint_dir = checkpoint_dir;
     return 1;
 error:
     if(checkpoint != NULL) {
         rocksdb_checkpoint_object_destroy(checkpoint);
-    } 
+    }
     sdsfree(checkpoint_dir);
     return 0;
 }
@@ -1329,12 +1332,12 @@ int swapShouldFlushMeta() {
  *  b) checkpoint: master process create checkpoint synchronously,
  *    child opens the checkpoint.  */
 
-static inline void swapForkRocksdbCtxInit(swapForkRocksdbCtx *ctx) {
-   ctx->type->init(ctx);
+static inline void swapForkRocksdbCtxInit(swapForkRocksdbCtx *sfrctx) {
+   sfrctx->type->init(sfrctx);
 }
 
-static inline void swapForkRocksdbCtxDeinit(swapForkRocksdbCtx *ctx) {
-   ctx->type->deinit(ctx);
+static inline void swapForkRocksdbCtxDeinit(swapForkRocksdbCtx *sfrctx) {
+   sfrctx->type->deinit(sfrctx);
 }
 
 typedef struct swapForkRocksdbSnapshotCtx {
@@ -1342,15 +1345,15 @@ typedef struct swapForkRocksdbSnapshotCtx {
   int checkpoint_dir_pipe_writing;
 } swapForkRocksdbSnapshotCtx;
 
-void swapForkRocksdbSnapshotCtxInit(struct swapForkRocksdbCtx *ctx) {
+void swapForkRocksdbSnapshotCtxInit(struct swapForkRocksdbCtx *sfrctx) {
    swapForkRocksdbSnapshotCtx *snapshot_ctx = zcalloc(sizeof(swapForkRocksdbSnapshotCtx));
    snapshot_ctx->checkpoint_dir_pipe = -1;
    snapshot_ctx->checkpoint_dir_pipe_writing = -1;
-   ctx->extend = snapshot_ctx;
+   sfrctx->extend = snapshot_ctx;
 }
 
-int swapForkRocksdbSnapshotBeforeFork(struct swapForkRocksdbCtx *ctx) {
-    swapForkRocksdbSnapshotCtx *snapshot_ctx = ctx->extend;
+int swapForkRocksdbSnapshotBeforeFork(struct swapForkRocksdbCtx *sfrctx) {
+    swapForkRocksdbSnapshotCtx *snapshot_ctx = sfrctx->extend;
     int pipefds[2];
 
     if (pipe(pipefds) == -1) return C_ERR;
@@ -1366,8 +1369,8 @@ int swapForkRocksdbSnapshotBeforeFork(struct swapForkRocksdbCtx *ctx) {
     return C_OK;
 }
 
-int swapForkRocksdbSnapshotAfterForkChild(struct swapForkRocksdbCtx *ctx) {
-    swapForkRocksdbSnapshotCtx *snapshot_ctx = ctx->extend;
+int swapForkRocksdbSnapshotAfterForkChild(struct swapForkRocksdbCtx *sfrctx) {
+    swapForkRocksdbSnapshotCtx *snapshot_ctx = sfrctx->extend;
     close(snapshot_ctx->checkpoint_dir_pipe_writing);
     if (C_ERR == readCheckpointDirFromPipe(snapshot_ctx->checkpoint_dir_pipe)) {
         serverLog(LL_WARNING, "wait checkpoint dir fail, exit.");
@@ -1375,124 +1378,6 @@ int swapForkRocksdbSnapshotAfterForkChild(struct swapForkRocksdbCtx *ctx) {
     }
     close(snapshot_ctx->checkpoint_dir_pipe);
     return C_OK;
-}
-
-int swapForkRocksdbSnapshotAfterForkParent(struct swapForkRocksdbCtx *ctx, int childpid) {
-    swapForkRocksdbSnapshotCtx *snapshot_ctx = ctx->extend;
-    if (childpid == -1) {
-        close(snapshot_ctx->checkpoint_dir_pipe);
-        close(snapshot_ctx->checkpoint_dir_pipe_writing);
-    } else {
-        close(snapshot_ctx->checkpoint_dir_pipe);
-        rocksdbCreateCheckpointPayload *pd = zcalloc(sizeof(rocksdbCreateCheckpointPayload));
-        pd->waiting_child = childpid;
-        pd->checkpoint_dir_pipe_writing = snapshot_ctx->checkpoint_dir_pipe_writing;
-        submitUtilTask(ROCKSDB_CREATE_CHECKPOINT, NULL, rocksdbCreateCheckpointTaskDone, pd, NULL);
-    }
-    return C_OK;
-}
-
-void swapForkRocksdbSnapshotCtxDeinit(struct swapForkRocksdbCtx *ctx) {
-    if (ctx->extend == NULL) return;
-    zfree(ctx->extend);
-    ctx->extend = NULL;
-}
-
-swapForkRocksdbType swap_fork_rocksdb_snapshot_type = {
-    .init = swapForkRocksdbSnapshotCtxInit,
-    .beforeFork = swapForkRocksdbSnapshotBeforeFork,
-    .afterForkChild = swapForkRocksdbSnapshotAfterForkChild,
-    .afterForkParent = swapForkRocksdbSnapshotAfterForkParent,
-    .deinit = swapForkRocksdbSnapshotCtxDeinit,
-};
-
-typedef struct swapForkRocksdbCheckpointCtx {
-    void *reserved;
-} swapForkRocksdbCheckpointCtx;
-
-void swapForkRocksdbCheckpointCtxInit(struct swapForkRocksdbCtx *ctx) {
-    UNUSED(ctx);
-}
-
-int swapForkRocksdbCheckpointBeforeFork(struct swapForkRocksdbCtx *ctx) {
-    UNUSED(ctx);
-    sds checkpoint_dir = sdscatprintf(sdsempty(),"%s/tmp_%lld",ROCKS_DATA,ustime());
-    return rocksCreateCheckpoint(checkpoint_dir) ? C_OK : C_ERR;
-}
-
-int swapForkRocksdbCheckpointAfterForkChild(struct swapForkRocksdbCtx *ctx) {
-    UNUSED(ctx);
-    return C_OK;
-}
-
-int swapForkRocksdbCheckpointAfterForkParent(struct swapForkRocksdbCtx *ctx, int childpid) {
-    UNUSED(ctx), UNUSED(childpid);
-    return C_OK;
-}
-
-void swapForkRocksdbCheckpointCtxDeinit(struct swapForkRocksdbCtx *ctx) {
-    UNUSED(ctx);
-}
-
-swapForkRocksdbType swap_fork_rocksdb_checkpoint_type = {
-    .init = swapForkRocksdbCheckpointCtxInit,
-    .beforeFork = swapForkRocksdbCheckpointBeforeFork,
-    .afterForkChild = swapForkRocksdbCheckpointAfterForkChild,
-    .afterForkParent = swapForkRocksdbCheckpointAfterForkParent,
-    .deinit = swapForkRocksdbCheckpointCtxDeinit,
-};
-
-
-swapForkRocksdbCtx *swapForkRocksdbCtxCreate(int mode, int rordb) {
-    swapForkRocksdbCtx *ctx = zcalloc(sizeof(swapForkRocksdbCtx));
-
-    ctx->rordb = rordb;
-
-    switch(mode) {
-    case SWAP_FORK_ROCKSDB_TYPE_CHECKPOINT:
-        ctx->type = &swap_fork_rocksdb_checkpoint_type;
-        break;
-    case SWAP_FORK_ROCKSDB_TYPE_SNAPSHOT:
-        ctx->type = &swap_fork_rocksdb_snapshot_type;
-        break;
-    default:
-        serverPanic("unexpected swap fork rocksdb mode");
-        break;
-    }
-
-    swapForkRocksdbCtxInit(ctx);
-
-    return ctx;
-}
-
-void swapForkRocksdbCtxRelease(swapForkRocksdbCtx *ctx) {
-    if (ctx == NULL) return;
-    swapForkRocksdbCtxDeinit(ctx);
-    zfree(ctx);
-}
-
-void rocksdbGetStatsTaskDone(void *pd, int errcode) {
-    UNUSED(errcode);
-    rocksdbInternalStats *internal_stats = pd;
-    if (internal_stats != NULL) {
-        rocksdbInternalStatsFree(server.rocks->internal_stats);
-        server.rocks->internal_stats = internal_stats;
-    }
-}
-
-swapData4RocksdbFlush *rocksdbFlushTaskArgCreate(const char *cfnames) {
-    swapData4RocksdbFlush *data = zcalloc(sizeof(swapData4RocksdbFlush));
-    parseCfNames(cfnames,data->cfhanles,NULL);
-    return data;
-}
-
-void rocksdbFlushTaskArgRelease(swapData4RocksdbFlush *data) {
-    zfree(data);
-}
-
-void rocksdbFlushTaskDone(void *pd, int errcode){
-    UNUSED(errcode);
-    rocksdbFlushTaskArgRelease(pd);
 }
 
 void checkpointDirPipeWriteHandler(struct aeEventLoop *eventLoop, int fd, void *clientData, int mask) {
@@ -1563,5 +1448,125 @@ void rocksdbCreateCheckpointTaskDone(void *_pd, int errcode) {
     }
 
     zfree(pd);
+}
+
+/* generate checkpoint asynchronsly and then sends checkpoint info to
+ * block waiting child */
+int swapForkRocksdbSnapshotAfterForkParent(struct swapForkRocksdbCtx *sfrctx, int childpid) {
+    swapForkRocksdbSnapshotCtx *snapshot_ctx = sfrctx->extend;
+    if (childpid == -1) {
+        close(snapshot_ctx->checkpoint_dir_pipe);
+        close(snapshot_ctx->checkpoint_dir_pipe_writing);
+    } else {
+        close(snapshot_ctx->checkpoint_dir_pipe);
+        rocksdbCreateCheckpointPayload *pd = zcalloc(sizeof(rocksdbCreateCheckpointPayload));
+        pd->waiting_child = childpid;
+        pd->checkpoint_dir_pipe_writing = snapshot_ctx->checkpoint_dir_pipe_writing;
+        submitUtilTask(ROCKSDB_CREATE_CHECKPOINT, NULL, rocksdbCreateCheckpointTaskDone, pd, NULL);
+    }
+    return C_OK;
+}
+
+void swapForkRocksdbSnapshotCtxDeinit(struct swapForkRocksdbCtx *sfrctx) {
+    if (sfrctx->extend == NULL) return;
+    zfree(sfrctx->extend);
+    sfrctx->extend = NULL;
+}
+
+swapForkRocksdbType swap_fork_rocksdb_snapshot_type = {
+    .init = swapForkRocksdbSnapshotCtxInit,
+    .beforeFork = swapForkRocksdbSnapshotBeforeFork,
+    .afterForkChild = swapForkRocksdbSnapshotAfterForkChild,
+    .afterForkParent = swapForkRocksdbSnapshotAfterForkParent,
+    .deinit = swapForkRocksdbSnapshotCtxDeinit,
+};
+
+typedef struct swapForkRocksdbCheckpointCtx {
+    void *reserved;
+} swapForkRocksdbCheckpointCtx;
+
+void swapForkRocksdbCheckpointCtxInit(struct swapForkRocksdbCtx *sfrctx) {
+    UNUSED(sfrctx);
+}
+
+int swapForkRocksdbCheckpointBeforeFork(struct swapForkRocksdbCtx *sfrctx) {
+    UNUSED(sfrctx);
+    sds checkpoint_dir = sdscatprintf(sdsempty(),"%s/tmp_%lld",ROCKS_DATA,ustime());
+    return rocksCreateCheckpoint(checkpoint_dir) ? C_OK : C_ERR;
+}
+
+int swapForkRocksdbCheckpointAfterForkChild(struct swapForkRocksdbCtx *sfrctx) {
+    UNUSED(sfrctx);
+    // reopen checkpoint?
+    return C_OK;
+}
+
+int swapForkRocksdbCheckpointAfterForkParent(struct swapForkRocksdbCtx *sfrctx, int childpid) {
+    UNUSED(sfrctx), UNUSED(childpid);
+    return C_OK;
+}
+
+void swapForkRocksdbCheckpointCtxDeinit(struct swapForkRocksdbCtx *sfrctx) {
+    UNUSED(sfrctx);
+}
+
+swapForkRocksdbType swap_fork_rocksdb_checkpoint_type = {
+    .init = swapForkRocksdbCheckpointCtxInit,
+    .beforeFork = swapForkRocksdbCheckpointBeforeFork,
+    .afterForkChild = swapForkRocksdbCheckpointAfterForkChild,
+    .afterForkParent = swapForkRocksdbCheckpointAfterForkParent,
+    .deinit = swapForkRocksdbCheckpointCtxDeinit,
+};
+
+
+swapForkRocksdbCtx *swapForkRocksdbCtxCreate(int mode) {
+    swapForkRocksdbCtx *sfrctx = zcalloc(sizeof(swapForkRocksdbCtx));
+
+    switch(mode) {
+    case SWAP_FORK_ROCKSDB_TYPE_CHECKPOINT:
+        sfrctx->type = &swap_fork_rocksdb_checkpoint_type;
+        break;
+    case SWAP_FORK_ROCKSDB_TYPE_SNAPSHOT:
+        sfrctx->type = &swap_fork_rocksdb_snapshot_type;
+        break;
+    default:
+        serverPanic("unexpected swap fork rocksdb mode");
+        break;
+    }
+
+    swapForkRocksdbCtxInit(sfrctx);
+
+    return sfrctx;
+}
+
+void swapForkRocksdbCtxRelease(swapForkRocksdbCtx *sfrctx) {
+    if (sfrctx == NULL) return;
+    swapForkRocksdbCtxDeinit(sfrctx);
+    zfree(sfrctx);
+}
+
+void rocksdbGetStatsTaskDone(void *pd, int errcode) {
+    UNUSED(errcode);
+    rocksdbInternalStats *internal_stats = pd;
+    if (internal_stats != NULL) {
+        rocksdbInternalStatsFree(server.rocks->internal_stats);
+        server.rocks->internal_stats = internal_stats;
+    }
+}
+
+swapData4RocksdbFlush *rocksdbFlushTaskArgCreate(const char *cfnames) {
+    swapData4RocksdbFlush *data = zcalloc(sizeof(swapData4RocksdbFlush));
+    parseCfNames(cfnames,data->cfhanles,NULL);
+    data->start_time = mstime();
+    return data;
+}
+
+void rocksdbFlushTaskArgRelease(swapData4RocksdbFlush *data) {
+    zfree(data);
+}
+
+void rocksdbFlushTaskDone(void *pd, int errcode){
+    UNUSED(errcode);
+    rocksdbFlushTaskArgRelease(pd);
 }
 

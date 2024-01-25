@@ -1574,7 +1574,7 @@ int rewriteAppendOnlyFile(char *filename) {
 
     if (server.aof_use_rdb_preamble) {
         int error;
-        if (rdbSaveRio(&aof,&error,RDBFLAGS_AOF_PREAMBLE,NULL) == C_ERR) {
+        if (rdbSaveRio(&aof,&error,RDBFLAGS_AOF_PREAMBLE,NULL,0) == C_ERR) {
             errno = error;
             goto werr;
         }
@@ -1768,15 +1768,15 @@ void aofClosePipes(void) {
  */
 int rewriteAppendOnlyFileBackground(void) {
     pid_t childpid;
-    swapForkRocksdbCtx *ctx = NULL;
+    swapForkRocksdbCtx *sfrctx = NULL;
 
     if (hasActiveChildProcess()) return C_ERR;
     if (aofCreatePipes() != C_OK) return C_ERR;
 
     if (server.swap_mode != SWAP_MODE_MEMORY) {
-        ctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_SNAPSHOT,0);
-        if (swapForkRocksdbBefore(ctx)) {
-            swapForkRocksdbCtxRelease(ctx);
+        sfrctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_SNAPSHOT);
+        if (swapForkRocksdbBefore(sfrctx)) {
+            swapForkRocksdbCtxRelease(sfrctx);
             return C_ERR;
         }
     }
@@ -1785,10 +1785,10 @@ int rewriteAppendOnlyFileBackground(void) {
         char tmpfile[256];
 
         if (server.swap_mode != SWAP_MODE_MEMORY) {
-            if (swapForkRocksdbAfterChild(ctx)) {
+            if (swapForkRocksdbAfterChild(sfrctx)) {
                 exit(1);
             } else {
-                swapForkRocksdbCtxRelease(ctx);
+                swapForkRocksdbCtxRelease(sfrctx);
             }
         }
 
@@ -1805,8 +1805,8 @@ int rewriteAppendOnlyFileBackground(void) {
     } else {
         /* Parent */
         if (server.swap_mode != SWAP_MODE_MEMORY) {
-            swapForkRocksdbAfterParent(ctx,childpid);
-            swapForkRocksdbCtxRelease(ctx);
+            swapForkRocksdbAfterParent(sfrctx,childpid);
+            swapForkRocksdbCtxRelease(sfrctx);
         }
 
         if (childpid == -1) {
