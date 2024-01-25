@@ -2294,6 +2294,7 @@ robj *unshareStringValue(robj *value);
 size_t objectEstimateSize(robj *o);
 size_t keyEstimateSize(redisDb *db, robj *key);
 void swapCommand(client *c);
+void swapDebugCommand(client *c);
 void swapExpiredCommand(client *c);
 const char *strObjectType(int type);
 int timestampIsExpired(mstime_t expire);

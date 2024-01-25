@@ -1144,6 +1144,10 @@ struct redisCommand redisCommandTable[] = {
     "admin no-script",
     0,NULL,getKeyRequestsNone,SWAP_NOP,0,0,0,0,0,0,0},
 
+	{"swap.debug",swapDebugCommand,-2,
+	 "admin no-script ok-stale @swap_keyspace",
+     0,NULL,getKeyRequestsGlobal,SWAP_NOP,0,0,0,0,0,0,0},
+
     {"gtid", gtidCommand, -3,
      "write use-memory ",
      0,NULL,getKeyRequestsGtid,SWAP_NOP/*not used*/,0,0,0,0,0,0,0},
