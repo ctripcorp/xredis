@@ -1781,6 +1781,11 @@ int rocksdbPropertyInt(const char *cfnames, const char *propname, uint64_t *out_
 sds rocksdbPropertyValue(const char *cfnames, const char *propname);
 char *rocksdbVersion(void);
 
+swapData4RocksdbFlush *rocksdbFlushTaskArgCreate(const char *cfnames);
+void rocksdbFlushTaskArgRelease(swapData4RocksdbFlush *data);
+void rocksdbFlushTaskDone(void *pd, int errcode);
+void rocksdbGetStatsTaskDone(void *pd, int errcode);
+void rocksdbCreateCheckpointTaskDone(void *_pd, int errcode);
 
 /* Repl */
 int submitReplClientRequests(client *c);
@@ -2333,15 +2338,19 @@ static inline void clientSwapError(client *c, int swap_errcode) {
 #define ROCKSDB_COMPACT_RANGE_TASK 0
 #define ROCKSDB_GET_STATS_TASK 1
 #define ROCKSDB_FLUSH_TASK 2
-#define EXCLUSIVE_TASK_COUNT 3
+#define ROCKSDB_EXCLUSIVE_TASK_COUNT 3
 #define ROCKSDB_CREATE_CHECKPOINT 3
+
+typedef void (*rocksdbUtilTaskCallback)(void *pd, int errcode);
+
 typedef struct rocksdbUtilTaskManager{
     struct {
         int stat;
-    } stats[EXCLUSIVE_TASK_COUNT];
+    } stats[ROCKSDB_EXCLUSIVE_TASK_COUNT];
 } rocksdbUtilTaskManager;
+
 rocksdbUtilTaskManager* createRocksdbUtilTaskManager();
-int submitUtilTask(int type, void *arg, void* pd, sds* error);
+int submitUtilTask(int type, void *arg, rocksdbUtilTaskCallback cb, void* pd, sds* error);
 
 typedef struct rocksdbCreateCheckpointPayload {
     rocksdb_checkpoint_t *checkpoint;
