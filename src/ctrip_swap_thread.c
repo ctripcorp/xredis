@@ -161,24 +161,18 @@ int isRunningUtilTask(rocksdbUtilTaskManager* manager, int type) {
     return manager->stats[type].stat == ROCKSDB_UTILS_TASK_DOING;
 }
 
-typedef struct rocksdbUtilTaskCtx {
-    int type;
-    rocksdbUtilTaskCallback cb;
-    void *pd;
-} rocksdbUtilTaskCtx;
-
-void rocksdbUtilTaskSwapFinished(swapData *data_, void *ctx_, int errcode) {
-    rocksdbUtilTaskCtx *ctx = ctx_;
+void rocksdbUtilTaskSwapFinished(swapData *data_, void *utilctx_, int errcode) {
+    rocksdbUtilTaskCtx *utilctx = utilctx_;
     UNUSED(data_);
-    if (ctx->cb) ctx->cb(ctx->pd, errcode);
-    if (isUtilTaskExclusive(ctx->type))
-        server.util_task_manager->stats[ctx->type].stat = ROCKSDB_UTILS_TASK_DONE;
-    zfree(ctx);
+    if (utilctx->finish_cb) utilctx->finish_cb(utilctx->result, utilctx->finish_pd, errcode);
+    if (isUtilTaskExclusive(utilctx->type))
+        server.util_task_manager->stats[utilctx->type].stat = ROCKSDB_UTILS_TASK_DONE;
+    zfree(utilctx);
 }
 
 int submitUtilTask(int type, void *arg, rocksdbUtilTaskCallback cb, void* pd, sds* error) {
     swapRequest *req = NULL;
-    rocksdbUtilTaskCtx *ctx = NULL;
+    rocksdbUtilTaskCtx *utilctx = NULL;
 
     if (isUtilTaskExclusive(type)) {
         if (isRunningUtilTask(server.util_task_manager, type)) {
@@ -188,13 +182,15 @@ int submitUtilTask(int type, void *arg, rocksdbUtilTaskCallback cb, void* pd, sd
         server.util_task_manager->stats[type].stat = ROCKSDB_UTILS_TASK_DOING;
     }
 
-    ctx = zmalloc(sizeof(rocksdbUtilTaskCtx));
-    ctx->type = type;
-    ctx->cb = cb;
-    ctx->pd = pd;
+    utilctx = zcalloc(sizeof(rocksdbUtilTaskCtx));
+    utilctx->type = type;
+    utilctx->argument = arg;
+    utilctx->result = NULL;
+    utilctx->finish_cb = cb;
+    utilctx->finish_pd = pd;
 
-    req = swapDataRequestNew(SWAP_UTILS,type,NULL,arg,NULL,NULL,
-            rocksdbUtilTaskSwapFinished,ctx,NULL);
+    req = swapDataRequestNew(SWAP_UTILS,type,NULL,NULL,NULL,NULL,
+            rocksdbUtilTaskSwapFinished,utilctx,NULL);
     submitSwapRequest(SWAP_MODE_ASYNC,req,server.swap_util_thread_idx);
     return 1;
 }

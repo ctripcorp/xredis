@@ -1662,29 +1662,6 @@ int submitExpireClientRequest(client *c, robj *key, int force);
 #define ROCKS_DATA "data.rocks"
 #define ROCKS_DISK_HEALTH_DETECT_FILE "disk_health_detect"
 
-typedef struct rocksdbCFInternalStats {
-  char* rocksdb_stats_cache;
-  uint64_t num_entries_imm_mem_tables;
-  uint64_t num_deletes_imm_mem_tables;
-  uint64_t num_entries_active_mem_table;
-  uint64_t num_deletes_active_mem_table;
-} rocksdbCFInternalStats;
-
-typedef struct rocksdbInternalStats {
-  rocksdbCFInternalStats cfs[CF_COUNT];
-}rocksdbInternalStats;
-
-rocksdbInternalStats *rocksdbInternalStatsNew();
-void rocksdbInternalStatsFree(rocksdbInternalStats *internal_stats);
-
-typedef struct swapData4RocksdbFlush {
-  rocksdb_column_family_handle_t *cfhanles[CF_COUNT];
-  mstime_t start_time;
-} swapData4RocksdbFlush;
-
-int parseCfNames(const char *cfnames, rocksdb_column_family_handle_t *handles[CF_COUNT], const char *names[CF_COUNT+1]);
-int swapShouldFlushMeta();
-
 /* Rocksdb engine */
 typedef struct rocks {
     rocksdb_t *db;
@@ -1700,7 +1677,7 @@ typedef struct rocks {
     rocksdb_checkpoint_t* checkpoint;
     sds checkpoint_dir;
     sds rdb_checkpoint_dir; /* checkpoint dir use for rdb saved */
-    rocksdbInternalStats *internal_stats;
+    struct rocksdbInternalStats *internal_stats;
 } rocks;
 
 static inline rocksdb_column_family_handle_t *swapGetCF(int cf) {
@@ -1781,11 +1758,53 @@ int rocksdbPropertyInt(const char *cfnames, const char *propname, uint64_t *out_
 sds rocksdbPropertyValue(const char *cfnames, const char *propname);
 char *rocksdbVersion(void);
 
+/* rocksdb util task: flush */
+typedef struct swapData4RocksdbFlush {
+  rocksdb_column_family_handle_t *cfhanles[CF_COUNT];
+  mstime_t start_time;
+} swapData4RocksdbFlush;
+
+int parseCfNames(const char *cfnames, rocksdb_column_family_handle_t *handles[CF_COUNT], const char *names[CF_COUNT+1]);
+int swapShouldFlushMeta();
 swapData4RocksdbFlush *rocksdbFlushTaskArgCreate(const char *cfnames);
 void rocksdbFlushTaskArgRelease(swapData4RocksdbFlush *data);
-void rocksdbFlushTaskDone(void *pd, int errcode);
-void rocksdbGetStatsTaskDone(void *pd, int errcode);
-void rocksdbCreateCheckpointTaskDone(void *_pd, int errcode);
+void rocksdbFlushTaskDone(void *result, void *pd, int errcode);
+
+/* rocksdb util task: getstats */
+typedef struct rocksdbCFInternalStats {
+  char* rocksdb_stats_cache;
+  uint64_t num_entries_imm_mem_tables;
+  uint64_t num_deletes_imm_mem_tables;
+  uint64_t num_entries_active_mem_table;
+  uint64_t num_deletes_active_mem_table;
+} rocksdbCFInternalStats;
+
+typedef struct rocksdbInternalStats {
+  rocksdbCFInternalStats cfs[CF_COUNT];
+}rocksdbInternalStats;
+
+rocksdbInternalStats *rocksdbInternalStatsNew();
+void rocksdbInternalStatsFree(rocksdbInternalStats *internal_stats);
+void rocksdbGetStatsTaskDone(void *result, void *pd, int errcode);
+
+/* rocksdb util task: checkpoint */
+typedef struct rocksdbCreateCheckpointPayload {
+    pid_t waiting_child;
+    int checkpoint_dir_pipe_writing;
+} rocksdbCreateCheckpointPayload;
+
+void rocksdbCreateCheckpointTaskDone(void *_result, void *_pd, int errcode);
+
+typedef struct checkpointDirPipeWritePayload {
+    sds data;
+    ssize_t written;
+    pid_t waiting_child;
+} checkpointDirPipeWritePayload;
+
+typedef struct rocksdbCreateCheckpointResult{
+    rocksdb_checkpoint_t *checkpoint;
+    sds checkpoint_dir;
+} rocksdbCreateCheckpointResult;
 
 /* Repl */
 int submitReplClientRequests(client *c);
@@ -2342,7 +2361,7 @@ static inline void clientSwapError(client *c, int swap_errcode) {
 #define ROCKSDB_EXCLUSIVE_TASK_COUNT 3
 #define ROCKSDB_CREATE_CHECKPOINT 3
 
-typedef void (*rocksdbUtilTaskCallback)(void *pd, int errcode);
+typedef void (*rocksdbUtilTaskCallback)(void *result, void *pd, int errcode);
 
 typedef struct rocksdbUtilTaskManager{
     struct {
@@ -2351,20 +2370,16 @@ typedef struct rocksdbUtilTaskManager{
 } rocksdbUtilTaskManager;
 
 rocksdbUtilTaskManager* createRocksdbUtilTaskManager();
+
+typedef struct rocksdbUtilTaskCtx {
+    int type;
+    void *argument; /* input argument for util task (ref, owned by caller)*/
+    void *result;   /* output result for util task(moved to finish_cb when finished) */
+    rocksdbUtilTaskCallback finish_cb;
+    void *finish_pd;
+} rocksdbUtilTaskCtx;
+
 int submitUtilTask(int type, void *arg, rocksdbUtilTaskCallback cb, void* pd, sds* error);
-
-typedef struct rocksdbCreateCheckpointPayload {
-    rocksdb_checkpoint_t *checkpoint;
-    sds checkpoint_dir;
-    pid_t waiting_child;
-    int checkpoint_dir_pipe_writing;
-} rocksdbCreateCheckpointPayload;
-
-typedef struct checkpointDirPipeWritePayload {
-    sds data;
-    ssize_t written;
-    pid_t waiting_child;
-} checkpointDirPipeWritePayload;
 
 /* swap trace */
 #define SLOWLOG_ENTRY_MAX_TRACE 16

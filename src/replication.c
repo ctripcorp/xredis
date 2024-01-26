@@ -3563,9 +3563,9 @@ void _replicationStartPendingFork(client *c, swapCtx *ctx) {
     clientReleaseLocks(c,ctx);
 }
 
-void rocksdbFlushForCheckpointTaskDone(void *pd, int errcode) {
+void rocksdbFlushForCheckpointTaskDone(void *result, void *pd, int errcode) {
     swapData4RocksdbFlush *data = pd;
-    UNUSED(errcode);
+    UNUSED(result), UNUSED(errcode);
     serverLog(LL_NOTICE,"rocksdb flush before checkpoint finished, took %lld ms",
             mstime() - data->start_time);
     rocksdbFlushTaskArgRelease(data);
