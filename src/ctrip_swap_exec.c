@@ -83,6 +83,7 @@ void swapRequestExecuteUtil_CompactRange(swapRequest *req) {
 
 void swapRequestExecuteUtil_GetRocksdbStats(swapRequest* req) {
     rocksdbInternalStats *internal_stats = rocksdbInternalStatsNew();
+    rocksdbUtilTaskCtx *utilctx = req->finish_pd;
 
     for(int i = 0; i < CF_COUNT; i++) {
         char *value;
@@ -126,19 +127,21 @@ void swapRequestExecuteUtil_GetRocksdbStats(swapRequest* req) {
         cf_stats->num_deletes_active_mem_table = intval;
     }
 
-    req->finish_pd = internal_stats;
+    utilctx->result = internal_stats;
     return;
 
 err:
 
     rocksdbInternalStatsFree(internal_stats);
-    req->finish_pd = NULL;
+    utilctx->result = NULL;
 }
 
 void swapRequestExecuteUtil_CreateCheckpoint(swapRequest* req) {
-    rocksdbCreateCheckpointPayload *pd = req->finish_pd;
+    rocksdbUtilTaskCtx *utilctx = req->finish_pd;
     sds checkpoint_dir = sdscatprintf(sdsempty(), "%s/tmp_%lld", ROCKS_DATA, ustime());
     rocksdb_checkpoint_t* checkpoint = NULL;
+    rocksdbCreateCheckpointResult *result = zcalloc(sizeof(rocksdbCreateCheckpointResult));
+    utilctx->result = result;
 
     char* err = NULL;
     checkpoint = rocksdb_checkpoint_object_create(server.rocks->db, &err);
@@ -151,8 +154,8 @@ void swapRequestExecuteUtil_CreateCheckpoint(swapRequest* req) {
         serverLog(LL_WARNING, "[rocks] checkpoint %s create fail: %s", checkpoint_dir, err);
         goto error;
     }
-    pd->checkpoint = checkpoint;
-    pd->checkpoint_dir = checkpoint_dir;
+    result->checkpoint = checkpoint;
+    result->checkpoint_dir = checkpoint_dir;
     return;
 
 error:
@@ -160,14 +163,15 @@ error:
         rocksdb_checkpoint_object_destroy(checkpoint);
     }
     sdsfree(checkpoint_dir);
-    pd->checkpoint = NULL;
-    pd->checkpoint_dir = NULL;
+    result->checkpoint = NULL;
+    result->checkpoint_dir = NULL;
 }
 
 void swapRequestExecuteUtil_RocksdbFlush(swapRequest* req) {
     char *err = NULL;
     rocksdb_flushoptions_t *flush_opts = NULL;
-    swapData4RocksdbFlush *data = (swapData4RocksdbFlush*)req->data;
+    rocksdbUtilTaskCtx *utilctx = req->finish_pd;
+    swapData4RocksdbFlush *data = (swapData4RocksdbFlush*)utilctx->argument;
 
     flush_opts = rocksdb_flushoptions_create();
 

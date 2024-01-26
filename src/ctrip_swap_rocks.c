@@ -1414,26 +1414,29 @@ void checkpointDirPipeWriteHandler(struct aeEventLoop *eventLoop, int fd, void *
     zfree(pd);
 }
 
-void rocksdbCreateCheckpointTaskDone(void *_pd, int errcode) {
+void rocksdbCreateCheckpointTaskDone(void *_result, void *_pd, int errcode) {
     UNUSED(errcode);
+    rocksdbCreateCheckpointResult *result = _result;
     rocksdbCreateCheckpointPayload *pd = _pd;
     rocks *rocks = server.rocks;
+
     if (NULL != rocks->checkpoint) {
         serverLog(LL_WARNING, "[rocks] release old checkpoint.");
         rocksReleaseCheckpoint();
     }
-    if (NULL != pd->checkpoint) {
-        serverLog(LL_NOTICE, "[rocks] create checkpoint %s.", pd->checkpoint_dir);
-        rocks->checkpoint = pd->checkpoint;
-        rocks->checkpoint_dir = pd->checkpoint_dir;
+    if (NULL != result->checkpoint) {
+        serverLog(LL_NOTICE, "[rocks] created checkpoint %s.", result->checkpoint_dir);
+        /* result moved to server.rocks */
+        rocks->checkpoint = result->checkpoint;
+        rocks->checkpoint_dir = result->checkpoint_dir;
     }
 
     if (pd->waiting_child && server.child_pid == pd->waiting_child) {
-        if (NULL == pd->checkpoint_dir) {
+        if (NULL == result->checkpoint_dir) {
             /* create checkpoint fail, send empty str. */
             close(pd->checkpoint_dir_pipe_writing);
         } else {
-            sds write_data = sdsdup(pd->checkpoint_dir);
+            sds write_data = sdsdup(result->checkpoint_dir);
             checkpointDirPipeWritePayload *write_payload = zcalloc(sizeof(checkpointDirPipeWritePayload));
             write_payload->data = write_data;
             write_payload->waiting_child = pd->waiting_child;
@@ -1448,6 +1451,7 @@ void rocksdbCreateCheckpointTaskDone(void *_pd, int errcode) {
     }
 
     zfree(pd);
+    zfree(result);
 }
 
 /* generate checkpoint asynchronsly and then sends checkpoint info to
@@ -1497,7 +1501,6 @@ int swapForkRocksdbCheckpointBeforeFork(struct swapForkRocksdbCtx *sfrctx) {
 
 int swapForkRocksdbCheckpointAfterForkChild(struct swapForkRocksdbCtx *sfrctx) {
     UNUSED(sfrctx);
-    // reopen checkpoint?
     return C_OK;
 }
 
@@ -1545,9 +1548,9 @@ void swapForkRocksdbCtxRelease(swapForkRocksdbCtx *sfrctx) {
     zfree(sfrctx);
 }
 
-void rocksdbGetStatsTaskDone(void *pd, int errcode) {
-    UNUSED(errcode);
-    rocksdbInternalStats *internal_stats = pd;
+void rocksdbGetStatsTaskDone(void *result, void *pd, int errcode) {
+    UNUSED(errcode), UNUSED(pd);
+    rocksdbInternalStats *internal_stats = result;
     if (internal_stats != NULL) {
         rocksdbInternalStatsFree(server.rocks->internal_stats);
         server.rocks->internal_stats = internal_stats;
@@ -1565,8 +1568,8 @@ void rocksdbFlushTaskArgRelease(swapData4RocksdbFlush *data) {
     zfree(data);
 }
 
-void rocksdbFlushTaskDone(void *pd, int errcode){
-    UNUSED(errcode);
+void rocksdbFlushTaskDone(void *result, void *pd, int errcode){
+    UNUSED(result), UNUSED(errcode);
     rocksdbFlushTaskArgRelease(pd);
 }
 
