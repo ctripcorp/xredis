@@ -61,17 +61,12 @@ static inline void rocks_init_option_compression(rocksdb_options_t *opts, int co
     }
 }
 
-int rocksInit() {
-    if (server.swap_debug_init_rocksdb_delay_micro)
-        usleep(server.swap_debug_init_rocksdb_delay_micro);
-    rocks *rocks = zcalloc(sizeof(struct rocks));
+int rocksOpen() {
+    rocks *rocks = server.rocks;
     char *errs[3] = {NULL}, dir[ROCKS_DIR_MAX_LEN], *err = NULL, longlong_str[20];
+    rocksdb_block_based_table_options_t *block_opts = NULL;
 
-    rocks->snapshot = NULL;
-    rocks->checkpoint = NULL;
-    rocks->checkpoint_dir = NULL;
-    rocks->rdb_checkpoint_dir = NULL;
-    atomicSetWithSync(server.inflight_snapshot, 0);
+    serverAssert(rocks->db_opts == NULL);
     rocks->db_opts = rocksdb_options_create();
     rocksdb_options_set_create_if_missing(rocks->db_opts, 1);
     rocksdb_options_set_create_missing_column_families(rocks->db_opts, 1);
@@ -113,20 +108,6 @@ int rocksInit() {
 	}
     rocksdb_options_set_bytes_per_sync(rocks->db_opts,server.rocksdb_bytes_per_sync);
 
-    struct stat statbuf;
-    if (!stat(ROCKS_DATA, &statbuf) && S_ISDIR(statbuf.st_mode) && !server.swap_persist_enabled) {
-        /* "data.rocks" folder already exists, remove it on start if persist not enabled. */
-        rmdirRecursive(ROCKS_DATA);
-    }
-    if (stat(ROCKS_DATA, &statbuf)) {
-        if (mkdir(ROCKS_DATA, 0755)) {
-            serverLog(LL_WARNING, "[ROCKS] mkdir %s failed: %s",
-                    ROCKS_DATA, strerror(errno));
-            return -1;
-        }
-    }
-
-    snprintf(dir, ROCKS_DIR_MAX_LEN, "%s/%d", ROCKS_DATA, server.rocksdb_epoch);
     rocks->filter_meta_ropts = rocksdb_readoptions_create();
     rocksdb_readoptions_set_verify_checksums(rocks->filter_meta_ropts, 0);
     rocksdb_readoptions_set_fill_cache(rocks->filter_meta_ropts, 0);
@@ -156,18 +137,17 @@ int rocksInit() {
                 deletion_ratio);
     }
 
-    rocks->block_opts[DATA_CF] = rocksdb_block_based_options_create();
-    rocks->cf_compactionfilterfatorys[DATA_CF] = createDataCfCompactionFilterFactory();
-    rocksdb_block_based_options_set_block_size(rocks->block_opts[DATA_CF], server.rocksdb_data_block_size);
-    rocksdb_block_based_options_set_cache_index_and_filter_blocks(rocks->block_opts[DATA_CF], server.rocksdb_data_cache_index_and_filter_blocks);
-    rocksdb_block_based_options_set_filter_policy(rocks->block_opts[DATA_CF], rocksdb_filterpolicy_create_bloom(10));
-
+    block_opts = rocksdb_block_based_options_create();
+    rocksdb_block_based_options_set_block_size(block_opts, server.rocksdb_data_block_size);
+    rocksdb_block_based_options_set_cache_index_and_filter_blocks(block_opts, server.rocksdb_data_cache_index_and_filter_blocks);
+    rocksdb_block_based_options_set_filter_policy(block_opts, rocksdb_filterpolicy_create_bloom(10));
     rocksdb_cache_t *data_cache = rocksdb_cache_create_lru(server.rocksdb_data_block_cache_size);
-    rocksdb_block_based_options_set_block_cache(rocks->block_opts[DATA_CF], data_cache);
+    rocksdb_block_based_options_set_block_cache(block_opts, data_cache);
     rocksdb_cache_destroy(data_cache);
+    rocksdb_options_set_block_based_table_factory(rocks->cf_opts[DATA_CF], block_opts);
+    rocksdb_block_based_options_destroy(block_opts);
 
-    rocksdb_options_set_block_based_table_factory(rocks->cf_opts[DATA_CF], rocks->block_opts[DATA_CF]);
-    rocksdb_options_set_compaction_filter_factory(rocks->cf_opts[DATA_CF], rocks->cf_compactionfilterfatorys[DATA_CF]);
+    rocksdb_options_set_compaction_filter_factory(rocks->cf_opts[DATA_CF], createDataCfCompactionFilterFactory());
 
     /* score cf */
     rocks->cf_opts[SCORE_CF] = rocksdb_options_create_copy(rocks->db_opts);
@@ -194,18 +174,17 @@ int rocksInit() {
                 deletion_ratio);
     }
 
-    rocks->block_opts[SCORE_CF] = rocksdb_block_based_options_create();
-    rocks->cf_compactionfilterfatorys[SCORE_CF] = createScoreCfCompactionFilterFactory();
-    rocksdb_block_based_options_set_block_size(rocks->block_opts[SCORE_CF], server.rocksdb_data_block_size);
-    rocksdb_block_based_options_set_cache_index_and_filter_blocks(rocks->block_opts[SCORE_CF], server.rocksdb_data_cache_index_and_filter_blocks);
-    rocksdb_block_based_options_set_filter_policy(rocks->block_opts[SCORE_CF], rocksdb_filterpolicy_create_bloom(10));
-
+    block_opts = rocksdb_block_based_options_create();
+    rocksdb_block_based_options_set_block_size(block_opts, server.rocksdb_data_block_size);
+    rocksdb_block_based_options_set_cache_index_and_filter_blocks(block_opts, server.rocksdb_data_cache_index_and_filter_blocks);
+    rocksdb_block_based_options_set_filter_policy(block_opts, rocksdb_filterpolicy_create_bloom(10));
     rocksdb_cache_t *score_cache = rocksdb_cache_create_lru(server.rocksdb_data_block_cache_size);
-    rocksdb_block_based_options_set_block_cache(rocks->block_opts[SCORE_CF], score_cache);
+    rocksdb_block_based_options_set_block_cache(block_opts, score_cache);
     rocksdb_cache_destroy(score_cache);
+    rocksdb_options_set_block_based_table_factory(rocks->cf_opts[SCORE_CF], block_opts);
+    rocksdb_block_based_options_destroy(block_opts);
 
-    rocksdb_options_set_block_based_table_factory(rocks->cf_opts[SCORE_CF], rocks->block_opts[SCORE_CF]);
-    rocksdb_options_set_compaction_filter_factory(rocks->cf_opts[SCORE_CF], rocks->cf_compactionfilterfatorys[SCORE_CF]);
+    rocksdb_options_set_compaction_filter_factory(rocks->cf_opts[SCORE_CF], createScoreCfCompactionFilterFactory());
 
     /* meta cf */
     rocks->cf_opts[META_CF] = rocksdb_options_create_copy(rocks->db_opts);
@@ -232,23 +211,23 @@ int rocksInit() {
                 deletion_ratio);
     }
 
-    rocks->block_opts[META_CF] = rocksdb_block_based_options_create();
-    rocks->cf_compactionfilterfatorys[META_CF] = NULL;
-    rocksdb_block_based_options_set_block_size(rocks->block_opts[META_CF], server.rocksdb_meta_block_size);
-    rocksdb_block_based_options_set_cache_index_and_filter_blocks(rocks->block_opts[META_CF], server.rocksdb_meta_cache_index_and_filter_blocks);
-    rocksdb_block_based_options_set_filter_policy(rocks->block_opts[META_CF], rocksdb_filterpolicy_create_bloom(10));
-
+    block_opts = rocksdb_block_based_options_create();
+    rocksdb_block_based_options_set_block_size(block_opts, server.rocksdb_meta_block_size);
+    rocksdb_block_based_options_set_cache_index_and_filter_blocks(block_opts, server.rocksdb_meta_cache_index_and_filter_blocks);
+    rocksdb_block_based_options_set_filter_policy(block_opts, rocksdb_filterpolicy_create_bloom(10));
     rocksdb_cache_t *meta_cache = rocksdb_cache_create_lru(server.rocksdb_meta_block_cache_size);
-    rocksdb_block_based_options_set_block_cache(rocks->block_opts[META_CF], meta_cache);
+    rocksdb_block_based_options_set_block_cache(block_opts, meta_cache);
     rocksdb_cache_destroy(meta_cache);
+    rocksdb_options_set_block_based_table_factory(rocks->cf_opts[META_CF], block_opts);
+    rocksdb_block_based_options_destroy(block_opts);
 
-    rocksdb_options_set_block_based_table_factory(rocks->cf_opts[META_CF], rocks->block_opts[META_CF]);
-    rocksdb_options_set_compaction_filter_factory(rocks->cf_opts[META_CF], rocks->cf_compactionfilterfatorys[META_CF]);
+    rocksdb_options_set_compaction_filter_factory(rocks->cf_opts[META_CF], NULL);
 
+    snprintf(dir, ROCKS_DIR_MAX_LEN, "%s/%d", ROCKS_DATA, server.rocksdb_epoch);
     rocks->db = rocksdb_open_column_families(rocks->db_opts, dir, CF_COUNT,
             swap_cf_names, (const rocksdb_options_t *const *)rocks->cf_opts,
             rocks->cf_handles, errs);
-    if (errs[0] != NULL || errs[1] != NULL) {
+    if (errs[0] != NULL || errs[1] != NULL || errs[2] != NULL) {
         serverLog(LL_WARNING, "[ROCKS] rocksdb open failed: default_cf=%s, meta_cf=%s, score_cf=%s", errs[0], errs[1], errs[2]);
         return -1;
     }
@@ -280,41 +259,69 @@ int rocksInit() {
         err = NULL;
     }
 
-    rocks->internal_stats = NULL;
-    server.rocks = rocks;
     return 0;
 }
 
-void rocksRelease() {
+int rocksInit() {
+    if (server.swap_debug_init_rocksdb_delay_micro)
+        usleep(server.swap_debug_init_rocksdb_delay_micro);
+    rocks *rocks = zcalloc(sizeof(struct rocks));
+    rocks->snapshot = NULL;
+    rocks->checkpoint = NULL;
+    rocks->checkpoint_dir = NULL;
+    rocks->rdb_checkpoint_dir = NULL;
+    rocks->internal_stats = NULL;
+    atomicSetWithSync(server.inflight_snapshot, 0);
+    rocks->internal_stats = NULL;
+    server.rocks = rocks;
+    struct stat statbuf;
+    if (!stat(ROCKS_DATA, &statbuf) && S_ISDIR(statbuf.st_mode) && !server.swap_persist_enabled) {
+        /* "data.rocks" folder already exists, remove it on start if persist not enabled. */
+        rmdirRecursive(ROCKS_DATA);
+    }
+    if (stat(ROCKS_DATA, &statbuf)) {
+        if (mkdir(ROCKS_DATA, 0755)) {
+            serverLog(LL_WARNING, "[ROCKS] mkdir %s failed: %s",
+                    ROCKS_DATA, strerror(errno));
+            return -1;
+        }
+    }
+    return rocksOpen();
+}
+
+void rocksClose() {
     int i;
+    rocks *rocks = server.rocks;
     char dir[ROCKS_DIR_MAX_LEN];
 
     snprintf(dir, ROCKS_DIR_MAX_LEN, "%s/%d", ROCKS_DATA, server.rocksdb_epoch);
-    rocks *rocks = server.rocks;
-    serverLog(LL_NOTICE, "[ROCKS] releasing rocksdb in (%s).",dir);
+    serverLog(LL_NOTICE, "[ROCKS] closing rocksdb(%s).",dir);
+
     setFilterState(FILTER_STATE_CLOSE);
-    for (i = 0; i < CF_COUNT; i++)
-        rocksdb_block_based_options_destroy(rocks->block_opts[i]);
-    for (i = 0; i < CF_COUNT; i++)
+    if (rocks->snapshot) rocksReleaseSnapshot();
+    for (i = 0; i < CF_COUNT; i++) {
         rocksdb_options_destroy(rocks->cf_opts[i]);
-    for (i = 0; i < CF_COUNT; i++)
+        rocks->cf_opts[i] = NULL;
+    }
+    for (i = 0; i < CF_COUNT; i++) {
         rocksdb_column_family_handle_destroy(rocks->cf_handles[i]);
+        rocks->cf_handles[i] = NULL;
+    }
     if (rocks->internal_stats != NULL) {
         rocksdbInternalStatsFree(rocks->internal_stats);
         rocks->internal_stats = NULL;
     }
 
     rocksdb_options_destroy(rocks->db_opts);
+    rocks->db_opts = NULL;
     rocksdb_writeoptions_destroy(rocks->wopts);
+    rocks->wopts = NULL;
     rocksdb_readoptions_destroy(rocks->ropts);
+    rocks->ropts = NULL;
     rocksdb_readoptions_destroy(rocks->filter_meta_ropts);
+    rocks->filter_meta_ropts = NULL;
     rocksdb_close(rocks->db);
-    for (i = 0; i < CF_COUNT; i++) {
-        if (rocks->cf_compactionfilterfatorys[i])
-            rocksdb_compactionfilterfactory_destroy(rocks->cf_compactionfilterfatorys[i]);
-    }
-    zfree(rocks);
-    server.rocks = NULL;
+    rocks->db = NULL;
 }
 
 int rocksRestore(const char *checkpoint_dir) {
@@ -328,23 +335,25 @@ int rocksRestore(const char *checkpoint_dir) {
                 checkpoint_dir, dir, strerror(errno), errno);
         return C_ERR;
     }
-    rocksRelease();
+    rocksClose();
     server.rocksdb_epoch++;
-    if (rocksInit()) {
+    if (rocksOpen()) {
         serverLog(LL_WARNING, "[ROCKS] rocksdb restore from dir(%s) failed.",dir);
         /* rollback to previous epoch */
         server.rocksdb_epoch--;
-        if (rocksInit()) serverPanic("[ROCKS] rocksdb restore rollback failed.");
+        if (rocksOpen()) serverPanic("[ROCKS] rocksdb restore rollback failed.");
         return C_ERR;
     } else {
         serverLog(LL_NOTICE, "[ROCKS] rocksdb restore from dir(%s) ok.",dir);
     }
 
-    /* snprintf(dir, ROCKS_DIR_MAX_LEN, "%s/%d", ROCKS_DATA, server.rocksdb_epoch-1); */
-    /* if (rmdirRecursive(dir)) { */
-        /* serverLog(LL_WARNING, "[ROCKS] purge deprecated db(%s) failed: %s,%d.", */
-                /* dir,strerror(errno),errno); */
-    /* } */
+    snprintf(dir, ROCKS_DIR_MAX_LEN, "%s/%d", ROCKS_DATA, server.rocksdb_epoch-1);
+    if (rmdirRecursive(dir)) {
+        serverLog(LL_WARNING, "[ROCKS] purge deprecated db(%s) failed: %s,%d.",
+                dir,strerror(errno),errno);
+    } else {
+        serverLog(LL_NOTICE, "[ROCKS] purge deprecated db(%s) ok.", dir);
+    }
     return C_OK;
 }
 

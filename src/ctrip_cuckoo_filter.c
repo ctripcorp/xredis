@@ -394,6 +394,23 @@ size_t cuckooFilterUsedMemory(cuckooFilter *filter) {
     return used_memory;
 }
 
+void cuckooFilterDump(cuckooFilter *filter) {
+    serverLog(LL_NOTICE, "==== cuckoo filter(%p) ====", (void*)filter);
+    serverLog(LL_NOTICE, "  bits_per_tag: %d", filter->bits_per_tag);
+    serverLog(LL_NOTICE, "  ntables: %d", filter->ntables);
+    for (int i = 0; i < filter->ntables; i++) {
+        cuckooTable *table = filter->tables+i;
+        serverLog(LL_NOTICE, "  table(%d):", i);
+        serverLog(LL_NOTICE, "    bits_per_tag: %lu", table->bits_per_tag);
+        serverLog(LL_NOTICE, "    bytes_per_bucket: %lu", table->bytes_per_bucket);
+        serverLog(LL_NOTICE, "    nbuckets: %lu", table->nbuckets);
+        serverLog(LL_NOTICE, "    victim: used=%d,tag=%u,index=%lu", table->victim.used, table->victim.tag, table->victim.index);
+        serverLog(LL_NOTICE, "    ntags: %ld", table->ntags);
+        serverLogHexDump(LL_NOTICE, "    data:",table->data,table->bytes_per_bucket*table->nbuckets);
+    }
+    serverLog(LL_NOTICE, "===========================");
+}
+
 #ifdef REDIS_TEST
 
 #define KEYMAXLEN 16
@@ -458,7 +475,7 @@ int cuckooFilterTest(int argc, char *argv[], int accurate) {
         for (int bt = 0; bt < CUCKOO_FILTER_BITS_PER_TAG_TYPES; bt++) {
             size_t expected_used_memory = cuckooGetBitsPerTag(bt)*
                 CUCKOO_FILTER_TAGS_PER_BUCKET/8*nbuckets_base*(1+4+16+64);
-            filter = cuckooFilterNew(dictGenHashFunction,bt,16);
+            filter = cuckooFilterNew(cuckooGenHashFunction,bt,16);
             for (size_t i = 0; i < ncases; i++) {
                 snprintf(key,KEYMAXLEN,"%08ld",i);
                 test_assert(cuckooFilterInsert(filter,key,strlen(key)) == CUCKOO_OK);
@@ -501,7 +518,7 @@ int cuckooFilterTest(int argc, char *argv[], int accurate) {
         for (int bt = 0; bt < CUCKOO_FILTER_BITS_PER_TAG_TYPES; bt++) {
             size_t expected_used_memory = cuckooGetBitsPerTag(bt)*
                 CUCKOO_FILTER_TAGS_PER_BUCKET/8*nbuckets_base*(1+4+16);
-            filter = cuckooFilterNew(dictGenHashFunction,bt,16);
+            filter = cuckooFilterNew(cuckooGenHashFunction,bt,16);
 
             for (size_t i = 0; i < ncases; i++) {
                 test_assert(cuckooFilterInsert(filter,key,strlen(key)) == CUCKOO_OK);
@@ -541,7 +558,7 @@ int cuckooFilterTest(int argc, char *argv[], int accurate) {
 
         for (int bt = 0; bt < CUCKOO_FILTER_BITS_PER_TAG_TYPES; bt++) {
             size_t false_positive = 0, total = 0;
-            filter = cuckooFilterNew(dictGenHashFunction, bt, nkeys);
+            filter = cuckooFilterNew(cuckooGenHashFunction, bt, nkeys);
 
             for (size_t i = 0; i < nkeys; i++) {
                 test_assert(cuckooFilterInsert(filter,(char*)&i,sizeof(size_t)) == CUCKOO_OK);
@@ -581,7 +598,7 @@ int cuckooFilterTest(int argc, char *argv[], int accurate) {
         size_t estimated_keys = 32*1024*1024, nkeys = 64*1024*1024;
         cuckooFilter *filter;
 
-        filter = cuckooFilterNew(dictGenHashFunction, CUCKOO_FILTER_BITS_PER_TAG_8, estimated_keys);
+        filter = cuckooFilterNew(cuckooGenHashFunction, CUCKOO_FILTER_BITS_PER_TAG_8, estimated_keys);
 
         long long start = ustime();
         for (size_t i = 0; i < nkeys; i++) {

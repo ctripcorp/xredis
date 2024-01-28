@@ -83,6 +83,8 @@ typedef struct cuckooFilter {
   cuckooTable *tables;
 } cuckooFilter;
 
+/* hash function with static seed(so that cuckoo filter can reload) */
+uint64_t cuckooGenHashFunction(const void *key, int len);
 /* Create cockoo filter */
 cuckooFilter *cuckooFilterNew(cuckoo_hash_fn hash_fn, int bits_per_tag_type, size_t estimated_keys);
 /* Destroy cockoo filter */
