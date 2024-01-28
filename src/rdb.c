@@ -1469,7 +1469,6 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi, struct swapForkRocksdbCt
     server.lastbgsave_try = time(NULL);
 
     if (server.swap_mode != SWAP_MODE_MEMORY) {
-        sfrctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_SNAPSHOT);
         if (swapForkRocksdbBefore(sfrctx)) {
             swapForkRocksdbCtxRelease(sfrctx);
             return C_ERR;
@@ -2574,6 +2573,10 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
             continue; /* Read next opcode. */
         } else if (type == RDB_OPCODE_EOF) {
             /* EOF: End of file, exit the main loop. */
+            if (server.swap_mode != SWAP_MODE_MEMORY && rordb && !rordb_finished) {
+                if (rordbLoadSSTFinished(rdb)) goto eoferr;
+                rordb_finished = 1;
+            }
             break;
         } else if (type == RDB_OPCODE_SELECTDB) {
             /* SELECTDB: Select the specified database. */
@@ -2786,7 +2789,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
                 sdsfree(key);
                 goto eoferr;
             }
-        } else if (server.swap_mode != SWAP_MODE_MEMORY && !swap_unsupported) {
+        } else if (server.swap_mode != SWAP_MODE_MEMORY && !swap_unsupported && !rordb) {
             robj keyobj;
             /* swap_mode does not:
              * a) handle expired keys, because expired keys handled later.

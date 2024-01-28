@@ -50,7 +50,7 @@ static inline
 void coldFilterInitCuckooFilter(coldFilter *filter) {
     if (server.swap_cuckoo_filter_enabled && filter->filter == NULL) {
         filter->filter = cuckooFilterNew(
-                dictGenHashFunction,
+                cuckooGenHashFunction,
                 server.swap_cuckoo_filter_bit_type,
                 server.swap_cuckoo_filter_estimated_keys);
     }

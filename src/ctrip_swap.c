@@ -334,6 +334,7 @@ int keyExpiredAndShouldDelete(redisDb *db, robj *key) {
 #define NOSWAP_REASON_ALREAY_SWAPPED_OUT 7
 #define NOSWAP_REASON_UNEXPECTED 100
 
+void cuckooFilterDump(cuckooFilter *filter);
 void keyRequestProceed(void *lock, int flush, redisDb *db, robj *key,
         client *c, void *pd) {
     int reason_num = 0, retval = 0, swap_intention, errcode;

@@ -41,7 +41,7 @@
 #define RORDB_OPCODE_SST              RORDB_OPCODE(1)
 /* ror.db opcodes */
 #define RORDB_OPCODE_COLD_KEY_NUM     RORDB_OPCODE(2)
-#define RORDB_OPCODE_CUCOO_FILTER     RORDB_OPCODE(3)
+#define RORDB_OPCODE_CUCKOO_FILTER    RORDB_OPCODE(3)
 /* String doesn't have object meta. */
 #define RORDB_OPCODE_HASH             RORDB_OPCODE(4)
 #define RORDB_OPCODE_SET              RORDB_OPCODE(5)

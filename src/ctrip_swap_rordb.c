@@ -235,7 +235,7 @@ int rordbLoadSSTStart(rio *rdb) {
                 RORDB_CHECKPOINT_DIR,strerror(errno),errno);
         goto err;
     } else {
-        serverLog(LL_WARNING, "[rordb] create checkpoint dir(%s) ok.",
+        serverLog(LL_NOTICE, "[rordb] create checkpoint dir(%s) ok.",
                 RORDB_CHECKPOINT_DIR);
     }
     return C_OK;
@@ -271,7 +271,7 @@ int rordbLoadSSTFinished(rio *rdb) {
 #define RORRDB_CUCKOO_FILTER_FORMAT_V1 1
 
 static int rordbSaveCuckooFilter(rio *rdb, cuckooFilter *cuckoo_filter) {
-    if (rdbSaveType(rdb,RORDB_OPCODE_CUCOO_FILTER) == -1) goto err;
+    if (rdbSaveType(rdb,RORDB_OPCODE_CUCKOO_FILTER) == -1) goto err;
     if (rdbSaveLen(rdb,RORRDB_CUCKOO_FILTER_FORMAT_V1) == -1) goto err;
     if (rdbSaveLen(rdb,cuckoo_filter->bits_per_tag) == -1) goto err;
     if (rdbSaveLen(rdb,cuckoo_filter->ntables) == -1) goto err;
@@ -302,8 +302,8 @@ static cuckooFilter *rordbLoadCuckooFilter(rio *rdb) {
     cuckooFilter *cuckoo_filter = zcalloc(sizeof(cuckooFilter));
 
     if (rdbLoadLen(rdb,NULL) != RORRDB_CUCKOO_FILTER_FORMAT_V1) goto err;
-    /* V1 is bound to use dictGenHashFunction */
-    cuckoo_filter->hash_fn = dictGenHashFunction;
+    /* V1 is bound to use cuckooGenHashFunction */
+    cuckoo_filter->hash_fn = cuckooGenHashFunction;
     if ((cuckoo_filter->bits_per_tag = rdbLoadLen(rdb,NULL)) == -1) goto err;
     if ((len = rdbLoadLen(rdb,NULL)) == RDB_LENERR) goto err;
     cuckoo_filter->ntables = len;
@@ -425,7 +425,7 @@ int rordbLoadDbType(rio *rdb, redisDb *db, int type) {
         uint64_t cold_keys;
         if ((cold_keys = rdbLoadLen(rdb,NULL)) == RDB_LENERR) return C_ERR;
         db->cold_keys = cold_keys;
-    } else if(type == RORDB_OPCODE_CUCOO_FILTER) {
+    } else if(type == RORDB_OPCODE_CUCKOO_FILTER) {
         cuckooFilter *cuckoo_filter = rordbLoadCuckooFilter(rdb);
         if (cuckoo_filter == NULL) return C_ERR;
         if (!server.swap_cuckoo_filter_enabled) {
@@ -578,7 +578,7 @@ int swapRordbTest(int argc, char *argv[], int accurate) {
         rio _rdb, *rdb = &_rdb;
         cuckooFilter *origin, *loaded;
 
-        origin = cuckooFilterNew(dictGenHashFunction,CUCKOO_FILTER_BITS_PER_TAG_8,16);
+        origin = cuckooFilterNew(cuckooGenHashFunction,CUCKOO_FILTER_BITS_PER_TAG_8,16);
         cuckooFilterInsert(origin,"hello",5);
         cuckooFilterInsert(origin,"foo",3);
 
@@ -586,7 +586,7 @@ int swapRordbTest(int argc, char *argv[], int accurate) {
         test_assert(rordbSaveCuckooFilter(rdb,origin) == C_OK);
 
         rioInitWithBuffer(rdb,rdb->io.buffer.ptr);
-        test_assert(rdbLoadType(rdb) == RORDB_OPCODE_CUCOO_FILTER);
+        test_assert(rdbLoadType(rdb) == RORDB_OPCODE_CUCKOO_FILTER);
         test_assert((loaded = rordbLoadCuckooFilter(rdb)) != NULL);
         test_assert(cuckooFilterContains(loaded,"hello",5) == CUCKOO_OK);
         test_assert(cuckooFilterContains(loaded,"world",5) == CUCKOO_ERR);

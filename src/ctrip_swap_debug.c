@@ -357,7 +357,7 @@ NULL
             rdbSaveInfo rsi, *rsiptr;
             rsiptr = rdbPopulateSaveInfo(&rsi);
             sds checkpoint_dir = sdscatprintf(sdsempty(),"%s/tmp_%lld",ROCKS_DATA,ustime());
-            if (rocksCreateCheckpoint(checkpoint_dir) != C_OK) {
+            if (!rocksCreateCheckpoint(checkpoint_dir)) {
                 addReplyError(c,"Error creating checkpoint");
                 return;
             }

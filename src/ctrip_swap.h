@@ -1666,9 +1666,7 @@ int submitExpireClientRequest(client *c, robj *key, int force);
 typedef struct rocks {
     rocksdb_t *db;
     rocksdb_options_t *cf_opts[CF_COUNT];
-    rocksdb_block_based_table_options_t *block_opts[CF_COUNT];
     rocksdb_column_family_handle_t *cf_handles[CF_COUNT];
-    rocksdb_compactionfilterfactory_t *cf_compactionfilterfatorys[CF_COUNT];
     rocksdb_options_t *db_opts;
     rocksdb_readoptions_t *ropts;
     rocksdb_writeoptions_t *wopts;
