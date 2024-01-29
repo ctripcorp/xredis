@@ -785,7 +785,7 @@ int metaScanTest(int argc, char *argv[], int accurate) {
             sdsfree(key);
         }
         data->nextseek = rocksEncodeMetaKey(db,lastkey);
-        retval = swapDataDecodeData(data,onumkeys,ocfs,orawkeys,orawvals,&decoded);
+        retval = swapDataDecodeData(data,onumkeys,ocfs,orawkeys,orawvals,NULL,&decoded);
         test_assert(retval == 0);
         result = (metaScanResult*)decoded;
         test_assert(result->num == onumkeys);

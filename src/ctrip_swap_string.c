@@ -536,7 +536,7 @@ int swapDataWholeKeyTest(int argc, char **argv, int accurate) {
 #endif
 
         void* decoded;
-        result = wholeKeyDecodeData(data, numkeys, cfs, rawkeys, rawvals, &decoded);
+        result = wholeKeyDecodeData(data, numkeys, cfs, rawkeys, rawvals, NULL, &decoded);
         test_assert(result == C_OK);
         test_assert(strcmp(((robj*)decoded)->ptr ,"value") == 0);
         swapDataFree(data, ctx);

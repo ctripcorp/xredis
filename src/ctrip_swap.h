@@ -677,11 +677,9 @@ static inline uint64_t swapDataObjectVersion(swapData *d) {
 }
 
 static inline int swapDataPersisted(swapData *d) {
-    if (d->object_type == OBJ_STRING) {
+    if (d->object_type == OBJ_BITMAP && d->object_meta) {
         /* todo bitmap type */
-        if (d->object_meta) {
-            return objectMetaGetPtr(d->object_meta) != NULL;
-        }
+        return objectMetaGetPtr(d->object_meta) != NULL;
     }
     return d->object_meta || d->cold_meta;
 }
@@ -2350,9 +2348,8 @@ void rbmdup(roaringBitmap* destRbm, roaringBitmap* srcRbm);
 
 int rbmIsEqual(roaringBitmap* destRbm, roaringBitmap* srcRbm);
 
-/* return pos of the nth one bit, from the startPos*/
-/* todo imp */
-uint32_t rbmGetBitPos(roaringBitmap* rbm, uint32_t startPos, uint32_t nthBit);
+/* Counting bitsNum bits of '1' from front to back， return real number of '1' bits, and output the indexs to idxArr(malloc by caller),  */
+uint32_t rbmGetBitPos(roaringBitmap* rbm, uint32_t bitsNum, uint32_t *idxArr);
 
 /* Util */
 
@@ -2589,6 +2586,7 @@ int cuckooFilterTest(int argc, char *argv[], int accurate);
 int swapPersistTest(int argc, char *argv[], int accurate);
 int swapRordbTest(int argc, char *argv[], int accurate);
 int roaringBitmapTest(int argc, char *argv[], int accurate);
+int swapDataBitmapTest(int argc, char **argv, int accurate);
 
 int swapTest(int argc, char **argv, int accurate);
 

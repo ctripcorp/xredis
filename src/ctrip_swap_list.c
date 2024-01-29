@@ -3074,7 +3074,7 @@ int swapListDataTest(int argc, char *argv[], int accurate) {
         test_assert(action == ROCKS_PUT && numkeys == 3 && cfs[0] == DATA_CF);
         test_assert(!sdscmp(rawkeys[0],rawkey0) && !sdscmp(rawvals[0],rawval0));
 
-        listDecodeData(hotdata,numkeys,cfs,rawkeys,rawvals,(void**)&decoded);
+        listDecodeData(hotdata,numkeys,cfs,rawkeys,rawvals,NULL,(void**)&decoded);
         test_assert(listTypeLength(decoded->list) == 3);
         test_assert(listMetaLength(decoded->meta,SEGMENT_TYPE_BOTH) == 3);
         test_assert(listMetaLength(decoded->meta,SEGMENT_TYPE_HOT) == 3);

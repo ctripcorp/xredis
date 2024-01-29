@@ -919,7 +919,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         test_assert(2 == numkeys);
 
         // decodeData - swap in
-        setDecodeData(set1_data, set1_ctx->ctx.num, cfs, rawkeys, rawvals, &decoded);
+        setDecodeData(set1_data, set1_ctx->ctx.num, cfs, rawkeys, rawvals, NULL, &decoded);
         test_assert(NULL != decoded);
         test_assert(2 == setTypeSize(decoded));
 

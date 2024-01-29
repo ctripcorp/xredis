@@ -1029,7 +1029,7 @@ int swapDataHashTest(int argc, char **argv, int accurate) {
         test_assert(action == ROCKS_PUT);
         test_assert(numkeys == hash1_ctx->ctx.num);
 
-        hashDecodeData(hash1_data,numkeys,cfs,rawkeys,rawvals,&decoded);
+        hashDecodeData(hash1_data,numkeys,cfs,rawkeys,rawvals,NULL,&decoded);
         test_assert(hashTypeLength(decoded) == hashTypeLength(hash1));
 
         freeObjectMeta(hash1_data_->d.object_meta);

@@ -1446,7 +1446,7 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
         rawvals_[1] = rawvals[2];
 
         // decodeData - swap in
-        zsetDecodeData(zset1_data, zset1_ctx->bdc.num, cfs_, rawkeys_, rawvals_, (void**)&decoded);
+        zsetDecodeData(zset1_data, zset1_ctx->bdc.num, cfs_, rawkeys_, rawvals_, NULL, (void**)&decoded);
         test_assert(NULL != decoded);
         test_assert(2 == zsetLength(decoded));
 

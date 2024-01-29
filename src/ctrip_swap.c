@@ -779,7 +779,7 @@ int swapTest(int argc, char **argv, int accurate) {
   result += swapPersistTest(argc, argv, accurate);
   result += roaringBitmapTest(argc, argv, accurate);
   result += swapRordbTest(argc, argv, accurate);
-
+  result += swapDataBitmapTest(argc, argv, accurate);
   return result;
 }
 #endif
