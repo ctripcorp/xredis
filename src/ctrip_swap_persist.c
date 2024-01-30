@@ -686,8 +686,10 @@ int persistLoadFixDb(redisDb *db) {
     decodedResultInit(next);
     int iter_valid; /* true if current iter value is valid. */
 
-    if (!(it = rocksCreateIter(server.rocks,db))) {
+    rocks *rocks = serverRocksGetReadLock();
+    if (!(it = rocksCreateIter(rocks,db))) {
         serverLog(LL_WARNING, "Create rocks iterator failed.");
+        serverRocksUnlock(rocks);
         return C_ERR;
     }
 
@@ -796,6 +798,7 @@ int persistLoadFixDb(redisDb *db) {
     }
 
     if (it) rocksReleaseIter(it);
+    serverRocksUnlock(rocks);
 
     return C_OK;
 
@@ -803,6 +806,7 @@ err:
     serverLog(LL_WARNING, "Fix persist data rdb failed: %s", errstr);
     if (it) rocksReleaseIter(it);
     if (errstr) sdsfree(errstr);
+    serverRocksUnlock(rocks);
     return C_ERR;
 }
 
@@ -971,7 +975,7 @@ int swapPersistTest(int argc, char *argv[], int accurate) {
         initTestRedisDb();
         monotonicInit();
         initServerConfig();
-        if (!server.rocks) rocksInit();
+        if (!server.rocks) serverRocksInit();
         db = server.db;
 	}
 

@@ -40,6 +40,9 @@ filterState getFilterState() {
     return state;
 }
 
+/* server.rocks can be used without lock because:
+ *   background canceled when reopen
+ *   filter state closed during reopen */
 static sds rocksdbGet(rocksdb_readoptions_t* ropts, int cf, sds rawkey, char** err) {
     serverAssert(cf < CF_COUNT);
     size_t vallen;

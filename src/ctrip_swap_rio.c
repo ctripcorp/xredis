@@ -127,6 +127,9 @@ void RIODeinit(RIO *rio) {
     }
 }
 
+/* server.rocks can be used without lock here because they are exclusive:
+ *   server.rocks changed with global lock
+ *   RIO called with key lock */
 void RIODoGet(RIO *rio) {
     int i;
     rocksdb_column_family_handle_t **cfs_list;
@@ -843,7 +846,7 @@ int swapRIOTest(int argc, char *argv[], int accurate) {
         initTestRedisDb();
         monotonicInit();
         initServerConfig();
-        if (!server.rocks) rocksInit();
+        if (!server.rocks) serverRocksInit();
         initStatsSwap();
     }
 

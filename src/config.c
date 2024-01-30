@@ -2474,7 +2474,7 @@ static int updateSwapAbsentCacheCapacity(long long val, long long prev, const ch
 }
 
 static int updateRocksdbCFOption(int cf,char *key, char *val, const char**err) {
-    rocks* rocks = server.rocks;
+    rocks* rocks = serverRocksGetTryReadLock();
     if (rocks == NULL) {
         *err = "Fail to set option, check rocksdb state.";
         return 0;
@@ -2489,9 +2489,11 @@ static int updateRocksdbCFOption(int cf,char *key, char *val, const char**err) {
         serverLog(LL_WARNING, "[ROCKS] rocksdb set options %s:%s failed: %s", key, val, inner_err);
         zlibc_free(inner_err);
         *err = "Fail to set option, rocksdb fail.";
+        serverRocksUnlock(rocks);
         return 0;
     }
 
+    serverRocksUnlock(rocks);
     return 1;
 }
 

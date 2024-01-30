@@ -284,13 +284,13 @@ rocksIter *rocksCreateIter(rocks *rocks, redisDb *db) {
     it->db = db;
     it->checkpoint_db = NULL;
 
-    if (rocks->rdb_checkpoint_dir != NULL) {
-        serverLog(LL_WARNING, "[rocks] create iter from checkpoint %s.", rocks->rdb_checkpoint_dir);
+    if (server.rocksdb_rdb_checkpoint_dir != NULL) {
+        serverLog(LL_WARNING, "[rocks] create iter from checkpoint %s.", server.rocksdb_rdb_checkpoint_dir);
         if (rocks->snapshot) rocksdb_readoptions_set_snapshot(rocks->ropts, rocks->snapshot);
         rocksdb_options_t* cf_opts[CF_COUNT];
         for (i = 0; i < CF_COUNT; i++) {
             /* disable cf cache since cache is useless for iterator */
-            cf_opts[i] = rocksdb_options_create_copy(server.rocks->cf_opts[i]);
+            cf_opts[i] = rocksdb_options_create_copy(rocks->cf_opts[i]);
             rocksdb_block_based_table_options_t* block_opt = rocksdb_block_based_options_create();
             rocksdb_block_based_options_set_no_block_cache(block_opt, 1);
             rocksdb_options_set_block_based_table_factory(cf_opts[i], block_opt);
@@ -299,7 +299,7 @@ rocksIter *rocksCreateIter(rocks *rocks, redisDb *db) {
 
         char *errs[CF_COUNT] = {NULL};
         rocksdb_t* checkpoint_db = rocksdb_open_column_families(rocks->db_opts,
-                rocks->rdb_checkpoint_dir, CF_COUNT, swap_cf_names,
+                server.rocksdb_rdb_checkpoint_dir, CF_COUNT, swap_cf_names,
                 (const rocksdb_options_t *const *)cf_opts,
                 it->cf_handles, errs);
         for (i = 0; i < CF_COUNT; i++) rocksdb_options_destroy(cf_opts[i]);
@@ -307,7 +307,7 @@ rocksIter *rocksCreateIter(rocks *rocks, redisDb *db) {
         if (errs[0] || errs[1] || errs[2]) {
             serverLog(LL_WARNING,
                     "[rocks] rocksdb open db fail, dir:%s, default_cf=%s, meta_cf=%s, score_cf=%s",
-                    rocks->rdb_checkpoint_dir, errs[0], errs[1], errs[2]);
+                    server.rocksdb_rdb_checkpoint_dir, errs[0], errs[1], errs[2]);
             goto err;
         }
         it->checkpoint_db = checkpoint_db;
@@ -663,7 +663,7 @@ int swapIterTest(int argc, char *argv[], int accurate) {
 
     TEST("iter: init") {
         initServerConfig();
-        if (!server.rocks) rocksInit();
+        if (!server.rocks) serverRocksInit();
     }
 
     TEST("iter: basic") {

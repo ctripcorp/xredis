@@ -1739,11 +1739,15 @@ struct redisServer {
 
     int swap_mode;      /* Swap mode: memory/swap/disk */
 		/* rocksdb engine */
-    int rocksdb_epoch;
     int rocksdb_disk_error;
     int rocksdb_disk_error_since;
     int swap_rocksdb_stats_collect_interval_ms;
     struct rocks *rocks;
+    struct rocksdb_checkpoint_t* rocksdb_checkpoint;
+    sds rocksdb_checkpoint_dir;
+    sds rocksdb_rdb_checkpoint_dir; /* checkpoint dir use for rdb saved */
+    struct rocksdbInternalStats *rocksdb_internal_stats;
+
     redisAtomic size_t inflight_snapshot;
     struct rocksdbUtilTaskManager* util_task_manager;
     /* swap threads */

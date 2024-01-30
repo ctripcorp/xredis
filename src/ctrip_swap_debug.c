@@ -288,7 +288,9 @@ NULL
     } else if (!strcasecmp(c->argv[1]->ptr,"flush") && c->argc >= 2) {
         sds error = NULL;
         const char *cfnames = c->argc > 2 ? c->argv[2]->ptr : NULL;
-        swapData4RocksdbFlush *data = rocksdbFlushTaskArgCreate(cfnames);
+        rocks *rocks = serverRocksGetReadLock();
+        swapData4RocksdbFlush *data = rocksdbFlushTaskArgCreate(rocks,cfnames);
+        serverRocksUnlock(rocks);
         if (submitUtilTask(ROCKSDB_FLUSH_TASK, data, rocksdbFlushTaskDone, data, &error)) {
             addReply(c,shared.ok);
         } else {
@@ -297,11 +299,15 @@ NULL
     } else if (!strcasecmp(c->argv[1]->ptr,"rocksdb-property-int") && c->argc >= 3) {
         uint64_t property_int = 0;
         const char *cfnames = c->argc > 3 ? c->argv[3]->ptr : NULL;
-        rocksdbPropertyInt(cfnames,c->argv[2]->ptr,&property_int);
+        rocks *rocks = serverRocksGetReadLock();
+        rocksPropertyInt(rocks,cfnames,c->argv[2]->ptr,&property_int);
+        serverRocksUnlock(rocks);
         addReplyLongLong(c, property_int);
     } else if (!strcasecmp(c->argv[1]->ptr,"rocksdb-property-value") && c->argc >= 3) {
         const char *cfnames = c->argc > 3 ? c->argv[3]->ptr : NULL;
-        sds property_value = rocksdbPropertyValue(cfnames,c->argv[2]->ptr);
+        rocks *rocks = serverRocksGetReadLock();
+        sds property_value = rocksPropertyValue(rocks,cfnames,c->argv[2]->ptr);
+        serverRocksUnlock(rocks);
         addReplyBulkCString(c, property_value);
         if (property_value) sdsfree(property_value);
     } else if (!strcasecmp(c->argv[1]->ptr,"scan-session") &&
@@ -357,7 +363,10 @@ NULL
             rdbSaveInfo rsi, *rsiptr;
             rsiptr = rdbPopulateSaveInfo(&rsi);
             sds checkpoint_dir = sdscatprintf(sdsempty(),"%s/tmp_%lld",ROCKS_DATA,ustime());
-            if (!rocksCreateCheckpoint(checkpoint_dir)) {
+            rocks *rocks = serverRocksGetReadLock();
+            int ret2 = rocksCreateCheckpoint(rocks, checkpoint_dir);
+            serverRocksUnlock(rocks);
+            if (ret2 != C_OK) {
                 addReplyError(c,"Error creating checkpoint");
                 return;
             }

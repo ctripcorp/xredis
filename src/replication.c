@@ -3601,7 +3601,9 @@ void ctrip_replicationStartPendingFork(void) {
             } else {
                 if (mincapa & SLAVE_CAPA_RORDB) {
                     sds error;
-                    swapData4RocksdbFlush *data = rocksdbFlushTaskArgCreate(NULL);
+                    rocks *rocks = serverRocksGetReadLock();
+                    swapData4RocksdbFlush *data = rocksdbFlushTaskArgCreate(rocks,NULL);
+                    serverRocksUnlock(rocks);
                     /* we can save rordb only when rocksdb fork mode is
                      * checkpoint (sst files in snapshot mode might contain
                      * more write).

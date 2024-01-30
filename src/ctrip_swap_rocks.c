@@ -61,8 +61,31 @@ static inline void rocks_init_option_compression(rocksdb_options_t *opts, int co
     }
 }
 
-int rocksOpen() {
-    rocks *rocks = server.rocks;
+rocks *serverRocksGetReadLock() {
+    pthread_rwlock_rdlock(server.rocks->rwlock);
+    serverAssert(server.rocks && server.rocks->db);
+    return server.rocks;
+}
+
+rocks *serverRocksGetTryReadLock() {
+    if (pthread_rwlock_tryrdlock(server.rocks->rwlock)) {
+        return NULL;
+    } else {
+        return server.rocks;
+    }
+}
+
+rocks *serverRocksGetWriteLock() {
+    pthread_rwlock_wrlock(server.rocks->rwlock);
+    serverAssert(server.rocks && server.rocks->db);
+    return server.rocks;
+}
+
+void serverRocksUnlock(rocks *rocks) {
+    pthread_rwlock_unlock(rocks->rwlock);
+}
+
+static int rocksOpen(rocks *rocks) {
     char *errs[3] = {NULL}, dir[ROCKS_DIR_MAX_LEN], *err = NULL, longlong_str[20];
     rocksdb_block_based_table_options_t *block_opts = NULL;
 
@@ -223,7 +246,7 @@ int rocksOpen() {
 
     rocksdb_options_set_compaction_filter_factory(rocks->cf_opts[META_CF], NULL);
 
-    snprintf(dir, ROCKS_DIR_MAX_LEN, "%s/%d", ROCKS_DATA, server.rocksdb_epoch);
+    snprintf(dir, ROCKS_DIR_MAX_LEN, "%s/%d", ROCKS_DATA, rocks->rocksdb_epoch);
     rocks->db = rocksdb_open_column_families(rocks->db_opts, dir, CF_COUNT,
             swap_cf_names, (const rocksdb_options_t *const *)rocks->cf_opts,
             rocks->cf_handles, errs);
@@ -262,18 +285,14 @@ int rocksOpen() {
     return 0;
 }
 
-int rocksInit() {
+int serverRocksInit() {
     if (server.swap_debug_init_rocksdb_delay_micro)
         usleep(server.swap_debug_init_rocksdb_delay_micro);
+
     rocks *rocks = zcalloc(sizeof(struct rocks));
     rocks->snapshot = NULL;
-    rocks->checkpoint = NULL;
-    rocks->checkpoint_dir = NULL;
-    rocks->rdb_checkpoint_dir = NULL;
-    rocks->internal_stats = NULL;
+    rocks->rocksdb_epoch = 0;
     atomicSetWithSync(server.inflight_snapshot, 0);
-    rocks->internal_stats = NULL;
-    server.rocks = rocks;
     struct stat statbuf;
     if (!stat(ROCKS_DATA, &statbuf) && S_ISDIR(statbuf.st_mode) && !server.swap_persist_enabled) {
         /* "data.rocks" folder already exists, remove it on start if persist not enabled. */
@@ -286,19 +305,25 @@ int rocksInit() {
             return -1;
         }
     }
-    return rocksOpen();
+    pthread_rwlock_init(rocks->rwlock,NULL);
+    server.rocks = rocks;
+    return rocksOpen(server.rocks);
 }
 
-void rocksClose() {
+static void rocksClose(rocks *rocks) {
     int i;
-    rocks *rocks = server.rocks;
     char dir[ROCKS_DIR_MAX_LEN];
 
-    snprintf(dir, ROCKS_DIR_MAX_LEN, "%s/%d", ROCKS_DATA, server.rocksdb_epoch);
+    snprintf(dir, ROCKS_DIR_MAX_LEN, "%s/%d", ROCKS_DATA, rocks->rocksdb_epoch);
     serverLog(LL_NOTICE, "[ROCKS] closing rocksdb(%s).",dir);
 
+    mstime_t start_time = mstime();
+    rocksdb_cancel_all_background_work(rocks->db, 1);
+    serverLog(LL_NOTICE, "[ROCKS] cancelled all background work, took %lld ms.",
+            mstime()-start_time);
+
     setFilterState(FILTER_STATE_CLOSE);
-    if (rocks->snapshot) rocksReleaseSnapshot();
+    if (rocks->snapshot) rocksReleaseSnapshot(rocks);
     for (i = 0; i < CF_COUNT; i++) {
         rocksdb_options_destroy(rocks->cf_opts[i]);
         rocks->cf_opts[i] = NULL;
@@ -307,11 +332,6 @@ void rocksClose() {
         rocksdb_column_family_handle_destroy(rocks->cf_handles[i]);
         rocks->cf_handles[i] = NULL;
     }
-    if (rocks->internal_stats != NULL) {
-        rocksdbInternalStatsFree(rocks->internal_stats);
-        rocks->internal_stats = NULL;
-    }
-
     rocksdb_options_destroy(rocks->db_opts);
     rocks->db_opts = NULL;
     rocksdb_writeoptions_destroy(rocks->wopts);
@@ -324,10 +344,9 @@ void rocksClose() {
     rocks->db = NULL;
 }
 
-int rocksRestore(const char *checkpoint_dir) {
+int rocksRestore(rocks *rocks, const char *checkpoint_dir) {
     char dir[ROCKS_DIR_MAX_LEN];
-    int next_epoch = server.rocksdb_epoch+1;
-
+    int next_epoch = rocks->rocksdb_epoch+1;
     snprintf(dir, ROCKS_DIR_MAX_LEN, "%s/%d", ROCKS_DATA, next_epoch);
     if (rename(checkpoint_dir,dir)) {
         serverLog(LL_WARNING,
@@ -335,19 +354,19 @@ int rocksRestore(const char *checkpoint_dir) {
                 checkpoint_dir, dir, strerror(errno), errno);
         return C_ERR;
     }
-    rocksClose();
-    server.rocksdb_epoch++;
-    if (rocksOpen()) {
+    rocksClose(rocks);
+    rocks->rocksdb_epoch++;
+    if (rocksOpen(rocks)) {
         serverLog(LL_WARNING, "[ROCKS] rocksdb restore from dir(%s) failed.",dir);
         /* rollback to previous epoch */
-        server.rocksdb_epoch--;
-        if (rocksOpen()) serverPanic("[ROCKS] rocksdb restore rollback failed.");
+        rocks->rocksdb_epoch--;
+        if (rocksOpen(rocks)) serverPanic("[ROCKS] rocksdb restore rollback failed.");
         return C_ERR;
     } else {
         serverLog(LL_NOTICE, "[ROCKS] rocksdb restore from dir(%s) ok.",dir);
     }
 
-    snprintf(dir, ROCKS_DIR_MAX_LEN, "%s/%d", ROCKS_DATA, server.rocksdb_epoch-1);
+    snprintf(dir, ROCKS_DIR_MAX_LEN, "%s/%d", ROCKS_DATA, rocks->rocksdb_epoch-1);
     if (rmdirRecursive(dir)) {
         serverLog(LL_WARNING, "[ROCKS] purge deprecated db(%s) failed: %s,%d.",
                 dir,strerror(errno),errno);
@@ -357,13 +376,12 @@ int rocksRestore(const char *checkpoint_dir) {
     return C_OK;
 }
 
-int rocksCreateCheckpoint(sds checkpoint_dir) {
+int rocksCreateCheckpoint(rocks *rocks, sds checkpoint_dir) {
     rocksdb_checkpoint_t* checkpoint = NULL;
-    rocks *rocks = server.rocks;
     ustime_t start_time = mstime();
     serverLog(LL_NOTICE, "[rocks] create checkpoint start.");
-    if (rocks->checkpoint != NULL) {
-        rocksReleaseCheckpoint();
+    if (server.rocksdb_checkpoint != NULL) {
+        rocksReleaseCheckpoint(rocks);
         serverLog(LL_NOTICE, "[rocks] released old checkpoint.");
     }
     char* err = NULL;
@@ -378,36 +396,34 @@ int rocksCreateCheckpoint(sds checkpoint_dir) {
         goto error;
     }
     serverLog(LL_NOTICE,"[rocks] create checkpoint finish(%lld ms).", mstime() - start_time);
-    rocks->checkpoint = checkpoint;
-    rocks->checkpoint_dir = checkpoint_dir;
-    return 1;
+    server.rocksdb_checkpoint = checkpoint;
+    server.rocksdb_checkpoint_dir = checkpoint_dir;
+    return C_OK;
 error:
     if(checkpoint != NULL) {
         rocksdb_checkpoint_object_destroy(checkpoint);
     }
     sdsfree(checkpoint_dir);
-    return 0;
+    return C_ERR;
 }
 
 
-void rocksReleaseCheckpoint() {
-    rocks *rocks = server.rocks;
+void rocksReleaseCheckpoint(rocks *rocks) {
     char* err = NULL;
-    if (rocks->checkpoint != NULL) {
-        serverLog(LL_NOTICE, "[rocks] releasing checkpoint in (%s).", rocks->checkpoint_dir);
-        rocksdb_checkpoint_object_destroy(rocks->checkpoint);
-        rocks->checkpoint = NULL;
-        rocksdb_destroy_db(rocks->db_opts, rocks->checkpoint_dir, &err);
+    if (server.rocksdb_checkpoint != NULL) {
+        serverLog(LL_NOTICE, "[rocks] releasing checkpoint in (%s).", server.rocksdb_checkpoint_dir);
+        rocksdb_checkpoint_object_destroy(server.rocksdb_checkpoint);
+        server.rocksdb_checkpoint = NULL;
+        rocksdb_destroy_db(rocks->db_opts, server.rocksdb_checkpoint_dir, &err);
         if (err != NULL) {
-            serverLog(LL_WARNING, "[rocks] destory db fail: %s", rocks->checkpoint_dir);
+            serverLog(LL_WARNING, "[rocks] destory db fail: %s", server.rocksdb_checkpoint_dir);
         }
-        sdsfree(rocks->checkpoint_dir);
-        rocks->checkpoint_dir = NULL;
+        sdsfree(server.rocksdb_checkpoint_dir);
+        server.rocksdb_checkpoint_dir = NULL;
     }
 }
 
-void rocksReleaseSnapshot() {
-    rocks *rocks = server.rocks;
+void rocksReleaseSnapshot(rocks *rocks) {
     if (NULL != rocks->snapshot) {
         serverLog(LL_WARNING, "[rocks] release snapshot.");
         rocksdb_release_snapshot(rocks->db, rocks->snapshot);
@@ -416,10 +432,9 @@ void rocksReleaseSnapshot() {
     }
 }
 
-int rocksCreateSnapshot() {
-    rocks *rocks = server.rocks;
+int rocksCreateSnapshot(rocks *rocks) {
     if (NULL != rocks->snapshot) {
-        rocksReleaseSnapshot();
+        rocksReleaseSnapshot(rocks);
     }
 
     serverLog(LL_NOTICE, "[rocks] create snapshot.");
@@ -428,7 +443,7 @@ int rocksCreateSnapshot() {
     return C_OK;
 }
 
-int readCheckpointDirFromPipe(int pipe) {
+static int readCheckpointDirFromPipe(int pipe) {
     ssize_t nread = 0, pos = 0;
     char checkpoint_dir[ROCKS_DIR_MAX_LEN] = {0};
     while ((nread = read(pipe, checkpoint_dir + pos, sizeof(checkpoint_dir) - pos)) > 0) {
@@ -442,7 +457,7 @@ int readCheckpointDirFromPipe(int pipe) {
         serverLog(LL_WARNING, "[rocks] read checkpoint dir from pipe empty.");
         return C_ERR;
     } else {
-        server.rocks->rdb_checkpoint_dir = sdsnew(checkpoint_dir);
+        server.rocksdb_rdb_checkpoint_dir = sdsnew(checkpoint_dir);
         return C_OK;
     }
 }
@@ -524,14 +539,14 @@ int rocksFlushDB(int dbid) {
     return retval;
 }
 
-int parseCfNames(const char *cfnames,
+int rocksGetCfByName(rocks *rocks, const char *cfnames,
         rocksdb_column_family_handle_t *handles[CF_COUNT],
         const char *names[CF_COUNT+1]) {
     int i = 0, ret = 0;
     char *ptr, *saveptr, *dupnames = NULL;
 
     if (cfnames == NULL || strlen(cfnames) == 0) {
-        memcpy(handles,server.rocks->cf_handles,sizeof(void*)*CF_COUNT);
+        memcpy(handles,rocks->cf_handles,sizeof(void*)*CF_COUNT);
         if (names) memcpy(names,swap_cf_names,sizeof(void*)*CF_COUNT);
         goto end;
     }
@@ -541,13 +556,13 @@ int parseCfNames(const char *cfnames,
             ptr != NULL && i < CF_COUNT;
             ptr = strtok_r(NULL,", ",&saveptr)) {
         if (!strcasecmp(ptr,data_cf_name)) {
-            handles[i] = server.rocks->cf_handles[DATA_CF];
+            handles[i] = rocks->cf_handles[DATA_CF];
             if (names) names[i] = data_cf_name;
         } else if (!strcasecmp(ptr,meta_cf_name)) {
-            handles[i] = server.rocks->cf_handles[META_CF];
+            handles[i] = rocks->cf_handles[META_CF];
             if (names) names[i] = meta_cf_name;
         } else if (!strcasecmp(ptr,score_cf_name)) {
-            handles[i] = server.rocks->cf_handles[SCORE_CF];
+            handles[i] = rocks->cf_handles[SCORE_CF];
             if (names) names[i] = score_cf_name;
         } else {
             ret = -1;
@@ -562,17 +577,17 @@ end:
     return ret;
 }
 
-int rocksdbPropertyInt(const char *cfnames, const char *propname,
+int rocksPropertyInt(rocks *rocks, const char *cfnames, const char *propname,
         uint64_t *out_val) {
     int ret = 0, i = 0;
     uint64_t sum = 0, val = 0;
     rocksdb_column_family_handle_t *handle, *cfhandles[CF_COUNT+1] = {NULL};
 
-    if ((ret = parseCfNames(cfnames,cfhandles,NULL)))
+    if ((ret = rocksGetCfByName(rocks,cfnames,cfhandles,NULL)))
         return ret;
 
     while ((handle = cfhandles[i++])) {
-        if ((ret = rocksdb_property_int_cf(server.rocks->db,handle,
+        if ((ret = rocksdb_property_int_cf(rocks->db,handle,
                         propname,&val))) {
             break;
         }
@@ -583,21 +598,20 @@ int rocksdbPropertyInt(const char *cfnames, const char *propname,
     return ret;
 }
 
-sds rocksdbPropertyValue(const char *cfnames, const char *propname) {
+sds rocksPropertyValue(rocks *rocks, const char *cfnames, const char *propname) {
     int ret = 0, i = 0;
     sds result = NULL;
     char *tmp;
     const char *names[CF_COUNT+1] = {NULL};
     rocksdb_column_family_handle_t *handle, *handles[CF_COUNT+1] = {NULL};
 
-    if ((ret = parseCfNames(cfnames,handles,names))) {
+    if ((ret = rocksGetCfByName(rocks,cfnames,handles,names))) {
         goto end;
     }
 
     result = sdsempty();
     while ((handle = handles[i])) {
-        if ((tmp = rocksdb_property_value_cf(server.rocks->db,handle,
-                        propname))) {
+        if ((tmp = rocksdb_property_value_cf(rocks->db,handle,propname))) {
             result = sdscat(result,"[");
             result = sdscat(result,names[i]);
             result = sdscat(result,"]:");
@@ -612,37 +626,36 @@ end:
     return result;
 }
 
-struct rocksdbMemOverhead *rocksGetMemoryOverhead() {
+struct rocksdbMemOverhead *rocksGetMemoryOverhead(rocks *rocks) {
     rocksdbMemOverhead *mh;
     size_t total = 0, mem;
 
-    if (server.rocks->db == NULL)
-        return NULL;
+    if (rocks->db == NULL) return NULL;
 
     mh = zmalloc(sizeof(struct rocksdbMemOverhead));
 
-    if (!rocksdbPropertyInt(NULL, "rocksdb.cur-size-all-mem-tables", &mem)) {
+    if (!rocksPropertyInt(rocks, NULL, "rocksdb.cur-size-all-mem-tables", &mem)) {
         mh->memtable = mem;
         total += mem;
     } else {
         mh->memtable = -1;
     }
 
-    if (!rocksdbPropertyInt(NULL, "rocksdb.block-cache-usage", &mem)) {
+    if (!rocksPropertyInt(rocks, NULL, "rocksdb.block-cache-usage", &mem)) {
         mh->block_cache = mem;
         total += mem;
     } else {
         mh->block_cache = -1;
     }
 
-    if (!rocksdbPropertyInt(NULL, "rocksdb.estimate-table-readers-mem", &mem)) {
+    if (!rocksPropertyInt(rocks, NULL, "rocksdb.estimate-table-readers-mem", &mem)) {
         mh->index_and_filter = mem;
         total += mem;
     } else {
         mh->index_and_filter = -1;
     }
 
-    if (!rocksdbPropertyInt(NULL, "rocksdb.block-cache-pinned-usage", &mem)) {
+    if (!rocksPropertyInt(rocks, NULL, "rocksdb.block-cache-pinned-usage", &mem)) {
         mh->pinned_blocks = mem;
         total += mem;
     } else {
@@ -1123,16 +1136,16 @@ sds intervalInfo(sds info, char* rocksdb_stats) {
 }
 
 
-static uint64_t rocksdbUsedDbSize(rocksdb_t *db) {
+static uint64_t rocksUsedDbSize(rocks *rocks) {
     char *err = NULL;
     uint64_t used_db_size = 0, total_used_db_size = 0;
     const char *begin_key = "\x0", *end_key = "\xff";
     const size_t begin_key_len = 1, end_key_len = 1;
 
     for (int i = 0; i < CF_COUNT; i++) {
-        rocksdb_column_family_handle_t *handle = server.rocks->cf_handles[i];
+        rocksdb_column_family_handle_t *handle = rocks->cf_handles[i];
         if (handle == NULL) continue;
-        rocksdb_approximate_sizes_cf(db,handle,1,&begin_key,&begin_key_len,
+        rocksdb_approximate_sizes_cf(rocks->db,handle,1,&begin_key,&begin_key_len,
                 &end_key,&end_key_len,&used_db_size,&err);
         if (err != NULL) {
             serverLog(LL_WARNING, "rocksdb_approximate_sizes_cf failed: %s",err);
@@ -1148,11 +1161,11 @@ sds genSwapStorageInfoString(sds info) {
 	size_t swap_used_db_size = 0, swap_max_db_size = 0,
            swap_disk_capacity = 0, swap_used_disk_size = 0;
 	float swap_used_db_percent = 0, swap_used_disk_percent = 0;
-	rocksdb_t *db = server.rocks->db;
+    rocks *rocks = serverRocksGetReadLock();
 	struct statvfs stat;
 
-	if (db) {
-        swap_used_db_size = rocksdbUsedDbSize(db);
+	if (rocks) {
+        swap_used_db_size = rocksUsedDbSize(rocks);
 		swap_max_db_size = server.swap_max_db_size;
 		if (swap_max_db_size) swap_used_db_percent = (float)(swap_used_db_size) * 100/swap_max_db_size;
 	}
@@ -1179,6 +1192,7 @@ sds genSwapStorageInfoString(sds info) {
 			swap_used_disk_percent,
             server.swap_error_count);
 
+    serverRocksUnlock(rocks);
     return info;
 }
 
@@ -1189,7 +1203,7 @@ sds genRocksdbInfoString(sds info) {
 	if (db) sequence = rocksdb_get_latest_sequence_number(db);
 	info = sdscatprintf(info,"rocksdb_sequence:%lu\r\n",sequence);
 
-    char* rocksdb_stats = server.rocks->internal_stats? server.rocks->internal_stats->cfs[DATA_CF].rocksdb_stats_cache: NULL;
+    char* rocksdb_stats = server.rocksdb_internal_stats? server.rocksdb_internal_stats->cfs[DATA_CF].rocksdb_stats_cache: NULL;
     info = compactLevelsInfo(info, rocksdb_stats);
     info = cumulativeInfo(info, rocksdb_stats);
     info = intervalInfo(info, rocksdb_stats);
@@ -1198,9 +1212,9 @@ sds genRocksdbInfoString(sds info) {
 }
 
 sds infoCfStats(int cf, sds info) {
-    if (server.rocks->internal_stats) {
+    if (server.rocksdb_internal_stats) {
         info = sdscatfmt(info, "=================== %s rocksdb.stats ===================\n", swap_cf_names[cf]);
-        info = sdscat(info, server.rocks->internal_stats->cfs[cf].rocksdb_stats_cache);
+        info = sdscat(info, server.rocksdb_internal_stats->cfs[cf].rocksdb_stats_cache);
     }
     return info;
 }
@@ -1242,21 +1256,9 @@ sds genRocksdbStatsString(sds section, sds info) {
 #define ROCKSDB_DISK_USED_UPDATE_PERIOD 60
 #define ROCKSDB_DISK_HEALTH_DETECT_PERIOD 1
 
-void rocksCron() {
+void serverRocksCron() {
     static long long rocks_cron_loops = 0;
     char path[ROCKS_DIR_MAX_LEN] = {0};
-
-    if (rocks_cron_loops % ROCKSDB_DISK_USED_UPDATE_PERIOD == 0) {
-        uint64_t property_int = 0;
-        if (!rocksdb_property_int(server.rocks->db,
-                    "rocksdb.total-sst-files-size", &property_int)) {
-            server.rocksdb_disk_used = property_int;
-        }
-        if (server.swap_max_db_size && server.rocksdb_disk_used > server.swap_max_db_size) {
-            serverLog(LL_WARNING, "Rocksdb disk usage exceeds swap_max_db_size %lld > %lld.",
-                    server.rocksdb_disk_used, server.swap_max_db_size);
-        }
-    }
 
     if (rocks_cron_loops % ROCKSDB_DISK_HEALTH_DETECT_PERIOD == 0) {
         snprintf(path,ROCKS_DIR_MAX_LEN,"%s/%s",
@@ -1283,16 +1285,32 @@ void rocksCron() {
         if (fp) fclose(fp);
     }
 
+    rocks *rocks = serverRocksGetReadLock();
+
+    if (rocks_cron_loops % ROCKSDB_DISK_USED_UPDATE_PERIOD == 0) {
+        uint64_t property_int = 0;
+        if (!rocksdb_property_int(rocks->db,
+                    "rocksdb.total-sst-files-size", &property_int)) {
+            server.rocksdb_disk_used = property_int;
+        }
+        if (server.swap_max_db_size && server.rocksdb_disk_used > server.swap_max_db_size) {
+            serverLog(LL_WARNING, "Rocksdb disk usage exceeds swap_max_db_size %lld > %lld.",
+                    server.rocksdb_disk_used, server.swap_max_db_size);
+        }
+    }
+
     int collect_interval_second = server.swap_rocksdb_stats_collect_interval_ms/1000;
     if (collect_interval_second <= 0) collect_interval_second = 1;
     if (rocks_cron_loops % collect_interval_second == 0) {
         if (swapShouldFlushMeta()) {
-            swapData4RocksdbFlush *data = rocksdbFlushTaskArgCreate(meta_cf_name);
+            swapData4RocksdbFlush *data = rocksdbFlushTaskArgCreate(rocks,meta_cf_name);
             submitUtilTask(ROCKSDB_FLUSH_TASK, data, rocksdbFlushTaskDone, data, NULL);
         }
 
         submitUtilTask(ROCKSDB_GET_STATS_TASK, NULL, rocksdbGetStatsTaskDone, NULL, NULL);
     }
+
+    serverRocksUnlock(rocks);
 
     rocks_cron_loops++;
 }
@@ -1322,10 +1340,9 @@ int swapShouldFlushMeta() {
     unsigned long long num_entries, num_deletes;
     rocksdbCFInternalStats *cf_stats = NULL;
 
-    if (server.rocks == NULL || server.rocks->internal_stats == NULL)
-        return 0;
+    if (server.rocksdb_internal_stats == NULL) return 0;
 
-    cf_stats = server.rocks->internal_stats->cfs+META_CF;
+    cf_stats = server.rocksdb_internal_stats->cfs+META_CF;
 
     num_entries = cf_stats->num_entries_imm_mem_tables + cf_stats->num_entries_active_mem_table;
     num_deletes = cf_stats->num_deletes_imm_mem_tables + cf_stats->num_deletes_active_mem_table;
@@ -1370,11 +1387,14 @@ int swapForkRocksdbSnapshotBeforeFork(struct swapForkRocksdbCtx *sfrctx) {
     snapshot_ctx->checkpoint_dir_pipe_writing = pipefds[1];
     anetNonBlock(NULL, snapshot_ctx->checkpoint_dir_pipe_writing);
 
-    if (rocksCreateSnapshot() != C_OK) {
+    rocks *rocks = serverRocksGetReadLock();
+    if (rocksCreateSnapshot(rocks) != C_OK) {
         close(snapshot_ctx->checkpoint_dir_pipe);
         close(snapshot_ctx->checkpoint_dir_pipe_writing);
+        serverRocksUnlock(rocks);
         return C_ERR;
     }
+    serverRocksUnlock(rocks);
     return C_OK;
 }
 
@@ -1423,21 +1443,21 @@ void checkpointDirPipeWriteHandler(struct aeEventLoop *eventLoop, int fd, void *
     zfree(pd);
 }
 
-void rocksdbCreateCheckpointTaskDone(void *_result, void *_pd, int errcode) {
+void serverRocksCreateCheckpointTaskDone(void *_result, void *_pd, int errcode) {
     UNUSED(errcode);
     rocksdbCreateCheckpointResult *result = _result;
     rocksdbCreateCheckpointPayload *pd = _pd;
-    rocks *rocks = server.rocks;
 
-    if (NULL != rocks->checkpoint) {
+    rocks *rocks = serverRocksGetReadLock();
+    if (NULL != server.rocksdb_checkpoint) {
         serverLog(LL_WARNING, "[rocks] release old checkpoint.");
-        rocksReleaseCheckpoint();
+        rocksReleaseCheckpoint(rocks);
     }
     if (NULL != result->checkpoint) {
         serverLog(LL_NOTICE, "[rocks] created checkpoint %s.", result->checkpoint_dir);
-        /* result moved to server.rocks */
-        rocks->checkpoint = result->checkpoint;
-        rocks->checkpoint_dir = result->checkpoint_dir;
+        /* results moved */
+        server.rocksdb_checkpoint = result->checkpoint;
+        server.rocksdb_checkpoint_dir = result->checkpoint_dir;
     }
 
     if (pd->waiting_child && server.child_pid == pd->waiting_child) {
@@ -1456,11 +1476,12 @@ void rocksdbCreateCheckpointTaskDone(void *_result, void *_pd, int errcode) {
         }
         /* parent process release snapshot so that rocksdb can continue compacting. */
         /* child process still maintain snapshot copy. */
-        rocksReleaseSnapshot();
+        rocksReleaseSnapshot(rocks);
     }
 
     zfree(pd);
     zfree(result);
+    serverRocksUnlock(rocks);
 }
 
 /* generate checkpoint asynchronsly and then sends checkpoint info to
@@ -1475,7 +1496,7 @@ int swapForkRocksdbSnapshotAfterForkParent(struct swapForkRocksdbCtx *sfrctx, in
         rocksdbCreateCheckpointPayload *pd = zcalloc(sizeof(rocksdbCreateCheckpointPayload));
         pd->waiting_child = childpid;
         pd->checkpoint_dir_pipe_writing = snapshot_ctx->checkpoint_dir_pipe_writing;
-        submitUtilTask(ROCKSDB_CREATE_CHECKPOINT, NULL, rocksdbCreateCheckpointTaskDone, pd, NULL);
+        submitUtilTask(ROCKSDB_CREATE_CHECKPOINT, NULL, serverRocksCreateCheckpointTaskDone, pd, NULL);
     }
     return C_OK;
 }
@@ -1505,7 +1526,10 @@ void swapForkRocksdbCheckpointCtxInit(struct swapForkRocksdbCtx *sfrctx) {
 int swapForkRocksdbCheckpointBeforeFork(struct swapForkRocksdbCtx *sfrctx) {
     UNUSED(sfrctx);
     sds checkpoint_dir = sdscatprintf(sdsempty(),"%s/tmp_%lld",ROCKS_DATA,ustime());
-    return rocksCreateCheckpoint(checkpoint_dir) ? C_OK : C_ERR;
+    rocks *rocks = serverRocksGetReadLock();
+    int ret = rocksCreateCheckpoint(rocks,checkpoint_dir);
+    serverRocksUnlock(rocks);
+    return ret;
 }
 
 int swapForkRocksdbCheckpointAfterForkChild(struct swapForkRocksdbCtx *sfrctx) {
@@ -1561,19 +1585,22 @@ void rocksdbGetStatsTaskDone(void *result, void *pd, int errcode) {
     UNUSED(errcode), UNUSED(pd);
     rocksdbInternalStats *internal_stats = result;
     if (internal_stats != NULL) {
-        rocksdbInternalStatsFree(server.rocks->internal_stats);
-        server.rocks->internal_stats = internal_stats;
+        rocksdbInternalStatsFree(server.rocksdb_internal_stats);
+        server.rocksdb_internal_stats = internal_stats;
     }
 }
 
-swapData4RocksdbFlush *rocksdbFlushTaskArgCreate(const char *cfnames) {
+swapData4RocksdbFlush *rocksdbFlushTaskArgCreate(rocks *rocks, const char *cfnames) {
     swapData4RocksdbFlush *data = zcalloc(sizeof(swapData4RocksdbFlush));
-    parseCfNames(cfnames,data->cfhanles,NULL);
     data->start_time = mstime();
+    data->rocksdb_epoch = rocks->rocksdb_epoch;
+    data->cfnames = cfnames ? sdsnew(cfnames): NULL;
     return data;
 }
 
 void rocksdbFlushTaskArgRelease(swapData4RocksdbFlush *data) {
+    if (data == NULL) return;
+    if (data->cfnames) sdsfree(data->cfnames);
     zfree(data);
 }
 

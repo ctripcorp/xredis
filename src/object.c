@@ -1090,7 +1090,9 @@ struct redisMemOverhead *getMemoryOverheadData(void) {
     }
 
     /* rocksdb memory & rectified fragmentation */
-    mh->rocks = rocksGetMemoryOverhead();
+    rocks *rocks = serverRocksGetReadLock();
+    mh->rocks = rocksGetMemoryOverhead(rocks);
+    serverRocksUnlock(rocks);
     if (mh->rocks) {
         mh->overhead_total = mem_total + mh->rocks->total;
         mh->rectified_frag = (float)server.cron_malloc_stats.process_rss /
