@@ -436,7 +436,7 @@ int swapBatchTest(int argc, char *argv[], int accurate) {
         initTestRedisDb();
         monotonicInit();
         initServerConfig();
-        if (!server.rocks) rocksInit();
+        if (!server.rocks) serverRocksInit();
         initStatsSwap();
         if (!server.swap_lock) swapLockCreate();
         if (!server.swap_batch_ctx) server.swap_batch_ctx = swapBatchCtxNew();

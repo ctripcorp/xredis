@@ -2091,8 +2091,10 @@ void checkChildrenDone(void) {
             }
             if (!bysignal && exitcode == 0) receiveChildInfo();
             receiveSwapChildErrs();
-            rocksReleaseSnapshot();
-            rocksReleaseCheckpoint();
+            rocks *rocks = serverRocksGetReadLock();
+            rocksReleaseSnapshot(rocks);
+            rocksReleaseCheckpoint(rocks);
+            serverRocksUnlock(rocks);
             resetChildState();
         } else {
             if (!ldbRemoveChild(pid)) {
@@ -2413,7 +2415,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
 
     run_with_period(1000) {
         if (server.swap_mode != SWAP_MODE_MEMORY) {
-            rocksCron();
+            serverRocksCron();
 
             if (server.maxmemory_scale_from > server.maxmemory)
                 updateMaxMemoryScaleFrom();
@@ -3669,7 +3671,6 @@ void initServer(void) {
 void InitServerLast() {
     bioInit();
     server.rocksdb_disk_used = 0;
-    server.rocksdb_epoch = 0;
     server.rocksdb_disk_error = 0;
     server.rocksdb_disk_error_since = 0;
     server.swap_rocksdb_stats_collect_interval_ms = 2000;
@@ -3677,7 +3678,11 @@ void InitServerLast() {
     server.swap_pause_type = CLIENT_PAUSE_OFF;
     server.swap_paused_keyrequests = listCreate();
     server.swap_resumed_keyrequests = listCreate();
-    rocksInit();
+    server.rocksdb_checkpoint = NULL;
+    server.rocksdb_checkpoint_dir = NULL;
+    server.rocksdb_rdb_checkpoint_dir = NULL;
+    server.rocksdb_internal_stats = NULL;
+    serverRocksInit();
     server.util_task_manager = createRocksdbUtilTaskManager();
     asyncCompleteQueueInit();
     parallelSyncInit(server.ps_parallism_rdb);

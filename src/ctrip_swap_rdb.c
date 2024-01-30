@@ -302,8 +302,10 @@ int rdbSaveRocks(rio *rdb, int *error, redisDb *db, int rdbflags) {
     decodedResultInit(next);
     int iter_valid; /* true if current iter value is valid. */
 
-    if (!(it = rocksCreateIter(server.rocks,db))) {
+    rocks *rocks = serverRocksGetReadLock();
+    if (!(it = rocksCreateIter(rocks,db))) {
         serverLog(LL_WARNING, "Create rocks iterator failed.");
+        serverRocksUnlock(rocks);
         return C_ERR;
     }
 
@@ -450,6 +452,7 @@ saveend:
     sdsfree(stats_dump);
 
     if (it) rocksReleaseIter(it);
+    serverRocksUnlock(rocks);
 
     return C_OK;
 
@@ -458,6 +461,7 @@ err:
     serverLog(LL_WARNING, "Save rocks data to rdb failed: %s", errstr);
     if (it) rocksReleaseIter(it);
     if (errstr) sdsfree(errstr);
+    serverRocksUnlock(rocks);
     return C_ERR;
 }
 

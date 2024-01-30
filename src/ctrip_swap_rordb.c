@@ -148,7 +148,7 @@ werr:
 int rordbSaveSST(rio *rdb) {
     if (rdbSaveType(rdb,RORDB_OPCODE_SWAP_VERSION) == -1) goto err;
     if (rdbSaveLen(rdb,server.swap_key_version) == -1) goto err;
-    if (rordbSaveSSTFiles(rdb,server.rocks->checkpoint_dir) == -1) goto err;
+    if (rordbSaveSSTFiles(rdb,server.rocksdb_checkpoint_dir) == -1) goto err;
     return C_OK;
 err:
     return C_ERR;
@@ -259,7 +259,10 @@ int rordbLoadSSTType(rio *rdb, int type) {
 int rordbLoadSSTFinished(rio *rdb) {
     UNUSED(rdb);
     serverLog(LL_NOTICE, "[rordb] restoring from checkpoint(%s).", RORDB_CHECKPOINT_DIR);
-    if (rocksRestore(RORDB_CHECKPOINT_DIR)) {
+    rocks *rocks = serverRocksGetReadLock();
+    int ret = rocksRestore(rocks,RORDB_CHECKPOINT_DIR);
+    serverRocksUnlock(rocks);
+    if (ret != C_OK) {
         serverLog(LL_WARNING, "[rordb] restore from checkpoint(%s) failed.", RORDB_CHECKPOINT_DIR);
         return C_ERR;
     } else {

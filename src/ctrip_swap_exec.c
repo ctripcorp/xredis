@@ -73,28 +73,31 @@ void swapRequestUpdateStatsSwapInNotFound(swapRequest *req) {
 void swapRequestExecuteUtil_CompactRange(swapRequest *req) {
     char dir[ROCKS_DIR_MAX_LEN];
     UNUSED(req);
-    snprintf(dir, ROCKS_DIR_MAX_LEN, "%s/%d", ROCKS_DATA, server.rocksdb_epoch);
+    rocks *rocks = serverRocksGetReadLock();
+    snprintf(dir, ROCKS_DIR_MAX_LEN, "%s/%d", ROCKS_DATA, rocks->rocksdb_epoch);
     serverLog(LL_WARNING, "[rocksdb compact range before] dir(%s) size(%ld)", dir, get_dir_size(dir));
     for (int i = 0; i < CF_COUNT; i++) {
-        rocksdb_compact_range_cf(server.rocks->db, server.rocks->cf_handles[i] ,NULL, 0, NULL, 0);
+        rocksdb_compact_range_cf(rocks->db, rocks->cf_handles[i] ,NULL, 0, NULL, 0);
     }
     serverLog(LL_WARNING, "[rocksdb compact range after] dir(%s) size(%ld)", dir, get_dir_size(dir));
+    serverRocksUnlock(rocks);
 }
 
 void swapRequestExecuteUtil_GetRocksdbStats(swapRequest* req) {
     rocksdbInternalStats *internal_stats = rocksdbInternalStatsNew();
     rocksdbUtilTaskCtx *utilctx = req->finish_pd;
 
+    rocks *rocks = serverRocksGetReadLock();
     for(int i = 0; i < CF_COUNT; i++) {
         char *value;
         uint64_t intval;
         rocksdb_column_family_handle_t *cf;
         rocksdbCFInternalStats *cf_stats;
 
-        cf = server.rocks->cf_handles[i];
+        cf = rocks->cf_handles[i];
         cf_stats = internal_stats->cfs+i;
 
-        if ((value = rocksdb_property_value_cf(server.rocks->db,
+        if ((value = rocksdb_property_value_cf(rocks->db,
                         cf,"rocksdb.stats")) == NULL) {
             goto err;
         }
@@ -102,25 +105,25 @@ void swapRequestExecuteUtil_GetRocksdbStats(swapRequest* req) {
         cf_stats->rocksdb_stats_cache = sdsnew(value);
         zlibc_free(value);
 
-        if (rocksdb_property_int_cf(server.rocks->db,cf,
+        if (rocksdb_property_int_cf(rocks->db,cf,
                     "rocksdb.num-entries-imm-mem-tables",&intval)) {
             goto err;
         }
         cf_stats->num_entries_imm_mem_tables = intval;
 
-        if (rocksdb_property_int_cf(server.rocks->db, cf,
+        if (rocksdb_property_int_cf(rocks->db, cf,
                     "rocksdb.num-deletes-imm-mem-tables",&intval)) {
             goto err;
         }
         cf_stats->num_deletes_imm_mem_tables = intval;
 
-        if (rocksdb_property_int_cf(server.rocks->db, cf,
+        if (rocksdb_property_int_cf(rocks->db, cf,
                     "rocksdb.num-entries-active-mem-table",&intval)) {
             goto err;
         }
         cf_stats->num_entries_active_mem_table = intval;
 
-        if (rocksdb_property_int_cf(server.rocks->db, cf,
+        if (rocksdb_property_int_cf(rocks->db, cf,
                     "rocksdb.num-deletes-active-mem-table",&intval)) {
             goto err;
         }
@@ -128,12 +131,14 @@ void swapRequestExecuteUtil_GetRocksdbStats(swapRequest* req) {
     }
 
     utilctx->result = internal_stats;
+    serverRocksUnlock(rocks);
     return;
 
 err:
 
     rocksdbInternalStatsFree(internal_stats);
     utilctx->result = NULL;
+    serverRocksUnlock(rocks);
 }
 
 void swapRequestExecuteUtil_CreateCheckpoint(swapRequest* req) {
@@ -144,7 +149,8 @@ void swapRequestExecuteUtil_CreateCheckpoint(swapRequest* req) {
     utilctx->result = result;
 
     char* err = NULL;
-    checkpoint = rocksdb_checkpoint_object_create(server.rocks->db, &err);
+    rocks *rocks = serverRocksGetReadLock();
+    checkpoint = rocksdb_checkpoint_object_create(rocks->db, &err);
     if (err != NULL) {
         serverLog(LL_WARNING, "[rocks] checkpoint object create fail :%s\n", err);
         goto error;
@@ -156,6 +162,7 @@ void swapRequestExecuteUtil_CreateCheckpoint(swapRequest* req) {
     }
     result->checkpoint = checkpoint;
     result->checkpoint_dir = checkpoint_dir;
+    serverRocksUnlock(rocks);
     return;
 
 error:
@@ -165,43 +172,47 @@ error:
     sdsfree(checkpoint_dir);
     result->checkpoint = NULL;
     result->checkpoint_dir = NULL;
+    serverRocksUnlock(rocks);
 }
+
+int rocksGetCfByName(rocks *rocks, const char *cfnames, rocksdb_column_family_handle_t *handles[CF_COUNT], const char *names[CF_COUNT+1]);
 
 void swapRequestExecuteUtil_RocksdbFlush(swapRequest* req) {
     char *err = NULL;
     rocksdb_flushoptions_t *flush_opts = NULL;
+    rocksdb_column_family_handle_t *cfhandles[CF_COUNT] = {NULL};
+    const char *names[CF_COUNT+1] = {NULL};
     rocksdbUtilTaskCtx *utilctx = req->finish_pd;
     swapData4RocksdbFlush *data = (swapData4RocksdbFlush*)utilctx->argument;
+
+    rocks *rocks = serverRocksGetReadLock();
+
+    rocksGetCfByName(rocks,data->cfnames,cfhandles,names);
 
     flush_opts = rocksdb_flushoptions_create();
 
     for (int i = 0; i < CF_COUNT; i++) {
-        size_t name_len;
-        char *name = NULL;
-        rocksdb_column_family_handle_t *handle = data->cfhanles[i];
+        const char *name = names[i];
+        rocksdb_column_family_handle_t *handle = cfhandles[i];
 
         if (handle == NULL) continue;
 
-        name = rocksdb_column_family_handle_get_name(handle,&name_len);
-
         ustime_t start = ustime(), elapsed;
-        rocksdb_flush_cf(server.rocks->db, flush_opts, handle, &err);
+        rocksdb_flush_cf(rocks->db, flush_opts, handle, &err);
         elapsed = ustime() - start;
 
         if (err != NULL) {
             swapRequestSetError(req, SWAP_ERR_EXEC_ROCKSDB_FLUSH_FAIL);
             serverLog(LL_WARNING, "[rocks] flush %.*s cf failed:%s, took %lld us",
-                    (int)name_len, name, err, elapsed);
-            zlibc_free(name);
+                    (int)strlen(name), name, err, elapsed);
         } else {
             serverLog(LL_NOTICE, "[rocks] flush %.*s cf ok, took %lld us",
-                    (int)name_len, name, elapsed);
+                    (int)strlen(name), name, elapsed);
         }
-
-        if (name != NULL) zlibc_free(name);
     }
 
     rocksdb_flushoptions_destroy(flush_opts);
+    serverRocksUnlock(rocks);
 }
 
 void swapRequestExecuteUtil(swapRequest *req) {
@@ -843,7 +854,7 @@ int swapExecTest(int argc, char *argv[], int accurate) {
         incrRefCount(val1);
         dbAdd(db,key1,val1);
         setExpire(NULL,db,key1,EXPIRE);
-        if (!server.rocks) rocksInit();
+        if (!server.rocks) serverRocksInit();
         initStatsSwap();
     }
 

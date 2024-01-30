@@ -325,7 +325,7 @@ typedef struct persistingKeysTodoIter {
   listIter li;
 } persistingKeysTodoIter;
 
-persistingKeys *persistingKeysNew();
+persistingKeys *persistingKeysNew(void);
 void persistingKeysFree(persistingKeys *keys);
 int persistingKeysPut(persistingKeys *keys, sds key, uint64_t version, mstime_t time);
 persistingKeyEntry *persistingKeysLookup(persistingKeys *keys, sds key);
@@ -359,7 +359,7 @@ typedef struct swapPersistCtx {
   swapPersistStat stat;
 } swapPersistCtx;
 
-swapPersistCtx *swapPersistCtxNew();
+swapPersistCtx *swapPersistCtxNew(void);
 void swapPersistCtxFree(swapPersistCtx *ctx);
 size_t swapPersistCtxKeysCount(swapPersistCtx *ctx);
 size_t swapPersistCtxUsedMemory(swapPersistCtx *ctx);
@@ -491,9 +491,9 @@ typedef struct objectMeta {
 extern objectMetaType lenObjectMetaType;
 extern objectMetaType listObjectMetaType;
 
-static inline void swapInitVersion() { server.swap_key_version = 1; }
+static inline void swapInitVersion(void) { server.swap_key_version = 1; }
 static inline void swapSetVersion(uint64_t version) { server.swap_key_version = version; }
-static inline uint64_t swapGetAndIncrVersion() { return server.swap_key_version++; }
+static inline uint64_t swapGetAndIncrVersion(void) { return server.swap_key_version++; }
 
 int buildObjectMeta(int object_type, uint64_t version, const char *extend, size_t extlen, OUT objectMeta **pobject_meta);
 objectMeta *dupObjectMeta(objectMeta *object_meta);
@@ -792,7 +792,7 @@ void swapCtxSetSwapData(swapCtx *ctx, MOVE swapData *data, MOVE void *datactx);
 void swapCtxFree(swapCtx *ctx);
 
 void pauseClientSwap(int pause_type);
-void resumeClientSwap();
+void resumeClientSwap(void);
 void processResumedClientKeyRequests(void);
 
 /* see server.req_submitted */
@@ -868,7 +868,7 @@ typedef struct argRewrites {
   argRewrite rewrites[ARG_REWRITES_MAX];
 } argRewrites;
 
-argRewrites *argRewritesCreate();
+argRewrites *argRewritesCreate(void);
 void argRewritesAdd(argRewrites *arg_rewrites, argRewriteRequest arg_req, MOVE robj *orig_arg);
 void argRewritesReset(argRewrites *arg_rewrites);
 void argRewritesFree(argRewrites *arg_rewrites);
@@ -922,7 +922,7 @@ typedef struct metaScanResult {
   sds nextseek;
 } metaScanResult;
 
-metaScanResult *metaScanResultCreate();
+metaScanResult *metaScanResultCreate(void);
 void metaScanResultAppend(metaScanResult *result, int object_type, MOVE sds key, long long expire);
 void metaScanResultSetNextSeek(metaScanResult *result, MOVE sds nextseek);
 void freeScanMetaResult(metaScanResult *result);
@@ -978,7 +978,7 @@ typedef struct scanExpire {
     long long stat_expire_time_used;
 } scanExpire;
 
-scanExpire *scanExpireCreate();
+scanExpire *scanExpireCreate(void);
 void scanExpireFree(scanExpire *scan_expire);
 void scanExpireEmpty(scanExpire *scan_expire);
 
@@ -1127,7 +1127,7 @@ typedef struct swapRequestBatch {
   monotime swap_queue_timer;
 } swapRequestBatch;
 
-swapRequestBatch *swapRequestBatchNew();
+swapRequestBatch *swapRequestBatchNew(void);
 void swapRequestBatchFree(swapRequestBatch *reqs);
 void swapRequestBatchAppend(swapRequestBatch *reqs, swapRequest *req);
 void swapRequestBatchExecute(swapRequestBatch *reqs);
@@ -1196,10 +1196,10 @@ typedef struct swapThread {
     redisAtomic unsigned long is_running_rio;
 } swapThread;
 
-int swapThreadsInit();
-void swapThreadsDeinit();
+int swapThreadsInit(void);
+void swapThreadsDeinit(void);
 void swapThreadsDispatch(struct swapRequestBatch *reqs, int idx);
-int swapThreadsDrained();
+int swapThreadsDrained(void);
 sds genSwapThreadInfoString(sds info);
 
 
@@ -1353,7 +1353,7 @@ typedef struct swapBatchCtx {
   int cmd_intention;
 } swapBatchCtx;
 
-swapBatchCtx *swapBatchCtxNew();
+swapBatchCtx *swapBatchCtxNew(void);
 void swapBatchCtxFree(swapBatchCtx *batch_ctx);
 void swapBatchCtxFeed(swapBatchCtx *batch_ctx, int force_flush, swapRequest *req, int thread_idx);
 size_t swapBatchCtxFlush(swapBatchCtx *batch_ctx, int reason);
@@ -1374,7 +1374,7 @@ typedef struct asyncCompleteQueue {
     list *complete_queue;
 } asyncCompleteQueue;
 
-int asyncCompleteQueueInit();
+int asyncCompleteQueueInit(void);
 void asyncCompleteQueueDeinit(asyncCompleteQueue *cq);
 void asyncCompleteQueueAppend(asyncCompleteQueue *cq, swapRequestBatch *reqs);
 int asyncCompleteQueueDrain(mstime_t time_limit);
@@ -1396,8 +1396,8 @@ typedef struct parallelSync {
 } parallelSync;
 
 int parallelSyncInit(int parallel);
-void parallelSyncDeinit();
-int parallelSyncDrain();
+void parallelSyncDeinit(void);
+int parallelSyncDrain(void);
 
 int parallelSyncSwapRequestBatchSubmit(swapRequestBatch *reqs, int idx);
 
@@ -1564,23 +1564,23 @@ typedef struct swapEvictionCtx {
 #define swapEvictionFreedInrowIncr(ctx) do { ctx->freed_inrow++; } while(0)
 #define swapEvictionFreedInrowReset(ctx) do { ctx->freed_inrow=0; } while(0)
 
-swapEvictionCtx *swapEvictionCtxCreate();
+swapEvictionCtx *swapEvictionCtxCreate(void);
 void swapEvictionCtxFree(swapEvictionCtx *ctx);
 
 
 int tryEvictKey(redisDb *db, robj *key, int *evict_result);
 void tryEvictKeyAsapLater(redisDb *db, robj *key);
 void swapEvictCommand(client *c);
-void swapDebugEvictKeys();
+void swapDebugEvictKeys(void);
 unsigned long long calculateNextMemoryLimit(size_t mem_used, unsigned long long from, unsigned long long to);
-void updateMaxMemoryScaleFrom();
+void updateMaxMemoryScaleFrom(void);
 int swapEvictGetInprogressLimit(size_t mem_tofree);
-int swapEvictionReachedInprogressLimit();
+int swapEvictionReachedInprogressLimit(void);
 sds genSwapEvictionInfoString(sds info);
 
 #define EVICT_ASAP_OK 0
 #define EVICT_ASAP_AGAIN 1
-int swapEvictAsap();
+int swapEvictAsap(void);
 
 typedef struct swapEvictKeysCtx {
     int swap_mode;
@@ -1591,7 +1591,7 @@ typedef struct swapEvictKeysCtx {
     int ended;
 } swapEvictKeysCtx;
 
-void ctrip_startEvictionTimeProc();
+void ctrip_startEvictionTimeProc(void);
 size_t ctrip_getMemoryToFree(size_t mem_used);
 void ctrip_performEvictionStart(swapEvictKeysCtx *sectx);
 int ctrip_performEvictionLoopStartShouldBreak(swapEvictKeysCtx *sectx);
@@ -1604,20 +1604,20 @@ static inline int ctrip_performEvictionLoopCheckInterval(int keys_freed) {
   else
     return keys_freed % server.swap_evict_loop_check_interval == 0;
 }
-unsigned long evictionTimeLimitUs();
-static inline unsigned long ctirp_evictionTimeLimitUs() {
+unsigned long evictionTimeLimitUs(void);
+static inline unsigned long ctirp_evictionTimeLimitUs(void) {
   if (server.swap_mode == SWAP_MODE_MEMORY)
     return evictionTimeLimitUs();
   else
     return 50uL * server.maxmemory_eviction_tenacity;
 }
 /* used memory in disk swap mode */
-size_t coldFiltersUsedMemory(); /* cuckoo filter not counted in maxmemory */
-static inline size_t ctrip_getUsedMemory() {
+size_t coldFiltersUsedMemory(void); /* cuckoo filter not counted in maxmemory */
+static inline size_t ctrip_getUsedMemory(void) {
     return zmalloc_used_memory() - server.swap_inprogress_memory -
       coldFiltersUsedMemory() - swapPersistCtxUsedMemory(server.swap_persist_ctx);
 }
-static inline int ctrip_evictionTimeProcGetDelayMillis() {
+static inline int ctrip_evictionTimeProcGetDelayMillis(void) {
   if (server.swap_mode == SWAP_MODE_MEMORY) return 0;
   if (swapEvictionReachedInprogressLimit()) return 1;
   return 0;
@@ -1650,8 +1650,8 @@ static inline int swapRatelimitNeeded(swapRatelimitCtx *rlctx, int policy, int *
 }
 int swapRateLimitReject(swapRatelimitCtx *rlctx, client *c);
 void swapRateLimitPause(swapRatelimitCtx *rlctx, client *c);
-void trackSwapRateLimitInstantaneousMetrics();
-void resetSwapRateLimitInstantaneousMetrics();
+void trackSwapRateLimitInstantaneousMetrics(void);
+void resetSwapRateLimitInstantaneousMetrics(void);
 sds genSwapRateLimitInfoString(sds info);
 
 /* Expire */
@@ -1664,6 +1664,7 @@ int submitExpireClientRequest(client *c, robj *key, int force);
 
 /* Rocksdb engine */
 typedef struct rocks {
+    int rocksdb_epoch;
     rocksdb_t *db;
     rocksdb_options_t *cf_opts[CF_COUNT];
     rocksdb_column_family_handle_t *cf_handles[CF_COUNT];
@@ -1672,11 +1673,13 @@ typedef struct rocks {
     rocksdb_writeoptions_t *wopts;
     rocksdb_readoptions_t *filter_meta_ropts;
     const rocksdb_snapshot_t *snapshot;
-    rocksdb_checkpoint_t* checkpoint;
-    sds checkpoint_dir;
-    sds rdb_checkpoint_dir; /* checkpoint dir use for rdb saved */
-    struct rocksdbInternalStats *internal_stats;
+    pthread_rwlock_t rwlock[1];
 } rocks;
+
+rocks *serverRocksGetReadLock(void);
+rocks *serverRocksGetTryReadLock(void);
+rocks *serverRocksGetWriteLock(void);
+void serverRocksUnlock(rocks *rocks);
 
 static inline rocksdb_column_family_handle_t *swapGetCF(int cf) {
     serverAssert(cf < CF_COUNT);
@@ -1734,37 +1737,35 @@ typedef enum {
   FILTER_STATE_OPEN
 } filterState;
 int setFilterState(filterState state);
-filterState getFilterState();
-rocksdb_compactionfilterfactory_t* createDataCfCompactionFilterFactory();
-rocksdb_compactionfilterfactory_t* createScoreCfCompactionFilterFactory();
+filterState getFilterState(void);
+rocksdb_compactionfilterfactory_t* createDataCfCompactionFilterFactory(void);
+rocksdb_compactionfilterfactory_t* createScoreCfCompactionFilterFactory(void);
 
-int rocksInit(void);
-void rocksRelease(void);
+int serverRocksInit(void);
 int rocksFlushDB(int dbid);
-void rocksCron(void);
-void rocksReleaseCheckpoint(void);
-void rocksReleaseSnapshot(void);
-int rocksCreateCheckpoint(sds checkpoint_dir);
-int rocksCreateSnapshot(void);
-int readCheckpointDirFromPipe(int pipe);
-int rocksRestore(const char *checkpoint_dir);
-struct rocksdbMemOverhead *rocksGetMemoryOverhead();
+void serverRocksCron(void);
+int rocksCreateCheckpoint(rocks *rocks, sds checkpoint_dir);
+void rocksReleaseCheckpoint(rocks *rocks);
+void rocksReleaseSnapshot(rocks *rocks);
+int rocksCreateSnapshot(rocks *rocks);
+int rocksRestore(rocks *rocks, const char *checkpoint_dir);
+struct rocksdbMemOverhead *rocksGetMemoryOverhead(rocks *rocks);
 void rocksFreeMemoryOverhead(struct rocksdbMemOverhead *mh);
 sds genRocksdbInfoString(sds info);
 sds genRocksdbStatsString(sds section, sds info);
-int rocksdbPropertyInt(const char *cfnames, const char *propname, uint64_t *out_val);
-sds rocksdbPropertyValue(const char *cfnames, const char *propname);
+int rocksPropertyInt(rocks *rocks, const char *cfnames, const char *propname, uint64_t *out_val);
+sds rocksPropertyValue(rocks *rocks, const char *cfnames, const char *propname);
 char *rocksdbVersion(void);
 
 /* rocksdb util task: flush */
 typedef struct swapData4RocksdbFlush {
-  rocksdb_column_family_handle_t *cfhanles[CF_COUNT];
+  sds cfnames;
   mstime_t start_time;
+  int rocksdb_epoch;
 } swapData4RocksdbFlush;
 
-int parseCfNames(const char *cfnames, rocksdb_column_family_handle_t *handles[CF_COUNT], const char *names[CF_COUNT+1]);
-int swapShouldFlushMeta();
-swapData4RocksdbFlush *rocksdbFlushTaskArgCreate(const char *cfnames);
+int swapShouldFlushMeta(void);
+swapData4RocksdbFlush *rocksdbFlushTaskArgCreate(rocks *rocks, const char *cfnames);
 void rocksdbFlushTaskArgRelease(swapData4RocksdbFlush *data);
 void rocksdbFlushTaskDone(void *result, void *pd, int errcode);
 
@@ -1781,7 +1782,7 @@ typedef struct rocksdbInternalStats {
   rocksdbCFInternalStats cfs[CF_COUNT];
 }rocksdbInternalStats;
 
-rocksdbInternalStats *rocksdbInternalStatsNew();
+rocksdbInternalStats *rocksdbInternalStatsNew(void);
 void rocksdbInternalStatsFree(rocksdbInternalStats *internal_stats);
 void rocksdbGetStatsTaskDone(void *result, void *pd, int errcode);
 
@@ -1790,8 +1791,6 @@ typedef struct rocksdbCreateCheckpointPayload {
     pid_t waiting_child;
     int checkpoint_dir_pipe_writing;
 } rocksdbCreateCheckpointPayload;
-
-void rocksdbCreateCheckpointTaskDone(void *_result, void *_pd, int errcode);
 
 typedef struct checkpointDirPipeWritePayload {
     sds data;
@@ -1953,7 +1952,7 @@ struct swapDebugInfo {
 } swapDebugInfo;
 void metricDebugInfo(int type, long val);
 
-void trackSwapInstantaneousMetrics();
+void trackSwapInstantaneousMetrics(void);
 sds genSwapInfoString(sds info);
 sds genSwapStorageInfoString(sds info);
 sds genSwapExecInfoString(sds info);
@@ -2248,8 +2247,8 @@ typedef struct swapCuckooFilterStat {
 
 void swapCuckooFilterStatInit(swapCuckooFilterStat *stat);
 void swapCuckooFilterStatDeinit(swapCuckooFilterStat *stat);
-void trackSwapCuckooFilterInstantaneousMetrics();
-void resetSwapCukooFilterInstantaneousMetrics();
+void trackSwapCuckooFilterInstantaneousMetrics(void);
+void resetSwapCukooFilterInstantaneousMetrics(void);
 sds genSwapCuckooFilterInfoString(sds info);
 
 typedef struct coldFilter {
@@ -2258,7 +2257,7 @@ typedef struct coldFilter {
   swapCuckooFilterStat filter_stat;
 } coldFilter;
 
-coldFilter *coldFilterCreate();
+coldFilter *coldFilterCreate(void);
 void coldFilterDestroy(coldFilter *filter);
 void coldFilterInit(coldFilter *filter);
 void coldFilterDeinit(coldFilter *filter);
@@ -2323,7 +2322,7 @@ void notifyKeyspaceEventDirtyKey(int type, char *event, robj *key, int dbid);
 void notifyKeyspaceEventDirtyMeta(int type, char *event, robj *key, int dbid, robj *o);
 void notifyKeyspaceEventDirtySubkeys(int type, char *event, robj *key, int dbid, robj *o, int count, sds *subkeys, size_t *sublens);
 
-robj *dirtySubkeysNew();
+robj *dirtySubkeysNew(void);
 void dirtySubkeysFree(robj *dss);
 unsigned long dirtySubkeysLength(robj *dss);
 int dirtySubkeysAdd(robj *dss, sds subkey, size_t sublen);
@@ -2367,7 +2366,7 @@ typedef struct rocksdbUtilTaskManager{
     } stats[ROCKSDB_EXCLUSIVE_TASK_COUNT];
 } rocksdbUtilTaskManager;
 
-rocksdbUtilTaskManager* createRocksdbUtilTaskManager();
+rocksdbUtilTaskManager* createRocksdbUtilTaskManager(void);
 
 typedef struct rocksdbUtilTaskCtx {
     int type;
@@ -2400,7 +2399,7 @@ struct swapCmdTrace {
     swapTrace *swap_traces;
 };
 
-swapCmdTrace *createSwapCmdTrace();
+swapCmdTrace *createSwapCmdTrace(void);
 void initSwapTraces(swapCmdTrace *swap_cmd, int swap_cnt);
 void swapCmdTraceFree(swapCmdTrace *trace);
 void swapCmdSwapSubmitted(swapCmdTrace *swap_cmd);
@@ -2423,14 +2422,14 @@ typedef struct swapUnblockCtx  {
   long long swap_err_count;
 } swapUnblockCtx ;
 
-swapUnblockCtx* createSwapUnblockCtx();
+swapUnblockCtx* createSwapUnblockCtx(void);
 void releaseSwapUnblockCtx(swapUnblockCtx* block);
 void swapServeClientsBlockedOnListKey(robj *o, readyList *rl);
 int getKeyRequestsSwapBlockedLmove(int dbid, int intention, int intention_flags, uint64_t cmd_flags,
             robj *key, struct getKeyRequestsResult *result, int arg_rewrite0,
             int arg_rewrite1, int num_ranges, ...);
 int serveClientBlockedOnList(client *receiver, robj *key, robj *dstkey, redisDb *db, robj *value, int wherefrom, int whereto,list* swap_wrong_type_error_keys);
-void incrSwapUnBlockCtxVersion();
+void incrSwapUnBlockCtxVersion(void);
 #ifndef __APPLE__
 typedef struct swapThreadCpuUsage{
     /* CPU usage Cacluation */
@@ -2452,7 +2451,7 @@ typedef struct swapThreadCpuUsage{
 
 void swapThreadCpuUsageUpdate(swapThreadCpuUsage *cpu_usage);
 void swapThreadCpuUsageFree(swapThreadCpuUsage *cpu_usage);
-struct swapThreadCpuUsage *swapThreadCpuUsageNew();
+struct swapThreadCpuUsage *swapThreadCpuUsageNew(void);
 sds genRedisThreadCpuUsageInfoString(sds info, swapThreadCpuUsage *cpu_usage);
 #endif
 #ifdef REDIS_TEST
