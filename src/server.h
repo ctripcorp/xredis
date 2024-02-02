@@ -221,11 +221,6 @@ extern int configOOMScoreAdjValuesDefaults[CONFIG_OOM_COUNT];
 #define CMD_CATEGORY_TRANSACTION (1ULL<<38)
 #define CMD_CATEGORY_SCRIPTING (1ULL<<39)
 
-// /* Command flags that describe cmd swap action. */
-// #define CMD_SWAP_GET (1ULL<<40)        /* Cmd require swap get if key absent. */
-// #define CMD_SWAP_PUT (1ULL<<41)        /* Cmd require swap put if key present. */
-// #define CMD_SWAP_DEL (1ULL<<42)        /* Cmd require swap del. */
-
 /* swap datatype flags*/
 #define CMD_SWAP_DATATYPE_KEYSPACE (1ULL<<40)
 #define CMD_SWAP_DATATYPE_STRING (1ULL<<41)

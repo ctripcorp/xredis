@@ -561,7 +561,7 @@ int swapBatchTest(int argc, char *argv[], int accurate) {
         data = createWholeKeySwapData(db,key1,val1,NULL);
         out_req1 = swapDataRequestNew(SWAP_OUT,0,NULL,data,NULL,NULL,NULL,NULL,NULL);
         out_req2 = swapDataRequestNew(SWAP_OUT,0,NULL,data,NULL,NULL,NULL,NULL,NULL);
-        utils_req = swapDataRequestNew(SWAP_UTILS,ROCKSDB_GET_STATS_TASK,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
+        utils_req = swapDataRequestNew(SWAP_UTILS,ROCKSDB_COMPACT_RANGE_TASK,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
 
         swapBatchCtxFeed(batch_ctx,0,utils_req,-1);
         test_assert(batch_ctx->stat.submit_batch_count == 1);

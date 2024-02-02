@@ -942,12 +942,14 @@ int swapDataHashTest(int argc, char **argv, int accurate) {
         kr1->level = REQUEST_LEVEL_KEY;
         kr1->b.num_subkeys = 0;
         kr1->b.subkeys = NULL;
+        kr1->cmd_flags = CMD_SWAP_DATATYPE_HASH;
         incrRefCount(key1);
         cold_kr1->key = key1;
         cold_kr1->level = REQUEST_LEVEL_KEY;
         cold_kr1->type = KEYREQUEST_TYPE_SUBKEY;
         cold_kr1->b.num_subkeys = 0;
         cold_kr1->b.subkeys = NULL;
+        cold_kr1->cmd_flags = CMD_SWAP_DATATYPE_HASH;
         dbAdd(db,key1,hash1);
 
         hash1_data = createSwapData(db,key1,hash1,NULL);
