@@ -365,7 +365,6 @@ NULL
             sds checkpoint_dir = sdscatprintf(sdsempty(),"%s/tmp_%lld",ROCKS_DATA,ustime());
             rocks *rocks = serverRocksGetReadLock();
             int ret2 = rocksCreateCheckpoint(rocks, checkpoint_dir);
-            serverRocksUnlock(rocks);
             if (ret2 != C_OK) {
                 addReplyError(c,"Error creating checkpoint");
                 return;
@@ -374,6 +373,8 @@ NULL
                 addReplyError(c,"Error saving rordb");
                 return;
             }
+            rocksReleaseCheckpoint(rocks);
+            serverRocksUnlock(rocks);
             emptyDb(-1,EMPTYDB_NO_FLAGS,NULL);
             protectClient(c);
             int ret = rdbLoad(server.rdb_filename,NULL,RDBFLAGS_NONE);
