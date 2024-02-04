@@ -247,19 +247,19 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,NULL,SWAP_IN,SWAP_IN_META,1,-1,1,0,0,0},
 
     {"setbit",setbitCommand,4,
-     "write use-memory @bitmap @swap_string",
+     "write use-memory @bitmap @swap_bitmap",
      0,NULL,getKeyRequestsSetbit,SWAP_IN,SWAP_IN_DEL,1,1,1,0,0,0},
 
     {"getbit",getbitCommand,3,
-     "read-only fast @bitmap @swap_string",
+     "read-only fast @bitmap @swap_bitmap",
      0,NULL,getKeyRequestsGetbit,SWAP_IN,0,1,1,1,0,0,0},
 
     {"bitfield",bitfieldCommand,-2,
-     "write use-memory @bitmap @swap_string",
-     0,NULL,getKeyRequestsBitField,SWAP_IN,0,1,1,1,0,0,0},
+     "write use-memory @bitmap @swap_bitmap",
+     0,NULL,getKeyRequestsBitField,SWAP_IN,SWAP_IN_DEL,1,1,1,0,0,0},
 
     {"bitfield_ro",bitfieldroCommand,-2,
-     "read-only fast @bitmap @swap_string",
+     "read-only fast @bitmap @swap_bitmap",
      0,NULL,getKeyRequestsBitField,SWAP_IN,0,1,1,1,0,0,0},
 
     {"setrange",setrangeCommand,4,
@@ -939,15 +939,15 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"bitop",bitopCommand,-4,
-     "write use-memory @bitmap @swap_string",
+     "write use-memory @bitmap @swap_bitmap",
      0,NULL,getKeyRequestsBitop,SWAP_IN,0,2,-1,1,0,0,0},
 
     {"bitcount",bitcountCommand,-2,
-     "read-only @bitmap @swap_string",
+     "read-only @bitmap @swap_bitmap",
      0,NULL,getKeyRequestsBitcount,SWAP_IN,0,1,1,1,0,0,0},
 
     {"bitpos",bitposCommand,-3,
-     "read-only @bitmap @swap_string",
+     "read-only @bitmap @swap_bitmap",
      0,NULL,getKeyRequestsBitpos,SWAP_IN,0,1,1,1,0,0,0},
 
     {"wait",waitCommand,3,

@@ -187,9 +187,9 @@ inline int swapDataEncodeRange(struct swapData *d, int intention, void *datactx,
 
 /* Swap-thread: decode val/subval from rawvalss returned by rocksdb. */
 inline int swapDataDecodeData(swapData *d, int num, int *cfs, sds *rawkeys,
-        sds *rawvals, void *datactx, void **decoded) {
+        sds *rawvals, void **decoded) {
     if (d->type->decodeData)
-        return d->type->decodeData(d,num,cfs,rawkeys,rawvals,datactx,decoded);
+        return d->type->decodeData(d,num,cfs,rawkeys,rawvals,decoded);
     else
         return 0;
 }

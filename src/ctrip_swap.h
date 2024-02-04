@@ -90,7 +90,7 @@ extern const char *swap_cf_names[CF_COUNT];
 /* check whether oom would happend during RIO */
 #define SWAP_EXEC_OOM_CHECK (1U<<2)
 /* Don't delete key in keyspace when swap (Delete key in rocksdb) finish. */
-#define SWAP_FIN_DEL_SKIP (1U<<3)  /* TODO 与 SWAP_DEL 相配合*/
+#define SWAP_FIN_DEL_SKIP (1U<<3)
 /* Reserve data when swap out. */
 #define SWAP_EXEC_OUT_KEEP_DATA (1U<<4)
 
@@ -151,10 +151,15 @@ static inline const char *requestLevelName(int level) {
 #define SEGMENT_TYPE_COLD 1
 #define SEGMENT_TYPE_BOTH 2
 
+#define LIST_RANGE 0
+#define BITMAP_BIT_RANGE 1
+#define BITMAP_BYTE_RANGE 2
+
 /* Both start and end are inclusive, see addListRangeReply for details. */
 typedef struct range {
-  long long start;
-  long long end;
+    int type; /* LIST_RANGE, BITMAP_BIT_RANGE, BITMAP_BYTE_RANGE*/
+    long long start;
+    long long end;
 } range;
 
 #define KEYREQUEST_TYPE_KEY    0
@@ -164,12 +169,14 @@ typedef struct range {
 
 typedef struct argRewriteRequest {
   int mstate_idx; /* >=0 if current command is a exec, means index in mstate; -1 means req not in multi/exec */
-  int arg_idx; /* index of argument to rewrite */
+  int arg_idx; /* index of argument to use for rewrite func */
+  int arg_type; /* LIST_RANGE, BITMAP_BIT_RANGE, BITMAP_BYTE_RANGE */
 } argRewriteRequest;
 
 static inline void argRewriteRequestInit(argRewriteRequest *arg_req) {
   arg_req->mstate_idx = -1;
   arg_req->arg_idx = -1;
+  arg_req->arg_type = -1;
 }
 
 typedef struct keyRequest{
@@ -545,7 +552,7 @@ typedef struct swapObjectMeta {
 static inline int swapObjectMetaIsHot(swapObjectMeta *som) {
     if (som->value == NULL) return 0;
     /* todo type 拓展， OBJ_BITMAP */
-    serverAssert((som->object_meta->object_type == OBJ_STRING && som->value->type == OBJ_STRING) || som->object_meta->object_type == som->value->type);
+    serverAssert((som->object_meta->object_type == OBJ_BITMAP && som->value->type == OBJ_STRING) || som->object_meta->object_type == som->value->type);
     if (som->omtype->objectIsHot) {
       return som->omtype->objectIsHot(som->object_meta,som->value);
     } else {
@@ -602,7 +609,7 @@ typedef struct swapDataType {
   int (*encodeKeys)(struct swapData *data, int intention, void *datactx, OUT int *num, OUT int **cfs, OUT sds **rawkeys);
   int (*encodeRange)(struct swapData *data, int intention, void *datactx, OUT int *limit, OUT uint32_t *flags, OUT int *cf, OUT sds *start, OUT sds *end);
   int (*encodeData)(struct swapData *data, int intention, void *datactx, OUT int *num, OUT int **cfs, OUT sds **rawkeys, OUT sds **rawvals);
-  int (*decodeData)(struct swapData *data, int num, int *cfs, sds *rawkeys, sds *rawvals, void *datactx, OUT void **decoded);
+  int (*decodeData)(struct swapData *data, int num, int *cfs, sds *rawkeys, sds *rawvals, OUT void **decoded);
   int (*swapIn)(struct swapData *data, MOVE void *result, void *datactx);
   int (*swapOut)(struct swapData *data, void *datactx, int keep_data, OUT int *totally_out);
   int (*swapDel)(struct swapData *data, void *datactx, int async);
@@ -627,7 +634,7 @@ int swapDataEncodeKeys(swapData *d, int intention, void *datactx, int *num, int 
 int swapDataEncodeData(swapData *d, int intention, void *datactx, int *num, int **cfs, sds **rawkeys, sds **rawvals);
 int swapDataEncodeRange(struct swapData *data, int intention, void *datactx_, int *limit, uint32_t *flags, int *pcf, sds *start, sds *end);
 int swapDataDecodeAndSetupMeta(swapData *d, sds rawval, OUT void **datactx);
-int swapDataDecodeData(swapData *d, int num, int *cfs, sds *rawkeys, sds *rawvals, void *datactx, void **decoded);
+int swapDataDecodeData(swapData *d, int num, int *cfs, sds *rawkeys, sds *rawvals, void **decoded);
 int swapDataSwapIn(swapData *d, void *result, void *datactx);
 int swapDataSwapOut(swapData *d, void *datactx, int keep_data, OUT int *totally_out);
 int swapDataSwapDel(swapData *d, void *datactx, int async);
@@ -2303,53 +2310,6 @@ int coldFilterMayContainKey(coldFilter *filter, sds key, int *filt_by);
 void coldFilterSubkeyAdded(coldFilter *filter, sds key);
 void coldFilterSubkeyNotFound(coldFilter *filter, sds key, sds subkey);
 int coldFilterMayContainSubkey(coldFilter *filter, sds key, sds subkey);
-
-/* roaring bitmap */
-
-typedef uint16_t arrayContainer;
-typedef uint8_t bitmapContainer;
-
-typedef struct roaringContainer {
-    uint16_t elementsNum;
-    unsigned type:2;
-    union {
-        struct {
-            unsigned padding:14;
-            bitmapContainer *bitmap;
-        } b;
-        struct {
-            unsigned capacity:14;
-            arrayContainer *array;
-        } a;
-        struct {
-            unsigned padding:14;
-            void *none;
-        } f;
-    };
-} roaringContainer;
-
-typedef struct roaringBitmap {
-    uint8_t bucketsNum;
-    uint8_t* buckets;
-    roaringContainer** containers;
-} roaringBitmap;
-
-roaringBitmap* rbmCreate(void);
-
-void rbmDestory(roaringBitmap* rbm);
-
-void rbmSetBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit);
-
-void rbmClearBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit);
-
-uint32_t rbmGetBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit);
-
-void rbmdup(roaringBitmap* destRbm, roaringBitmap* srcRbm);
-
-int rbmIsEqual(roaringBitmap* destRbm, roaringBitmap* srcRbm);
-
-/* Counting bitsNum bits of '1' from front to back， return real number of '1' bits, and output the indexs to idxArr(malloc by caller),  */
-uint32_t rbmGetBitPos(roaringBitmap* rbm, uint32_t bitsNum, uint32_t *idxArr);
 
 /* Util */
 

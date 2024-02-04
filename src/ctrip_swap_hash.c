@@ -272,7 +272,7 @@ int hashSwapAna(swapData *data, int thd, struct keyRequest *req,
         }
         break;
     case SWAP_DEL:
-        /* TODO add if branch refer to list. */
+        /* TODO add if branch, refer to list. */
         *intention = SWAP_DEL;
         *intention_flags = 0;
         break;
@@ -377,14 +377,13 @@ int hashEncodeData(swapData *data, int intention, void *datactx_,
 
 /* decoded object move to exec module */
 int hashDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
-        sds *rawvals, void *datactx, void **pdecoded) {
+        sds *rawvals, void **pdecoded) {
     int i;
     robj *decoded;
     uint64_t version = swapDataObjectVersion(data);
 
     serverAssert(num >= 0);
     UNUSED(cfs);
-    UNUSED(datactx);
 
     /* Note that event if all subkeys are not found, still an empty hash
      * object will be returned: empty *warm* hash could can meta in memory,
@@ -1029,7 +1028,7 @@ int swapDataHashTest(int argc, char **argv, int accurate) {
         test_assert(action == ROCKS_PUT);
         test_assert(numkeys == hash1_ctx->ctx.num);
 
-        hashDecodeData(hash1_data,numkeys,cfs,rawkeys,rawvals,NULL,&decoded);
+        hashDecodeData(hash1_data,numkeys,cfs,rawkeys,rawvals,&decoded);
         test_assert(hashTypeLength(decoded) == hashTypeLength(hash1));
 
         freeObjectMeta(hash1_data_->d.object_meta);

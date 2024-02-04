@@ -27,8 +27,9 @@
  */
 
 #include "ctrip_swap.h"
-#include <assert.h>
 #include "ctrip_roaring_malloc.h"
+#include "ctrip_roaring_bitmap.h"
+#include <assert.h>
 
 #define CONTAINER_BITS 12  // default save the lower 12 bits in the container, no more than 16
 #define BUCKET_MAX_BITS 8
@@ -50,6 +51,34 @@
 #define CONTAINER_TYPE_ARRAY 0
 #define CONTAINER_TYPE_BITMAP 1
 #define CONTAINER_TYPE_FULL 2
+
+typedef uint16_t arrayContainer;
+typedef uint8_t bitmapContainer;
+
+typedef struct roaringContainer {
+    uint16_t elementsNum;
+    unsigned type:2;
+    union {
+        struct {
+            unsigned padding:14;
+            bitmapContainer *bitmap;
+        } b;
+        struct {
+            unsigned capacity:14;
+            arrayContainer *array;
+        } a;
+        struct {
+            unsigned padding:14;
+            void *none;
+        } f;
+    };
+} roaringContainer;
+
+struct roaringBitmap_t {
+    uint8_t bucketsNum;
+    uint8_t* buckets;
+    roaringContainer** containers;
+};
 
 static uint8_t bitsNumTable[256] =
         {
@@ -925,7 +954,7 @@ void rbmDestory(roaringBitmap* rbm)
 
 void rbmSetBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit)
 {
-    if (minBit > maxBit) {
+    if (rbm == NULL || minBit > maxBit) {
         return;
     }
 
@@ -969,7 +998,7 @@ void rbmSetBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit)
 
 uint32_t rbmGetBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit)
 {
-    if (minBit > maxBit) {
+    if (rbm == NULL || minBit > maxBit) {
         return 0;
     }
     uint32_t firstBucketIdx = minBit >> CONTAINER_BITS;
@@ -1004,7 +1033,7 @@ uint32_t rbmGetBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit)
 
 void rbmClearBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit)
 {
-    if (minBit > maxBit) {
+    if (rbm == NULL || minBit > maxBit) {
         return;
     }
     uint32_t firstBucketIdx = minBit >> CONTAINER_BITS;

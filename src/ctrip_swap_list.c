@@ -1617,7 +1617,7 @@ int listEncodeRange(struct swapData *data, int intention, void *datactx_, int *l
 }
 
 int listDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
-        sds *rawvals, void *datactx, void **pdecoded) {
+        sds *rawvals, void **pdecoded) {
     listMeta *meta = listMetaCreate();
     robj *list = createQuicklistObject();
     metaList *delta = metaListBuild(meta,list);
@@ -1625,7 +1625,6 @@ int listDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
 
     serverAssert(num >= 0);
     UNUSED(cfs);
-    UNUSED(datactx);
 
     for (int i = 0; i < num; i++) {
         int dbid;
@@ -3074,7 +3073,7 @@ int swapListDataTest(int argc, char *argv[], int accurate) {
         test_assert(action == ROCKS_PUT && numkeys == 3 && cfs[0] == DATA_CF);
         test_assert(!sdscmp(rawkeys[0],rawkey0) && !sdscmp(rawvals[0],rawval0));
 
-        listDecodeData(hotdata,numkeys,cfs,rawkeys,rawvals,NULL,(void**)&decoded);
+        listDecodeData(hotdata,numkeys,cfs,rawkeys,rawvals,(void**)&decoded);
         test_assert(listTypeLength(decoded->list) == 3);
         test_assert(listMetaLength(decoded->meta,SEGMENT_TYPE_BOTH) == 3);
         test_assert(listMetaLength(decoded->meta,SEGMENT_TYPE_HOT) == 3);

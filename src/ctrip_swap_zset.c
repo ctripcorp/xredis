@@ -603,8 +603,7 @@ int zsetDecodeScoreData(swapData *data, int num, sds *rawkeys,
 
 /* decoded object move to exec module */
 int zsetDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
-        sds *rawvals, void *datactx, void **pdecoded_) {
-    UNUSED(datactx);
+        sds *rawvals, void **pdecoded_) {
     robj **pdecoded = (robj**)pdecoded_;
 
     serverAssert(num >= 0);
@@ -1446,7 +1445,7 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
         rawvals_[1] = rawvals[2];
 
         // decodeData - swap in
-        zsetDecodeData(zset1_data, zset1_ctx->bdc.num, cfs_, rawkeys_, rawvals_, NULL, (void**)&decoded);
+        zsetDecodeData(zset1_data, zset1_ctx->bdc.num, cfs_, rawkeys_, rawvals_, (void**)&decoded);
         test_assert(NULL != decoded);
         test_assert(2 == zsetLength(decoded));
 

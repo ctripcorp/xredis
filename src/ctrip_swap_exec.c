@@ -555,7 +555,7 @@ void swapExecBatchExecuteIn(swapExecBatch *exec_batch) {
         if (action == ROCKS_GET) {
             if ((errcode = swapDataDecodeData(req->data,rio->get.numkeys,
                             rio->get.cfs,rio->get.rawkeys,rio->get.rawvals,
-                            req->datactx,&decoded))) {
+                            &decoded))) {
                 swapRequestSetError(req,errcode);
                 continue;
             }
@@ -574,7 +574,7 @@ void swapExecBatchExecuteIn(swapExecBatch *exec_batch) {
 
             if ((errcode = swapDataDecodeData(req->data,rio->iterate.numkeys,
                             tmpcfs,rio->iterate.rawkeys,rio->iterate.rawvals,
-                            req->datactx,&decoded))) {
+                            &decoded))) {
                 swapRequestSetError(req,errcode);
                 zfree(tmpcfs);
                 continue;

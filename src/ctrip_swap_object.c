@@ -48,9 +48,9 @@ static inline objectMetaType *getObjectMetaType(int object_type) {
     case OBJ_LIST:
         omtype = &listObjectMetaType;
         break;
-/*    case OBJ_BITMAP:
+    case OBJ_BITMAP:
         omtype = &bitmapObjectMetaType;
-        break;*/
+        break;
     default:
         break;
     }

@@ -171,12 +171,11 @@ int wholeKeyEncodeData(swapData *data, int intention, void *datactx,
 
 /* decoded move to exec module */
 int wholeKeyDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
-        sds *rawvals, void *datactx, void **pdecoded) {
+        sds *rawvals, void **pdecoded) {
     serverAssert(num == 1);
     UNUSED(data);
     UNUSED(rawkeys);
     UNUSED(cfs);
-    UNUSED(datactx);
     sds rawval = rawvals[0];
     *pdecoded = rocksDecodeValRdb(rawval);
     return 0;
@@ -536,7 +535,7 @@ int swapDataWholeKeyTest(int argc, char **argv, int accurate) {
 #endif
 
         void* decoded;
-        result = wholeKeyDecodeData(data, numkeys, cfs, rawkeys, rawvals, NULL, &decoded);
+        result = wholeKeyDecodeData(data, numkeys, cfs, rawkeys, rawvals, &decoded);
         test_assert(result == C_OK);
         test_assert(strcmp(((robj*)decoded)->ptr ,"value") == 0);
         swapDataFree(data, ctx);
