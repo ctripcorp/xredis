@@ -152,7 +152,7 @@ void rdbRemoveTempFile(pid_t childpid, int from_signal);
 int rdbSave(char *filename, rdbSaveInfo *rsi, int rordb);
 ssize_t rdbSaveObject(rio *rdb, robj *o, robj *key);
 size_t rdbSavedObjectLen(robj *o, robj *key);
-robj *rdbLoadObject(int type, rio *rdb, sds key, int *error);
+robj *rdbLoadObject(int type, rio *rdb, sds key, int *error, int ignore_emptykey_err);
 void backgroundSaveDoneHandler(int exitcode, int bysignal);
 int rdbSaveKeyValuePair(rio *rdb, robj *key, robj *val, long long expiretime);
 ssize_t rdbSaveSingleModuleAux(rio *rdb, int when, moduleType *mt);
