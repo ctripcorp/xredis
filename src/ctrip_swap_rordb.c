@@ -365,6 +365,11 @@ static int rordbSaveDbObjectMeta(rio *rdb, redisDb *db) {
         sds keystr = dictGetKey(de);
         objectMeta *om = dictGetVal(de);
         initStaticStringObject(key,keystr);
+
+#ifdef ROCKS_DEBUG
+        serverLog(LL_NOTICE, "[rordbSaveDbObjectMeta] meta of key(%s) saved.", keystr);
+#endif
+
         if (rdbSaveObjectMeta(rdb,&key,om) == -1) goto err;
     }
     if (di) dictReleaseIterator(di);
@@ -446,8 +451,16 @@ int rordbLoadDbType(rio *rdb, redisDb *db, int type) {
         sds keyptr = NULL;
         objectMeta *object_meta;
         int object_type = rordbObjectTypeFromOpcode(type);
-        if (rordbLoadObjectMeta(rdb,object_type,&keyptr,&object_meta) == -1)
+        if (rordbLoadObjectMeta(rdb,object_type,&keyptr,&object_meta) == -1) {
+#ifdef ROCKS_DEBUG
+            serverLog(LL_NOTICE, "[rordbLoadDbType] meta of key(%s) loaded.",keyptr);
+#endif
             return C_ERR;
+        } else {
+#ifdef ROCKS_DEBUG
+            serverLog(LL_NOTICE, "[rordbLoadDbType] meta of key(%s) loaded.",keyptr);
+#endif
+        }
         initStaticStringObject(key,keyptr);
         dbAddMeta(db,&key,object_meta);
         sdsfree(keyptr);
