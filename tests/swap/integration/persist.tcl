@@ -210,6 +210,7 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
 
     test {persist will not interfere evict asap} {
         set bak_delay [lindex [r config get swap-debug-rdb-key-save-delay-micro] 1]
+        r config set swap-repl-rordb-sync no
         r config set swap-debug-rdb-key-save-delay-micro 100000
 
         set num_keys 10
