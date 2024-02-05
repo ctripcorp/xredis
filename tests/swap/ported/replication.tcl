@@ -413,6 +413,7 @@ test {slave fails full sync and diskless load swapdb recovers it} {
             set master_host [srv 0 host]
             set master_port [srv 0 port]
 
+            $master config set swap-repl-rordb-sync no
             # Put different data sets on the master and slave
             # we need to put large keys on the master since the slave replies to info only once in 2mb
             $slave debug populate 2000 slave 10
@@ -612,6 +613,7 @@ start_server {tags {"repl"}} {
     # we also need the replica to process requests during transfer (which it does only once in 2mb)
     $master config set rdbcompression no
     $master debug populate 20000 test 10000
+    $master config set swap-repl-rordb-sync no
     # If running on Linux, we also measure utime/stime to detect possible I/O handling issues
     set os [catch {exec uname}]
     set measure_time [expr {$os == "Linux"} ? 1 : 0]
@@ -762,6 +764,7 @@ test "diskless replication child being killed is collected" {
         # put enough data in the db that the rdb file will be bigger than the socket buffers
         $master debug populate 20000 test 10000
         $master config set rdbcompression no
+        $master config set swap-repl-rordb-sync no
         start_server {} {
             set replica [srv 0 client]
             set loglines [count_log_lines 0]
@@ -801,6 +804,7 @@ test "diskless replication read pipe cleanup" {
         set master_pid [srv 0 pid]
         $master config set repl-diskless-sync yes
         $master config set repl-diskless-sync-delay 0
+        $master config set swap-repl-rordb-sync no
 
         # put enough data in the db, and slowdown the save, to keep the parent busy at the read process
         $master config set rdb-key-save-delay 100000
@@ -892,6 +896,7 @@ test {Kill rdb child process if its dumping RDB is not useful} {
                 for {set i 0} {$i < 10} {incr i} {
                     $master set $i $i
                 }
+                $master config set swap-repl-rordb-sync no
                 # Generating RDB will cost 10s(10 * 1s)
                 $master config set rdb-key-save-delay 1000000
                 $master config set repl-diskless-sync no
