@@ -1415,6 +1415,7 @@ struct redisServer {
     int tcpkeepalive;               /* Set SO_KEEPALIVE if non-zero. */
     int active_expire_enabled;      /* Can be disabled for testing purposes. */
     int active_expire_effort;       /* From 1 (default) to 10, active effort. */
+    int slow_expire_effort;         /* From -10 to 10, default -5, slow expire effort */
     int active_defrag_enabled;
     int sanitize_dump_payload;      /* Enables deep sanitization for ziplist and listpack in RDB and RESTORE. */
     int skip_checksum_validation;   /* Disables checksum validateion for RDB and RESTORE payload. */
