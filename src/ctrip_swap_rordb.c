@@ -32,7 +32,47 @@
 
 #define RORDB_SST_READ_BUF_LEN (16*1024)
 
-static int rordbSaveSSTFile(rio *rdb, char* filepath) {
+#define RORDB_RATELIMIT_INTERVAL_MS 100
+#define RORDB_RATELIMIT_INTERVAL_BATCH 64
+
+typedef struct rordb_ratelimit_ctx {
+    size_t accumulated_memory;
+    size_t accumulated_count;
+    mstime_t last_time;
+} rordb_ratelimit_ctx;
+
+rordb_ratelimit_ctx *rordb_ratelimit_new() {
+    rordb_ratelimit_ctx *ratelimit = zcalloc(sizeof(rordb_ratelimit_ctx));
+    ratelimit->last_time = mstime();
+    return ratelimit;
+}
+
+void rordb_ratelimit_do(rordb_ratelimit_ctx *ratelimit, size_t memory) {
+    ratelimit->accumulated_memory += memory;
+
+    if (server.swap_repl_rordb_max_write_bps &&
+            !(ratelimit->accumulated_count++ & (RORDB_RATELIMIT_INTERVAL_BATCH-1)) &&
+            mstime() - ratelimit->last_time > RORDB_RATELIMIT_INTERVAL_MS) {
+        mstime_t minimal_timespan = ratelimit->accumulated_memory*1000/server.swap_repl_rordb_max_write_bps;
+        mstime_t elapsed_timespan = mstime() - ratelimit->last_time;
+        mstime_t sleep_timespan = minimal_timespan - elapsed_timespan;
+        if (sleep_timespan > 0) {
+            usleep(sleep_timespan*1000);
+            serverLog(LL_DEBUG, "[rordb] ratelimit sleep %lld ms: "
+                    "memory=%lu, elapsed=%lld, minimal=%lld",
+                    sleep_timespan, ratelimit->accumulated_memory,
+                    elapsed_timespan, minimal_timespan);
+        }
+        ratelimit->last_time = mstime();
+        ratelimit->accumulated_memory = 0;
+    }
+}
+
+void rordb_ratelimit_free(rordb_ratelimit_ctx *ratelimit) {
+    if (ratelimit) zfree(ratelimit);
+}
+
+static int rordbSaveSSTFile(rio *rdb, char* filepath, rordb_ratelimit_ctx *ratelimit) {
     FILE *fp = NULL;
     char *filename = NULL, *buffer = NULL;
     struct stat statbuf;
@@ -74,6 +114,8 @@ static int rordbSaveSSTFile(rio *rdb, char* filepath) {
                     strerror(errno),errno);
             goto werr;
         }
+
+        rordb_ratelimit_do(ratelimit,toread);
     }
 
     if (fp) fclose(fp);
@@ -90,6 +132,7 @@ static int rordbSaveSSTFiles(rio *rdb, char* path) {
 	DIR *dir;
 	struct dirent *ent;
     int saved = 0, skipped = 0;
+    rordb_ratelimit_ctx *ratelimit = rordb_ratelimit_new();
 
 	if ((dir = opendir(path)) == NULL) goto werr;
 
@@ -118,12 +161,12 @@ static int rordbSaveSSTFiles(rio *rdb, char* path) {
             continue;
         }
 
-        if (rordbSaveSSTFile(rdb, filepath) != C_OK) {
+        if (rordbSaveSSTFile(rdb, filepath, ratelimit) != C_OK) {
             zfree(filepath);
             goto werr;
         } else {
             saved++;
-            serverLog(LL_NOTICE, "[rordb] saved sst file: %s", filepath); //TODO DEBUG
+            serverLog(LL_VERBOSE, "[rordb] saved sst file: %s", filepath);
         }
 
 		zfree(filepath);
@@ -133,6 +176,7 @@ static int rordbSaveSSTFiles(rio *rdb, char* path) {
             "[rordb] save sst files in (%s) ok: saved %d, skipped %d file.",
             path, saved, skipped);
 
+    if (ratelimit) rordb_ratelimit_free(ratelimit);
 	if (dir) closedir(dir);
     return C_OK;
 
@@ -141,6 +185,7 @@ werr:
             "[rordb] save sst files in (%s) err: saved %d, skipped %d file.",
             path, saved, skipped);
 
+    if (ratelimit) rordb_ratelimit_free(ratelimit);
     if (dir) closedir(dir);
     return C_ERR;
 }
@@ -200,7 +245,7 @@ static int rordbLoadSSTFile(rio *rdb, char* path) {
         }
     }
 
-    serverLog(LL_NOTICE, "[rordb] load sst file(%s) ok.", filepath); //TODO NOTICE => DEBUG
+    serverLog(LL_VERBOSE, "[rordb] load sst file(%s) ok.", filepath);
 
     if (filename) sdsfree(filename);
     if (fp) fclose(fp);

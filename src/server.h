@@ -1948,6 +1948,7 @@ struct redisServer {
 
     /* swap rordb */
     int swap_repl_rordb_sync;
+    unsigned long long swap_repl_rordb_max_write_bps;
 
     client *swap_draining_master;
 };
