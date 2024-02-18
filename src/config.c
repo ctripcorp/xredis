@@ -3080,7 +3080,7 @@ standardConfig configs[] = {
     createULongLongConfig("rocksdb.meta.min_blob_size", NULL, MODIFIABLE_CONFIG, 0, ULLONG_MAX, server.rocksdb_meta_min_blob_size, 4096, MEMORY_CONFIG, NULL, updateRocksdbMetaMinBlobSize),
     createULongLongConfig("rocksdb.data.blob_file_size", "rocksdb.blob_file_size", MODIFIABLE_CONFIG, 0, ULLONG_MAX, server.rocksdb_data_blob_file_size, 256*1024*1024, MEMORY_CONFIG, NULL, updateRocksdbDataBlobFileSize),
     createULongLongConfig("rocksdb.meta.blob_file_size", NULL, MODIFIABLE_CONFIG, 0, ULLONG_MAX, server.rocksdb_meta_blob_file_size, 256*1024*1024, MEMORY_CONFIG, NULL, updateRocksdbMetaBlobFileSize),
-
+    createULongLongConfig("swap-repl-rordb-max-write-bps", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.swap_repl_rordb_max_write_bps, 200*1024*1024, MEMORY_CONFIG, NULL, NULL),
 
 
     /* Size_t configs */
