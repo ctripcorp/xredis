@@ -820,9 +820,21 @@ typedef struct hashSwapData {
 
 #define BIG_DATA_CTX_FLAG_NONE 0
 #define BIG_DATA_CTX_FLAG_MOCK_VALUE (1U<<0)
+
+#define BASE_SWAP_CTX_TYPE_SUBKEY 0
+#define BASE_SWAP_CTX_TYPE_SAMPLE 1
+
 typedef struct baseBigDataCtx {
-    int num;
-    robj **subkeys;
+    int type;
+    union {
+      struct {
+        int num;
+        robj **subkeys;
+      } sub;
+      struct {
+        int count;
+      } spl;
+    };
     int ctx_flag;
 } baseBigDataCtx;
 
@@ -889,8 +901,9 @@ void ctripListMetaDelRange(redisDb *db, robj *key, long ltrim, long rtrim);
 typedef struct zsetSwapData {
   swapData sd;
 } zsetSwapData;
-#define TYPE_NONE 0
-#define TYPE_ZS 1
+
+#define ZSET_SWAP_CTX_TYPE_NONE 0
+#define ZSET_SWAP_CTX_TYPE_ZS 1
 
 typedef struct zsetDataCtx {
 	baseBigDataCtx bdc;

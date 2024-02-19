@@ -75,7 +75,8 @@ static int hashSwapAnaOutSelectSubkeys(swapData *data, hashDataCtx *datactx,
     }
 
     count = MIN(count,(size_t)server.swap_evict_step_max_subkeys);
-    datactx->ctx.subkeys = zmalloc(count*sizeof(robj*));
+    datactx->ctx.type = BASE_SWAP_CTX_TYPE_SUBKEY;
+    datactx->ctx.sub.subkeys = zmalloc(count*sizeof(robj*));
 
     *may_keep_data = 1;
     if (select_type == SELECT_MAIN) {
@@ -86,7 +87,7 @@ static int hashSwapAnaOutSelectSubkeys(swapData *data, hashDataCtx *datactx,
             unsigned int vlen;
             long long vll;
 
-            if ((size_t)datactx->ctx.num >= count ||
+            if ((size_t)datactx->ctx.sub.num >= count ||
                     evict_memory >= server.swap_evict_step_max_memory) {
                 /* Evict big hash in small steps.
                  * There still may be dirty subkeys in memory, cant set clean
@@ -102,7 +103,7 @@ static int hashSwapAnaOutSelectSubkeys(swapData *data, hashDataCtx *datactx,
                 subkey = createStringObjectFromLongLong(vll);
                 subkey = unshareStringValue(subkey);
             }
-            datactx->ctx.subkeys[datactx->ctx.num++] = subkey;
+            datactx->ctx.sub.subkeys[datactx->ctx.sub.num++] = subkey;
 
             hashTypeCurrentObject(hi,OBJ_HASH_VALUE,&vstr,&vlen,&vll);
             if (vstr)
@@ -119,7 +120,7 @@ static int hashSwapAnaOutSelectSubkeys(swapData *data, hashDataCtx *datactx,
 
         dirtySubkeysIteratorInit(&dss_iter, subkeys);
         while ((subkey = dirtySubkeysIteratorNext(&dss_iter,&sublen)) != NULL) {
-            if ((size_t)datactx->ctx.num >= count ||
+            if ((size_t)datactx->ctx.sub.num >= count ||
                     evict_memory >= server.swap_evict_step_max_memory) {
                 /* Evict big hash in small steps. */
                 if (!noswap) *may_keep_data = 0;
@@ -129,7 +130,7 @@ static int hashSwapAnaOutSelectSubkeys(swapData *data, hashDataCtx *datactx,
 
             /* check with lock hold so that evicting subkeys must exist. */
             if (hashTypeExists(data->value,subkey->ptr)) {
-                datactx->ctx.subkeys[datactx->ctx.num++] = subkey;
+                datactx->ctx.sub.subkeys[datactx->ctx.sub.num++] = subkey;
                 evict_memory += sublen;
             } else {
                 listAddNodeTail(redundent_subkeys, subkey);
@@ -198,21 +199,24 @@ int hashSwapAna(swapData *data, int thd, struct keyRequest *req,
             } else if (cmd_intention_flags == SWAP_IN_META) {
                 /* HLEN: swap in meta (with random field gets empty hash)
                  * also HLEN command will be modified like dbsize. */
-                datactx->ctx.num = 0;
-                datactx->ctx.subkeys = zmalloc(sizeof(robj*));
-                datactx->ctx.subkeys[datactx->ctx.num++] = createStringObject("foo",3);
+                datactx->ctx.type = BASE_SWAP_CTX_TYPE_SUBKEY;
+                datactx->ctx.sub.num = 0;
+                datactx->ctx.sub.subkeys = zmalloc(sizeof(robj*));
+                datactx->ctx.sub.subkeys[datactx->ctx.sub.num++] = createStringObject("foo",3);
                 *intention = SWAP_IN;
                 *intention_flags = 0;
             } else {
                 /* HKEYS/HVALS/..., swap in all fields */
-                datactx->ctx.num = 0;
-                datactx->ctx.subkeys = NULL;
+                datactx->ctx.type = BASE_SWAP_CTX_TYPE_SUBKEY;
+                datactx->ctx.sub.num = 0;
+                datactx->ctx.sub.subkeys = NULL;
                 *intention = SWAP_IN;
                 *intention_flags = 0;
             }
         } else { /* keyrequests with subkeys */
-            datactx->ctx.num = 0;
-            datactx->ctx.subkeys = zmalloc(req->b.num_subkeys * sizeof(robj*));
+            datactx->ctx.type = BASE_SWAP_CTX_TYPE_SUBKEY;
+            datactx->ctx.sub.num = 0;
+            datactx->ctx.sub.subkeys = zmalloc(req->b.num_subkeys * sizeof(robj*));
             for (int i = 0; i < req->b.num_subkeys; i++) {
                 robj *subkey = req->b.subkeys[i];
                 /* HDEL: even if field is hot (exists in value), we still
@@ -222,12 +226,12 @@ int hashSwapAna(swapData *data, int thd, struct keyRequest *req,
                         !hashTypeExists(data->value,subkey->ptr)) {
                     if (swapDataMayContainSubkey(data,thd,subkey)) {
                         incrRefCount(subkey);
-                        datactx->ctx.subkeys[datactx->ctx.num++] = subkey;
+                        datactx->ctx.sub.subkeys[datactx->ctx.sub.num++] = subkey;
                     }
                 }
             }
 
-            *intention = datactx->ctx.num > 0 ? SWAP_IN : SWAP_NOP;
+            *intention = datactx->ctx.sub.num > 0 ? SWAP_IN : SWAP_NOP;
             if (cmd_intention_flags == SWAP_IN_DEL)
                 *intention_flags = SWAP_EXEC_IN_DEL;
             else
@@ -292,7 +296,7 @@ int hashSwapAnaAction(swapData *data, int intention, void *datactx_, int *action
     hashDataCtx *datactx = datactx_;
     switch (intention) {
         case SWAP_IN:
-            if (datactx->ctx.num > 0) *action = ROCKS_GET; /* Swap in specific fields */
+            if (datactx->ctx.sub.num > 0) *action = ROCKS_GET; /* Swap in specific fields */
             else *action = ROCKS_ITERATE; /* Swap in entire hash(HKEYS/HVALS...) */
             break;
         case SWAP_DEL:
@@ -317,14 +321,14 @@ int hashEncodeKeys(swapData *data, int intention, void *datactx_,
     uint64_t version = swapDataObjectVersion(data);
 
     serverAssert(intention == SWAP_IN);
-    cfs = zmalloc(sizeof(int)*datactx->ctx.num);
-    rawkeys = zmalloc(sizeof(sds)*datactx->ctx.num);
-    for (int i = 0; i < datactx->ctx.num; i++) {
+    cfs = zmalloc(sizeof(int)*datactx->ctx.sub.num);
+    rawkeys = zmalloc(sizeof(sds)*datactx->ctx.sub.num);
+    for (int i = 0; i < datactx->ctx.sub.num; i++) {
         cfs[i] = DATA_CF;
         rawkeys[i] = hashEncodeSubkey(data->db,data->key->ptr,
-                                      version,datactx->ctx.subkeys[i]->ptr);
+                                      version,datactx->ctx.sub.subkeys[i]->ptr);
     }
-    *numkeys = datactx->ctx.num;
+    *numkeys = datactx->ctx.sub.num;
     *pcfs = cfs;
     *prawkeys = rawkeys;
 
@@ -351,23 +355,23 @@ int hashEncodeRange(struct swapData *data, int intention, void *datactx, int *li
 int hashEncodeData(swapData *data, int intention, void *datactx_,
         int *numkeys, int **pcfs, sds **prawkeys, sds **prawvals) {
     hashDataCtx *datactx = datactx_;
-    int *cfs = zmalloc(datactx->ctx.num*sizeof(int));
-    sds *rawkeys = zmalloc(datactx->ctx.num*sizeof(sds));
-    sds *rawvals = zmalloc(datactx->ctx.num*sizeof(sds));
+    int *cfs = zmalloc(datactx->ctx.sub.num*sizeof(int));
+    sds *rawkeys = zmalloc(datactx->ctx.sub.num*sizeof(sds));
+    sds *rawvals = zmalloc(datactx->ctx.sub.num*sizeof(sds));
     uint64_t version = swapDataObjectVersion(data);
 
     serverAssert(intention == SWAP_OUT);
-    for (int i = 0; i < datactx->ctx.num; i++) {
+    for (int i = 0; i < datactx->ctx.sub.num; i++) {
         cfs[i] = DATA_CF;
         rawkeys[i] = hashEncodeSubkey(data->db,data->key->ptr,
-                version,datactx->ctx.subkeys[i]->ptr);
+                version,datactx->ctx.sub.subkeys[i]->ptr);
         robj *subval = hashTypeGetValueObject(data->value,
-                datactx->ctx.subkeys[i]->ptr);
+                datactx->ctx.sub.subkeys[i]->ptr);
         serverAssert(subval);
         rawvals[i] = hashEncodeSubval(subval);
         decrRefCount(subval);
     }
-    *numkeys = datactx->ctx.num;
+    *numkeys = datactx->ctx.sub.num;
     *pcfs = cfs;
     *prawkeys = rawkeys;
     *prawvals = rawvals;
@@ -571,12 +575,12 @@ void *hashCreateOrMergeObject(swapData *data, void *decoded_, void *datactx) {
 int hashCleanObject(swapData *data, void *datactx_, int keep_data) {
     hashDataCtx *datactx = datactx_;
     if (swapDataIsCold(data)) return 0;
-    for (int i = 0; i < datactx->ctx.num; i++) {
+    for (int i = 0; i < datactx->ctx.sub.num; i++) {
         if (data->dirty_subkeys) {
             dirtySubkeysRemove(data->dirty_subkeys,
-                    datactx->ctx.subkeys[i]->ptr);
+                    datactx->ctx.sub.subkeys[i]->ptr);
         }
-        if (!keep_data && hashTypeDelete(data->value,datactx->ctx.subkeys[i]->ptr)) {
+        if (!keep_data && hashTypeDelete(data->value,datactx->ctx.sub.subkeys[i]->ptr)) {
             swapDataObjectMetaModifyLen(data,1);
         }
     }
@@ -588,10 +592,10 @@ int hashCleanObject(swapData *data, void *datactx_, int keep_data) {
 void freeHashSwapData(swapData *data_, void *datactx_) {
     UNUSED(data_);
     hashDataCtx *datactx = datactx_;
-    for (int i = 0; i < datactx->ctx.num; i++) {
-        decrRefCount(datactx->ctx.subkeys[i]);
+    for (int i = 0; i < datactx->ctx.sub.num; i++) {
+        decrRefCount(datactx->ctx.sub.subkeys[i]);
     }
-    zfree(datactx->ctx.subkeys);
+    zfree(datactx->ctx.sub.subkeys);
     zfree(datactx);
 }
 
@@ -626,8 +630,8 @@ int swapDataSetupHash(swapData *d, void **pdatactx) {
     d->type = &hashSwapDataType;
     d->omtype = &hashObjectMetaType;
     hashDataCtx *datactx = zmalloc(sizeof(hashDataCtx));
-    datactx->ctx.num = 0;
-    datactx->ctx.subkeys = NULL;
+    datactx->ctx.sub.num = 0;
+    datactx->ctx.sub.subkeys = NULL;
     *pdatactx = datactx;
     return 0;
 }
@@ -988,7 +992,7 @@ int swapDataHashTest(int argc, char **argv, int accurate) {
         cold_kr1->cmd_intention = SWAP_IN, cold_kr1->cmd_intention_flags = 0;
         swapDataAna(cold1_data,0,cold_kr1,&intention,&intention_flags,cold1_ctx);
         test_assert(intention == SWAP_IN && intention_flags == 0);
-        test_assert(cold1_ctx->ctx.num == 0 && cold1_ctx->ctx.subkeys == NULL);
+        test_assert(cold1_ctx->ctx.sub.num == 0 && cold1_ctx->ctx.sub.subkeys == NULL);
         subkeys1[0] = createStringObject(f1,sdslen(f1));
         subkeys1[1] = createStringObject(f2,sdslen(f2));
         cold_kr1->b.num_subkeys = 2;
@@ -996,14 +1000,14 @@ int swapDataHashTest(int argc, char **argv, int accurate) {
         cold_kr1->cmd_intention = SWAP_IN, cold_kr1->cmd_intention_flags = 0;
         swapDataAna(cold1_data,0,cold_kr1,&intention,&intention_flags,cold1_ctx);
         test_assert(intention == SWAP_IN && intention_flags == 0);
-        test_assert(cold1_ctx->ctx.num == 2 && cold1_ctx->ctx.subkeys != NULL);
+        test_assert(cold1_ctx->ctx.sub.num == 2 && cold1_ctx->ctx.sub.subkeys != NULL);
         /* out: evict by small steps */
         kr1->b.num_subkeys = 0;
         kr1->b.subkeys = NULL;
         kr1->cmd_intention = SWAP_OUT, kr1->cmd_intention_flags = 0;
         swapDataAna(hash1_data,0,kr1,&intention,&intention_flags,hash1_ctx);
         test_assert(intention == SWAP_OUT && intention_flags == 0);
-        test_assert(cold1_ctx->ctx.num == SWAP_EVICT_STEP && cold1_ctx->ctx.subkeys != NULL);
+        test_assert(cold1_ctx->ctx.sub.num == SWAP_EVICT_STEP && cold1_ctx->ctx.sub.subkeys != NULL);
     }
 
     TEST("hash - encodeData/DecodeData") {
@@ -1014,18 +1018,18 @@ int swapDataHashTest(int argc, char **argv, int accurate) {
         kr1->b.num_subkeys = 0;
         kr1->b.subkeys = NULL;
         kr1->cmd_intention = SWAP_OUT, kr1->cmd_intention_flags = 0;
-        zfree(hash1_ctx->ctx.subkeys), hash1_ctx->ctx.subkeys = NULL;
-        hash1_ctx->ctx.num = 0;
+        zfree(hash1_ctx->ctx.sub.subkeys), hash1_ctx->ctx.sub.subkeys = NULL;
+        hash1_ctx->ctx.sub.num = 0;
         hash1_data_->d.object_meta = createHashObjectMeta(0,1);
         swapDataAna(hash1_data,0,kr1,&intention,&intention_flags,hash1_ctx);
         test_assert(intention == SWAP_OUT && intention_flags == 0);
-        test_assert(hash1_ctx->ctx.num == (int)hashTypeLength(hash1_data_->d.value));
-        serverAssert(hash1_ctx->ctx.subkeys != NULL);
+        test_assert(hash1_ctx->ctx.sub.num == (int)hashTypeLength(hash1_data_->d.value));
+        serverAssert(hash1_ctx->ctx.sub.subkeys != NULL);
 
         hashSwapAnaAction(hash1_data,intention,hash1_ctx,&action);
         hashEncodeData(hash1_data,intention,hash1_ctx,&numkeys,&cfs,&rawkeys,&rawvals);
         test_assert(action == ROCKS_PUT);
-        test_assert(numkeys == hash1_ctx->ctx.num);
+        test_assert(numkeys == hash1_ctx->ctx.sub.num);
 
         hashDecodeData(hash1_data,numkeys,cfs,rawkeys,rawvals,&decoded);
         test_assert(hashTypeLength(decoded) == hashTypeLength(hash1));
