@@ -75,7 +75,8 @@ static int zsetSwapAnaOutSelectSubkeys(swapData *data, zsetDataCtx *datactx,
     }
 
     count = MIN(count,(size_t)server.swap_evict_step_max_subkeys);
-    datactx->bdc.subkeys = zmalloc(count*sizeof(robj*));
+    datactx->bdc.type = BASE_SWAP_CTX_TYPE_SUBKEY;
+    datactx->bdc.sub.subkeys = zmalloc(count*sizeof(robj*));
 
     *may_keep_data = 1;
     if (select_type == SELECT_MAIN) {
@@ -91,7 +92,7 @@ static int zsetSwapAnaOutSelectSubkeys(swapData *data, zsetDataCtx *datactx,
                 eptr = ziplistIndex(zl, 0);
                 sptr = ziplistNext(zl, eptr);
                 while (eptr != NULL) {
-                    if ((size_t)datactx->bdc.num >= count ||
+                    if ((size_t)datactx->bdc.sub.num >= count ||
                             evict_memory >= server.swap_evict_step_max_memory) {
                         /* Evict big zset in small steps.
                          * There still may be dirty subkeys in memory, cant set clean
@@ -108,7 +109,7 @@ static int zsetSwapAnaOutSelectSubkeys(swapData *data, zsetDataCtx *datactx,
                     } else {
                         subkey = createObject(OBJ_STRING,sdsfromlonglong(vlong));
                     }
-                    datactx->bdc.subkeys[datactx->bdc.num++] = subkey;
+                    datactx->bdc.sub.subkeys[datactx->bdc.sub.num++] = subkey;
                     ziplistGet(sptr, &vstr, &vlen, &vlong);
                     evict_memory += vlen;
 
@@ -120,7 +121,7 @@ static int zsetSwapAnaOutSelectSubkeys(swapData *data, zsetDataCtx *datactx,
                 dictIterator* di = dictGetIterator(d);
                 dictEntry *de;
                 while ((de = dictNext(di)) != NULL) {
-                    if ((size_t)datactx->bdc.num >= count ||
+                    if ((size_t)datactx->bdc.sub.num >= count ||
                             evict_memory >= server.swap_evict_step_max_memory) {
                         /* Evict big zset in small steps. */
                         if (!noswap) *may_keep_data = 0;
@@ -128,7 +129,7 @@ static int zsetSwapAnaOutSelectSubkeys(swapData *data, zsetDataCtx *datactx,
                     }
                     sds skey = dictGetKey(de);
                     subkey = createStringObject(skey, sdslen(skey));
-                    datactx->bdc.subkeys[datactx->bdc.num++] = subkey;
+                    datactx->bdc.sub.subkeys[datactx->bdc.sub.num++] = subkey;
                     evict_memory += sizeof(zset) + sizeof(dictEntry);
                 }
                 dictReleaseIterator(di);
@@ -144,7 +145,7 @@ static int zsetSwapAnaOutSelectSubkeys(swapData *data, zsetDataCtx *datactx,
 
         dirtySubkeysIteratorInit(&dss_iter, subkeys);
         while ((subkey = dirtySubkeysIteratorNext(&dss_iter,&sublen)) != NULL) {
-            if ((size_t)datactx->bdc.num >= count ||
+            if ((size_t)datactx->bdc.sub.num >= count ||
                     evict_memory >= server.swap_evict_step_max_memory) {
                 /* Evict big object in small steps. */
                 if (!noswap) *may_keep_data = 0;
@@ -155,7 +156,7 @@ static int zsetSwapAnaOutSelectSubkeys(swapData *data, zsetDataCtx *datactx,
             /* check with lock hold so that evicting subkeys must exist. */
             double score;
             if (zsetScore(data->value,subkey->ptr, &score) == C_OK) {
-                datactx->bdc.subkeys[datactx->bdc.num++] = subkey;
+                datactx->bdc.sub.subkeys[datactx->bdc.sub.num++] = subkey;
                 evict_memory += sublen;
             } else {
                 listAddNodeTail(redundent_subkeys, subkey);
@@ -195,7 +196,7 @@ int zsetSwapAna(swapData *data, int thd, struct keyRequest *req,
             *intention = SWAP_NOP;
             *intention_flags = 0;
         } else if(req->type == KEYREQUEST_TYPE_SCORE ) {
-            datactx->type = TYPE_ZS;
+            datactx->type = ZSET_SWAP_CTX_TYPE_ZS;
             datactx->zs.reverse = req->zs.reverse;
             datactx->zs.limit = req->zs.limit;
             datactx->zs.rangespec = req->zs.rangespec;
@@ -241,51 +242,55 @@ int zsetSwapAna(swapData *data, int thd, struct keyRequest *req,
             } else if (cmd_intention_flags == SWAP_IN_META) {
                 /* HLEN: swap in meta (with random field gets empty zset)
                  * also HLEN command will be modified like dbsize. */
-                datactx->bdc.num = 0;
-                datactx->bdc.subkeys = zmalloc(sizeof(robj*));
-                datactx->bdc.subkeys[datactx->bdc.num++] = createStringObject("foo",3);
+                datactx->bdc.type = BASE_SWAP_CTX_TYPE_SUBKEY;
+                datactx->bdc.sub.num = 0;
+                datactx->bdc.sub.subkeys = zmalloc(sizeof(robj*));
+                datactx->bdc.sub.subkeys[datactx->bdc.sub.num++] = createStringObject("foo",3);
                 *intention = SWAP_IN;
                 *intention_flags = 0;
             } else {
                 /* HKEYS/HVALS/..., swap in all fields */
-                datactx->bdc.num = 0;
-                datactx->bdc.subkeys = NULL;
+                datactx->bdc.type = BASE_SWAP_CTX_TYPE_SUBKEY;
+                datactx->bdc.sub.num = 0;
+                datactx->bdc.sub.subkeys = NULL;
                 *intention = SWAP_IN;
                 *intention_flags = 0;
             }
         } else { /* keyrequests with subkeys */
             objectMeta *meta = swapDataObjectMeta(data);
             if (req->cmd_intention_flags == SWAP_IN_DEL) {
-                datactx->bdc.num = 0;
-                datactx->bdc.subkeys = zmalloc(req->b.num_subkeys * sizeof(robj *));
+                datactx->bdc.type = BASE_SWAP_CTX_TYPE_SUBKEY;
+                datactx->bdc.sub.num = 0;
+                datactx->bdc.sub.subkeys = zmalloc(req->b.num_subkeys * sizeof(robj *));
                 /* ZREM: even if field is hot (exists in value), we still
                     * need to do ROCKS_DEL on those fields. */
                 for (int i = 0; i < req->b.num_subkeys; i++) {
                     robj *subkey = req->b.subkeys[i];
                     if (swapDataMayContainSubkey(data,thd,subkey)) {
                         incrRefCount(subkey);
-                        datactx->bdc.subkeys[datactx->bdc.num++] = subkey;
+                        datactx->bdc.sub.subkeys[datactx->bdc.sub.num++] = subkey;
                     }
                 }
-                *intention = datactx->bdc.num > 0 ? SWAP_IN : SWAP_NOP;
+                *intention = datactx->bdc.sub.num > 0 ? SWAP_IN : SWAP_NOP;
                 *intention_flags = SWAP_EXEC_IN_DEL;
             } else if (meta->len == 0) {
                 *intention = SWAP_NOP;
                 *intention_flags = 0;
             } else {
-                datactx->bdc.num = 0;
-                datactx->bdc.subkeys = zmalloc(req->b.num_subkeys * sizeof(robj *));
+                datactx->bdc.type = BASE_SWAP_CTX_TYPE_SUBKEY;
+                datactx->bdc.sub.num = 0;
+                datactx->bdc.sub.subkeys = zmalloc(req->b.num_subkeys * sizeof(robj *));
                 for (int i = 0; i < req->b.num_subkeys; i++) {
                     robj *subkey = req->b.subkeys[i];
                     double score;
                     if (data->value == NULL || zsetScore(data->value, subkey->ptr, &score) == C_ERR) {
                         if (swapDataMayContainSubkey(data,thd,subkey)) {
                             incrRefCount(subkey);
-                            datactx->bdc.subkeys[datactx->bdc.num++] = subkey;
+                            datactx->bdc.sub.subkeys[datactx->bdc.sub.num++] = subkey;
                         }
                     }
                 }
-                *intention = datactx->bdc.num > 0 ? SWAP_IN : SWAP_NOP;
+                *intention = datactx->bdc.sub.num > 0 ? SWAP_IN : SWAP_NOP;
                 *intention_flags = 0;
             }
         }
@@ -340,9 +345,9 @@ int zsetSwapAnaAction(swapData *data, int intention, void *datactx_, int *action
     zsetDataCtx *datactx = datactx_;
     switch (intention) {
         case SWAP_IN:
-            if (datactx->type != TYPE_NONE) {
+            if (datactx->type != ZSET_SWAP_CTX_TYPE_NONE) {
                 *action = ROCKS_ITERATE;
-            } else if (datactx->bdc.num) { /* Swap in specific fields */
+            } else if (datactx->bdc.sub.num) { /* Swap in specific fields */
                 *action = ROCKS_GET;
             } else { /* Swap in entire zset. */
                 *action = ROCKS_ITERATE;
@@ -404,16 +409,16 @@ int zsetEncodeKeys(swapData *data, int intention, void *datactx_,
     uint64_t version = swapDataObjectVersion(data);
 
     serverAssert(intention == SWAP_IN);
-    serverAssert(datactx->type == TYPE_NONE);
-    serverAssert(datactx->bdc.num);
+    serverAssert(datactx->type == ZSET_SWAP_CTX_TYPE_NONE);
+    serverAssert(datactx->bdc.sub.num);
 
-    cfs = zmalloc(sizeof(int)*datactx->bdc.num);
-    rawkeys = zmalloc(sizeof(sds)*datactx->bdc.num);
-    for (i = 0; i < datactx->bdc.num; i++) {
+    cfs = zmalloc(sizeof(int)*datactx->bdc.sub.num);
+    rawkeys = zmalloc(sizeof(sds)*datactx->bdc.sub.num);
+    for (i = 0; i < datactx->bdc.sub.num; i++) {
         cfs[i] = DATA_CF;
-        rawkeys[i] = rocksEncodeDataKey(data->db,data->key->ptr,version,datactx->bdc.subkeys[i]->ptr);
+        rawkeys[i] = rocksEncodeDataKey(data->db,data->key->ptr,version,datactx->bdc.sub.subkeys[i]->ptr);
     }
-    *numkeys = datactx->bdc.num;
+    *numkeys = datactx->bdc.sub.num;
     *prawkeys = rawkeys;
     *pcfs = cfs;
 
@@ -446,31 +451,31 @@ int zsetEncodeData(swapData *data, int intention, void *datactx_,
         int *numkeys, int **pcfs, sds **prawkeys, sds **prawvals) {
     zsetDataCtx *datactx = datactx_;
     uint64_t version = swapDataObjectVersion(data);
-    if (datactx->bdc.num == 0) {
+    if (datactx->bdc.sub.num == 0) {
         *numkeys = 0;
         *prawkeys = NULL;
         *prawvals = NULL;
         return 0;
     }
-    int *cfs = zmalloc(datactx->bdc.num*2*sizeof(int));
-    sds *rawkeys = zmalloc(datactx->bdc.num*2*sizeof(sds));
-    sds *rawvals = zmalloc(datactx->bdc.num*2*sizeof(sds));
+    int *cfs = zmalloc(datactx->bdc.sub.num*2*sizeof(int));
+    sds *rawkeys = zmalloc(datactx->bdc.sub.num*2*sizeof(sds));
+    sds *rawvals = zmalloc(datactx->bdc.sub.num*2*sizeof(sds));
     serverAssert(intention == SWAP_OUT);
-    for (int i = 0; i < datactx->bdc.num; i++) {
+    for (int i = 0; i < datactx->bdc.sub.num; i++) {
         cfs[i * 2] = DATA_CF;
         rawkeys[i * 2] = rocksEncodeDataKey(data->db,data->key->ptr,version,
-                datactx->bdc.subkeys[i]->ptr);
+                datactx->bdc.sub.subkeys[i]->ptr);
         double score = 0;
         serverAssert(C_OK == zsetScore(data->value,
-                datactx->bdc.subkeys[i]->ptr, &score));
+                datactx->bdc.sub.subkeys[i]->ptr, &score));
         rawvals[i * 2] = zsetEncodeSubval(score);
 
         cfs[i*2 + 1] = SCORE_CF;
         rawkeys[i * 2 + 1] = zsetEncodeScoreKey(data->db, data->key->ptr,
-                version, datactx->bdc.subkeys[i]->ptr, score);
-        rawvals[i * 2 + 1] = zsetEncodeScoreValue(datactx->bdc.subkeys[i]->ptr, score);
+                version, datactx->bdc.sub.subkeys[i]->ptr, score);
+        rawvals[i * 2 + 1] = zsetEncodeScoreValue(datactx->bdc.sub.subkeys[i]->ptr, score);
     }
-    *numkeys = datactx->bdc.num*2;
+    *numkeys = datactx->bdc.sub.num*2;
     *pcfs = cfs;
     *prawkeys = rawkeys;
     *prawvals = rawvals;
@@ -482,12 +487,12 @@ int zsetEncodeRange(struct swapData *data, int intention, void *datactx_, int *l
     zsetDataCtx *datactx = datactx_;
     uint64_t version = swapDataObjectVersion(data);
     serverAssert(intention == SWAP_IN);
-    serverAssert(0 == datactx->bdc.num);
+    serverAssert(0 == datactx->bdc.sub.num);
 
     *limit = ROCKS_ITERATE_NO_LIMIT;
     *flags = 0;
-    if (datactx->type != TYPE_NONE) {
-        if (datactx->type == TYPE_ZS) {
+    if (datactx->type != ZSET_SWAP_CTX_TYPE_NONE) {
+        if (datactx->type == ZSET_SWAP_CTX_TYPE_ZS) {
             *flags |= ROCKS_ITERATE_PREFIX_MATCH;
             *limit = datactx->zs.limit;
             *pcf = SCORE_CF;
@@ -788,13 +793,13 @@ void *zsetCreateOrMergeObject(swapData *data, void *decoded_, void *datactx) {
 int zsetCleanObject(swapData *data, void *datactx_, int keep_data) {
     zsetDataCtx *datactx = datactx_;
     if (swapDataIsCold(data)) return 0;
-    for (int i = 0; i < datactx->bdc.num; i++) {
+    for (int i = 0; i < datactx->bdc.sub.num; i++) {
         if (data->dirty_subkeys) {
             dirtySubkeysRemove(data->dirty_subkeys,
-                    datactx->bdc.subkeys[i]->ptr);
+                    datactx->bdc.sub.subkeys[i]->ptr);
         }
 
-        if (!keep_data && zsetDel(data->value,datactx->bdc.subkeys[i]->ptr)) {
+        if (!keep_data && zsetDel(data->value,datactx->bdc.sub.subkeys[i]->ptr)) {
             swapDataObjectMetaModifyLen(data,1);
         }
     }
@@ -806,13 +811,13 @@ int zsetCleanObject(swapData *data, void *datactx_, int keep_data) {
 void freeZsetSwapData(swapData *data_, void *datactx_) {
     zsetDataCtx *datactx = datactx_;
     UNUSED(data_);
-    for (int i = 0; i < datactx->bdc.num; i++) {
-        serverAssert(datactx->bdc.subkeys[i] != NULL);
-        decrRefCount(datactx->bdc.subkeys[i]);
+    for (int i = 0; i < datactx->bdc.sub.num; i++) {
+        serverAssert(datactx->bdc.sub.subkeys[i] != NULL);
+        decrRefCount(datactx->bdc.sub.subkeys[i]);
     }
-    zfree(datactx->bdc.subkeys);
+    zfree(datactx->bdc.sub.subkeys);
     switch(datactx->type) {
-        case TYPE_ZS:
+        case ZSET_SWAP_CTX_TYPE_ZS:
             if (datactx->zs.rangespec != NULL) {
                 zfree(datactx->zs.rangespec);
                 datactx->zs.rangespec = NULL;
@@ -934,10 +939,11 @@ int swapDataSetupZSet(swapData *d, void **pdatactx) {
     d->type = &zsetSwapDataType;
     d->omtype = &zsetObjectMetaType;
     zsetDataCtx *datactx = zmalloc(sizeof(zsetDataCtx));
-    datactx->bdc.num = 0;
+    datactx->bdc.type = BASE_SWAP_CTX_TYPE_SUBKEY;
+    datactx->bdc.sub.num = 0;
     datactx->bdc.ctx_flag = BIG_DATA_CTX_FLAG_NONE;
-    datactx->bdc.subkeys = NULL;
-    datactx->type = TYPE_NONE;
+    datactx->bdc.sub.subkeys = NULL;
+    datactx->type = ZSET_SWAP_CTX_TYPE_NONE;
     *pdatactx = datactx;
     return 0;
 }
@@ -1400,8 +1406,9 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
         uint32_t flags;
         sds start, end;
 
-        zset1_ctx->bdc.num = 2;
-        zset1_ctx->bdc.subkeys = mockSubKeys(2, sdsdup(f1), sdsdup(f2));
+        zset1_ctx->bdc.type = BASE_SWAP_CTX_TYPE_SUBKEY;
+        zset1_ctx->bdc.sub.num = 2;
+        zset1_ctx->bdc.sub.subkeys = mockSubKeys(2, sdsdup(f1), sdsdup(f2));
         zset1_data->object_meta = createZsetObjectMeta(0,2);
         // encodeKeys - swap in subkeys
         zsetSwapAnaAction(zset1_data, SWAP_IN, zset1_ctx, &action);
@@ -1414,7 +1421,7 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
             || memcmp(expectEncodedKey,rawkeys[1],sdslen(rawkeys[1])) == 0);
 
         // encodeKeys - swap in whole key
-        zset1_ctx->bdc.num = 0;
+        zset1_ctx->bdc.sub.num = 0;
         zsetSwapAnaAction(zset1_data, SWAP_IN, zset1_ctx, &action);
         zsetEncodeRange(zset1_data, SWAP_IN, zset1_ctx, &numkeys, &flags, &cf, &start, &end);
         test_assert(ROCKS_ITERATE == action);
@@ -1426,7 +1433,7 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
         test_assert(0 == action);
 
         // encodeData - swap out
-        zset1_ctx->bdc.num = 2;
+        zset1_ctx->bdc.sub.num = 2;
         zsetSwapAnaAction(zset1_data, SWAP_OUT, zset1_ctx, &action);
         zsetEncodeData(zset1_data, SWAP_OUT, zset1_ctx, &numkeys, &cfs, &rawkeys, &rawvals);
         test_assert(action == ROCKS_PUT);
@@ -1445,7 +1452,7 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
         rawvals_[1] = rawvals[2];
 
         // decodeData - swap in
-        zsetDecodeData(zset1_data, zset1_ctx->bdc.num, cfs_, rawkeys_, rawvals_, (void**)&decoded);
+        zsetDecodeData(zset1_data, zset1_ctx->bdc.sub.num, cfs_, rawkeys_, rawvals_, (void**)&decoded);
         test_assert(NULL != decoded);
         test_assert(2 == zsetLength(decoded));
 
@@ -1495,7 +1502,7 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
         zset1_meta->len = 4;
         zsetSwapAna(zset1_data,0,kr1,&intention,&intention_flags,zset1_ctx);
         test_assert(intention == SWAP_IN && intention_flags == 0);
-        test_assert(zset1_ctx->bdc.num > 0);
+        test_assert(zset1_ctx->bdc.sub.num > 0);
 
         // swap in del mock value
         kr1->cmd_intention = SWAP_IN;
@@ -1533,7 +1540,7 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
         kr1->cmd_intention_flags = SWAP_IN_DEL;
         zsetSwapAna(zset1_data,0,kr1,&intention,&intention_flags,zset1_ctx);
         test_assert(intention == SWAP_IN && intention_flags == SWAP_EXEC_IN_DEL);
-        test_assert(zset1_ctx->bdc.num == 2);
+        test_assert(zset1_ctx->bdc.sub.num == 2);
 
         // swap in with subkeys - subkeys already in mem
         kr1->cmd_intention = SWAP_IN;
@@ -1541,7 +1548,7 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
         zset1_data->value = zset1;
         zsetSwapAna(zset1_data,0,kr1,&intention,&intention_flags,zset1_ctx);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
-        test_assert(zset1_ctx->bdc.num == 0);
+        test_assert(zset1_ctx->bdc.sub.num == 0);
 
         // swap in with subkeys - subkeys not in mem
         kr1->cmd_intention = SWAP_IN;
@@ -1549,7 +1556,7 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
         kr1->b.subkeys = mockSubKeys(2, sdsnew("new1"), sdsnew("new2"));
         zsetSwapAna(zset1_data,0,kr1,&intention,&intention_flags,zset1_ctx);
         test_assert(intention == SWAP_IN && intention_flags == 0);
-        test_assert(zset1_ctx->bdc.num == 2);
+        test_assert(zset1_ctx->bdc.sub.num == 2);
 
         // swap out - data not in mem
         zset1_data->value = NULL;
@@ -1564,15 +1571,15 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
         zset1_data->object_meta = NULL;
         zset1_data->cold_meta = NULL;
         zset1_data->new_meta = NULL;
-        zset1_ctx->bdc.num = 0;
+        zset1_ctx->bdc.sub.num = 0;
         zsetSwapAna(zset1_data,0,kr1,&intention,&intention_flags,zset1_ctx);
         test_assert(intention == SWAP_OUT && intention_flags == 0);
-        test_assert(4 == zset1_ctx->bdc.num);
+        test_assert(4 == zset1_ctx->bdc.sub.num);
         test_assert(NULL != zset1_data->new_meta);
 
         // swap out - data not dirty
         clearObjectDirty(zset1);
-        zset1_ctx->bdc.num = 0;
+        zset1_ctx->bdc.sub.num = 0;
         zset1_data->object_meta = createZsetObjectMeta(0,0);
         zset1_data->new_meta = NULL;
         zsetSwapAna(zset1_data,0,kr1,&intention,&intention_flags,zset1_ctx);
@@ -1608,8 +1615,8 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
 
         /* hot => warm => cold */
         zset1_data->new_meta = createZsetObjectMeta(0,0);
-        zset1_ctx->bdc.num = 2;
-        zset1_ctx->bdc.subkeys = mockSubKeys(2, sdsdup(f1), sdsdup(f2));
+        zset1_ctx->bdc.sub.num = 2;
+        zset1_ctx->bdc.sub.subkeys = mockSubKeys(2, sdsdup(f1), sdsdup(f2));
         zsetCleanObject(zset1_data, zset1_ctx, 0);
         zsetSwapOut(zset1_data, zset1_ctx, 0, NULL);
         test_assert((m =lookupMeta(db,key1)) != NULL && m->len == 2);
@@ -1618,7 +1625,7 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
 
         zset1_data->new_meta = NULL;
         zset1_data->object_meta = m;
-        zset1_ctx->bdc.subkeys = mockSubKeys(2, sdsdup(f3), sdsdup(f4));
+        zset1_ctx->bdc.sub.subkeys = mockSubKeys(2, sdsdup(f3), sdsdup(f4));
         zsetCleanObject(zset1_data, zset1_ctx, 0);
         zsetSwapOut(zset1_data, zset1_ctx, 0, NULL);
         test_assert(lookupKey(db,key1,LOOKUP_NOTOUCH) == NULL);
@@ -1655,8 +1662,8 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
         /* hot => cold */
         zset1_data->object_meta = m;
         zset1_data->value = s;
-        zset1_ctx->bdc.num = 4;
-        zset1_ctx->bdc.subkeys = mockSubKeys(4, sdsdup(f1), sdsdup(f2), sdsdup(f3), sdsdup(f4));
+        zset1_ctx->bdc.sub.num = 4;
+        zset1_ctx->bdc.sub.subkeys = mockSubKeys(4, sdsdup(f1), sdsdup(f2), sdsdup(f3), sdsdup(f4));
         zsetCleanObject(zset1_data, zset1_ctx, 0);
         zsetSwapOut(zset1_data, zset1_ctx, 0, NULL);
         test_assert((m = lookupMeta(db,key1)) == NULL);
