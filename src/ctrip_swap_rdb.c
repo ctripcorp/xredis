@@ -210,6 +210,9 @@ static int rdbKeySaveDataInitWarm(rdbKeySaveData *save, redisDb *db,
     case OBJ_ZSET:
         zsetSaveInit(save,SWAP_VERSION_ZERO,NULL,0);
         break;
+    case OBJ_BITMAP:
+        bitmapSaveInit(save,SWAP_VERSION_ZERO,NULL,0);
+        break;
     default:
         retval = INIT_SAVE_ERR;
         break;
@@ -246,7 +249,10 @@ static int rdbKeySaveDataInitCold(rdbKeySaveData *save, redisDb *db,
         serverAssert(dm->extend != NULL);
         retval = zsetSaveInit(save,dm->version,dm->extend,sdslen(dm->extend));
         break;
-    /* todo case OBJ_BITMAP: */
+    case OBJ_BITMAP:
+        serverAssert(dm->extend != NULL);
+        retval = bitmapSaveInit(save,dm->version,dm->extend,sdslen(dm->extend));
+        break;
     default:
         retval = INIT_SAVE_ERR;
         break;

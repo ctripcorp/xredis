@@ -2120,7 +2120,7 @@ typedef struct rdbKeySaveData {
   objectMeta *object_meta; /* own */
   long long expire;
   int saved;
-  void *iter; /* used by list (metaListIterator) */
+  void *iter; /* used by list (metaListIterator), used by bitmap () */
 } rdbKeySaveData;
 
 typedef struct rdbSaveRocksStats {
@@ -2143,6 +2143,7 @@ int hashSaveInit(rdbKeySaveData *save, uint64_t version, const char *extend, siz
 int setSaveInit(rdbKeySaveData *save, uint64_t version, const char *extend, size_t extlen);
 int listSaveInit(rdbKeySaveData *save, uint64_t version, const char *extend, size_t extlen);
 int zsetSaveInit(rdbKeySaveData *save, uint64_t version, const char *extend, size_t extlen);
+int bitmapSaveInit(rdbKeySaveData *save, uint64_t version, const char *extend, size_t extlen);
 
 /* Rdb load */
 /* RDB_LOAD_ERR_*: [1 +inf), SWAP_ERR_RDB_LOAD_*: (-inf -500] */
