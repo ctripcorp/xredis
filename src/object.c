@@ -1343,6 +1343,7 @@ NULL
     }
 }
 
+size_t ctrip_objectComputeSize(robj *val, int samples, objectMeta *object_meta);
 /* The memory command will eventually be a complete interface for the
  * memory introspection capabilities of Redis.
  *
@@ -1388,7 +1389,8 @@ NULL
             addReplyNull(c);
             return;
         }
-        size_t usage = objectComputeSize(dictGetVal(de),samples);
+        objectMeta *object_meta = lookupMeta(c->db,c->argv[2]);
+        size_t usage = ctrip_objectComputeSize(dictGetVal(de),samples,object_meta);
         usage += sdsZmallocSize(dictGetKey(de));
         usage += sizeof(dictEntry);
         addReplyLongLong(c,usage);

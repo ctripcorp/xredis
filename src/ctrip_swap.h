@@ -161,6 +161,7 @@ typedef struct range {
 #define KEYREQUEST_TYPE_SUBKEY 1
 #define KEYREQUEST_TYPE_RANGE  2
 #define KEYREQUEST_TYPE_SCORE  3
+#define KEYREQUEST_TYPE_SAMPLE 4
 
 typedef struct argRewriteRequest {
   int mstate_idx; /* >=0 if current command is a exec, means index in mstate; -1 means req not in multi/exec */
@@ -195,6 +196,9 @@ typedef struct keyRequest{
       int reverse;
       int limit;
     } zs; /* zset score*/
+    struct {
+      int count;
+    } sp; /* sample */
   };
   argRewriteRequest list_arg_rewrite[2];
   swapCmdTrace *swap_cmd;
@@ -282,6 +286,8 @@ int getKeyRequestsGtid(int dbid, struct redisCommand *cmd, robj **argv, int argc
 int getKeyRequestsGtidAuto(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 
 int getKeyRequestsDebug(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+
+int getKeyRequestsMemory(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 
 #define GET_KEYREQUESTS_RESULT_INIT { {{0}}, NULL, NULL, 0, MAX_KEYREQUESTS_BUFFER}
 

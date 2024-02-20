@@ -1348,7 +1348,8 @@ int listSwapAna(swapData *data, int thd, struct keyRequest *req,
             dbDeleteMeta(data->db,data->key);
             *intention = SWAP_NOP;
             *intention_flags = 0;
-        } else if (req->l.num_ranges == 0) {
+        } else if (req->type != KEYREQUEST_TYPE_SAMPLE &&
+                req->l.num_ranges == 0) {
             if (cmd_intention_flags == SWAP_IN_DEL_MOCK_VALUE) {
                 datactx->ctx_flag |= BIG_DATA_CTX_FLAG_MOCK_VALUE;
                 *intention = SWAP_DEL;
@@ -1385,8 +1386,16 @@ int listSwapAna(swapData *data, int thd, struct keyRequest *req,
             serverAssert(list_meta != NULL);
             long ridx_shift = listMetaGetRidxShift(list_meta);
 
-            req_meta = listMetaNormalizeFromRequest(ridx_shift,
-                    req->l.num_ranges,req->l.ranges,llen);
+            if (req->type == KEYREQUEST_TYPE_SAMPLE) {
+                range sample_ranges[1];
+                sample_ranges[0].start = 0;
+                sample_ranges[0].end = req->sp.count;
+                req_meta = listMetaNormalizeFromRequest(ridx_shift,
+                        1,sample_ranges,llen);
+            } else {
+                req_meta = listMetaNormalizeFromRequest(ridx_shift,
+                        req->l.num_ranges,req->l.ranges,llen);
+            }
 
             /* req_meta is NULL if range is not valid, in which case swap in
              * all eles (e.g. ltrim removes all eles if range invalid) */

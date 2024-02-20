@@ -902,7 +902,7 @@ struct redisCommand redisCommandTable[] = {
 
     {"memory",memoryCommand,-2,
      "random read-only @swap_keyspace",
-     0,memoryGetKeys,NULL,SWAP_IN,0,0,0,0,0,0,0},
+     0,memoryGetKeys,getKeyRequestsMemory,SWAP_IN,0,0,0,0,0,0,0},
 
     {"client",clientCommand,-2,
      "admin no-script random ok-loading ok-stale @connection",
@@ -1183,6 +1183,7 @@ struct redisCommand redisCommandTable[] = {
     {"swap.slowlog", swapSlowlogCommand, -2,
      "admin random ok-loading ok-stale",
      0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
+
 };
 
 /*============================ Utility functions ============================ */

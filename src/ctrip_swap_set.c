@@ -147,8 +147,8 @@ int setSwapAna(swapData *data, int thd, struct keyRequest *req,
     int cmd_intention = req->cmd_intention;
     uint32_t cmd_intention_flags = req->cmd_intention_flags;
 
-    serverAssert(req->type == KEYREQUEST_TYPE_SUBKEY);
-    serverAssert(req->b.num_subkeys >= 0);
+    serverAssert(req->type == KEYREQUEST_TYPE_SUBKEY ||
+            req->type == KEYREQUEST_TYPE_SAMPLE);
 
     switch (cmd_intention) {
         case SWAP_NOP:
@@ -159,6 +159,11 @@ int setSwapAna(swapData *data, int thd, struct keyRequest *req,
             if (!swapDataPersisted(data)) {
                 /* No need to swap for pure hot key */
                 *intention = SWAP_NOP;
+                *intention_flags = 0;
+            } else if (req->type == KEYREQUEST_TYPE_SAMPLE) {
+                datactx->ctx.type = BASE_SWAP_CTX_TYPE_SAMPLE;
+                datactx->ctx.spl.count = req->sp.count;
+                *intention = SWAP_IN;
                 *intention_flags = 0;
             } else if (req->b.num_subkeys == 0) {
                 if (cmd_intention_flags == SWAP_IN_DEL_MOCK_VALUE) {
@@ -293,8 +298,14 @@ int setSwapAnaAction(swapData *data, int intention, void *datactx_, int *action)
 
     switch (intention) {
         case SWAP_IN:
-            if (datactx->ctx.sub.num > 0) *action = ROCKS_GET; /* Swap in specific fields */
-            else *action = ROCKS_ITERATE; /* Swap in entire set(SMEMBERS) */
+            if (datactx->ctx.type == BASE_SWAP_CTX_TYPE_SUBKEY &&
+                    datactx->ctx.sub.num > 0) {
+                *action = ROCKS_GET; /* Swap in specific fields */
+            } else {
+                /* Swap in entire set(SMEMBERS) or sample some
+                 * subkey (MEMORY USAGE) */
+                *action = ROCKS_ITERATE;
+            }
             break;
         case SWAP_DEL:
             *action = ROCKS_NOP;
@@ -359,16 +370,24 @@ int setEncodeData(swapData *data, int intention, void *datactx_,
     return 0;
 }
 
-int setEncodeRange(struct swapData *data, int intention, void *datactx, int *limit,
+int setEncodeRange(struct swapData *data, int intention, void *datactx_, int *limit,
         uint32_t *flags, int *pcf, sds *start, sds *end) {
-    UNUSED(intention), UNUSED(datactx);
+    UNUSED(intention);
+    hashDataCtx *datactx = datactx_;
+
     uint64_t version = swapDataObjectVersion(data);
 
     *pcf = DATA_CF;
     *flags = 0;
     *start = rocksEncodeDataRangeStartKey(data->db,data->key->ptr,version);
     *end = rocksEncodeDataRangeEndKey(data->db,data->key->ptr,version);
-    *limit = ROCKS_ITERATE_NO_LIMIT;
+
+    if (datactx->ctx.type == BASE_SWAP_CTX_TYPE_SAMPLE) {
+        *limit = datactx->ctx.spl.count;
+    } else {
+        *limit =  ROCKS_ITERATE_NO_LIMIT;
+    }
+
     return 0;
 }
 
@@ -557,9 +576,11 @@ int setCleanObject(swapData *data, void *datactx_, int keep_data) {
 void freeSetSwapData(swapData *data_, void *datactx_) {
     UNUSED(data_);
     setDataCtx *datactx = datactx_;
-    for (int i = 0; i < datactx->ctx.sub.num; i++) {
-        decrRefCount(datactx->ctx.sub.subkeys[i]);
-    }
+	if (datactx->ctx.type == BASE_SWAP_CTX_TYPE_SUBKEY) {
+		for (int i = 0; i < datactx->ctx.sub.num; i++) {
+			decrRefCount(datactx->ctx.sub.subkeys[i]);
+		}
+	}
     zfree(datactx->ctx.sub.subkeys);
     zfree(datactx);
 }

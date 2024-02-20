@@ -124,6 +124,9 @@ void copyKeyRequest(keyRequest *dst, keyRequest *src) {
         dst->zs.reverse = src->zs.reverse;
         dst->zs.limit = src->zs.limit;
         break;
+    case KEYREQUEST_TYPE_SAMPLE:
+        dst->sp.count = src->sp.count;
+        break;
     default:
         break;
     }
@@ -165,6 +168,9 @@ void moveKeyRequest(keyRequest *dst, keyRequest *src) {
         dst->zs.reverse = src->zs.reverse;
         dst->zs.limit = src->zs.limit;
         break;
+    case KEYREQUEST_TYPE_SAMPLE:
+        dst->sp.count = src->sp.count;
+        break;
     default:
         break;
     }
@@ -201,6 +207,9 @@ void keyRequestDeinit(keyRequest *key_request) {
             zfree(key_request->zs.rangespec);
             key_request->zs.rangespec = NULL;
         }
+        break;
+    case KEYREQUEST_TYPE_SAMPLE:
+        key_request->sp.count = 0;
         break;
     default:
         break;
@@ -295,6 +304,18 @@ void getKeyRequestsAppendSubkeyResult(getKeyRequestsResult *result, int level,
     key_request->type = KEYREQUEST_TYPE_SUBKEY;
     key_request->b.num_subkeys = num_subkeys;
     key_request->b.subkeys = subkeys;
+    key_request->swap_cmd = NULL;
+    key_request->trace = NULL;
+    key_request->deferred = 0;
+}
+
+void getKeyRequestsAppendSampleResult(getKeyRequestsResult *result, int level,
+        robj *key, int count, int cmd_intention,
+        int cmd_intention_flags, uint64_t cmd_flags, int dbid) {
+    keyRequest *key_request = getKeyRequestsAppendCommonResult(result,level,
+            key,cmd_intention,cmd_intention_flags,cmd_flags,dbid);
+    key_request->type = KEYREQUEST_TYPE_SAMPLE;
+    key_request->sp.count = count;
     key_request->swap_cmd = NULL;
     key_request->trace = NULL;
     key_request->deferred = 0;
@@ -1130,6 +1151,31 @@ int getKeyRequestsDebug(int dbid, struct redisCommand *cmd, robj **argv,
     }
 }
 
+#define GET_KEYREQUESTS_MEMORY_MUL 4
+
+int getKeyRequestsMemory(int dbid, struct redisCommand *cmd, robj **argv,
+        int argc, struct getKeyRequestsResult *result) {
+    if (!strcasecmp(argv[1]->ptr,"usage")) {
+        robj *key;
+        int count = 5; /* OBJ_COMPUTE_SIZE_DEF_SAMPLES */
+        long long value;
+
+        if (argc >= 5 && !strcasecmp(argv[3]->ptr,"samples") &&
+                getLongLongFromObject(argv[4],&value) == C_OK) {
+            count = value;
+        }
+
+        key = argv[2];
+        incrRefCount(key);
+        getKeyRequestsAppendSampleResult(result,REQUEST_LEVEL_KEY,key,
+                count*GET_KEYREQUESTS_MEMORY_MUL,
+                cmd->intention,cmd->intention_flags,cmd->flags,dbid);
+        return 0;
+    } else {
+        return getKeyRequestsNone(dbid,cmd,argv,argc,result);
+    }
+}
+
 #ifdef REDIS_TEST
 
 void rewriteResetClientCommandCString(client *c, int argc, ...) {
@@ -1552,6 +1598,19 @@ int swapCmdTest(int argc, char *argv[], int accurate) {
         releaseKeyRequests(&result);
         getKeyRequestsFreeResult(&result);
         discardTransaction(c);
+    }
+
+    TEST("cmd: memory") {
+        getKeyRequestsResult result = GET_KEYREQUESTS_RESULT_INIT;
+        rewriteResetClientCommandCString(c,5,"MEMORY","USAGE","KEY","SAMPLES","10");
+        getKeyRequests(c,&result);
+        test_assert(result.num == 1);
+        test_assert(result.key_requests[0].type == KEYREQUEST_TYPE_SAMPLE);
+        test_assert(!strcmp(result.key_requests[0].key->ptr, "KEY"));
+        test_assert(result.key_requests[0].sp.count == 40);
+
+        releaseKeyRequests(&result);
+        getKeyRequestsFreeResult(&result);
     }
 
     return error;
