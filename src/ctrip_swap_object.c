@@ -331,6 +331,45 @@ size_t keyEstimateSize(redisDb *db, robj *key) {
     return val ? objectEstimateSize(val): 0;
 }
 
+size_t ctrip_objectComputeSize(robj *val, int samples, objectMeta *object_meta) {
+    size_t total_size, hot_size, total_len, hot_len;
+
+    hot_size = objectComputeSize(val,samples);
+    if (keyIsHot(object_meta, val)) return hot_size;
+
+    serverAssert(val && object_meta);
+
+    switch (val->type) {
+    case OBJ_STRING:
+        total_size = hot_size;
+        break;
+    case OBJ_HASH:
+        hot_len = hashTypeLength(val);
+        total_len = object_meta->len + hot_len;
+        total_size = hot_size * total_len / hot_len;
+        break;
+    case OBJ_SET:
+        hot_len = setTypeSize(val);
+        total_len = object_meta->len + hot_len;
+        total_size = hot_size * total_len / hot_len;
+        break;
+    case OBJ_ZSET:
+        hot_len = zsetLength(val);
+        total_len = object_meta->len + hot_len;
+        total_size = hot_size * total_len / hot_len;
+        break;
+    case OBJ_LIST:
+        hot_len = listTypeLength(val);
+        total_len = ctripListTypeLength(val,object_meta);
+        total_size = hot_size * total_len / hot_len;
+        break;
+    default:
+        total_size = hot_size;
+        break;
+    }
+
+    return total_size;
+}
 
 #ifdef REDIS_TEST
 int swapObjectTest(int argc, char *argv[], int accurate) {

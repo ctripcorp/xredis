@@ -195,6 +195,11 @@ int zsetSwapAna(swapData *data, int thd, struct keyRequest *req,
             /* No need to swap for pure hot key */
             *intention = SWAP_NOP;
             *intention_flags = 0;
+        } else if (req->type == KEYREQUEST_TYPE_SAMPLE) {
+            datactx->bdc.type = BASE_SWAP_CTX_TYPE_SAMPLE;
+            datactx->bdc.spl.count = req->sp.count;
+            *intention = SWAP_IN;
+            *intention_flags = 0;
         } else if(req->type == KEYREQUEST_TYPE_SCORE ) {
             datactx->type = ZSET_SWAP_CTX_TYPE_ZS;
             datactx->zs.reverse = req->zs.reverse;
@@ -347,7 +352,8 @@ int zsetSwapAnaAction(swapData *data, int intention, void *datactx_, int *action
         case SWAP_IN:
             if (datactx->type != ZSET_SWAP_CTX_TYPE_NONE) {
                 *action = ROCKS_ITERATE;
-            } else if (datactx->bdc.sub.num) { /* Swap in specific fields */
+            } else if (datactx->bdc.type == BASE_SWAP_CTX_TYPE_SUBKEY &&
+					datactx->bdc.sub.num) { /* Swap in specific fields */
                 *action = ROCKS_GET;
             } else { /* Swap in entire zset. */
                 *action = ROCKS_ITERATE;
@@ -487,7 +493,6 @@ int zsetEncodeRange(struct swapData *data, int intention, void *datactx_, int *l
     zsetDataCtx *datactx = datactx_;
     uint64_t version = swapDataObjectVersion(data);
     serverAssert(intention == SWAP_IN);
-    serverAssert(0 == datactx->bdc.sub.num);
 
     *limit = ROCKS_ITERATE_NO_LIMIT;
     *flags = 0;
@@ -509,6 +514,12 @@ int zsetEncodeRange(struct swapData *data, int intention, void *datactx_, int *l
         *pcf = DATA_CF;
         *start = rocksEncodeDataRangeStartKey(data->db,data->key->ptr,version);
         *end = rocksEncodeDataRangeEndKey(data->db,data->key->ptr,version);
+
+		if (datactx->bdc.type == BASE_SWAP_CTX_TYPE_SAMPLE) {
+			*limit = datactx->bdc.spl.count;
+		} else {
+			*limit =  ROCKS_ITERATE_NO_LIMIT;
+		}
     }
 
     return 0;
@@ -811,11 +822,13 @@ int zsetCleanObject(swapData *data, void *datactx_, int keep_data) {
 void freeZsetSwapData(swapData *data_, void *datactx_) {
     zsetDataCtx *datactx = datactx_;
     UNUSED(data_);
-    for (int i = 0; i < datactx->bdc.sub.num; i++) {
-        serverAssert(datactx->bdc.sub.subkeys[i] != NULL);
-        decrRefCount(datactx->bdc.sub.subkeys[i]);
-    }
-    zfree(datactx->bdc.sub.subkeys);
+	if (datactx->bdc.type == BASE_SWAP_CTX_TYPE_SUBKEY) {
+		for (int i = 0; i < datactx->bdc.sub.num; i++) {
+			serverAssert(datactx->bdc.sub.subkeys[i] != NULL);
+			decrRefCount(datactx->bdc.sub.subkeys[i]);
+		}
+		zfree(datactx->bdc.sub.subkeys);
+	}
     switch(datactx->type) {
         case ZSET_SWAP_CTX_TYPE_ZS:
             if (datactx->zs.rangespec != NULL) {
