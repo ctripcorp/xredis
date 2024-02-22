@@ -265,6 +265,10 @@ void keyRequestBeforeCall(client *c, swapCtx *ctx) {
     void *datactx = ctx->datactx;
     if (data == NULL) return;
     if (!swapDataAlreadySetup(data)) return;
+
+    /* Hack: add bitmap object marker  */
+    if ( (ctx->key_request->cmd_flags & CMD_SWAP_DATATYPE_BITMAP)
+
     swapDataBeforeCall(data,c,datactx);
 }
 
@@ -321,10 +325,9 @@ int keyExpiredAndShouldDelete(redisDb *db, robj *key) {
 #define NOSWAP_REASON_ALREAY_SWAPPED_OUT 7
 #define NOSWAP_REASON_UNEXPECTED 100
 
-void cuckooFilterDump(cuckooFilter *filter);
 void keyRequestProceed(void *lock, int flush, redisDb *db, robj *key,
         client *c, void *pd) {
-    int reason_num = 0, retval = 0, swap_intention, errcode;
+    int reason_num = 0, retval = 0, swap_intention, errcode, swap_type;
     void *datactx = NULL;
     swapData *data = NULL;
     swapCtx *ctx = pd;
@@ -410,8 +413,16 @@ void keyRequestProceed(void *lock, int flush, redisDb *db, robj *key,
 
     expire = getExpire(db,key);
 
-    /* value->type 须扩展 */
-    retval = swapDataSetupMeta(data,value->type,expire,&datactx);
+    object_meta = lookupMeta(db,key);
+    swap_type = swapDataAnaSwapType(value,object_meta);
+    if (swap_type < 0) {
+        reason = "data not support swap";
+        reason_num = NOSWAP_REASON_KEYNOTSUPPORT;
+        ctx->errcode = SWAP_ERR_SETUP_UNEXPECTED_SWAP_TYPE;
+        goto noswap;
+    }
+
+    retval = swapDataSetupMeta(data,swap_type,expire,&datactx);
     swapCtxSetSwapData(ctx,data,datactx);
     if (retval) {
         if (retval == SWAP_ERR_SETUP_UNSUPPORTED) {
@@ -425,7 +436,6 @@ void keyRequestProceed(void *lock, int flush, redisDb *db, robj *key,
         goto noswap;
     }
 
-    object_meta = lookupMeta(db,key);
     swapDataSetObjectMeta(data,object_meta);
 
 allset:

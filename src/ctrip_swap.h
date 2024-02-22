@@ -573,6 +573,21 @@ typedef struct swapDataAbsentSubkey {
 #define SWAP_ANA_THD_MAIN 0
 #define SWAP_ANA_THD_SWAP 1
 
+
+/* Note that obj_xxx must equal to swap_type_xxx respectively. */
+#define SWAP_TYPE_STRING    OBJ_STRING
+#define SWAP_TYPE_LIST      OBJ_LIST
+#define SWAP_TYPE_SET       OBJ_SET
+#define SWAP_TYPE_ZSET      OBJ_ZSET
+#define SWAP_TYPE_HASH      OBJ_HASH
+#define SWAP_TYPE_BITMAP    7
+
+static inline int swapDataAnaSwapType(robj *value, objectMeta *object_meta) {
+    if (object_meta) return object_meta->object_type;
+    if (value) return value->type;
+    return -1;
+}
+
 /* SwapData represents key state when swap start. It is stable during
  * key swapping, misc dynamic data are save in dataCtx. */
 typedef struct swapData {
@@ -615,7 +630,7 @@ typedef struct swapDataType {
   int (*swapDel)(struct swapData *data, void *datactx, int async);
   void *(*createOrMergeObject)(struct swapData *data, MOVE void *decoded, void *datactx);
   int (*cleanObject)(struct swapData *data, void *datactx, int keep_data);
-  int (*beforeCall)(struct swapData *data, client *c, void *datactx);
+  int (*beforeCall)(struct swapData *data, keyRequest *key_request, client *c, void *datactx);
   void (*free)(struct swapData *data, void *datactx);
   int (*rocksDel)(struct swapData *data_,  void *datactx_, int inaction, int num, int* cfs, sds *rawkeys, sds *rawvals, OUT int *outaction, OUT int *outnum, OUT int** outcfs,OUT sds **outrawkeys);
   int (*mergedIsHot)(struct swapData *data, MOVE void *result, void *datactx);
@@ -640,7 +655,7 @@ int swapDataSwapOut(swapData *d, void *datactx, int keep_data, OUT int *totally_
 int swapDataSwapDel(swapData *d, void *datactx, int async);
 void *swapDataCreateOrMergeObject(swapData *d, MOVE void *decoded, void *datactx);
 int swapDataCleanObject(swapData *d, void *datactx, int keep_data);
-int swapDataBeforeCall(swapData *d, client *c, void *datactx);
+int swapDataBeforeCall(swapData *d, keyRequest *key_request, client *c, void *datactx);
 int swapDataKeyRequestFinished(swapData *data);
 char swapDataGetObjectAbbrev(robj *value);
 void swapDataFree(swapData *data, void *datactx);
@@ -762,7 +777,8 @@ void swapDebugMsgsDump(swapDebugMsgs *msgs);
 
 /* Swap */
 #define SWAP_ERR_SETUP_FAIL -100
-#define SWAP_ERR_SETUP_UNSUPPORTED -101
+#define SWAP_ERR_SETUP_UNEXPECTED_SWAP_TYPE -101
+#define SWAP_ERR_SETUP_UNSUPPORTED -102
 #define SWAP_ERR_DATA_FAIL -200
 #define SWAP_ERR_DATA_ANA_FAIL -201
 #define SWAP_ERR_DATA_DECODE_FAIL -202
@@ -947,6 +963,9 @@ void ctripGrowMetaBitmap(metaBitmap *meta_bitmap, size_t byte);
 objectMeta *createBitmapObjectMeta(uint64_t version, MOVE struct bitmapMeta *bitmap_meta);
 
 int swapDataSetupBitmap(swapData *d, void **pdatactx);
+
+void bitmapSetObjectMarkerIfNeeded(redisDb *db, robj *key);
+void bitmapClearObjectMarkerIfNeeded(redisDb *db, robj *key);
 
 /* MetaScan */
 #define DEFAULT_SCANMETA_BUFFER 16

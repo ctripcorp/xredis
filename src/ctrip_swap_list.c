@@ -1809,10 +1809,13 @@ int listSwapDel(swapData *data, void *datactx_, int del_skip) {
     }
 }
 
-int listBeforeCall(swapData *data, client *c, void *datactx_) {
+int listBeforeCall(swapData *data, keyRequest *key_request, client *c,
+        void *datactx_) {
     listDataCtx *datactx = datactx_;
     objectMeta *object_meta;
     listMeta *meta;
+
+    UNUSED(key_request);
 
     object_meta = lookupMeta(data->db,data->key);
     if (object_meta == NULL) return 0;

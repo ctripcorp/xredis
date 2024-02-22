@@ -252,6 +252,15 @@ void *wholeKeyCreateOrMergeObject(swapData *data, void *decoded, void *datactx) 
     return decoded;
 }
 
+int wholeKeyBeforeCall(swapData *data, keyRequest *key_request,
+        client *c, void *datactx)  {
+    UNUSED(data), UNUSED(c), UNUSED(datactx);
+    /* Setup bitmap marker if bitmap command touching string */
+    if (key_request->cmd_flags & CMD_SWAP_DATATYPE_BITMAP)
+        bitmapSetObjectMarkerIfNeeded(data->db,data->key);
+    return 0;
+}
+
 swapDataType wholeKeySwapDataType = {
     .name = "wholekey",
     .cmd_swap_flags = CMD_SWAP_DATATYPE_STRING,

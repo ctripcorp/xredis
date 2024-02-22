@@ -935,8 +935,27 @@ void bitmapSwapDataFree(swapData *data_, void *datactx_) {
     zfree(datactx);
 }
 
-int bitmapBeforeCall(swapData *data, client *c, void *datactx_)
-{
+objectMeta *bitmapCreateObjectMarker();
+int bitmapObjectMetaIsMarker();
+
+void bitmapSetObjectMarkerIfNeeded(redisDb *db, robj *key) {
+    objectMeta *object_meta = lookupMeta(db,key);
+    if (object_meta == NULL) dbAddMeta(db,key,bitmapCreateObjectMarker());
+}
+
+void bitmapClearObjectMarkerIfNeeded(redisDb *db, robj *key) {
+    objectMeta *object_meta = lookupMeta(db,key);
+    if (object_meta && bitmapObjectMetaIsMarker(object_meta))
+        dbDeleteMeta(db,key);
+}
+
+int bitmapBeforeCall(swapData *data, keyRequest *key_request, client *c,
+        void *datactx_) {
+
+    /* Clear bitmap marker if string command touching bitmap */
+    if (key_request->cmd_flags & CMD_SWAP_DATATYPE_STRING)
+        bitmapClearObjectMarkerIfNeeded(data->db,data->key);
+
     objectMeta *object_meta = lookupMeta(data->db,data->key);
     serverAssert(object_meta != NULL && object_meta->object_type == OBJ_BITMAP);
     bitmapMeta *bitmap_meta = objectMetaGetPtr(object_meta);

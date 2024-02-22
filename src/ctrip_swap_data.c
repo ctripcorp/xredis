@@ -117,10 +117,24 @@ int swapDataAna(swapData *d, int thd, struct keyRequest *key_request,
     }
 
     if (d->type->swapAna) {
-        if (!(key_request->cmd_flags & CMD_SWAP_DATATYPE_KEYSPACE
-            || key_request->cmd_flags & d->type->cmd_swap_flags))  {
-            return SWAP_ERR_DATA_WRONG_TYPE_ERROR;
+        if (!(key_request->cmd_flags & CMD_SWAP_DATATYPE_KEYSPACE)) {
+            int cmd_string_compatible =
+                (key_request->cmd_flags & CMD_SWAP_DATATYPE_STRING) ||
+                (key_request->cmd_flags & CMD_SWAP_DATATYPE_BITMAP);
+            int data_string_compatible =
+                (d->type->cmd_swap_flags & CMD_SWAP_DATATYPE_STRING) ||
+                (d->type->cmd_swap_flags & CMD_SWAP_DATATYPE_BITMAP);
+
+            if (key_request->cmd_flags & d->type->cmd_swap_flags)  {
+                /* cmd type equals swap type: proceed */
+            } else if (cmd_string_compatible && data_string_compatible) {
+                /* cmd type and swap type both string compatible: SWAP_IN_DEL */
+                key_request->cmd_intention_flags = SWAP_IN_DEL;
+            } else {
+                return SWAP_ERR_DATA_WRONG_TYPE_ERROR;
+            }
         }
+
         retval = d->type->swapAna(d,thd,key_request,intention,
                 intention_flags,datactx);
 
@@ -237,9 +251,10 @@ inline int swapDataCleanObject(swapData *d, void *datactx, int keep_data) {
         return 0;
 }
 
-inline int swapDataBeforeCall(swapData *d, client *c, void *datactx) {
+inline int swapDataBeforeCall(swapData *d, keyRequest *key_request,
+        client *c, void *datactx) {
     if (d->type->beforeCall)
-        return d->type->beforeCall(d,c,datactx);
+        return d->type->beforeCall(d,key_request,c,datactx);
     else
         return 0;
 }
