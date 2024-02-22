@@ -129,6 +129,7 @@ int swapDataAna(swapData *d, int thd, struct keyRequest *key_request,
                 /* cmd type equals swap type: proceed */
             } else if (cmd_string_compatible && data_string_compatible) {
                 /* cmd type and swap type both string compatible: SWAP_IN_DEL */
+                serverAssert(key_request->cmd_intention == SWAP_IN);
                 key_request->cmd_intention_flags = SWAP_IN_DEL;
             } else {
                 return SWAP_ERR_DATA_WRONG_TYPE_ERROR;

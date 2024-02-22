@@ -103,6 +103,9 @@ extern const char *swap_cf_names[CF_COUNT];
 #define SWAP_UTILS  4
 #define SWAP_TYPES  5
 
+/* next of OBJ_STREAM */
+#define OBJ_BITMAP  7
+
 static inline const char *swapIntentionName(int intention) {
   const char *name = "?";
   const char *intentions[] = {"NOP", "IN", "OUT", "DEL", "UTILS"};
@@ -551,7 +554,6 @@ typedef struct swapObjectMeta {
 
 static inline int swapObjectMetaIsHot(swapObjectMeta *som) {
     if (som->value == NULL) return 0;
-    /* todo type 拓展， OBJ_BITMAP */
     serverAssert((som->object_meta->object_type == OBJ_BITMAP && som->value->type == OBJ_STRING) || som->object_meta->object_type == som->value->type);
     if (som->omtype->objectIsHot) {
       return som->omtype->objectIsHot(som->object_meta,som->value);
@@ -572,15 +574,6 @@ typedef struct swapDataAbsentSubkey {
 
 #define SWAP_ANA_THD_MAIN 0
 #define SWAP_ANA_THD_SWAP 1
-
-
-/* Note that obj_xxx must equal to swap_type_xxx respectively. */
-#define SWAP_TYPE_STRING    OBJ_STRING
-#define SWAP_TYPE_LIST      OBJ_LIST
-#define SWAP_TYPE_SET       OBJ_SET
-#define SWAP_TYPE_ZSET      OBJ_ZSET
-#define SWAP_TYPE_HASH      OBJ_HASH
-#define SWAP_TYPE_BITMAP    7
 
 static inline int swapDataAnaSwapType(robj *value, objectMeta *object_meta) {
     if (object_meta) return object_meta->object_type;

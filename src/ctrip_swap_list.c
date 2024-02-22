@@ -3232,25 +3232,25 @@ int swapListDataTest(int argc, char *argv[], int accurate) {
         datactx->arg_reqs[1].arg_idx = -1;
 
         rewriteResetClientCommandCString(c,3,"LINDEX","mylist","3");
-        listBeforeCall(data,c,datactx_);
+        listBeforeCall(data,NULL,c,datactx_);
         test_assert(!strcmp(c->argv[2]->ptr,"0"));
         clientArgRewritesRestore(c);
         test_assert(!strcmp(c->argv[2]->ptr,"3"));
 
         rewriteResetClientCommandCString(c,3,"LINDEX","mylist","4");
-        listBeforeCall(data,c,datactx_);
+        listBeforeCall(data,NULL,c,datactx_);
         test_assert(!strcmp(c->argv[2]->ptr,"1"));
         clientArgRewritesRestore(c);
         test_assert(!strcmp(c->argv[2]->ptr,"4"));
 
         rewriteResetClientCommandCString(c,3,"LINDEX","mylist","6");
-        listBeforeCall(data,c,datactx_);
+        listBeforeCall(data,NULL,c,datactx_);
         test_assert(!strcmp(c->argv[2]->ptr,"2"));
         clientArgRewritesRestore(c);
         test_assert(!strcmp(c->argv[2]->ptr,"6"));
 
         rewriteResetClientCommandCString(c,3,"LINDEX","mylist","1"); /* fail */
-        listBeforeCall(data,c,datactx_);
+        listBeforeCall(data,NULL,c,datactx_);
         test_assert(!strcmp(c->argv[2]->ptr,"0"));
         clientArgRewritesRestore(c);
         test_assert(!strcmp(c->argv[2]->ptr,"1"));
@@ -3260,7 +3260,7 @@ int swapListDataTest(int argc, char *argv[], int accurate) {
         datactx->arg_reqs[1].arg_idx = 3;
 
         rewriteResetClientCommandCString(c,4,"LRANGE","mylist","3","4");
-        listBeforeCall(data,c,datactx_);
+        listBeforeCall(data,NULL,c,datactx_);
         test_assert(!strcmp(c->argv[2]->ptr,"0"));
         test_assert(!strcmp(c->argv[3]->ptr,"1"));
         clientArgRewritesRestore(c);
@@ -3283,13 +3283,13 @@ int swapListDataTest(int argc, char *argv[], int accurate) {
         datactx->arg_reqs[1].arg_idx = -1;
 
         rewriteResetClientCommandCString(c,3,"LINDEX","mylist","1");
-        listBeforeCall(data,c,datactx_);
+        listBeforeCall(data,NULL,c,datactx_);
         test_assert(!strcmp(c->argv[2]->ptr,"1"));
         clientArgRewritesRestore(c);
         test_assert(!strcmp(c->argv[2]->ptr,"1"));
 
         rewriteResetClientCommandCString(c,3,"LINDEX","mylist","4");
-        listBeforeCall(data,c,datactx_);
+        listBeforeCall(data,NULL,c,datactx_);
         test_assert(!strcmp(c->argv[2]->ptr,"2"));
         clientArgRewritesRestore(c);
         test_assert(!strcmp(c->argv[2]->ptr,"4"));
@@ -3299,7 +3299,7 @@ int swapListDataTest(int argc, char *argv[], int accurate) {
         datactx->arg_reqs[1].arg_idx = 3;
 
         rewriteResetClientCommandCString(c,4,"LRANGE","mylist","4","4");
-        listBeforeCall(data,c,datactx_);
+        listBeforeCall(data,NULL,c,datactx_);
         test_assert(!strcmp(c->argv[2]->ptr,"2"));
         test_assert(!strcmp(c->argv[2]->ptr,"2"));
         clientArgRewritesRestore(c);

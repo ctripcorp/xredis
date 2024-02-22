@@ -935,12 +935,18 @@ void bitmapSwapDataFree(swapData *data_, void *datactx_) {
     zfree(datactx);
 }
 
-objectMeta *bitmapCreateObjectMarker();
-int bitmapObjectMetaIsMarker();
+objectMeta *createBitmapObjectMarker() {
+    return createBitmapObjectMeta(swapGetAndIncrVersion(), NULL);
+}
+
+int bitmapObjectMetaIsMarker(objectMeta *object_meta) {
+    serverAssert(object_meta->object_type == OBJ_BITMAP);
+    return NULL == objectMetaGetPtr(object_meta);
+}
 
 void bitmapSetObjectMarkerIfNeeded(redisDb *db, robj *key) {
     objectMeta *object_meta = lookupMeta(db,key);
-    if (object_meta == NULL) dbAddMeta(db,key,bitmapCreateObjectMarker());
+    if (object_meta == NULL) dbAddMeta(db,key,createBitmapObjectMarker());
 }
 
 void bitmapClearObjectMarkerIfNeeded(redisDb *db, robj *key) {
@@ -953,7 +959,7 @@ int bitmapBeforeCall(swapData *data, keyRequest *key_request, client *c,
         void *datactx_) {
 
     /* Clear bitmap marker if string command touching bitmap */
-    if (key_request->cmd_flags & CMD_SWAP_DATATYPE_STRING)
+    if (key_request && (key_request->cmd_flags & CMD_SWAP_DATATYPE_STRING))
         bitmapClearObjectMarkerIfNeeded(data->db,data->key);
 
     objectMeta *object_meta = lookupMeta(data->db,data->key);
@@ -2617,7 +2623,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         datactx->arg_reqs[0].arg_type = RANGE_BIT_BITMAP;
 
         rewriteResetClientCommandCString(c, 3, "GETBIT", "mybitmap", "65636"); /* 32768 * 2 + 100 */
-        bitmapBeforeCall(data, c, datactx);
+        bitmapBeforeCall(data, NULL, c, datactx);
         test_assert(!strcmp(c->argv[2]->ptr,"100"));
         clientArgRewritesRestore(c);
         test_assert(!strcmp(c->argv[2]->ptr,"65636"));
@@ -2631,7 +2637,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         datactx->arg_reqs[1].arg_type = RANGE_BYTE_BITMAP;
 
         rewriteResetClientCommandCString(c, 4, "bITCOUNT", "mybitmap", "8292", "12388"); /* 4096 * 2 + 100,  4096 * 3 + 100*/
-        bitmapBeforeCall(data, c, datactx);
+        bitmapBeforeCall(data, NULL, c, datactx);
         test_assert(!strcmp(c->argv[2]->ptr,"100"));
         test_assert(!strcmp(c->argv[3]->ptr,"4196"));
         clientArgRewritesRestore(c);
@@ -2648,7 +2654,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
         /* BITCOUNT key [start end], both of start end may not exist.  */
         rewriteResetClientCommandCString(c, 2, "bITCOUNT", "mybitmap");
-        bitmapBeforeCall(data, c, datactx);
+        bitmapBeforeCall(data, NULL, c, datactx);
         clientArgRewritesRestore(c);
 
         /* bitpos */
@@ -2661,7 +2667,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         datactx->arg_reqs[1].arg_type = RANGE_BYTE_BITMAP;
 
         rewriteResetClientCommandCString(c, 5, "BITPos", "mybitmap", "1", "8192", "16383"); /* pos : 4096 * 2,  4096 * 4 - 1 */
-        bitmapBeforeCall(data, c, datactx);
+        bitmapBeforeCall(data, NULL, c, datactx);
         test_assert(!strcmp(c->argv[3]->ptr,"0"));
         test_assert(!strcmp(c->argv[4]->ptr,"8191"));
         clientArgRewritesRestore(c);
@@ -2670,14 +2676,14 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
         /* BITPOS key bit [start [end] ], end may not exist. */
         rewriteResetClientCommandCString(c, 4, "BITPos", "mybitmap", "1", "8192"); /* pos : 4096 * 2 */
-        bitmapBeforeCall(data, c, datactx);
+        bitmapBeforeCall(data, NULL, c, datactx);
         test_assert(!strcmp(c->argv[3]->ptr,"0"));
         clientArgRewritesRestore(c);
         test_assert(!strcmp(c->argv[3]->ptr,"8192"));
 
         /* BITPOS key bit [start [end] ], both of start end may not exist. */
         rewriteResetClientCommandCString(c, 3, "BITPos", "mybitmap", "1");
-        bitmapBeforeCall(data, c, datactx);
+        bitmapBeforeCall(data, NULL, c, datactx);
         clientArgRewritesRestore(c);
 
         dbDelete(db, key);

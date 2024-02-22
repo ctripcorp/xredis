@@ -265,11 +265,7 @@ void keyRequestBeforeCall(client *c, swapCtx *ctx) {
     void *datactx = ctx->datactx;
     if (data == NULL) return;
     if (!swapDataAlreadySetup(data)) return;
-
-    /* Hack: add bitmap object marker  */
-    if ( (ctx->key_request->cmd_flags & CMD_SWAP_DATATYPE_BITMAP)
-
-    swapDataBeforeCall(data,c,datactx);
+    swapDataBeforeCall(data,ctx->key_request,c,datactx);
 }
 
 void normalClientKeyRequestFinished(client *c, swapCtx *ctx) {
