@@ -474,14 +474,14 @@ int keyLoadFixDataInit(keyLoadFixData *fix, redisDb *db, decodedResult *dr) {
     case OBJ_HASH:
     case OBJ_SET:
     case OBJ_ZSET:
-        rebuild_meta = createLenObjectMeta(dm->object_type,dm->version,0);
+        rebuild_meta = createLenObjectMeta(dm->object_type, dm->version, 0);
         break;
     case OBJ_LIST:
-        rebuild_meta = createListObjectMeta(dm->version,listMetaCreate());
+        rebuild_meta = createListObjectMeta(dm->version, listMetaCreate());
         break;
-/*    case OBJ_BITMAP:
+    case OBJ_BITMAP:
         rebuild_meta = createBitmapObjectMeta(dm->version, bitmapMetaCreate());
-        break;*/
+        break;
     default:
         rebuild_meta = NULL;
         break;

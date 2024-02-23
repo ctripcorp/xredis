@@ -535,7 +535,6 @@ typedef enum {
 #define OBJ_SET 2       /* Set object. */
 #define OBJ_ZSET 3      /* Sorted set object. */
 #define OBJ_HASH 4      /* Hash object. */
-#define OBJ_BITMAP 7      /* Bitmap object. */
 
 /* The "module" object type is a special one that signals that the object
  * is one directly managed by a Redis module. In this case the value points
@@ -550,6 +549,8 @@ typedef enum {
  * encoding version. */
 #define OBJ_MODULE 5    /* Module object. */
 #define OBJ_STREAM 6    /* Stream object. */
+
+#define OBJ_BITMAP 7      /* Bitmap object. */
 
 /* Extract encver / signature from a module type ID. */
 #define REDISMODULE_TYPE_ENCVER_BITS 10
