@@ -1584,7 +1584,9 @@ robj *rdbLoadCheckModuleValue(rio *rdb, char *modulename) {
  * On success a newly allocated object is returned, otherwise NULL.
  * When the function returns NULL and if 'error' is not NULL, the
  * integer pointed by 'error' is set to the type of error that occurred */
-robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int *error, int ignore_emptykey_err) {
+/* We skip emptykey and integrity check when loading in rordb mode,
+ * those checks are ok to fail in rordb mode. */
+robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int *error, int rordb) {
     robj *o = NULL, *ele, *dec;
     uint64_t len;
     unsigned int i;
@@ -1610,7 +1612,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int *error, int ignore_empty
     } else if (rdbtype == RDB_TYPE_LIST) {
         /* Read list value */
         if ((len = rdbLoadLen(rdb,NULL)) == RDB_LENERR) return NULL;
-        if (len == 0 && !ignore_emptykey_err) goto emptykey;
+        if (len == 0 && !rordb) goto emptykey;
 
         o = createQuicklistObject();
         quicklistSetOptions(o->ptr, server.list_max_ziplist_size,
@@ -1631,7 +1633,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int *error, int ignore_empty
     } else if (rdbtype == RDB_TYPE_SET) {
         /* Read Set value */
         if ((len = rdbLoadLen(rdb,NULL)) == RDB_LENERR) return NULL;
-        if (len == 0 && !ignore_emptykey_err) goto emptykey;
+        if (len == 0 && !rordb) goto emptykey;
 
         /* Use a regular set when there are too many entries. */
         size_t max_entries = server.set_max_intset_entries;
@@ -1701,7 +1703,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int *error, int ignore_empty
         zset *zs;
 
         if ((zsetlen = rdbLoadLen(rdb,NULL)) == RDB_LENERR) return NULL;
-        if (zsetlen == 0 && !ignore_emptykey_err) goto emptykey;
+        if (zsetlen == 0 && !rordb) goto emptykey;
 
         o = createZsetObject();
         zs = o->ptr;
@@ -1765,7 +1767,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int *error, int ignore_empty
 
         len = rdbLoadLen(rdb, NULL);
         if (len == RDB_LENERR) return NULL;
-        if (len == 0 && !ignore_emptykey_err) goto emptykey;
+        if (len == 0 && !rordb) goto emptykey;
 
         o = createHashObject();
 
@@ -1882,7 +1884,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int *error, int ignore_empty
         serverAssert(len == 0);
     } else if (rdbtype == RDB_TYPE_LIST_QUICKLIST) {
         if ((len = rdbLoadLen(rdb,NULL)) == RDB_LENERR) return NULL;
-        if (len == 0 && !ignore_emptykey_err) goto emptykey;
+        if (len == 0 && !rordb) goto emptykey;
 
         o = createQuicklistObject();
         quicklistSetOptions(o->ptr, server.list_max_ziplist_size,
@@ -1913,7 +1915,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int *error, int ignore_empty
             }
         }
 
-        if (quicklistCount(o->ptr) == 0 && !ignore_emptykey_err) {
+        if (quicklistCount(o->ptr) == 0 && !rordb) {
             decrRefCount(o);
             goto emptykey;
         }
@@ -1940,7 +1942,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int *error, int ignore_empty
             case RDB_TYPE_HASH_ZIPMAP:
                 /* Since we don't keep zipmaps anymore, the rdb loading for these
                  * is O(n) anyway, use `deep` validation. */
-                if (!zipmapValidateIntegrity(encoded, encoded_len, 1)) {
+                if (!rordb && !zipmapValidateIntegrity(encoded, encoded_len, 1)) {
                     rdbReportCorruptRDB("Zipmap integrity check failed.");
                     zfree(encoded);
                     o->ptr = NULL;
@@ -1993,7 +1995,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int *error, int ignore_empty
                 break;
             case RDB_TYPE_LIST_ZIPLIST:
                 if (deep_integrity_validation) server.stat_dump_payload_sanitizations++;
-                if (!ziplistValidateIntegrity(encoded, encoded_len, deep_integrity_validation, NULL, NULL)) {
+                if (!rordb && !ziplistValidateIntegrity(encoded, encoded_len, deep_integrity_validation, NULL, NULL)) {
                     rdbReportCorruptRDB("List ziplist integrity check failed.");
                     zfree(encoded);
                     o->ptr = NULL;
@@ -2001,7 +2003,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int *error, int ignore_empty
                     return NULL;
                 }
 
-                if (ziplistLen(encoded) == 0 && !ignore_emptykey_err) {
+                if (ziplistLen(encoded) == 0 && !rordb) {
                     zfree(encoded);
                     o->ptr = NULL;
                     decrRefCount(o);
@@ -2014,7 +2016,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int *error, int ignore_empty
                 break;
             case RDB_TYPE_SET_INTSET:
                 if (deep_integrity_validation) server.stat_dump_payload_sanitizations++;
-                if (!intsetValidateIntegrity(encoded, encoded_len, deep_integrity_validation)) {
+                if (!rordb && !intsetValidateIntegrity(encoded, encoded_len, deep_integrity_validation)) {
                     rdbReportCorruptRDB("Intset integrity check failed.");
                     zfree(encoded);
                     o->ptr = NULL;
@@ -2028,7 +2030,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int *error, int ignore_empty
                 break;
             case RDB_TYPE_ZSET_ZIPLIST:
                 if (deep_integrity_validation) server.stat_dump_payload_sanitizations++;
-                if (!zsetZiplistValidateIntegrity(encoded, encoded_len, deep_integrity_validation)) {
+                if (!rordb && !zsetZiplistValidateIntegrity(encoded, encoded_len, deep_integrity_validation)) {
                     rdbReportCorruptRDB("Zset ziplist integrity check failed.");
                     zfree(encoded);
                     o->ptr = NULL;
@@ -2037,7 +2039,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int *error, int ignore_empty
                 }
                 o->type = OBJ_ZSET;
                 o->encoding = OBJ_ENCODING_ZIPLIST;
-                if (zsetLength(o) == 0 && !ignore_emptykey_err) {
+                if (zsetLength(o) == 0 && !rordb) {
                     zfree(encoded);
                     o->ptr = NULL;
                     decrRefCount(o);
@@ -2050,7 +2052,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int *error, int ignore_empty
                 break;
             case RDB_TYPE_HASH_ZIPLIST:
                 if (deep_integrity_validation) server.stat_dump_payload_sanitizations++;
-                if (!hashZiplistValidateIntegrity(encoded, encoded_len, deep_integrity_validation)) {
+                if (!rordb && !hashZiplistValidateIntegrity(encoded, encoded_len, deep_integrity_validation)) {
                     rdbReportCorruptRDB("Hash ziplist integrity check failed.");
                     zfree(encoded);
                     o->ptr = NULL;
@@ -2059,7 +2061,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int *error, int ignore_empty
                 }
                 o->type = OBJ_HASH;
                 o->encoding = OBJ_ENCODING_ZIPLIST;
-                if (hashTypeLength(o) == 0 && !ignore_emptykey_err) {
+                if (hashTypeLength(o) == 0 && !rordb) {
                     zfree(encoded);
                     o->ptr = NULL;
                     decrRefCount(o);
@@ -2113,7 +2115,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key, int *error, int ignore_empty
                 return NULL;
             }
             if (deep_integrity_validation) server.stat_dump_payload_sanitizations++;
-            if (!streamValidateListpackIntegrity(lp, lp_size, deep_integrity_validation)) {
+            if (!rordb && !streamValidateListpackIntegrity(lp, lp_size, deep_integrity_validation)) {
                 rdbReportCorruptRDB("Stream listpack integrity check failed.");
                 sdsfree(nodekey);
                 decrRefCount(o);
