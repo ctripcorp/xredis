@@ -615,7 +615,7 @@ int equalStringObjects(robj *a, robj *b) {
 }
 
 size_t stringObjectLen(robj *o) {
-    serverAssertWithInfo(NULL,o,o->type == OBJ_STRING);
+    serverAssertWithInfo(NULL,o,o->type == OBJ_STRING || o->type == OBJ_BITMAP);
     if (sdsEncodedObject(o)) {
         return sdslen(o->ptr);
     } else {

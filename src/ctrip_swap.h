@@ -151,13 +151,13 @@ static inline const char *requestLevelName(int level) {
 #define SEGMENT_TYPE_COLD 1
 #define SEGMENT_TYPE_BOTH 2
 
-#define LIST_RANGE 0
-#define BITMAP_BIT_RANGE 1
-#define BITMAP_BYTE_RANGE 2
+#define RANGE_LIST 0
+#define RANGE_BIT_BITMAP 1
+#define RANGE_BYTE_BITMAP 2
 
 /* Both start and end are inclusive, see addListRangeReply for details. */
 typedef struct range {
-    int type; /* LIST_RANGE, BITMAP_BIT_RANGE, BITMAP_BYTE_RANGE*/
+    int type; /* RANGE_LIST, RANGE_BIT_BITMAP, RANGE_BYTE_BITMAP*/
     long long start;
     long long end;
 } range;
@@ -170,7 +170,7 @@ typedef struct range {
 typedef struct argRewriteRequest {
   int mstate_idx; /* >=0 if current command is a exec, means index in mstate; -1 means req not in multi/exec */
   int arg_idx; /* index of argument to use for rewrite func */
-  int arg_type; /* LIST_RANGE, BITMAP_BIT_RANGE, BITMAP_BYTE_RANGE */
+  int arg_type; /* RANGE_LIST, RANGE_BIT_BITMAP, RANGE_BYTE_BITMAP */
 } argRewriteRequest;
 
 static inline void argRewriteRequestInit(argRewriteRequest *arg_req) {

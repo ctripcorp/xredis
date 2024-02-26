@@ -663,6 +663,7 @@ int rdbLoadBinaryFloatValue(rio *rdb, float *val) {
 int rdbSaveObjectType(rio *rdb, robj *o) {
     switch (o->type) {
     case OBJ_STRING:
+    case OBJ_BITMAP:
         return rdbSaveType(rdb,RDB_TYPE_STRING);
     case OBJ_LIST:
         if (o->encoding == OBJ_ENCODING_QUICKLIST)
@@ -807,7 +808,7 @@ size_t rdbSaveStreamConsumers(rio *rdb, streamCG *cg) {
 ssize_t rdbSaveObject(rio *rdb, robj *o, robj *key) {
     ssize_t n = 0, nwritten = 0;
 
-    if (o->type == OBJ_STRING) {
+    if (o->type == OBJ_STRING || o->type == OBJ_BITMAP) {
         /* Save a string value */
         if ((n = rdbSaveStringObject(rdb,o)) == -1) return -1;
         nwritten += n;
