@@ -253,17 +253,30 @@ objectMetaType bitmapObjectMetaType = {
         .rebuildFeed = bitmapObjectMetaRebuildFeed
 };
 
+/* Meta bitmap */
+typedef struct metaBitmap {
+    bitmapMeta *meta;
+    robj *bitmap;
+} metaBitmap;
+
+metaBitmap *metaBitmapCreate(bitmapMeta *meta, robj *bitmap) {
+    metaBitmap *mb = zmalloc(sizeof(metaBitmap));
+    mb->meta = meta;
+    mb->bitmap = bitmap;
+    return mb;
+}
+
+void metaBitmapDestroy(metaBitmap *mb) {
+    zfree(mb);
+}
+
+
+
 /* delta bitmap */
 
-typedef struct subkeyInterval {
-    int start_index;
-    int end_index;
-} subkeyInterval;
-
 typedef struct deltaBitmap {
-    int subkey_intervals_num;
-    subkeyInterval *subkey_intervals;
-    sds *subval_intervals;
+    sds *subvals;
+    size_t subvals_total_len;
     int subkeys_num;
     int *subkeys_logic_idx;
 } deltaBitmap;
@@ -271,69 +284,101 @@ typedef struct deltaBitmap {
 static inline deltaBitmap *deltaBitmapCreate(int num)
 {
     deltaBitmap *delta_bm = zmalloc(sizeof(deltaBitmap));
-    delta_bm->subval_intervals = sds_malloc(sizeof(subkeyInterval) * num);
+    delta_bm->subvals = sds_malloc(sizeof(sds) * num);
     delta_bm->subkeys_logic_idx = zmalloc(num * sizeof(int));
-    delta_bm->subkey_intervals = zmalloc(num * sizeof(subkeyInterval));
-    delta_bm->subkey_intervals_num = 0;
     delta_bm->subkeys_num = 0;
+    delta_bm->subvals_total_len = 0;
     return delta_bm;
 }
 
 static inline void deltaBitmapFree(deltaBitmap *delta_bm)
 {
-    zfree(delta_bm->subval_intervals);
-    zfree(delta_bm->subkey_intervals);
+    zfree(delta_bm->subvals);
     zfree(delta_bm->subkeys_logic_idx);
     zfree(delta_bm);
 }
 
-static inline robj *deltaBitmapTransToBitmapObject(deltaBitmap *delta_bm)
+robj *bitmapObjectMerge(robj *bitmap_object, bitmapMeta *meta, deltaBitmap *delta_bm)
 {
-    sds bitmap = sdsnewlen("", 0);
-    for (int i = 0; i < delta_bm->subkey_intervals_num; i++) {
-        bitmap = sdscatsds(bitmap, delta_bm->subval_intervals[i]);
+    size_t old_obj_len = 0;
+    if (bitmap_object) {
+        old_obj_len = stringObjectLen(bitmap_object);
     }
-    robj *res = createStringObject(bitmap, sdslen(bitmap));
-    sdsfree(bitmap);
-    return res;
-}
+    robj *new_bitmap = createStringObject(NULL, old_obj_len + delta_bm->subvals_total_len);
 
-robj *deltaBitmapMergeIntoOldBitmapObject(deltaBitmap *delta_bm, robj *old_bitmap_object, bitmapMeta *meta)
-{
-    sds old_bitmap = old_bitmap_object->ptr;
-    sds new_bitmap = sdsnewlen("", 0);
+    long offset_in_new_bitmap = 0;
+    long offset_in_old_bitmap = 0;
 
-    char *interval_ahead_start_pos = old_bitmap;   /* which is already in old_bitmap, not include the inserted subkeys later */
-    int interval_ahead_start_idx = 0;
-    int old_subkeys_num = 0;
-    for (int i = 0; i < delta_bm->subkey_intervals_num; i++) {
-        /* subkey of start_index is absolutely not in old bitmap */
-        int subkeys_num_ahead = bitmapMetaGetHotSubkeysNum(meta, interval_ahead_start_idx, delta_bm->subkey_intervals[i].start_index);
-        if (subkeys_num_ahead == 0) {
-            new_bitmap = sdscatsds(new_bitmap, delta_bm->subval_intervals[i]);
-            continue;
+    int subkeys_idx_cursor = 0;
+
+    long actual_new_bitmap_len = 0;
+
+    for (int i = 0; i < delta_bm->subkeys_num; i++) {
+        int subkeys_num_ahead = bitmapMetaGetHotSubkeysNum(meta, subkeys_idx_cursor, delta_bm->subkeys_logic_idx[i]);
+        if (bitmap_object != NULL && subkeys_num_ahead != 0) {
+            memcpy(new_bitmap->ptr + offset_in_new_bitmap, bitmap_object->ptr + offset_in_old_bitmap, BITMAP_SUBKEY_SIZE * subkeys_num_ahead);
+            offset_in_new_bitmap += BITMAP_SUBKEY_SIZE * subkeys_num_ahead;
+            offset_in_old_bitmap += BITMAP_SUBKEY_SIZE * subkeys_num_ahead;
+            actual_new_bitmap_len += BITMAP_SUBKEY_SIZE * subkeys_num_ahead;
         }
-        sds interval_ahead = sdsnewlen(interval_ahead_start_pos, subkeys_num_ahead * BITMAP_SUBKEY_SIZE);
-        new_bitmap = sdscatsds(new_bitmap, interval_ahead);
-        new_bitmap = sdscatsds(new_bitmap, delta_bm->subval_intervals[i]);
-        interval_ahead_start_pos += subkeys_num_ahead * BITMAP_SUBKEY_SIZE;
-        interval_ahead_start_idx = delta_bm->subkey_intervals[i].end_index + 1;
-        old_subkeys_num += subkeys_num_ahead;
-        sdsfree(interval_ahead);
+
+        memcpy(new_bitmap->ptr + offset_in_new_bitmap, delta_bm->subvals[i], sdslen(delta_bm->subvals[i]));
+        offset_in_new_bitmap += sdslen(delta_bm->subvals[i]);
+        actual_new_bitmap_len += sdslen(delta_bm->subvals[i]);
+
+        subkeys_idx_cursor = delta_bm->subkeys_logic_idx[i] + 1;
     }
-
-    int last_old_interval_size = stringObjectLen(old_bitmap_object) - old_subkeys_num * BITMAP_SUBKEY_SIZE;
-
-    if (last_old_interval_size != 0) {
-        sds last_old_interval = sdsnewlen(interval_ahead_start_pos, last_old_interval_size);
-        new_bitmap = sdscatsds(new_bitmap, last_old_interval);
-        sdsfree(last_old_interval);
-    }
-
-    robj *res = createStringObject(new_bitmap, sdslen(new_bitmap));
-    sdsfree(new_bitmap);
-    return res;
+    serverAssert(old_obj_len + delta_bm->subvals_total_len == actual_new_bitmap_len);
+    return new_bitmap;
 }
+
+//static inline robj *deltaBitmapTransToBitmapObject(deltaBitmap *delta_bm)
+//{
+//    sds bitmap = sdsnewlen("", 0);
+//    for (int i = 0; i < delta_bm->subkeys_num; i++) {
+//        bitmap = sdscatsds(bitmap, delta_bm->subvals[i]);
+//    }
+//    robj *res = createStringObject(bitmap, sdslen(bitmap));
+//    sdsfree(bitmap);
+//    return res;
+//}
+//
+//robj *deltaBitmapMergeIntoOldBitmapObject(deltaBitmap *delta_bm, robj *old_bitmap_object, bitmapMeta *meta)
+//{
+//    sds old_bitmap = old_bitmap_object->ptr;
+//    sds new_bitmap = sdsnewlen("", 0);
+//
+//    char *interval_ahead_start_pos = old_bitmap;   /* which is already in old_bitmap, not include the inserted subkeys later */
+//    int interval_ahead_start_idx = 0;
+//    int old_subkeys_num = 0;
+//    for (int i = 0; i < delta_bm->subkeys_num; i++) {
+//        /* subkey of start_index is absolutely not in old bitmap */
+//        int subkeys_num_ahead = bitmapMetaGetHotSubkeysNum(meta, interval_ahead_start_idx, delta_bm->subkey_intervals[i].start_index);
+//        if (subkeys_num_ahead == 0) {
+//            new_bitmap = sdscatsds(new_bitmap, delta_bm->subvals[i]);
+//            continue;
+//        }
+//        sds interval_ahead = sdsnewlen(interval_ahead_start_pos, subkeys_num_ahead * BITMAP_SUBKEY_SIZE);
+//        new_bitmap = sdscatsds(new_bitmap, interval_ahead);
+//        new_bitmap = sdscatsds(new_bitmap, delta_bm->subvals[i]);
+//        interval_ahead_start_pos += subkeys_num_ahead * BITMAP_SUBKEY_SIZE;
+//        interval_ahead_start_idx = delta_bm->subkey_intervals[i].end_index + 1;
+//        old_subkeys_num += subkeys_num_ahead;
+//        sdsfree(interval_ahead);
+//    }
+//
+//    int last_old_interval_size = stringObjectLen(old_bitmap_object) - old_subkeys_num * BITMAP_SUBKEY_SIZE;
+//
+//    if (last_old_interval_size != 0) {
+//        sds last_old_interval = sdsnewlen(interval_ahead_start_pos, last_old_interval_size);
+//        new_bitmap = sdscatsds(new_bitmap, last_old_interval);
+//        sdsfree(last_old_interval);
+//    }
+//
+//    robj *res = createStringObject(new_bitmap, sdslen(new_bitmap));
+//    sdsfree(new_bitmap);
+//    return res;
+//}
 
 typedef struct bitmapDataCtx {
     int ctx_flag;
@@ -570,7 +615,7 @@ int bitmapSwapAna(swapData *data, int thd, struct keyRequest *req,
                     *intention_flags = 0;
                 }
             } else { /* range requests */
-                bitmapSwapAnaInSelectSubKeys(datactx, meta, cmd_intention_flags == SWAP_IN_DEL, req->l.ranges);
+                bitmapSwapAnaInSelectSubKeys(datactx, meta, cmd_intention_flags == SWAP_IN_WRITE_OP, req->l.ranges);
 
                 *intention = datactx->subkeys_num == 0 ? SWAP_NOP : SWAP_IN;
                 if (cmd_intention_flags == SWAP_IN_DEL)
@@ -773,9 +818,7 @@ int bitmapDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
     deltaBitmap *delta_bm = deltaBitmapCreate(num);
 
     uint64_t version = swapDataObjectVersion(data);
-    int pre_subkey_idx = -1;
 
-    int interval_cursor = 0;
     int subkeys_cursor = 0;
     for (int i = 0; i < num; i++) {
         int dbid;
@@ -800,20 +843,7 @@ int bitmapDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
         }
         subkey_idx = bitmapDecodeSubkeyIdx(subkeystr, slen);
 
-        delta_bm->subkeys_logic_idx[subkeys_cursor++] = subkey_idx;
-
-        if (pre_subkey_idx == -1) {
-            /* 1、 it's a first subkey. */
-            delta_bm->subkey_intervals[interval_cursor].start_index = subkey_idx;
-            delta_bm->subkey_intervals[interval_cursor].end_index = subkey_idx;
-        } else if (subkey_idx != pre_subkey_idx + 1) {
-            /* 2、is not consecutive with the previous subkey. */
-            interval_cursor++;
-            delta_bm->subkey_intervals[interval_cursor].start_index = subkey_idx;
-            delta_bm->subkey_intervals[interval_cursor].end_index = subkey_idx;
-        } else if (subkey_idx == pre_subkey_idx + 1) {
-            delta_bm->subkey_intervals[interval_cursor].end_index = subkey_idx;
-        }
+        delta_bm->subkeys_logic_idx[subkeys_cursor] = subkey_idx;
 
         subvalobj = rocksDecodeValRdb(rawvals[i]);
         serverAssert(subvalobj->type == OBJ_STRING);
@@ -824,17 +854,12 @@ int bitmapDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
         sds subval = subvalobj->ptr;
         subvalobj->ptr = NULL;
 
-        if (delta_bm->subkey_intervals[interval_cursor].end_index == delta_bm->subkey_intervals[interval_cursor].start_index) {
-            delta_bm->subval_intervals[interval_cursor] = sdsdup(subval);
-        } else {
-            delta_bm->subval_intervals[interval_cursor] = sdscatsds(delta_bm->subval_intervals[interval_cursor], subval);
-        }
-        sdsfree(subval);
+        delta_bm->subvals[subkeys_cursor] = subval;
+        delta_bm->subvals_total_len += sdslen(subval);
         decrRefCount(subvalobj);
-        pre_subkey_idx = subkey_idx;
+        subkeys_cursor++;
     }
     delta_bm->subkeys_num = subkeys_cursor;
-    delta_bm->subkey_intervals_num = interval_cursor + 1;
     *pdecoded = delta_bm;
     return 0;
 }
@@ -846,10 +871,10 @@ void *bitmapCreateOrMergeObject(swapData *data, void *decoded_, void *datactx)
     deltaBitmap *delta_bm = (deltaBitmap *)decoded_;
 
     if (swapDataIsCold(data)) {
-        result = deltaBitmapTransToBitmapObject(delta_bm); // todo bitmapObjectCreateFromDeltaBm  类似
+        result = bitmapObjectMerge(NULL, NULL, delta_bm);
     } else {
         bitmapMeta *meta = swapDataGetBitmapMeta(data);
-        result = deltaBitmapMergeIntoOldBitmapObject(delta_bm, data->value, meta);
+        result = bitmapObjectMerge(data->value, meta, delta_bm);
     }
 
     bitmapMeta *meta = swapDataGetBitmapMeta(data);
@@ -1522,9 +1547,9 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
         cold_keyReq1->l.num_ranges = 1;
         cold_keyReq1->l.ranges = range1;
-        cold_keyReq1->cmd_intention = SWAP_IN, cold_keyReq1->cmd_intention_flags = SWAP_IN_DEL;
+        cold_keyReq1->cmd_intention = SWAP_IN, cold_keyReq1->cmd_intention_flags = SWAP_IN_WRITE_OP;
         swapDataAna(cold_data1,0,cold_keyReq1,&intention,&intention_flags,cold_ctx1);
-        test_assert(intention == SWAP_IN && intention_flags == SWAP_EXEC_IN_DEL);
+        test_assert(intention == SWAP_IN && intention_flags == 0);
         test_assert(cold_ctx1->subkeys_num == 1);
         test_assert(cold_ctx1->subkeys_logic_idx[0] == 2);
         bitmapDataCtxReset(cold_ctx1);
@@ -1535,9 +1560,9 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
         cold_keyReq1->l.num_ranges = 1;
         cold_keyReq1->l.ranges = range1;
-        cold_keyReq1->cmd_intention = SWAP_IN, cold_keyReq1->cmd_intention_flags = SWAP_IN_DEL;
+        cold_keyReq1->cmd_intention = SWAP_IN, cold_keyReq1->cmd_intention_flags = SWAP_IN_WRITE_OP;
         swapDataAna(cold_data1,0,cold_keyReq1,&intention,&intention_flags,cold_ctx1);
-        test_assert(intention == SWAP_IN && intention_flags == SWAP_EXEC_IN_DEL);
+        test_assert(intention == SWAP_IN && intention_flags == 0);
         test_assert(cold_ctx1->subkeys_num == 1);
         test_assert(cold_ctx1->subkeys_logic_idx[0] == 2);
         bitmapDataCtxReset(cold_ctx1);
@@ -1809,20 +1834,21 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         bitmapDecodeData(warm_data1,numkeys,cfs,rawkeys,rawvals,&decoded);
 
         deltaBitmap *deltaBm = (deltaBitmap *)decoded;
-        test_assert(deltaBm->subkey_intervals_num == 3);
         test_assert(deltaBm->subkeys_num == 5);
 
-        test_assert(deltaBm->subkey_intervals[2].start_index == 7);
-        test_assert(deltaBm->subkey_intervals[2].end_index == 7);
-        test_assert(sdslen(deltaBm->subval_intervals[2]) == BITMAP_SUBKEY_SIZE / 2);
+        test_assert(deltaBm->subkeys_logic_idx[2] == 3);
+        test_assert(deltaBm->subkeys_logic_idx[3] == 4);
+        test_assert(deltaBm->subkeys_logic_idx[4] == 7);
 
-        test_assert(deltaBm->subkey_intervals[1].start_index == 3);
-        test_assert(deltaBm->subkey_intervals[1].end_index == 4);
-        test_assert(sdslen(deltaBm->subval_intervals[1]) == BITMAP_SUBKEY_SIZE * 2);
+        test_assert(deltaBm->subkeys_logic_idx[0] == 0);
+        test_assert(deltaBm->subkeys_logic_idx[1] == 1);
 
-        test_assert(deltaBm->subkey_intervals[0].start_index == 0);
-        test_assert(deltaBm->subkey_intervals[0].end_index == 1);
-        test_assert(sdslen(deltaBm->subval_intervals[0]) == BITMAP_SUBKEY_SIZE * 2);
+        test_assert(sdslen(deltaBm->subvals[0]) == BITMAP_SUBKEY_SIZE);
+        test_assert(sdslen(deltaBm->subvals[1]) == BITMAP_SUBKEY_SIZE);
+        test_assert(sdslen(deltaBm->subvals[2]) == BITMAP_SUBKEY_SIZE);
+        test_assert(sdslen(deltaBm->subvals[3]) == BITMAP_SUBKEY_SIZE);
+        test_assert(sdslen(deltaBm->subvals[4]) == BITMAP_SUBKEY_SIZE / 2);
+
 
         test_assert(deltaBm->subkeys_logic_idx[0] == 0);
         test_assert(deltaBm->subkeys_logic_idx[4] == 7);
@@ -1859,22 +1885,13 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         swapDataSetObjectMeta(cold_data2, cold_meta2);
 
         deltaBitmap *deltaBm = deltaBitmapCreate(5);
-        deltaBm->subkey_intervals_num = 3;
         deltaBm->subkeys_num = 5;
 
-
-        deltaBm->subkey_intervals[0].start_index = 0;
-        deltaBm->subkey_intervals[0].start_index = 1;
-
-        deltaBm->subkey_intervals[1].start_index = 3;
-        deltaBm->subkey_intervals[1].start_index = 4;
-
-        deltaBm->subkey_intervals[2].start_index = 7;
-        deltaBm->subkey_intervals[2].start_index = 7;
-
-        deltaBm->subval_intervals[0] = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE * 2);
-        deltaBm->subval_intervals[1] = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE * 2);
-        deltaBm->subval_intervals[2] = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE / 2);
+        deltaBm->subvals[0] = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE);
+        deltaBm->subvals[1] = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE);
+        deltaBm->subvals[2] = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE);
+        deltaBm->subvals[3] = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE);
+        deltaBm->subvals[4] = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE / 2);
 
         deltaBm->subkeys_logic_idx[0] = 0;
         deltaBm->subkeys_logic_idx[1] = 1;
@@ -1949,21 +1966,12 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         swapDataSetObjectMeta(warm_data2, warm_meta2);
 
         deltaBitmap *deltaBm = deltaBitmapCreate(3);
-        deltaBm->subkey_intervals_num = 3;
+
         deltaBm->subkeys_num = 3;
 
-        deltaBm->subkey_intervals[0].start_index = 2;
-        deltaBm->subkey_intervals[0].end_index = 2;
-
-        deltaBm->subkey_intervals[1].start_index = 5;
-        deltaBm->subkey_intervals[1].end_index = 5;
-
-        deltaBm->subkey_intervals[2].start_index = 7;
-        deltaBm->subkey_intervals[2].end_index = 7;
-
-        deltaBm->subval_intervals[0] = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE);
-        deltaBm->subval_intervals[1] = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE);
-        deltaBm->subval_intervals[2] = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE / 2);
+        deltaBm->subvals[0] = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE);
+        deltaBm->subvals[1] = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE);
+        deltaBm->subvals[2] = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE / 2);
 
         deltaBm->subkeys_logic_idx[0] = 2;
         deltaBm->subkeys_logic_idx[1] = 5;

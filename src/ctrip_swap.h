@@ -81,6 +81,8 @@ extern const char *swap_cf_names[CF_COUNT];
 #define SWAP_OUT_PERSIST (1U<<10)
 /* Keep data in memory because memory is sufficient. */
 #define SWAP_OUT_KEEP_DATA (1U<<11)
+/* Swap in for write operation, now just used in bitmap setbit operation. */
+#define SWAP_IN_WRITE_OP (1U<<11)
 
 /* --- swap intention flags --- */
 /* Delete rocksdb data key when swap in */
