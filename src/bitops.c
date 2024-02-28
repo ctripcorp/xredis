@@ -488,7 +488,10 @@ robj *lookupStringForBitCommand(client *c, uint64_t maxbit) {
         dbAdd(c->db,c->argv[1],o);
     } else {
         o = dbUnshareStringValue(c->db,c->argv[1],o);
-        o->ptr = ctripGrowBitmap(c, o->ptr, byte+1);
+        objectMeta *om = lookupMeta(c->db,c->argv[1]);
+        metaBitmap meta_bitmap;
+        metaBitmapInit(&meta_bitmap, om->ptr, o);
+        ctripGrowMetaBitmap(&meta_bitmap, byte+1);
     }
     return o;
 }

@@ -248,7 +248,7 @@ struct redisCommand redisCommandTable[] = {
 
     {"setbit",setbitCommand,4,
      "write use-memory @bitmap @swap_bitmap",
-     0,NULL,getKeyRequestsSetbit,SWAP_IN,SWAP_IN_WRITE_OP,1,1,1,0,0,0},
+     0,NULL,getKeyRequestsSetbit,SWAP_IN,0,1,1,1,0,0,0},
 
     {"getbit",getbitCommand,3,
      "read-only fast @bitmap @swap_bitmap",

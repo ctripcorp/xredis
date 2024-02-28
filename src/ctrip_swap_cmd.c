@@ -1172,7 +1172,7 @@ int getKeyRequestsBitpos(int dbid, struct redisCommand *cmd, robj **argv,
     } else if (argc == 4) {
         if (getLongLongFromObject(argv[3],&start) != C_OK) return -1;
         getKeyRequestsSingleKeyWithRanges(dbid, cmd, argv, argc,
-                                          result, 1, 3, 4, RANGE_BYTE_BITMAP, 1/*num_ranges*/, start, -1); /* -1 means the end of bitmap object. */
+                                          result, 1, 3, 4, RANGE_BYTE_BITMAP, 1/*num_ranges*/, start, LONG_MAX); /* -1 means the end of bitmap object. */
     } else {
         if (getLongLongFromObject(argv[3],&start) != C_OK) return -1;
         if (getLongLongFromObject(argv[4],&end) != C_OK) return -1;

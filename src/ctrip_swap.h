@@ -81,8 +81,6 @@ extern const char *swap_cf_names[CF_COUNT];
 #define SWAP_OUT_PERSIST (1U<<10)
 /* Keep data in memory because memory is sufficient. */
 #define SWAP_OUT_KEEP_DATA (1U<<11)
-/* Swap in for write operation, now just used in bitmap setbit operation. */
-#define SWAP_IN_WRITE_OP (1U<<11)
 
 /* --- swap intention flags --- */
 /* Delete rocksdb data key when swap in */
@@ -937,7 +935,14 @@ struct bitmapMeta;
 
 void bitmapMetaFree(struct bitmapMeta *bitmap_meta);
 
-sds ctripGrowBitmap(client *c, sds s, size_t byte);
+/* Meta bitmap */
+typedef struct metaBitmap {
+    struct bitmapMeta *meta;
+    robj *bitmap;
+} metaBitmap;
+
+void metaBitmapInit(metaBitmap *meta_bitmap, struct bitmapMeta *bitmap_meta, robj *bitmap);
+void ctripGrowMetaBitmap(metaBitmap *meta_bitmap, size_t byte);
 
 objectMeta *createBitmapObjectMeta(uint64_t version, MOVE struct bitmapMeta *bitmap_meta);
 
@@ -2122,6 +2127,7 @@ typedef struct rdbKeySaveData {
   objectMeta *object_meta; /* own */
   long long expire;
   int saved;
+  void *value_waiting_save;  /* value waiting for saving, only used in whole bitmap saving */
   void *iter; /* used by list (metaListIterator), used by bitmap () */
 } rdbKeySaveData;
 
