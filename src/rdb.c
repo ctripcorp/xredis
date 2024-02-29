@@ -1312,6 +1312,8 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi, int rordb) 
 
             }
 
+            if (rordb && rordbSaveObjectFlags(rdb,o) == -1) goto werr;
+
             expire = getExpire(db,&key);
             if (rdbSaveKeyValuePair(rdb,&key,o,expire) == -1) goto werr;
             rdbSaveProgress(rdb,rdbflags);
@@ -2534,6 +2536,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
     /* Key-specific attributes, set by opcodes before the key type. */
     long long lru_idle = -1, lfu_freq = -1, expiretime = -1, now = mstime();
     long long lru_clock = LRU_CLOCK();
+    long long rordb_object_flags = -1;
 
     if (server.swap_mode != SWAP_MODE_MEMORY && getFilterState() == FILTER_STATE_OPEN) {
         setFilterState(FILTER_STATE_CLOSE);
@@ -2729,6 +2732,10 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
                 if (rordbLoadSSTType(rdb,type)) goto eoferr;
             } else if (rordbOpcodeIsDbType(type)) {
                 if (rordbLoadDbType(rdb,db,type)) goto eoferr;
+            } else if (rordbOpcodeIsObjectFlags(type)) {
+                uint8_t byte;
+                if (rioRead(rdb,&byte,1) == 0) goto eoferr;
+                rordb_object_flags = byte;
             }
 
             continue;
@@ -2838,6 +2845,11 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
             /* Set usage information (for eviction). */
             objectSetLRUOrLFU(val,lfu_freq,lru_idle,lru_clock,1000);
 
+            /* Set rordb object flags */
+            if (rordb_object_flags != -1) {
+                rordbSetObjectFlags(val,rordb_object_flags);
+            }
+
             /* call key space notification on key loaded for modules only */
             moduleNotifyKeyspaceEvent(NOTIFY_LOADED, "loaded", &keyobj, db->id);
         }
@@ -2852,6 +2864,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
         expiretime = -1;
         lfu_freq = -1;
         lru_idle = -1;
+        rordb_object_flags = -1;
     }
     if (reopen_filter) {
         setFilterState(FILTER_STATE_OPEN);

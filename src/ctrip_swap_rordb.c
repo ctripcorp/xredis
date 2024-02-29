@@ -543,6 +543,27 @@ int rordbLoadAuxFields(robj *key, robj *val) {
     }
 }
 
+int rordbSetObjectFlags(robj *val, long long object_flags) {
+    val->dirty_meta = (object_flags & RORDB_OBJECT_FLAGS_DIRTY_META) ? 1 : 0;
+    val->dirty_data = (object_flags & RORDB_OBJECT_FLAGS_DIRTY_DATA) ? 1 : 0;
+    val->persistent = (object_flags & RORDB_OBJECT_FLAGS_PERSISTENT) ? 1 : 0;
+    val->persist_keep = (object_flags & RORDB_OBJECT_FLAGS_PERSIST_KEEP) ? 1 : 0;
+    return 0;
+}
+
+int rordbSaveObjectFlags(rio *rdb, robj *val) {
+    uint8_t flags = 0;
+
+    if (val->dirty_meta) flags |= RORDB_OBJECT_FLAGS_DIRTY_META;
+    if (val->dirty_data) flags |= RORDB_OBJECT_FLAGS_DIRTY_DATA;
+    if (val->persistent) flags |= RORDB_OBJECT_FLAGS_PERSISTENT;
+    if (val->persist_keep) flags |= RORDB_OBJECT_FLAGS_PERSIST_KEEP;
+
+    if (rdbSaveType(rdb,RORDB_OPCODE_OBJECT_FLAGS) == -1) return -1;
+    if (rdbWriteRaw(rdb,&flags,1) == -1) return -1;
+    return 1;
+}
+
 #ifdef REDIS_TEST
 
 #define TMP_PATH_MAX 64
@@ -706,6 +727,15 @@ int swapRordbTest(int argc, char *argv[], int accurate) {
         dbDelete(db2,key1), dbDelete(db2,key2), dbDelete(db2,key3), dbDelete(db2,key4);
         decrRefCount(key1), decrRefCount(key2), decrRefCount(key3), decrRefCount(key4);
         sdsfree(rdb->io.buffer.ptr);
+    }
+
+    TEST("rordb: save & load object flags") {
+        robj *val = createStringObject("hello",5);
+        rordbSetObjectFlags(val,0);
+        test_assert(val->dirty_meta == 0 && val->dirty_data == 0 && val->persistent == 0);
+        rordbSetObjectFlags(val,6);
+        test_assert(val->dirty_meta == 0 && val->dirty_data == 1 && val->persistent == 1);
+        decrRefCount(val);
     }
 
     return error;
