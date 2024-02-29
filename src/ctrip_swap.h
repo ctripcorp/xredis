@@ -2097,7 +2097,7 @@ typedef struct decodedData {
   uint64_t version;
   sds subkey;
   int rdbtype;
-  sds rdbraw;
+  sds rdbraw;  /* not include type in first byte. */
 } decodedData;
 
 typedef struct rocksIterDecodeStats {
@@ -2127,7 +2127,6 @@ typedef struct rdbKeySaveData {
   objectMeta *object_meta; /* own */
   long long expire;
   int saved;
-  void *value_waiting_save;  /* value waiting for saving, only used in whole bitmap saving */
   void *iter; /* used by list (metaListIterator), used by bitmap () */
 } rdbKeySaveData;
 
