@@ -69,7 +69,7 @@ int asyncCompleteQueueProcess(asyncCompleteQueue *cq) {
  * if main thread read less notify bytes than unlink clients num (e.g. rockdb
  * thread link more clients when , main thread would still be triggered because
  * epoll LT-triggering mode. */
-void asyncCompleteQueueHanlder(aeEventLoop *el, int fd, void *privdata, int mask) {
+void asyncCompleteQueueHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     char notify_recv_buf[ASYNC_COMPLETE_QUEUE_NOTIFY_READ_MAX];
 
     UNUSED(el);
@@ -118,7 +118,7 @@ int asyncCompleteQueueInit() {
     }
 
     if (aeCreateFileEvent(server.el, cq->notify_recv_fd,
-                AE_READABLE, asyncCompleteQueueHanlder, cq) == AE_ERR) {
+                AE_READABLE, asyncCompleteQueueHandler, cq) == AE_ERR) {
         serverLog(LL_WARNING,"Fatal: create notify recv event failed: %s",
                 strerror(errno));
         return -1;
