@@ -812,13 +812,6 @@ void freeClientSwapCmdTrace(client *c);
 #define REQ_SUBMITTED_BGSAVE (1ULL<<0)
 #define REQ_SUBMITTED_REPL_START (1ULL<<1)
 
-/* String */
-typedef struct wholeKeySwapData {
-  swapData d;
-} wholeKeySwapData;
-
-int swapDataSetupWholeKey(swapData *d, OUT void **datactx);
-
 /* Hash */
 typedef struct hashSwapData {
   swapData d;
@@ -852,6 +845,17 @@ int swapDataSetupHash(swapData *d, OUT void **datactx);
 
 #define hashObjectMetaType lenObjectMetaType
 #define createHashObjectMeta(version, len) createLenObjectMeta(OBJ_HASH, version, len)
+
+/* String */
+typedef struct wholeKeySwapData {
+  swapData d;
+} wholeKeySwapData;
+
+typedef struct wholeKeyDataCtx {
+    baseBigDataCtx ctx;
+} wholeKeyDataCtx;
+
+int swapDataSetupWholeKey(swapData *d, OUT void **datactx);
 
 /* Set */
 typedef struct setSwapData {
