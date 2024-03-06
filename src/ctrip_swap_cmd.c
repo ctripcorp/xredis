@@ -773,7 +773,7 @@ int getKeyRequestsBlpop(int dbid, struct redisCommand *cmd, robj **argv,
         int argc, struct getKeyRequestsResult *result) {
     for (int i = 1; i < argc-1; i++) {
         getKeyRequestsSingleKeyWithRanges(dbid,cmd,argv,argc,
-                result,i,-1,-1,1/*num_ranges*/,0,1);
+                result,i,-1,-1,1/*num_ranges*/,0,0);
     }
     return 0;
 }
@@ -855,8 +855,13 @@ int getKeyRequestsLtrim(int dbid, struct redisCommand *cmd, robj **argv,
     long long start, stop;
     if (getLongLongFromObject(argv[2],&start) != C_OK) return -1;
     if (getLongLongFromObject(argv[3],&stop) != C_OK) return -1;
-    getKeyRequestsSingleKeyWithRanges(dbid,cmd,argv,argc,
-            result,1,2,3,1/*num_ranges*/,2,0,start-1,stop+1,-1);
+    if (start == 0) {
+        getKeyRequestsSingleKeyWithRanges(dbid,cmd,argv,argc,
+                result,1,2,3,1/*num_ranges*/,stop+1,-1);
+    } else {
+        getKeyRequestsSingleKeyWithRanges(dbid,cmd,argv,argc,
+                result,1,2,3,2/*num_ranges*/,0,start-1,stop+1,-1);
+    }
     return 0;
 }
 /** zset **/
@@ -1611,6 +1616,33 @@ int swapCmdTest(int argc, char *argv[], int accurate) {
 
         releaseKeyRequests(&result);
         getKeyRequestsFreeResult(&result);
+    }
+
+    TEST("cmd: ltrim") {
+        range *head, *tail;
+        getKeyRequestsResult result = GET_KEYREQUESTS_RESULT_INIT;
+        rewriteResetClientCommandCString(c,4,"LTRIM","KEY","1","3");
+        getKeyRequests(c,&result);
+        test_assert(result.num == 1);
+        test_assert(result.key_requests[0].type == KEYREQUEST_TYPE_RANGE);
+        test_assert(!strcmp(result.key_requests[0].key->ptr, "KEY"));
+        test_assert(result.key_requests[0].l.num_ranges == 2);
+        head = result.key_requests[0].l.ranges;
+        tail = result.key_requests[0].l.ranges+1;
+        test_assert(head->start == 0 && head->end == 0);
+        test_assert(tail->start == 4 && tail->end == -1);
+        releaseKeyRequests(&result);
+        getKeyRequestsFreeResult(&result);
+
+        getKeyRequestsResult result2 = GET_KEYREQUESTS_RESULT_INIT;
+        rewriteResetClientCommandCString(c,4,"LTRIM","KEY","0","2");
+        getKeyRequests(c,&result2);
+        test_assert(result2.num == 1);
+        test_assert(result2.key_requests[0].type == KEYREQUEST_TYPE_RANGE);
+        test_assert(!strcmp(result2.key_requests[0].key->ptr, "KEY"));
+        test_assert(result2.key_requests[0].l.num_ranges == 1);
+        tail = result2.key_requests[0].l.ranges;
+        test_assert(tail->start == 3 && tail->end == -1);
     }
 
     return error;
