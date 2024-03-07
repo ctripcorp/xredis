@@ -32,7 +32,6 @@
 static void createFakeWholeKeyForDeleteIfCold(swapData *data) {
 	if (swapDataIsCold(data)) {
         /* empty whole key allowed */
-        serverLog(LL_NOTICE, "createFakeWholeKeyForDeleteIfCold mock kv for string type cold key");
 		dbAdd(data->db,data->key,createStringObject("", 0));
 	}
 }
@@ -127,7 +126,7 @@ int wholeKeySwapAnaAction(swapData *data, int intention, void *datactx_, int *ac
             *action = ROCKS_GET;
             break;
         case SWAP_DEL:
-            *action = ROCKS_NOP;
+            *action = ROCKS_DEL;
             break;
         case SWAP_OUT:
             *action = ROCKS_PUT;
@@ -248,6 +247,7 @@ int wholeKeySwapOut(swapData *data, void *datactx, int keep_data, int *totally_o
 int wholeKeySwapDel(swapData *data, void *datactx_, int async) {
     redisDb *db = data->db;
     robj *key = data->key;
+    UNUSED(async);
     // if (async) return 0;
     wholeKeyDataCtx* datactx = (wholeKeyDataCtx*)datactx_;
     if (datactx->ctx.ctx_flag & BIG_DATA_CTX_FLAG_MOCK_VALUE) {
@@ -265,6 +265,18 @@ void *wholeKeyCreateOrMergeObject(swapData *data, void *decoded, void *datactx) 
     return decoded;
 }
 
+void freeWholeKeySwapData(swapData *data_, void *datactx_) {
+    UNUSED(data_);
+    wholeKeyDataCtx *datactx = datactx_;
+    if (datactx->ctx.type == BASE_SWAP_CTX_TYPE_SUBKEY) {
+        for (int i = 0; i < datactx->ctx.sub.num; i++) {
+            decrRefCount(datactx->ctx.sub.subkeys[i]);
+        }
+    }
+    zfree(datactx->ctx.sub.subkeys);
+    zfree(datactx);
+}
+
 swapDataType wholeKeySwapDataType = {
     .name = "wholekey",
     .cmd_swap_flags = CMD_SWAP_DATATYPE_STRING,
@@ -280,7 +292,7 @@ swapDataType wholeKeySwapDataType = {
     .createOrMergeObject = wholeKeyCreateOrMergeObject,
     .cleanObject = NULL,
     .beforeCall = NULL,
-    .free = NULL,
+    .free = freeWholeKeySwapData,
     .rocksDel = NULL,
     .mergedIsHot = wholeKeyMergedIsHot,
 };
@@ -455,8 +467,8 @@ int swapDataWholeKeyTest(int argc, char **argv, int accurate) {
         wholeKeySwapAna_(data, SWAP_IN, 0, &intention, &intention_flags, ctx);
         test_assert(intention == SWAP_IN);
         wholeKeySwapAna_(data, SWAP_IN, SWAP_IN_DEL, &intention, &intention_flags, ctx);
-        test_assert(intention == SWAP_IN);
-        test_assert(intention_flags == SWAP_EXEC_IN_DEL);
+        test_assert(intention == SWAP_DEL);
+        test_assert(intention_flags == SWAP_FIN_DEL_SKIP);
         wholeKeySwapAna_(data, SWAP_OUT, 0, &intention, &intention_flags, ctx);
         test_assert(intention == SWAP_NOP);
         wholeKeySwapAna_(data, SWAP_DEL, 0, &intention, &intention_flags, ctx);
@@ -534,15 +546,15 @@ int swapDataWholeKeyTest(int argc, char **argv, int accurate) {
     }
 
     TEST("wholeKey - EncodeData + DecodeData") {
-        void* ctx = NULL;
+        void* wholekey_ctx = NULL;
         robj* key = createRawStringObject("key", 3);
         robj* value  = createRawStringObject("value", 5);
-        swapData* data = createWholeKeySwapData(db, key, value, &ctx);
+        swapData* data = createWholeKeySwapData(db, key, value, &wholekey_ctx);
         int numkeys, action;
         sds *rawkeys = NULL, *rawvals = NULL;
         int *cfs;
-        wholeKeySwapAnaAction(data, SWAP_OUT, ctx, &action);
-        int result = wholeKeyEncodeData(data, SWAP_OUT, ctx, &numkeys, &cfs, &rawkeys, &rawvals);
+        wholeKeySwapAnaAction(data, SWAP_OUT, wholekey_ctx, &action);
+        int result = wholeKeyEncodeData(data, SWAP_OUT, wholekey_ctx, &numkeys, &cfs, &rawkeys, &rawvals);
         test_assert(result == C_OK);
         test_assert(ROCKS_PUT == action);
         test_assert(numkeys == 1);
@@ -557,21 +569,22 @@ int swapDataWholeKeyTest(int argc, char **argv, int accurate) {
         result = wholeKeyDecodeData(data, numkeys, cfs, rawkeys, rawvals, &decoded);
         test_assert(result == C_OK);
         test_assert(strcmp(((robj*)decoded)->ptr ,"value") == 0);
-        swapDataFree(data, ctx);
+        swapDataFree(data, wholekey_ctx);
     }
 
     TEST("wholeKey - swapIn cold non-volatie key") {
+        void* wholekey_ctx = NULL;
         robj *decoded;
         robj* key = createRawStringObject("key", 3);
         robj* val;
-        swapData* data = createWholeKeySwapData(db, key, NULL, NULL);
+        swapData* data = createWholeKeySwapData(db, key, NULL, &wholekey_ctx);
         decoded = createRawStringObject("value", 5);
         test_assert(wholeKeySwapIn(data, decoded, NULL) == 0);
         test_assert(dictFind(db->dict, key->ptr) != NULL);
         val = dictGetVal(dictFind(db->dict, key->ptr));
         test_assert(val->persistent);
         decoded = NULL;
-        swapDataFree(data, NULL);
+        swapDataFree(data, wholekey_ctx);
         clearTestRedisDb();
     }
 
@@ -579,16 +592,17 @@ int swapDataWholeKeyTest(int argc, char **argv, int accurate) {
         robj *key = createRawStringObject("key", 3);
         robj* val;
         robj *decoded = NULL;
+        void* wholekey_ctx = NULL;
         test_assert(dictFind(db->dict, key->ptr) == NULL);
 
-        swapData* data = createWholeKeySwapDataWithExpire(db, key, NULL, 1000000, NULL);
+        swapData* data = createWholeKeySwapDataWithExpire(db, key, NULL, 1000000, &wholekey_ctx);
         decoded = createRawStringObject("value", 5);
         test_assert(wholeKeySwapIn(data,decoded,NULL) == 0);
         test_assert(dictFind(db->dict, key->ptr) != NULL);
         val = dictGetVal(dictFind(db->dict, key->ptr));
         test_assert(val->persistent);
         decoded = NULL;
-        swapDataFree(data, NULL);
+        swapDataFree(data, wholekey_ctx);
         clearTestRedisDb();
 
     }
@@ -599,11 +613,12 @@ int swapDataWholeKeyTest(int argc, char **argv, int accurate) {
         test_assert(dictFind(db->dict, key->ptr) == NULL);
         dbAdd(db, key, value);
         test_assert(dictFind(db->dict, key->ptr) != NULL);
+        void* wholekey_ctx = NULL;
 
-        swapData* data = createWholeKeySwapData(db, key, value, NULL);
+        swapData* data = createWholeKeySwapData(db, key, value, &wholekey_ctx);
         test_assert(wholeKeySwapOut(data, NULL, 0, NULL) == 0);
         test_assert(dictFind(db->dict, key->ptr) == NULL);
-        swapDataFree(data, NULL);
+        swapDataFree(data, wholekey_ctx);
         clearTestRedisDb();
     }
 
@@ -614,11 +629,12 @@ int swapDataWholeKeyTest(int argc, char **argv, int accurate) {
         dbAdd(db, key, value);
         setExpire(NULL, db, key, 1000000);
         test_assert(dictFind(db->dict, key->ptr) != NULL);
+        void* wholekey_ctx = NULL;
 
-        swapData* data = createWholeKeySwapDataWithExpire(db, key, value, 1000000, NULL);
+        swapData* data = createWholeKeySwapDataWithExpire(db, key, value, 1000000, &wholekey_ctx);
         test_assert(wholeKeySwapOut(data, NULL, 0, NULL) == 0);
         test_assert(dictFind(db->dict, key->ptr) == NULL);
-        swapDataFree(data, NULL);
+        swapDataFree(data, wholekey_ctx);
         clearTestRedisDb();
     }
 
@@ -628,11 +644,12 @@ int swapDataWholeKeyTest(int argc, char **argv, int accurate) {
         test_assert(dictFind(db->dict, key->ptr) == NULL);
         dbAdd(db, key, value);
         test_assert(dictFind(db->dict, key->ptr) != NULL);
+        void* wholekey_ctx = NULL;
 
-        swapData* data = createWholeKeySwapData(db, key, value, NULL);
-        test_assert(wholeKeySwapDel(data, NULL, 0) == 0);
+        swapData* data = createWholeKeySwapData(db, key, value, &wholekey_ctx);
+        test_assert(wholeKeySwapDel(data, &wholekey_ctx, 0) == 0);
         test_assert(dictFind(db->dict, key->ptr) == NULL);
-        swapDataFree(data, NULL);
+        swapDataFree(data, wholekey_ctx);
         clearTestRedisDb();
     }
 
@@ -643,21 +660,23 @@ int swapDataWholeKeyTest(int argc, char **argv, int accurate) {
         dbAdd(db, key, value);
         setExpire(NULL, db, key, 1000000);
         test_assert(dictFind(db->dict, key->ptr) != NULL);
+        void* wholekey_ctx = NULL;
 
-        swapData* data = createWholeKeySwapDataWithExpire(db, key, value, 1000000, NULL);
-        test_assert(wholeKeySwapDel(data, NULL, 0) == 0);
+        swapData* data = createWholeKeySwapDataWithExpire(db, key, value, 1000000, &wholekey_ctx);
+        test_assert(wholeKeySwapDel(data, &wholekey_ctx, 0) == 0);
         test_assert(dictFind(db->dict, key->ptr) == NULL);
-        swapDataFree(data, NULL);
+        swapDataFree(data, wholekey_ctx);
         clearTestRedisDb();
     }
 
     TEST("wholeKey - swapdelete cold key") {
         robj* key = createRawStringObject("key", 3);
         test_assert(dictFind(db->dict, key->ptr) == NULL);
-        swapData* data = createWholeKeySwapData(db, key, NULL, NULL);
-        test_assert(wholeKeySwapDel(data, NULL, 0) == 0);
+        void* wholekey_ctx = NULL;
+        swapData* data = createWholeKeySwapData(db, key, NULL, &wholekey_ctx);
+        test_assert(wholeKeySwapDel(data, &wholekey_ctx, 0) == 0);
         test_assert(dictFind(db->dict, key->ptr) == NULL);
-        swapDataFree(data, NULL);
+        swapDataFree(data, wholekey_ctx);
         clearTestRedisDb();
     }
 

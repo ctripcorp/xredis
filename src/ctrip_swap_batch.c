@@ -463,8 +463,9 @@ int swapBatchTest(int argc, char *argv[], int accurate) {
     TEST("batch: exec batch ctx") {
         swapExecBatchCtx _exec_ctx, *exec_ctx = &_exec_ctx;
         swapRequest *utils_req = swapDataRequestNew(SWAP_UTILS,ROCKSDB_COMPACT_RANGE_TASK,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
-        swapData *data = createWholeKeySwapData(db,key1,val1,NULL);
-        swapRequest *out_req = swapDataRequestNew(SWAP_OUT,0,NULL,data,NULL,NULL,NULL,NULL,NULL);
+        void *wholekey_ctx;
+        swapData *data = createWholeKeySwapData(db,key1,val1,(void**)&wholekey_ctx);
+        swapRequest *out_req = swapDataRequestNew(SWAP_OUT,0,NULL,data,(void**)&wholekey_ctx,NULL,NULL,NULL,NULL);
 
         resetStatsSwap();
 
@@ -512,7 +513,7 @@ int swapBatchTest(int argc, char *argv[], int accurate) {
         swapExecBatchCtxDeinit(exec_ctx);
         swapRequestFree(out_req);
         swapRequestFree(utils_req);
-        swapDataFree(data,NULL);
+        swapDataFree(data,wholekey_ctx);
     }
 
     TEST("batch: request batch") {
@@ -522,7 +523,8 @@ int swapBatchTest(int argc, char *argv[], int accurate) {
 
         resetStatsSwap();
 
-        data = createWholeKeySwapData(db,key1,val1,NULL);
+        void *wholekey_ctx;
+        data = createWholeKeySwapData(db,key1,val1,(void**)&wholekey_ctx);
         reqs = swapRequestBatchNew();
         reqs->notify_cb = mockNotifyCallback;
         reqs->notify_pd = NULL;
@@ -541,7 +543,7 @@ int swapBatchTest(int argc, char *argv[], int accurate) {
         test_assert(server.ror_stats->rio_stats[ROCKS_PUT].batch == 1);
         test_assert(server.ror_stats->rio_stats[ROCKS_PUT].count == 2);
 
-        swapDataFree(data,NULL);
+        swapDataFree(data,wholekey_ctx);
     }
 
     TEST("batch: request batch ctx") {
@@ -558,7 +560,8 @@ int swapBatchTest(int argc, char *argv[], int accurate) {
         test_assert(batch_ctx->stat.submit_batch_count == 0);
         test_assert(batch_ctx->stat.submit_request_count == 0);
 
-        data = createWholeKeySwapData(db,key1,val1,NULL);
+        void *wholekey_ctx;
+        data = createWholeKeySwapData(db,key1,val1,(void**)&wholekey_ctx);
         out_req1 = swapDataRequestNew(SWAP_OUT,0,NULL,data,NULL,NULL,NULL,NULL,NULL);
         out_req2 = swapDataRequestNew(SWAP_OUT,0,NULL,data,NULL,NULL,NULL,NULL,NULL);
         utils_req = swapDataRequestNew(SWAP_UTILS,ROCKSDB_COMPACT_RANGE_TASK,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
