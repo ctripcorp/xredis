@@ -155,6 +155,7 @@ static inline const char *requestLevelName(int level) {
 typedef struct range {
   long start;
   long end;
+  int reverse; /* LTRIM command specifies range to keep, so swap in the reverse range */
 } range;
 
 #define KEYREQUEST_TYPE_KEY    0
