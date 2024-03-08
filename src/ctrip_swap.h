@@ -847,13 +847,14 @@ int swapDataSetupHash(swapData *d, OUT void **datactx);
 #define createHashObjectMeta(version, len) createLenObjectMeta(OBJ_HASH, version, len)
 
 /* String */
+typedef struct wholeKeyDataCtx {
+    int ctx_flag;
+} wholeKeyDataCtx;
+
 typedef struct wholeKeySwapData {
   swapData d;
+  wholeKeyDataCtx ctx[1]; 
 } wholeKeySwapData;
-
-typedef struct wholeKeyDataCtx {
-    baseBigDataCtx ctx;
-} wholeKeyDataCtx;
 
 int swapDataSetupWholeKey(swapData *d, OUT void **datactx);
 

@@ -32,7 +32,7 @@
 static void createFakeWholeKeyForDeleteIfCold(swapData *data) {
 	if (swapDataIsCold(data)) {
         /* empty whole key allowed */
-		dbAdd(data->db,data->key,createStringObject("", 0));
+        dbAdd(data->db,data->key,createStringObject("", 0));
 	}
 }
 
@@ -62,10 +62,12 @@ int wholeKeySwapAna(swapData *data, int thd, struct keyRequest *req,
         break;
     case SWAP_IN:
         if (!data->value) {
-            if ((cmd_intention_flags & SWAP_IN_DEL) ||
-                    (cmd_intention_flags & SWAP_IN_DEL_MOCK_VALUE)) {
+            if (cmd_intention_flags & SWAP_IN_DEL) {
+                *intention = SWAP_IN;
+                *intention_flags = SWAP_EXEC_IN_DEL;
+            } else if (cmd_intention_flags & SWAP_IN_DEL_MOCK_VALUE) {
                 /* DEL/UNLINK: Lazy delete current key. */
-                datactx->ctx.ctx_flag |= BIG_DATA_CTX_FLAG_MOCK_VALUE;
+                datactx->ctx_flag |= BIG_DATA_CTX_FLAG_MOCK_VALUE;
                 *intention = SWAP_DEL;
                 *intention_flags = SWAP_FIN_DEL_SKIP;
             } else {
@@ -247,12 +249,13 @@ int wholeKeySwapOut(swapData *data, void *datactx, int keep_data, int *totally_o
 int wholeKeySwapDel(swapData *data, void *datactx_, int async) {
     redisDb *db = data->db;
     robj *key = data->key;
-    UNUSED(async);
-    // if (async) return 0;
+
     wholeKeyDataCtx* datactx = (wholeKeyDataCtx*)datactx_;
-    if (datactx->ctx.ctx_flag & BIG_DATA_CTX_FLAG_MOCK_VALUE) {
+    if (datactx->ctx_flag & BIG_DATA_CTX_FLAG_MOCK_VALUE) {
         createFakeWholeKeyForDeleteIfCold(data);
     }
+
+    if (async) return 0;
     if (data->value) dictDelete(db->dict,key->ptr);
     return 0;
 }
@@ -263,18 +266,6 @@ void *wholeKeyCreateOrMergeObject(swapData *data, void *decoded, void *datactx) 
     UNUSED(datactx);
     serverAssert(decoded);
     return decoded;
-}
-
-void freeWholeKeySwapData(swapData *data_, void *datactx_) {
-    UNUSED(data_);
-    wholeKeyDataCtx *datactx = datactx_;
-    if (datactx->ctx.type == BASE_SWAP_CTX_TYPE_SUBKEY) {
-        for (int i = 0; i < datactx->ctx.sub.num; i++) {
-            decrRefCount(datactx->ctx.sub.subkeys[i]);
-        }
-    }
-    zfree(datactx->ctx.sub.subkeys);
-    zfree(datactx);
 }
 
 swapDataType wholeKeySwapDataType = {
@@ -292,7 +283,7 @@ swapDataType wholeKeySwapDataType = {
     .createOrMergeObject = wholeKeyCreateOrMergeObject,
     .cleanObject = NULL,
     .beforeCall = NULL,
-    .free = freeWholeKeySwapData,
+    .free = NULL,
     .rocksDel = NULL,
     .mergedIsHot = wholeKeyMergedIsHot,
 };
@@ -302,10 +293,7 @@ int swapDataSetupWholeKey(swapData *d, OUT void **pdatactx) {
     d->omtype = &wholekeyObjectMetaType;
     // if (datactx) *datactx = NULL;
     wholeKeyDataCtx *datactx = zmalloc(sizeof(wholeKeyDataCtx));
-    datactx->ctx.type = BASE_SWAP_CTX_TYPE_SUBKEY;
-    datactx->ctx.sub.num = 0;
-    datactx->ctx.ctx_flag = BIG_DATA_CTX_FLAG_NONE;
-    datactx->ctx.sub.subkeys = NULL;
+    datactx->ctx_flag = BIG_DATA_CTX_FLAG_NONE;
     *pdatactx = datactx;
     return 0;
 }
@@ -467,8 +455,8 @@ int swapDataWholeKeyTest(int argc, char **argv, int accurate) {
         wholeKeySwapAna_(data, SWAP_IN, 0, &intention, &intention_flags, ctx);
         test_assert(intention == SWAP_IN);
         wholeKeySwapAna_(data, SWAP_IN, SWAP_IN_DEL, &intention, &intention_flags, ctx);
-        test_assert(intention == SWAP_DEL);
-        test_assert(intention_flags == SWAP_FIN_DEL_SKIP);
+        test_assert(intention == SWAP_IN);
+        test_assert(intention_flags == SWAP_EXEC_IN_DEL);
         wholeKeySwapAna_(data, SWAP_OUT, 0, &intention, &intention_flags, ctx);
         test_assert(intention == SWAP_NOP);
         wholeKeySwapAna_(data, SWAP_DEL, 0, &intention, &intention_flags, ctx);
