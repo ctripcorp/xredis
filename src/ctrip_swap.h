@@ -2059,6 +2059,10 @@ void rocksIterGetError(rocksIter *it, char **error);
 #define DEFAULT_ZSET_MEMBER_SIZE 128
 #define DEFAULT_KEY_SIZE 48
 
+#define CUR_KEY_SAVE_FINISHED 1
+#define CUR_KEY_SAVE_OK 0
+#define CUR_KEY_SAVE_ERR -1
+
 typedef enum swapRdbSaveErrType {
     SAVE_ERR_NONE,
     SAVE_ERR_META_LEN_MISMATCH,
@@ -2130,15 +2134,15 @@ typedef struct rdbKeySaveData {
   void *iter; /* used by list (metaListIterator), used by bitmap () */
 } rdbKeySaveData;
 
-typedef struct rdbSaveRocksStats {
+typedef struct rdbSaveRorExtensionStats {
     long long init_save_ok;
     long long init_save_skip;
     long long init_save_err;
     long long save_ok;
-} rdbSaveRocksStats;
+} rdbSaveRorExtensionStats;
 
 /* rdb save */
-int rdbSaveRocks(rio *rdb, int *error, redisDb *db, int rdbflags);
+int rdbSaveRorExtension(rio *rdb, int *error, redisDb *db, int rdbflags);
 int rdbSaveKeyHeader(rio *rdb, robj *key, robj *evict, unsigned char rdbtype, long long expiretime);
 int rdbKeySaveDataInit(rdbKeySaveData *keydata, redisDb *db, decodedResult *dr);
 void rdbKeySaveDataDeinit(rdbKeySaveData *keydata);
@@ -2185,6 +2189,17 @@ typedef struct rdbKeyLoadType {
   void (*load_deinit)(struct rdbKeyLoadData *keydata);
 } rdbKeyLoadType;
 
+
+typedef struct bitmaploadInfo
+{
+    sds loading_subval;   /* subval not yet finished loading. */
+    sds rdbraw_consuming; /* rdbraw read in previous load process, part of it has not been comsumed. */
+    long rdbraw_offset;  /* offset description for rdbraw_consuming, data behind offset is not yet consumed. */
+    long num_raw_waiting_load; /* num of rdb raw waiting be loaded for self of bitmap object. */
+    long len_raw_need_load_totally;
+} bitmaploadInfo;
+
+
 typedef struct rdbKeyLoadData {
     rdbKeyLoadType *type;
     objectMetaType *omtype;
@@ -2200,6 +2215,7 @@ typedef struct rdbKeyLoadData {
     int loaded_fields;
     robj *value;
     void *iter;
+    bitmaploadInfo *bitmap_info; /* only used in RDB_TYPE_BITMAP load process. */
 } rdbKeyLoadData;
 
 static inline sds rdbVerbatimNew(unsigned char rdbtype) {
@@ -2229,6 +2245,7 @@ void setLoadInit(rdbKeyLoadData *load);
 void listLoadInit(rdbKeyLoadData *load);
 
 void zsetLoadInit(rdbKeyLoadData *load);
+void bitmapLoadInit(rdbKeyLoadData *load);
 int rdbLoadLenVerbatim(rio *rdb, sds *verbatim, int *isencoded, unsigned long long *lenptr);
 
 /* persist load fix */

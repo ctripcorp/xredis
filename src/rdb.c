@@ -1300,11 +1300,14 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi, int rordb) 
 
             initStaticStringObject(key,keystr);
 
-            /* cold or warm bighash will be saved later in rdbSaveRocks. */
-            if (!rordb && !keyIsHot(lookupMeta(db,&key),o)) {
+            objectMeta *meta = lookupMeta(db,&key);
+            /* cold or warm key, and hot bitmap will be saved later in rdbSaveRorExtension. */
+            if (!rordb && !keyIsHot(meta, o) && meta->object_type != OBJ_BITMAP) {
 #ifdef ROCKS_DEBUG
                 serverLog(LL_NOTICE, "[rdbSaveRio] key(%s) not hot: skipped.",keystr);
 #endif
+                
+                
                 continue;
             } else {
 #ifdef ROCKS_DEBUG
@@ -1324,7 +1327,7 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi, int rordb) 
             if (rordbSaveDbRio(rdb,db) == -1) goto werr;
         } else {
             /* Iterate DB.rocks writing every entry */
-            if (rdbSaveRocks(rdb,error,db,rdbflags)) goto werr;
+            if (rdbSaveRorExtension(rdb,error,db,rdbflags)) goto werr;
         }
 
         dbResumeRehash(db);

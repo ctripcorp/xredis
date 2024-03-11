@@ -158,7 +158,7 @@ void rdbKeySaveDataDeinit(rdbKeySaveData *save) {
         save->type->save_deinit(save);
 }
 
-sds rdbSaveRocksStatsDump(rdbSaveRocksStats *stats) {
+sds rdbSaveRorExtensionStatsDump(rdbSaveRorExtensionStats *stats) {
     return sdscatprintf(sdsempty(),
             "init.ok=%lld,"
             "init.skip=%lld,"
@@ -182,6 +182,20 @@ static void rdbKeySaveDataInitCommon(rdbKeySaveData *save,
     save->object_meta = dupObjectMeta(om);
     save->saved = 0;
     save->iter = NULL;
+}
+
+static int rdbKeySaveDataInitHot(rdbKeySaveData *save, redisDb *db,
+        MOVE robj *key, robj *value) {
+    objectMeta *object_meta = lookupMeta(db,key);
+    long long expire = getExpire(db,key);
+
+    serverAssert(value && object_meta->object_type == OBJ_BITMAP && keyIsHot(object_meta,value));
+
+    rdbKeySaveDataInitCommon(save,key,value,expire,object_meta);
+
+    bitmapSaveInit(save,SWAP_VERSION_ZERO,NULL,0);
+
+    return INIT_SAVE_OK;
 }
 
 static int rdbKeySaveDataInitWarm(rdbKeySaveData *save, redisDb *db,
@@ -285,7 +299,11 @@ int rdbKeySaveDataInit(rdbKeySaveData *save, redisDb *db, decodedResult *dr) {
         serverLog(LL_WARNING,"rdbKeySaveDataInit: key(%s) is hot, skipped",dr->key);
 #endif
         decrRefCount(key);
-        return INIT_SAVE_SKIP;
+        if (object_meta->object_type == OBJ_BITMAP) {
+            return rdbKeySaveDataInitHot(save,db,key,value);
+        } else {
+            return INIT_SAVE_SKIP;
+        }
     } else if (value) { /* warm */
         return rdbKeySaveDataInitWarm(save,db,key,value);
     } else  { /* cold */
@@ -294,16 +312,21 @@ int rdbKeySaveDataInit(rdbKeySaveData *save, redisDb *db, decodedResult *dr) {
     }
 }
 
-/* Bighash/set/zset... fields are located adjacent, and will be iterated
+
+
+/* warm or cold key, and bitmap is expanding concepts in ror, which are saved here.
+ * bitmap(for RDB_TYPE_STRING) is saved same as hash,set ......, hot is saved in rdbSaveKeyValuePair, warm and cold are saved here.
+ * bitmap(for RDB_TYPE_BITMAP), hot, warm or cold are all saved here.
+ * Bighash/set/zset... fields are located adjacent, and will be iterated
  * next to each.
- * Note that only IO error aborts rdbSaveRocks, keys with decode/init_save
+ * Note that only IO error aborts rdbSaveRorExtension, keys with decode/init_save
  * errors are skipped. */
-int rdbSaveRocks(rio *rdb, int *error, redisDb *db, int rdbflags) {
+int rdbSaveRorExtension(rio *rdb, int *error, redisDb *db, int rdbflags) {
     rocksIter *it = NULL;
     sds errstr = NULL;
     int recoverable_err = 0;
     rocksIterDecodeStats _iter_stats = {0}, *iter_stats = &_iter_stats;
-    rdbSaveRocksStats _stats = {0}, *stats = &_stats;
+    rdbSaveRorExtensionStats _stats = {0}, *stats = &_stats;
     decodedResult  _cur, *cur = &_cur, _next, *next = &_next;
     decodedResultInit(cur);
     decodedResultInit(next);
@@ -351,12 +374,19 @@ int rdbSaveRocks(rio *rdb, int *error, redisDb *db, int rdbflags) {
             stats->init_save_ok++;
         }
 
-        if (rdbKeySaveStart(save,rdb) == -1) {
+        int res = rdbKeySaveStart(save,rdb);
+
+        if (res == CUR_KEY_SAVE_ERR) {
             errstr = sdscatfmt(sdsempty(),"Save key(%S) start failed: %s",
                     cur->key, strerror(errno));
             rdbKeySaveDataDeinit(save);
             decodedResultDeinit(cur);
             goto err; /* IO error, can't recover. */
+
+        /* if saveStart has finished saving the whole key, just go to the end. */
+        } else if (res == CUR_KEY_SAVE_FINISHED) {
+            decodedResultDeinit(cur);
+            goto saveend;
         }
 
         /* There may be no rocks-meta for warm/hot hash(set/zset...), in
@@ -451,7 +481,7 @@ saveend:
     }
 
     sds iter_stats_dump = rocksIterDecodeStatsDump(iter_stats);
-    sds stats_dump = rdbSaveRocksStatsDump(stats);
+    sds stats_dump = rdbSaveRorExtensionStatsDump(stats);
     serverLog(LL_NOTICE,
             "Rdb save keys from rocksdb finished: iter=(%s), save=(%s)",
             iter_stats_dump,stats_dump);
@@ -865,6 +895,9 @@ int rdbKeyLoadDataInit(rdbKeyLoadData *load, int rdbtype,
     case RDB_TYPE_ZSET_2:
     case RDB_TYPE_ZSET_ZIPLIST:
         zsetLoadInit(load);
+        break;
+    case RDB_TYPE_BITMAP:
+        bitmapLoadInit(load);
         break;
     default:
         retval = SWAP_ERR_RDB_LOAD_UNSUPPORTED;

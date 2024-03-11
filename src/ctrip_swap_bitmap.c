@@ -33,7 +33,10 @@
 #define BITS_NUM_IN_SUBKEY 32768
 #define BITMAP_MAX_INDEX INT_MAX
 
-#define BITMAP_GET_SUBKEYS_NUM(size)  ((size - 1) / BITMAP_SUBKEY_SIZE + 1)
+#define BITMAP_GET_SUBKEYS_NUM(size, subkey_size)  ((size - 1) / subkey_size + 1)
+
+#define BITMAP_GET_SPECIFIED_SUBKEY_SIZE(size, subkey_size, idx) \
+    idx == (BITMAP_GET_SUBKEYS_NUM(size, subkey_size) - 1) ? (size % subkey_size) : subkey_size
 
 /* utils */
 
@@ -87,7 +90,7 @@ static inline void bitmapMetaInit(bitmapMeta *meta, robj *value)
 {
     meta->size = stringObjectLen(value);
     meta->pure_cold_subkeys_num = 0;
-    rbmSetBitRange(meta->subkeys_status, 0, BITMAP_GET_SUBKEYS_NUM(meta->size) - 1);
+    rbmSetBitRange(meta->subkeys_status, 0, BITMAP_GET_SUBKEYS_NUM(meta->size, BITMAP_SUBKEY_SIZE) - 1);
 }
 
 /*
@@ -104,7 +107,7 @@ static inline bitmapMeta *bitmapMetaDecode(const char *extend, size_t extend_len
     bitmapMeta *bitmap_meta = bitmapMetaCreate();
 
     bitmap_meta->size = decodeBitmapSize(extend);
-    bitmap_meta->pure_cold_subkeys_num = BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size);
+    bitmap_meta->pure_cold_subkeys_num = BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE);
     return bitmap_meta;
 }
 
@@ -128,7 +131,7 @@ static inline int bitmapMetaGetHotSubkeysNum(bitmapMeta *bitmap_meta, int start_
         return 0;
     }
     serverAssert(start_subkey_idx <= end_subkey_idx && start_subkey_idx >= 0);
-    int subkeys_num = BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size);
+    int subkeys_num = BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE);
     if (start_subkey_idx >= subkeys_num) {
         return 0;
     }
@@ -174,9 +177,9 @@ static inline int bitmapMetaGetHotSubkeysIdx(bitmapMeta *meta, int subkeys_num, 
 static inline void bitmapMetaGrowHot(bitmapMeta *bitmap_meta, int extendSize)
 {
     serverAssert(bitmap_meta != NULL && extendSize > 0);
-    int old_subkeys_num = BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size);
+    int old_subkeys_num = BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE);
     bitmap_meta->size += extendSize;
-    int subkeys_num = BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size);
+    int subkeys_num = BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE);
 
     subkeys_num = MAX(subkeys_num, old_subkeys_num);
     rbmSetBitRange(bitmap_meta->subkeys_status, old_subkeys_num, subkeys_num - 1);
@@ -320,54 +323,6 @@ robj *bitmapObjectMerge(robj *bitmap_object, bitmapMeta *meta, deltaBitmap *delt
     return new_bitmap;
 }
 
-//static inline robj *deltaBitmapTransToBitmapObject(deltaBitmap *delta_bm)
-//{
-//    sds bitmap = sdsnewlen("", 0);
-//    for (int i = 0; i < delta_bm->subkeys_num; i++) {
-//        bitmap = sdscatsds(bitmap, delta_bm->subvals[i]);
-//    }
-//    robj *res = createStringObject(bitmap, sdslen(bitmap));
-//    sdsfree(bitmap);
-//    return res;
-//}
-//
-//robj *deltaBitmapMergeIntoOldBitmapObject(deltaBitmap *delta_bm, robj *old_bitmap_object, bitmapMeta *meta)
-//{
-//    sds old_bitmap = old_bitmap_object->ptr;
-//    sds new_bitmap = sdsnewlen("", 0);
-//
-//    char *interval_ahead_start_pos = old_bitmap;   /* which is already in old_bitmap, not include the inserted subkeys later */
-//    int interval_ahead_start_idx = 0;
-//    int old_subkeys_num = 0;
-//    for (int i = 0; i < delta_bm->subkeys_num; i++) {
-//        /* subkey of start_index is absolutely not in old bitmap */
-//        int subkeys_num_ahead = bitmapMetaGetHotSubkeysNum(meta, interval_ahead_start_idx, delta_bm->subkey_intervals[i].start_index);
-//        if (subkeys_num_ahead == 0) {
-//            new_bitmap = sdscatsds(new_bitmap, delta_bm->subvals[i]);
-//            continue;
-//        }
-//        sds interval_ahead = sdsnewlen(interval_ahead_start_pos, subkeys_num_ahead * BITMAP_SUBKEY_SIZE);
-//        new_bitmap = sdscatsds(new_bitmap, interval_ahead);
-//        new_bitmap = sdscatsds(new_bitmap, delta_bm->subvals[i]);
-//        interval_ahead_start_pos += subkeys_num_ahead * BITMAP_SUBKEY_SIZE;
-//        interval_ahead_start_idx = delta_bm->subkey_intervals[i].end_index + 1;
-//        old_subkeys_num += subkeys_num_ahead;
-//        sdsfree(interval_ahead);
-//    }
-//
-//    int last_old_interval_size = stringObjectLen(old_bitmap_object) - old_subkeys_num * BITMAP_SUBKEY_SIZE;
-//
-//    if (last_old_interval_size != 0) {
-//        sds last_old_interval = sdsnewlen(interval_ahead_start_pos, last_old_interval_size);
-//        new_bitmap = sdscatsds(new_bitmap, last_old_interval);
-//        sdsfree(last_old_interval);
-//    }
-//
-//    robj *res = createStringObject(new_bitmap, sdslen(new_bitmap));
-//    sdsfree(new_bitmap);
-//    return res;
-//}
-
 typedef struct bitmapDataCtx {
     int ctx_flag;
     int subkeys_total_size;  /* only used in swap out */
@@ -402,7 +357,7 @@ static inline void bitmapSwapAnaInSelectSubKeys(bitmapDataCtx *datactx, bitmapMe
         /* RANGE_BYTE_BITMAP */
         required_subkey_start_idx = range->start / BITMAP_SUBKEY_SIZE;
         if (range->end == -1) {
-            required_subkey_end_idx = BITMAP_GET_SUBKEYS_NUM(meta->size) - 1;
+            required_subkey_end_idx = BITMAP_GET_SUBKEYS_NUM(meta->size, BITMAP_SUBKEY_SIZE) - 1;
         } else {
             required_subkey_end_idx = range->end / BITMAP_SUBKEY_SIZE;
         }
@@ -411,7 +366,7 @@ static inline void bitmapSwapAnaInSelectSubKeys(bitmapDataCtx *datactx, bitmapMe
     int subkeys_swap_in_start_idx = required_subkey_start_idx;
     int subkeys_swap_in_end_idx = required_subkey_end_idx;
 
-    int subkeys_num = BITMAP_GET_SUBKEYS_NUM(meta->size);
+    int subkeys_num = BITMAP_GET_SUBKEYS_NUM(meta->size, BITMAP_SUBKEY_SIZE);
 
 
     /* when required subkeys range exceed the max subkey idx,
@@ -461,7 +416,7 @@ int bitmapSwapAnaOutSelectSubkeys(swapData *data, bitmapDataCtx *datactx, int *m
     int noswap;
     bitmapMeta *meta = swapDataGetBitmapMeta(data);
 
-    int hot_subkeys_num = bitmapMetaGetHotSubkeysNum(meta, 0, BITMAP_GET_SUBKEYS_NUM(meta->size) - 1);
+    int hot_subkeys_num = bitmapMetaGetHotSubkeysNum(meta, 0, BITMAP_GET_SUBKEYS_NUM(meta->size, BITMAP_SUBKEY_SIZE) - 1);
     int subkeys_num_may_swapout = 0;
 
     /* only SELECT_MAIN */
@@ -1117,7 +1072,7 @@ typedef struct bitmapIterator {
     long offset;  /* points to the hot bitmap, the subkey behind cursor (include cursor) has not been process. */
 } bitmapIterator;
 
-void *bitmapSaveIterCreate()
+void *bitmapTypeCreateIter()
 {
     bitmapIterator *iter = zmalloc(sizeof(bitmapIterator));
     iter->subkey_idx = 0;
@@ -1125,12 +1080,12 @@ void *bitmapSaveIterCreate()
     return iter;
 }
 
-void bitmapSaveIterFree(bitmapIterator *iter)
+void bitmapTypeReleaseIter(bitmapIterator *iter)
 {
     zfree(iter);
 }
 
-int bitmapSaveStart(rdbKeySaveData *save, rio *rdb) {
+int bitmapWholeSaveStart(rdbKeySaveData *save, rio *rdb) {
     robj *key = save->key;
     /* save header */
     if (rdbSaveKeyHeader(rdb,key,key,RDB_TYPE_STRING,save->expire) == -1) {
@@ -1144,7 +1099,7 @@ int bitmapSaveStart(rdbKeySaveData *save, rio *rdb) {
 }
 
 /* save subkeys in memory untill subkey idx(not included) */
-int bitmapSaveHotSubkeysUntill(rdbKeySaveData *save, rio *rdb, int idx) {
+int bitmapWholeSaveHotSubkeysUntill(rdbKeySaveData *save, rio *rdb, int idx) {
 
     /* 1. no hot subkeys in the front, 2. cold bitmap, no hot subkeys. */
     if (idx == 0 || save->iter == NULL) {
@@ -1165,7 +1120,7 @@ int bitmapSaveHotSubkeysUntill(rdbKeySaveData *save, rio *rdb, int idx) {
 
     long hot_subkeys_size_to_save;
 
-    int subkeysSum = BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size);
+    int subkeysSum = BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE);
     if (idx >= subkeysSum) {
         /* hot subkeys to save include the last subkey. */
         hot_subkeys_size_to_save = stringObjectLen(save->value) - iter->offset;
@@ -1184,7 +1139,7 @@ int bitmapSaveHotSubkeysUntill(rdbKeySaveData *save, rio *rdb, int idx) {
 }
 
 /* only called in cold or warm data. */
-int bitmapSave(rdbKeySaveData *save, rio *rdb, decodedData *decoded) {
+int bitmapWholeSave(rdbKeySaveData *save, rio *rdb, decodedData *decoded) {
     long idx;
     robj *key = save->key;
     serverAssert(!sdscmp(decoded->key, key->ptr));
@@ -1206,7 +1161,7 @@ int bitmapSave(rdbKeySaveData *save, rio *rdb, decodedData *decoded) {
         }
     }
 
-    bitmapSaveHotSubkeysUntill(save, rdb, idx);
+    bitmapWholeSaveHotSubkeysUntill(save, rdb, idx);
 
     rio sdsrdb;
     rioInitWithBuffer(&sdsrdb,decoded->rdbraw);
@@ -1228,13 +1183,199 @@ int bitmapSave(rdbKeySaveData *save, rio *rdb, decodedData *decoded) {
     return 0;
 }
 
+int bitmapWholeSaveEnd(rdbKeySaveData *save, rio *rdb, int save_result) {
+    bitmapMeta *meta = objectMetaGetPtr(save->object_meta);
+    long expected = meta->pure_cold_subkeys_num + server.swap_debug_bgsave_metalen_addition;
+
+    if (save_result != -1) {
+        /* save tail hot subkeys */
+        bitmapWholeSaveHotSubkeysUntill(save, rdb, BITMAP_GET_SUBKEYS_NUM(meta->size, BITMAP_SUBKEY_SIZE));
+    } 
+
+    if (save->saved != expected) {
+        sds key  = save->key->ptr;
+        sds repr = sdscatrepr(sdsempty(), key, sdslen(key));
+        serverLog(LL_WARNING,
+                  "bitmapSave %s: saved(%d) != bitmapMeta.pure_cold_subkeys_num(%ld)",
+                  repr, save->saved, expected);
+        sdsfree(repr);
+        return SAVE_ERR_META_LEN_MISMATCH;
+    }
+
+    return save_result;
+}
+
+void bitmapWholeSaveDeinit(rdbKeySaveData *save) {
+    if (save->iter) {
+        bitmapTypeReleaseIter(save->iter);
+        save->iter = NULL;
+    }
+}
+
+/* save bitmap object as RDB_TYPE_STRING */
+rdbKeySaveType bitmapWholeSaveType = {
+        .save_start = bitmapWholeSaveStart,
+        .save = bitmapWholeSave,
+        .save_end = bitmapWholeSaveEnd,
+        .save_deinit = bitmapWholeSaveDeinit,
+};
+
+int bitmapSaveStart(rdbKeySaveData *save, rio *rdb) {
+    robj *key = save->key;
+    /* save header */
+    if (rdbSaveKeyHeader(rdb,key,key,RDB_TYPE_BITMAP,save->expire) == -1) {
+        return CUR_KEY_SAVE_ERR;
+    }
+
+    bitmapMeta *bitmap_meta = objectMetaGetPtr(save->object_meta);
+    if ((rdbSaveLen(rdb, bitmap_meta->size)) == -1)
+        return CUR_KEY_SAVE_ERR;
+    if ((rdbSaveLen(rdb, BITMAP_SUBKEY_SIZE)) == -1)
+        return CUR_KEY_SAVE_ERR;
+
+    if (!bitmapObjectMetaIsHot(save->object_meta, save->value)) {
+        return CUR_KEY_SAVE_OK;
+    }
+
+    /* hot bitmap object will be saved here, no need to be saved with iterating valid rawkey. */
+    long waiting_save_size = stringObjectLen(save->value);
+    serverAssert(bitmap_meta->pure_cold_subkeys_num == 0 && bitmap_meta->size == waiting_save_size);
+
+    long subkey_size = BITMAP_SUBKEY_SIZE;
+    long offset = 0;
+    while (waiting_save_size > 0)
+    {
+        long hot_subkey_size = waiting_save_size < subkey_size ? waiting_save_size : subkey_size;
+
+        sds subval = sdsnewlen(save->value->ptr + offset, hot_subkey_size);
+
+        robj subvalobj;
+        initStaticStringObject(subvalobj, subval);
+
+        if (rdbSaveStringObject(rdb, &subvalobj) == -1) {
+            sdsfree(subval);
+            return -1;
+        }
+
+        sdsfree(subval);
+
+        offset += hot_subkey_size;
+        waiting_save_size -= hot_subkey_size;
+    }
+    
+    serverAssert(waiting_save_size == 0);
+
+    ((bitmapIterator *)save->iter)->subkey_idx = BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE);
+    ((bitmapIterator *)save->iter)->offset = bitmap_meta->size;
+    return CUR_KEY_SAVE_FINISHED;
+}
+
+/* save subkeys in memory untill subkey idx(not included) */
+int bitmapSaveHotSubkeysUntill(rdbKeySaveData *save, rio *rdb, int idx) {
+
+    /* 1. no hot subkeys in the front, 2. cold bitmap, no hot subkeys. */
+    if (idx == 0 || save->iter == NULL) {
+        return 0;
+    }
+
+    bitmapIterator *iter = save->iter;
+
+    /* no hot subkeys in the front. */
+    if (iter->subkey_idx >= idx) {
+        return 0;
+    }
+
+    bitmapMeta *bitmap_meta = objectMetaGetPtr(save->object_meta);
+
+    int hot_subkeys_num_to_save = bitmapMetaGetHotSubkeysNum(bitmap_meta, iter->subkey_idx, idx - 1);
+    serverAssert(idx - iter->subkey_idx == hot_subkeys_num_to_save);
+
+    int subkeysSum = BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE);
+    long hot_subkey_size;
+
+    for (int i = iter->subkey_idx; i <= idx - 1; i++) {
+
+        if (i == subkeysSum - 1) {
+            /* hot subkeys to save include the last subkey. */
+            hot_subkey_size = stringObjectLen(save->value) - iter->offset;
+        } else {
+            hot_subkey_size = BITMAP_SUBKEY_SIZE;
+        }
+
+        sds subval = sdsnewlen(save->value->ptr + iter->offset, hot_subkey_size);
+
+        robj subvalobj;
+        initStaticStringObject(subvalobj, subval);
+
+        if (rdbSaveStringObject(rdb, &subvalobj) == -1) {
+            sdsfree(subval);
+            return -1;
+        }
+
+        sdsfree(subval);
+
+        iter->subkey_idx = i + 1;
+        iter->offset += hot_subkey_size;
+    }
+
+    return 0;
+}
+
+/* need to fit hot bitmap. */
+int bitmapSave(rdbKeySaveData *save, rio *rdb, decodedData *decoded) {
+    long idx;
+    robj *key = save->key;
+    serverAssert(!sdscmp(decoded->key, key->ptr));
+
+    if (decoded->rdbtype != RDB_TYPE_BITMAP) {
+        /* check failed, skip this key */
+        return 0;
+    }
+
+    /* save subkeys in prior to current saving subkey in memory. */
+    idx = bitmapDecodeSubkeyIdx(decoded->subkey, sdslen(decoded->subkey));
+
+    if (save->value != NULL) {
+        bitmapMeta *bitmap_meta = objectMetaGetPtr(save->object_meta);
+        serverAssert(bitmap_meta);
+        if (bitmapMetaGetSubkeyStatus(bitmap_meta, idx, idx)) {
+            /* hot subkey exist both redis and rocksDb, skip this subkey, it will be saved in the next cold subkey process. */
+            return 0;
+        }
+    }
+
+    bitmapSaveHotSubkeysUntill(save, rdb, idx);
+
+    // rio sdsrdb;
+    // rioInitWithBuffer(&sdsrdb,decoded->rdbraw);
+
+    // robj *subvalobj = rdbLoadObject(RDB_TYPE_STRING, &sdsrdb, NULL, NULL, 0);
+    // serverAssert(subvalobj->type == OBJ_STRING);
+
+    // if (rdbSaveStringObject(rdb, subvalobj) == -1) {
+    //     return -1;
+    // }
+
+    if (rdbWriteRaw(rdb, decoded->rdbraw, sdslen(decoded->rdbraw)) == -1) {
+        return -1;
+    }
+
+    bitmapIterator *iter = save->iter;
+    if (iter) {
+        iter->subkey_idx = idx + 1;
+    }
+
+    save->saved++;
+    return 0;
+}
+
 int bitmapSaveEnd(rdbKeySaveData *save, rio *rdb, int save_result) {
     bitmapMeta *meta = objectMetaGetPtr(save->object_meta);
     long expected = meta->pure_cold_subkeys_num + server.swap_debug_bgsave_metalen_addition;
 
     if (save_result != -1) {
         /* save tail hot subkeys */
-        bitmapSaveHotSubkeysUntill(save, rdb, BITMAP_GET_SUBKEYS_NUM(meta->size));
+        bitmapSaveHotSubkeysUntill(save, rdb, BITMAP_GET_SUBKEYS_NUM(meta->size, BITMAP_SUBKEY_SIZE));
     } 
 
     if (save->saved != expected) {
@@ -1252,11 +1393,12 @@ int bitmapSaveEnd(rdbKeySaveData *save, rio *rdb, int save_result) {
 
 void bitmapSaveDeinit(rdbKeySaveData *save) {
     if (save->iter) {
-        bitmapSaveIterFree(save->iter);
+        bitmapTypeReleaseIter(save->iter);
         save->iter = NULL;
     }
 }
 
+/* save bitmap object as RDB_TYPE_BITMAP */
 rdbKeySaveType bitmapSaveType = {
         .save_start = bitmapSaveStart,
         .save = bitmapSave,
@@ -1266,16 +1408,252 @@ rdbKeySaveType bitmapSaveType = {
 
 int bitmapSaveInit(rdbKeySaveData *save, uint64_t version, const char *extend, size_t extlen) {
     int retval = 0;
-    save->type = &bitmapSaveType;
+    save->type = &bitmapWholeSaveType;
     save->omtype = &bitmapObjectMetaType;
     if (extend) { /* cold */
         serverAssert(save->object_meta == NULL && save->value == NULL);
         retval = buildObjectMeta(OBJ_BITMAP,version,extend,extlen,&save->object_meta);
-    } else { /* warm */
+    } else { /* warm or hot */
         serverAssert(save->object_meta && save->value);
-        save->iter = bitmapSaveIterCreate();
+        save->iter = bitmapTypeCreateIter();
     }
     return retval;
+}
+
+void bitmapLoadStart(struct rdbKeyLoadData *load, rio *rdb, int *cf,
+        sds *rawkey, sds *rawval, int *error) {
+
+    int isencode;
+    unsigned long long bitmap_size, subkey_size;
+    sds header, extend = NULL;
+
+    header = rdbVerbatimNew((unsigned char)load->rdbtype);
+
+    /* bitmap_size */
+    if (rdbLoadLenVerbatim(rdb, &header, &isencode, &bitmap_size)) {
+        sdsfree(header);
+        *error = RDB_LOAD_ERR_OTHER;
+        return;
+    }
+
+    /* subkey_size */
+    if (rdbLoadLenVerbatim(rdb, &header, &isencode, &subkey_size)) {
+        sdsfree(header);
+        *error = RDB_LOAD_ERR_OTHER;
+        return;
+    }
+
+    /* if it is hot ..... */
+
+    load->total_fields = BITMAP_GET_SUBKEYS_NUM(bitmap_size, subkey_size);
+    load->bitmap_info->num_raw_waiting_load = load->total_fields;
+    load->bitmap_info->len_raw_need_load_totally = bitmap_size;
+
+    extend = encodeBitmapSize(bitmap_size);
+
+    *cf = META_CF;
+    *rawkey = rocksEncodeMetaKey(load->db,load->key);
+    *rawval = rocksEncodeMetaVal(load->object_type,load->expire,load->version,extend);
+    *error = 0;
+
+    sdsfree(extend);
+    sdsfree(header);
+}
+
+int bitmapLoad(struct rdbKeyLoadData *load, rio *rdb, int *cf,
+        sds *rawkey, sds *rawval, int *error) {
+
+    int subkey_size = BITMAP_GET_SPECIFIED_SUBKEY_SIZE(load->bitmap_info->len_raw_need_load_totally, BITMAP_SUBKEY_SIZE, load->loaded_fields); /*  todo 替换成配置项. */    
+
+    *error = RDB_LOAD_ERR_OTHER;
+
+    long raw_consumed_len = 0;
+    long consuming_raw_left_len = load->bitmap_info->rdbraw_consuming == NULL ? 0 : sdslen(load->bitmap_info->rdbraw_consuming) - load->bitmap_info->rdbraw_offset;
+    long load_subval_need_raw_len = load->bitmap_info->loading_subval == NULL ? subkey_size : (subkey_size - sdslen(load->bitmap_info->loading_subval));
+
+    robj *new_raw_obj = NULL;
+    if (load->bitmap_info->num_raw_waiting_load != 0 && consuming_raw_left_len < load_subval_need_raw_len) {
+        if((new_raw_obj = rdbLoadStringObject(rdb)) == NULL) { 
+            return 0;
+        }
+        load->bitmap_info->num_raw_waiting_load -= 1;
+    } else {
+        serverAssert(load->bitmap_info->rdbraw_consuming != NULL);
+    }
+
+    long new_raw_len = stringObjectLen(new_raw_obj);
+
+    /* to load the unfinished subval */
+    if (load->bitmap_info->loading_subval) {
+
+        /* raw loaded before must have been consumed fully. */
+        serverAssert(load->bitmap_info->rdbraw_consuming = NULL && load->bitmap_info->rdbraw_offset == 0 && new_raw_len != 0);
+
+        /* just try to consume the raw loaded this time. */
+            
+        load_subval_need_raw_len = subkey_size - sdslen(load->bitmap_info->loading_subval);
+
+        raw_consumed_len = MIN(load_subval_need_raw_len, new_raw_len);
+
+        load->bitmap_info->loading_subval = sdscatlen(load->bitmap_info->loading_subval, new_raw_obj->ptr, raw_consumed_len);
+
+        if (raw_consumed_len < new_raw_len) {
+            /* if raw loaded not yet fully consumed */
+            load->bitmap_info->rdbraw_consuming = new_raw_obj->ptr;
+            load->bitmap_info->rdbraw_offset == raw_consumed_len;
+
+            new_raw_obj->ptr = NULL;
+            decrRefCount(new_raw_obj);
+        } else if (raw_consumed_len == new_raw_len){
+            /* raw_consumed_len == new_raw_len, raw loaded fully consumed. */
+            decrRefCount(new_raw_obj);
+        } else {
+            serverAssert(false);
+        }
+
+        if (sdslen(load->bitmap_info->loading_subval) == subkey_size) {
+            /* if subval finished loading process. */
+
+            long subkey_idx = ((bitmapIterator *)load->iter)->subkey_idx;
+            sds subkey_str = bitmapEncodeSubkeyIdx(subkey_idx);
+
+            ((bitmapIterator *)load->iter)->subkey_idx += 1;
+
+            robj subval_obj;
+            initStaticStringObject(subval_obj, load->bitmap_info->loading_subval);
+
+            *cf = DATA_CF;
+            *rawkey = bitmapEncodeSubkey(load->db, load->key, load->version, subkey_str);
+            *rawval = bitmapEncodeSubval(&subval_obj);
+            *error = 0;
+
+            sdsfree(load->bitmap_info->loading_subval);
+            load->bitmap_info->loading_subval = NULL;
+
+            load->loaded_fields++;
+        } else {
+            /* subval not finished loading process, just return. */
+            *cf = DATA_CF;
+            *rawkey = NULL;
+            *rawval = NULL;
+            *error = 0;
+        }
+
+        return load->loaded_fields < load->total_fields;
+    }
+
+    /* not in the unfinished process of previous subval, just load for new subval. */
+
+    sds subval_raw = NULL;
+    long subval_len = 0;
+
+    load_subval_need_raw_len = subkey_size;
+
+    if (load->bitmap_info->rdbraw_consuming) {
+        /* try to consume previous raw firstly if it existed. */
+
+        serverAssert(consuming_raw_left_len != 0);
+
+        raw_consumed_len = MIN(load_subval_need_raw_len, consuming_raw_left_len); 
+
+        subval_raw = sdsnewlen(load->bitmap_info->rdbraw_consuming + load->bitmap_info->rdbraw_offset, raw_consumed_len);
+        subval_len += raw_consumed_len;
+
+        load->bitmap_info->rdbraw_offset += raw_consumed_len;
+
+        if (load->bitmap_info->rdbraw_offset == sdslen(load->bitmap_info->rdbraw_consuming)) {
+            /* previous loaded raw fully consumed */
+            sdsfree(load->bitmap_info->rdbraw_consuming);
+            load->bitmap_info->rdbraw_consuming = NULL;
+            load->bitmap_info->rdbraw_offset = 0;
+        }
+    }
+
+    /* try to consume raw loaded this time. */
+    if (new_raw_len != 0 && subval_len < subkey_size) {
+
+        load_subval_need_raw_len = subkey_size - subval_len;
+
+        raw_consumed_len = MIN(load_subval_need_raw_len, new_raw_len);
+
+        subval_raw = (subval_raw == NULL ? sdsnewlen(new_raw_obj->ptr, raw_consumed_len) : sdscatlen(subval_raw, new_raw_obj->ptr, raw_consumed_len));
+
+        subval_len += raw_consumed_len;
+
+        if (raw_consumed_len < new_raw_len) {
+            /* if raw loaded not yet fully consumed */
+            load->bitmap_info->rdbraw_consuming = new_raw_obj->ptr;
+            load->bitmap_info->rdbraw_offset == raw_consumed_len;
+
+            new_raw_obj->ptr = NULL;
+            decrRefCount(new_raw_obj);
+        } else if (raw_consumed_len == new_raw_len){
+            /* raw_consumed_len == new_raw_len, raw loaded fully consumed. */
+            decrRefCount(new_raw_obj);
+        } else {
+            serverAssert(false);
+        }
+    }
+
+    if (subval_len == subkey_size) {
+        /* new subval finished loading. */
+
+        long subkey_idx = ((bitmapIterator *)load->iter)->subkey_idx;
+        sds subkey_str = bitmapEncodeSubkeyIdx(subkey_idx);
+        
+        ((bitmapIterator *)load->iter)->subkey_idx += 1;
+
+        robj subval_obj;
+        initStaticStringObject(subval_obj, subval_raw);
+
+        *cf = DATA_CF;
+        *rawkey = bitmapEncodeSubkey(load->db, load->key, load->version, subkey_str);
+        *rawval = bitmapEncodeSubval(&subval_obj);
+        *error = 0;
+
+        load->loaded_fields++;
+    } else {
+        /* subval not finished loading process, just return. */
+        *cf = DATA_CF;
+        *rawkey = NULL;
+        *rawval = NULL;
+        *error = 0;
+    }
+
+    return load->loaded_fields < load->total_fields;
+}
+
+void bitmapLoadDeinit(struct rdbKeyLoadData *load) {
+    if (load->iter) {
+        bitmapTypeReleaseIter(load->iter);
+        load->iter = NULL;
+    }
+
+    if (load->value) {
+        decrRefCount(load->value);
+        load->value = NULL;
+    }
+    if (load->bitmap_info) {
+        zfree(load->bitmap_info);
+        load->bitmap_info = NULL;
+    }
+}
+
+/* load for RDB_TYPE_BITMAP */
+rdbKeyLoadType bitmapLoadType = {
+    .load_start = bitmapLoadStart,
+    .load = bitmapLoad,
+    .load_end = NULL,
+    .load_deinit = bitmapLoadDeinit,
+};
+
+void bitmapLoadInit(rdbKeyLoadData *load) {
+    load->type = &bitmapLoadType;
+    load->omtype = &bitmapObjectMetaType;
+    load->object_type = OBJ_BITMAP;
+    load->iter = bitmapTypeCreateIter();
+    load->bitmap_info = zmalloc(sizeof(bitmaploadInfo));
+    memset(load->bitmap_info, 0, sizeof(bitmaploadInfo));
 }
 
 #ifdef REDIS_TEST
@@ -1306,6 +1684,8 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
     int originEvictStepMaxSubkey = server.swap_evict_step_max_subkeys;
     int originEvictStepMaxMemory = server.swap_evict_step_max_memory;
+
+    long long NOW = 1661657836000;
 
     TEST("bitmap - swap test init") {
 
@@ -1403,7 +1783,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(1 == bitmapObjectMetaEqual(object_meta1, object_meta3));
 
         bitmapMeta *bitmap_meta3 = objectMetaGetPtr(object_meta3);
-        test_assert(1 == bitmapMetaGetHotSubkeysNum(bitmap_meta3, 0, BITMAP_GET_SUBKEYS_NUM(bitmap_meta3->size) - 1));
+        test_assert(1 == bitmapMetaGetHotSubkeysNum(bitmap_meta3, 0, BITMAP_GET_SUBKEYS_NUM(bitmap_meta3->size, BITMAP_SUBKEY_SIZE) - 1));
         test_assert(0 == bitmapObjectMetaIsHot(object_meta2, NULL));
 
         bitmapObjectMetaFree(object_meta1);
@@ -1487,7 +1867,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         swapDataAna(cold_data1,0,cold_keyReq1,&intention,&intention_flags,cold_ctx1);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
         test_assert(((bitmapMeta *)objectMetaGetPtr(cold_meta1))->pure_cold_subkeys_num == 3);
-        test_assert((BITMAP_GET_SUBKEYS_NUM(((bitmapMeta *)objectMetaGetPtr(cold_meta1))->size)) == 3);
+        test_assert((BITMAP_GET_SUBKEYS_NUM(((bitmapMeta *)objectMetaGetPtr(cold_meta1))->size, BITMAP_SUBKEY_SIZE)) == 3);
         test_assert(purehot_ctx1->ctx_flag == 0);
         test_assert(purehot_ctx1->subkeys_num == 0);
 
@@ -1738,7 +2118,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         swapDataAna(cold_data1, 0, cold_keyReq1, &intention, &intention_flags, cold_ctx1);
         test_assert(intention == SWAP_DEL && intention_flags == 0);
         test_assert(((bitmapMeta *)objectMetaGetPtr(cold_meta1))->pure_cold_subkeys_num == 3);
-        test_assert(BITMAP_GET_SUBKEYS_NUM(((bitmapMeta *)objectMetaGetPtr(cold_meta1))->size) == 3);
+        test_assert(BITMAP_GET_SUBKEYS_NUM(((bitmapMeta *)objectMetaGetPtr(cold_meta1))->size, BITMAP_SUBKEY_SIZE) == 3);
         test_assert(purehot_ctx1->ctx_flag == 0);
         test_assert(purehot_ctx1->subkeys_num == 0);
 
@@ -1888,7 +2268,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
         test_assert(bitmap_meta->pure_cold_subkeys_num == 3);
         test_assert(bitmap_meta->size == BITMAP_SUBKEY_SIZE * 7 + BITMAP_SUBKEY_SIZE / 2);
-        test_assert(rbmGetBitRange(bitmap_meta->subkeys_status, 0, BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size) - 1) == 5);
+        test_assert(rbmGetBitRange(bitmap_meta->subkeys_status, 0, BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE) - 1) == 5);
         test_assert(stringObjectLen(result) == BITMAP_SUBKEY_SIZE * 4 + BITMAP_SUBKEY_SIZE / 2);
 
         test_assert(bitmapMergedIsHot(cold_data2, result, cold_ctx2) == 0);
@@ -1922,13 +2302,15 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
         /* 5 subkeys are hot */
         sds str = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE * 4);
-        sds str1 = sdsnewlen("1", BITMAP_SUBKEY_SIZE);  /* subkey 6 is not all zero bits. */
+        sds str1 = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE);  /* subkey 6 is not all zero bits. */
+        str1[0] = '1';
 
         str = sdscatsds(str, str1);
         warm_bitmap2 = createStringObject(str, sdslen(str));
 
         sds str2 = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE * 4);
-        sds str3 = sdsnewlen("1", BITMAP_SUBKEY_SIZE);  /* subkey 6 is not all zero bits. */
+        sds str3 = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE);  /* subkey 6 is not all zero bits. */
+        str3[0] = '1';
         str2 = sdscatsds(str2, str3);
 
         test_assert(0 == memcmp(warm_bitmap2->ptr, str2, BITMAP_SUBKEY_SIZE * 5));
@@ -1968,7 +2350,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
         test_assert(bitmap_meta->pure_cold_subkeys_num == 0);
         test_assert(bitmap_meta->size == BITMAP_SUBKEY_SIZE * 7 + BITMAP_SUBKEY_SIZE / 2);
-        test_assert(rbmGetBitRange(bitmap_meta->subkeys_status, 0, BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size) - 1) == 8);
+        test_assert(rbmGetBitRange(bitmap_meta->subkeys_status, 0, BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE) - 1) == 8);
         test_assert(stringObjectLen(result) == BITMAP_SUBKEY_SIZE * 7 + BITMAP_SUBKEY_SIZE / 2);
 
         test_assert(bitmapMergedIsHot(warm_data2, result, warm_ctx2) == 1);
@@ -1979,7 +2361,8 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(stringObjectLen(bm) == BITMAP_SUBKEY_SIZE * 7 + BITMAP_SUBKEY_SIZE / 2);
 
         sds str5 = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE * 6);
-        sds str6 = sdsnewlen("1", BITMAP_SUBKEY_SIZE);  /* subkey 6 is not all zero bits. */
+        sds str6 = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE);  /* subkey 6 is not all zero bits. */
+        str6[0] = '1';
         sds str7 = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE / 2);
 
         str5 = sdscatsds(str5, str6);
@@ -2041,7 +2424,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(bm->persistent);
 
         bitmapMeta *bitmap_meta = swapDataGetBitmapMeta(purehot_data2);
-        test_assert(rbmGetBitRange(bitmap_meta->subkeys_status, 0, BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size) - 1) == 0);
+        test_assert(rbmGetBitRange(bitmap_meta->subkeys_status, 0, BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE) - 1) == 0);
         test_assert(bitmap_meta->pure_cold_subkeys_num == 2);
 
         int totally_out;
@@ -2060,7 +2443,8 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
         /* 13 subkeys in pure hot bitmap */
         sds str = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE * 10);
-        sds str1 = sdsnewlen("1", BITMAP_SUBKEY_SIZE * 2 + BITMAP_SUBKEY_SIZE / 2);
+        sds str1 = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE * 2 + BITMAP_SUBKEY_SIZE / 2);
+        str1[0] = '1';
         str = sdscatsds(str, str1);
 
         purehot_bitmap3 = createStringObject(str, sdslen(str));
@@ -2096,7 +2480,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(bm->persistent);
 
         bitmapMeta *bitmap_meta = swapDataGetBitmapMeta(purehot_data3);
-        test_assert(rbmGetBitRange(bitmap_meta->subkeys_status, 0, BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size) - 1) == 13);
+        test_assert(rbmGetBitRange(bitmap_meta->subkeys_status, 0, BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE) - 1) == 13);
         test_assert(bitmap_meta->pure_cold_subkeys_num == 0);
 
         int totally_out;
@@ -2116,7 +2500,8 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
         /* 13 subkeys in pure hot bitmap */
         sds str = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE * 10);
-        sds str1 = sdsnewlen("1", BITMAP_SUBKEY_SIZE * 2 + BITMAP_SUBKEY_SIZE / 2);
+        sds str1 = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE * 2 + BITMAP_SUBKEY_SIZE / 2);
+        str1[0] = '1';
         str = sdscatsds(str, str1);
 
         purehot_bitmap4 = createStringObject(str, sdslen(str));
@@ -2152,7 +2537,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(bm->persistent);
 
         bitmapMeta *bitmap_meta = swapDataGetBitmapMeta(purehot_data4);
-        test_assert(rbmGetBitRange(bitmap_meta->subkeys_status, 0, BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size) - 1) == 3);
+        test_assert(rbmGetBitRange(bitmap_meta->subkeys_status, 0, BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE) - 1) == 3);
         test_assert(bitmap_meta->pure_cold_subkeys_num == 10);
 
         int totally_out;
@@ -2162,7 +2547,8 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(stringObjectLen(bm) == BITMAP_SUBKEY_SIZE * 2 + BITMAP_SUBKEY_SIZE / 2);
         test_assert(totally_out == 0);
 
-        sds str2 = sdsnewlen("1", BITMAP_SUBKEY_SIZE * 2 + BITMAP_SUBKEY_SIZE / 2);
+        sds str2 = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE * 2 + BITMAP_SUBKEY_SIZE / 2);
+        str2[0] = '1';
         test_assert(0 == memcmp(bm->ptr, str2, BITMAP_SUBKEY_SIZE * 2 + BITMAP_SUBKEY_SIZE / 2));
 
         sdsfree(str);
@@ -2295,19 +2681,20 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
     TEST("bitmap - save RDB_TYPE_STRING") {
 
-        sds f1, f2, f3;
+        sds f1, f2, f3, subval1, rdb_subval1, rdb_subval2, rdb_subval3, coldraw, warmraw, hotraw, warm_str1, hot_bitmap;
+
+        robj *save_key1, *save_warm_bitmap1, *save_hot_bitmap0, *save_hot_bitmap1, *rdb_key1, *rdb_key2, *rdb_key3, *value1, *value2, *value3;
+
         f1 = bitmapEncodeSubkeyIdx(0), f2 = bitmapEncodeSubkeyIdx(1), f3 = bitmapEncodeSubkeyIdx(2);
+        save_key1 = createStringObject("save_key1",9);
 
-        robj *save_key1 = createStringObject("save_key1",9);
-
-        sds subval1 = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE);
+        subval1 = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE);
         subval1[0] = '1';
 
-        sds rdb_subval1 = bitmapEncodeSubval(createStringObject(subval1, sdslen(subval1)));
-        sds rdb_subval2 = bitmapEncodeSubval(createStringObject(NULL, BITMAP_SUBKEY_SIZE));
-        sds rdb_subval3 = bitmapEncodeSubval(createStringObject(NULL, BITMAP_SUBKEY_SIZE / 2));
+        rdb_subval1 = bitmapEncodeSubval(createStringObject(subval1, sdslen(subval1)));
+        rdb_subval2 = bitmapEncodeSubval(createStringObject(NULL, BITMAP_SUBKEY_SIZE));
+        rdb_subval3 = bitmapEncodeSubval(createStringObject(NULL, BITMAP_SUBKEY_SIZE / 2));
 
-        sds coldraw, warmraw, hotraw;
         rio rdbcold, rdbwarm, rdbhot, rdbhot2;
         rdbKeySaveData _saveData; rdbKeySaveData *saveData = &_saveData;
 
@@ -2332,19 +2719,19 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         rioInitWithBuffer(&rdbcold,sdsempty());
         test_assert(rdbKeySaveDataInit(saveData, db, (decodedResult*)decoded_meta) == 0);
 
-        test_assert(rdbKeySaveStart(saveData, &rdbcold) == 0);
+        test_assert(bitmapWholeSaveStart(saveData, &rdbcold) == 0);
 
         decoded_data->subkey = f1, decoded_data->rdbraw = sdsnewlen(rdb_subval1 + 1, sdslen(rdb_subval1) - 1);
         decoded_data->version = saveData->object_meta->version;
-        test_assert(rdbKeySave(saveData,&rdbcold,decoded_data) == 0 && saveData->saved == 1);
+        test_assert(bitmapWholeSave(saveData,&rdbcold,decoded_data) == 0 && saveData->saved == 1);
 
         decoded_data->subkey = f2, decoded_data->rdbraw = sdsnewlen(rdb_subval2 + 1, sdslen(rdb_subval2) - 1);
-        test_assert(rdbKeySave(saveData,&rdbcold,decoded_data) == 0 && saveData->saved == 2);
+        test_assert(bitmapWholeSave(saveData,&rdbcold,decoded_data) == 0 && saveData->saved == 2);
 
         decoded_data->subkey = f3, decoded_data->rdbraw = sdsnewlen(rdb_subval3 + 1, sdslen(rdb_subval3) - 1);
-        test_assert(rdbKeySave(saveData,&rdbcold,decoded_data) == 0 && saveData->saved == 3);
+        test_assert(bitmapWholeSave(saveData,&rdbcold,decoded_data) == 0 && saveData->saved == 3);
 
-        test_assert(rdbKeySaveEnd(saveData,&rdbcold,0) == 0);
+        test_assert(bitmapWholeSaveEnd(saveData,&rdbcold,0) == 0);
 
         rdbKeySaveDataDeinit(saveData);
         coldraw = rdbcold.io.buffer.ptr;
@@ -2355,9 +2742,9 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         rioInitWithBuffer(&rdbwarm,sdsempty());
 
         /* 2 subkeys are hot */
-        sds warm_str1 = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE + BITMAP_SUBKEY_SIZE / 2);
+        warm_str1 = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE + BITMAP_SUBKEY_SIZE / 2);
         warm_str1[0] = '1';
-        robj *save_warm_bitmap1 = createStringObject(warm_str1, sdslen(warm_str1));
+        save_warm_bitmap1 = createStringObject(warm_str1, sdslen(warm_str1));
         save_warm_bitmap1->type = OBJ_BITMAP;
 
         bitmapMeta *warm_bitmap_meta = bitmapMetaCreate();
@@ -2375,25 +2762,25 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         dbAddMeta(db, save_key1, warm_object_meta);
 
         test_assert(rdbKeySaveDataInit(saveData, db, (decodedResult*)decoded_meta) == 0);
-        test_assert(rdbKeySaveStart(saveData,&rdbwarm) == 0);
+        test_assert(bitmapWholeSaveStart(saveData, &rdbwarm) == 0);
 
         decoded_data->version = saveData->object_meta->version;
         decoded_data->subkey = f2, decoded_data->rdbraw = sdsnewlen(rdb_subval2 + 1, sdslen(rdb_subval2) - 1);
 
-        test_assert(rdbKeySave(saveData,&rdbwarm,decoded_data) == 0);
+        test_assert(bitmapWholeSave(saveData,&rdbwarm,decoded_data) == 0);
 
-        test_assert(rdbKeySaveEnd(saveData,&rdbwarm,0) == 0);
+        test_assert(bitmapWholeSaveEnd(saveData,&rdbwarm,0) == 0);
 
         rdbKeySaveDataDeinit(saveData);
         warmraw = rdbwarm.io.buffer.ptr;
 
         /* rdbSave - save hot */
-        sds hot_bitmap = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE * 2 + BITMAP_SUBKEY_SIZE / 2);
+        hot_bitmap = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE * 2 + BITMAP_SUBKEY_SIZE / 2);
         hot_bitmap[0] = '1';
 
-        robj *save_hot_bitmap0 = createStringObject(hot_bitmap, sdslen(hot_bitmap));
+        save_hot_bitmap0 = createStringObject(hot_bitmap, sdslen(hot_bitmap));
 
-        robj *save_hot_bitmap1 = createStringObject(hot_bitmap, sdslen(hot_bitmap));
+        save_hot_bitmap1 = createStringObject(hot_bitmap, sdslen(hot_bitmap));
 
         /* 3 subkeys are hot */
         save_hot_bitmap1->type = OBJ_BITMAP;
@@ -2429,11 +2816,11 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         /* rdbtype */
         test_assert(rdbLoadType(&rdbwarm) == RDB_TYPE_STRING);
         /* key */
-        robj *rdb_key1 = rdbLoadStringObject(&rdbwarm);
+        rdb_key1 = rdbLoadStringObject(&rdbwarm);
         test_assert(equalStringObjects(rdb_key1, save_key1));
 
         int error1 = 0;
-        robj *value1 = rdbLoadObject(RDB_TYPE_STRING, &rdbwarm, rdb_key1, &error1, 0);
+        value1 = rdbLoadObject(RDB_TYPE_STRING, &rdbwarm, rdb_key1, &error1, 0);
         test_assert(value1 != NULL);
 
         test_assert(equalStringObjects(value1, save_hot_bitmap0));
@@ -2448,11 +2835,11 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         /* rdbtype */
         test_assert(rdbLoadType(&rdbcold) == RDB_TYPE_STRING);
         /* key */
-        robj *rdb_key2 = rdbLoadStringObject(&rdbcold);
+        rdb_key2 = rdbLoadStringObject(&rdbcold);
         test_assert(equalStringObjects(rdb_key2, save_key1));
 
         int error2 = 0;
-        robj *value2 = rdbLoadObject(RDB_TYPE_STRING, &rdbcold, rdb_key2, &error2, 0);
+        value2 = rdbLoadObject(RDB_TYPE_STRING, &rdbcold, rdb_key2, &error2, 0);
         test_assert(value2 != NULL);
 
         test_assert(equalStringObjects(value2, save_hot_bitmap0));
@@ -2467,14 +2854,386 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         /* rdbtype */
         test_assert(rdbLoadType(&rdbhot) == RDB_TYPE_STRING);
         /* key */
-        robj *rdb_key3 = rdbLoadStringObject(&rdbhot);
+        rdb_key3 = rdbLoadStringObject(&rdbhot);
         test_assert(equalStringObjects(rdb_key3, save_key1));
 
         int error3 = 0;
-        robj *value3 = rdbLoadObject(RDB_TYPE_STRING, &rdbhot, rdb_key3, &error3, 0);
+        value3 = rdbLoadObject(RDB_TYPE_STRING, &rdbhot, rdb_key3, &error3, 0);
         test_assert(value3 != NULL);
 
         test_assert(equalStringObjects(value3, save_hot_bitmap0));
+    }
+
+    TEST("bitmap - save & load cold RDB_TYPE_BITMAP") {
+        
+        sds f1, f2, f3, subval1, rdb_subval1, rdb_subval2, rdb_subval3, coldraw, warmraw, hotraw, warm_str1, hot_bitmap;
+
+        robj *save_key1, *save_warm_bitmap1, *save_hot_bitmap0, *save_hot_bitmap1, *rdb_key1, *rdb_key2, *rdb_key3, *value1, *value2, *value3;
+
+        uint64_t V = server.swap_key_version = 0; /* reset to zero so that save & load with same version(0) */
+
+        save_key1 = createStringObject("save_key1",9);
+
+        f1 = bitmapEncodeSubkeyIdx(0), f2 = bitmapEncodeSubkeyIdx(1), f3 = bitmapEncodeSubkeyIdx(2);
+
+        sds raw_f1 = bitmapEncodeSubkey(db, save_key1->ptr, V, f1);
+        sds raw_f2 = bitmapEncodeSubkey(db, save_key1->ptr, V, f2);
+        sds raw_f3 = bitmapEncodeSubkey(db, save_key1->ptr, V, f3);
+
+        subval1 = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE);
+        subval1[0] = '1';
+
+        rdb_subval1 = bitmapEncodeSubval(createStringObject(subval1, sdslen(subval1)));
+        rdb_subval2 = bitmapEncodeSubval(createStringObject(NULL, BITMAP_SUBKEY_SIZE));
+        rdb_subval3 = bitmapEncodeSubval(createStringObject(NULL, BITMAP_SUBKEY_SIZE / 2));
+
+        rio rdbcold, rdbwarm, rdbhot, rdbhot2;
+        rdbKeySaveData _saveData; rdbKeySaveData *saveData = &_saveData;
+
+        decodedMeta _decoded_meta, *decoded_meta = &_decoded_meta;
+        decodedData _decoded_data, *decoded_data = &_decoded_data;
+        decoded_meta->dbid = db->id;
+        decoded_meta->key = save_key1->ptr;
+        decoded_meta->cf = META_CF;
+        decoded_meta->version = 0;
+        decoded_meta->object_type = OBJ_BITMAP;
+        decoded_meta->expire = -1;
+        decoded_meta->extend = encodeBitmapSize(BITMAP_SUBKEY_SIZE * 2 + BITMAP_SUBKEY_SIZE / 2);
+
+        decoded_data->dbid = db->id;
+        decoded_data->key = save_key1->ptr;
+        decoded_data->cf = DATA_CF;
+        decoded_data->version = 0;
+        decoded_data->rdbtype = RDB_TYPE_BITMAP;
+
+        /* rdbSave - save cold, 3 subkeys */
+        dbDelete(db, save_key1);
+        rioInitWithBuffer(&rdbcold,sdsempty());
+        test_assert(rdbKeySaveDataInit(saveData, db, (decodedResult*)decoded_meta) == 0);
+
+        test_assert(bitmapSaveStart(saveData, &rdbcold) == 0);
+
+        decoded_data->subkey = f1, decoded_data->rdbraw = sdsnewlen(rdb_subval1 + 1, sdslen(rdb_subval1) - 1);
+        decoded_data->version = saveData->object_meta->version;
+        test_assert(bitmapSave(saveData,&rdbcold,decoded_data) == 0 && saveData->saved == 1);
+
+        decoded_data->subkey = f2, decoded_data->rdbraw = sdsnewlen(rdb_subval2 + 1, sdslen(rdb_subval2) - 1);
+        test_assert(bitmapSave(saveData,&rdbcold,decoded_data) == 0 && saveData->saved == 2);
+
+        decoded_data->subkey = f3, decoded_data->rdbraw = sdsnewlen(rdb_subval3 + 1, sdslen(rdb_subval3) - 1);
+        test_assert(bitmapSave(saveData,&rdbcold,decoded_data) == 0 && saveData->saved == 3);
+
+        test_assert(bitmapSaveEnd(saveData,&rdbwarm,0) == 0);
+
+        bitmapSaveDeinit(saveData);
+
+        coldraw = rdbcold.io.buffer.ptr;
+        rioInitWithBuffer(&rdbcold,coldraw);
+
+        int type;
+        uint8_t byte;
+        
+        /* consume rdb header */
+        test_assert((type = rdbLoadType(&rdbcold)) == RDB_OPCODE_FREQ);
+        rioRead(&rdbcold, &byte, 1);
+        test_assert((type = rdbLoadType(&rdbcold)) == RDB_TYPE_BITMAP);
+        sds key = rdbGenericLoadStringObject(&rdbcold,RDB_LOAD_SDS,NULL);
+        test_assert(!sdscmp(key, save_key1->ptr));
+
+        /* consume object */
+        rdbKeyLoadData _load, *load = &_load;
+        rdbKeyLoadDataInit(load, type, db, key, -1, NOW);
+        sds metakey, metaval, subkey, subraw;
+        int cont, cf, err;
+
+        sds expected_metakey = rocksEncodeMetaKey(db, save_key1->ptr),
+            expected_metaextend = encodeBitmapSize(BITMAP_SUBKEY_SIZE * 2 + BITMAP_SUBKEY_SIZE / 2),
+            expected_metaval = rocksEncodeMetaVal(OBJ_BITMAP, -1, V, expected_metaextend);
+
+        bitmapLoadStart(load,&rdbcold,&cf,&metakey,&metaval,&err);
+        test_assert(cf == META_CF && err == 0);
+        test_assert(!sdscmp(metakey,expected_metakey));
+        test_assert(!sdscmp(metaval,expected_metaval));
+
+        cont = bitmapLoad(load,&rdbcold,&cf,&subkey,&subraw,&err);
+        test_assert(cf == DATA_CF && cont == 1 && err == 0);
+        test_assert(!sdscmp(subraw, rdb_subval1) && !sdscmp(subkey, raw_f1));
+
+        sdsfree(subkey), sdsfree(subraw);
+
+        cont = bitmapLoad(load,&rdbcold,&cf,&subkey,&subraw,&err);
+        test_assert(cf == DATA_CF && cont == 1 && err == 0);
+        test_assert(!sdscmp(subraw, rdb_subval2) && !sdscmp(subkey, raw_f2));
+
+        sdsfree(subkey), sdsfree(subraw);
+
+        cont = bitmapLoad(load,&rdbcold,&cf,&subkey,&subraw,&err);
+        test_assert(cf == DATA_CF && cont == 0 && err == 0);
+        test_assert(!sdscmp(subraw, rdb_subval3) && !sdscmp(subkey, raw_f3));
+
+        sdsfree(subkey), sdsfree(subraw);
+
+        test_assert(load->loaded_fields == 3);
+        test_assert(load->object_type == OBJ_BITMAP);
+        rdbKeyLoadDataDeinit(load);
+
+    }
+
+    TEST("bitmap - save & load warm RDB_TYPE_BITMAP") {
+        
+        sds f1, f2, f3, subval1, rdb_subval1, rdb_subval2, rdb_subval3, coldraw, warmraw, hotraw, warm_str1, hot_bitmap;
+
+        robj *save_key1, *save_warm_bitmap1, *save_hot_bitmap0, *save_hot_bitmap1, *rdb_key1, *rdb_key2, *rdb_key3, *value1, *value2, *value3;
+
+        uint64_t V = server.swap_key_version = 0; /* reset to zero so that save & load with same version(0) */
+
+        save_key1 = createStringObject("save_key1",9);
+
+        f1 = bitmapEncodeSubkeyIdx(0), f2 = bitmapEncodeSubkeyIdx(1), f3 = bitmapEncodeSubkeyIdx(2);
+
+        sds raw_f1 = bitmapEncodeSubkey(db, save_key1->ptr, V, f1);
+        sds raw_f2 = bitmapEncodeSubkey(db, save_key1->ptr, V, f2);
+        sds raw_f3 = bitmapEncodeSubkey(db, save_key1->ptr, V, f3);
+
+        subval1 = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE);
+        subval1[0] = '1';
+
+        rdb_subval1 = bitmapEncodeSubval(createStringObject(subval1, sdslen(subval1)));
+        rdb_subval2 = bitmapEncodeSubval(createStringObject(NULL, BITMAP_SUBKEY_SIZE));
+        rdb_subval3 = bitmapEncodeSubval(createStringObject(NULL, BITMAP_SUBKEY_SIZE / 2));
+
+        rio rdbcold, rdbwarm, rdbhot, rdbhot2;
+        rdbKeySaveData _saveData; rdbKeySaveData *saveData = &_saveData;
+
+        decodedMeta _decoded_meta, *decoded_meta = &_decoded_meta;
+        decodedData _decoded_data, *decoded_data = &_decoded_data;
+        decoded_meta->dbid = db->id;
+        decoded_meta->key = save_key1->ptr;
+        decoded_meta->cf = META_CF;
+        decoded_meta->version = 0;
+        decoded_meta->object_type = OBJ_BITMAP;
+        decoded_meta->expire = -1;
+        decoded_meta->extend = encodeBitmapSize(BITMAP_SUBKEY_SIZE * 2 + BITMAP_SUBKEY_SIZE / 2);
+
+        decoded_data->dbid = db->id;
+        decoded_data->key = save_key1->ptr;
+        decoded_data->cf = DATA_CF;
+        decoded_data->version = 0;
+        decoded_data->rdbtype = RDB_TYPE_BITMAP;
+
+        /* rdbSave - save warm */
+
+        dbDelete(db, save_key1);
+        rioInitWithBuffer(&rdbwarm,sdsempty());
+
+        /* 2 subkeys are hot */
+        warm_str1 = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE + BITMAP_SUBKEY_SIZE / 2);
+        warm_str1[0] = '1';
+        save_warm_bitmap1 = createStringObject(warm_str1, sdslen(warm_str1));
+        save_warm_bitmap1->type = OBJ_BITMAP;
+
+        bitmapMeta *warm_bitmap_meta = bitmapMetaCreate();
+
+        /* subkeys sum = 3, part {0, 2} both in redis and rocks, {1} in rocksDb. */
+        bitmapMetaSetSubkeyStatus(warm_bitmap_meta, 2, 2, STATUS_HOT);
+        bitmapMetaSetSubkeyStatus(warm_bitmap_meta, 0, 0, STATUS_HOT);
+
+        warm_bitmap_meta->pure_cold_subkeys_num = 1;
+        warm_bitmap_meta->size = BITMAP_SUBKEY_SIZE * 2 + BITMAP_SUBKEY_SIZE / 2;
+
+        objectMeta *warm_object_meta = createBitmapObjectMeta(0, warm_bitmap_meta);
+
+        dbAdd(db, save_key1, save_warm_bitmap1);
+        dbAddMeta(db, save_key1, warm_object_meta);
+
+        test_assert(rdbKeySaveDataInit(saveData, db, (decodedResult*)decoded_meta) == 0);
+        test_assert(bitmapSaveStart(saveData, &rdbwarm) == 0);
+
+        decoded_data->version = saveData->object_meta->version;
+        decoded_data->subkey = f2, decoded_data->rdbraw = sdsnewlen(rdb_subval2 + 1, sdslen(rdb_subval2) - 1);
+
+        test_assert(bitmapSave(saveData,&rdbwarm,decoded_data) == 0);
+
+        test_assert(bitmapSaveEnd(saveData,&rdbwarm,0) == 0);
+
+        rdbKeySaveDataDeinit(saveData);
+
+        warmraw = rdbwarm.io.buffer.ptr;
+        rioInitWithBuffer(&rdbwarm,warmraw);
+
+        int type;
+        uint8_t byte;
+        
+        /* consume rdb header */
+        test_assert((type = rdbLoadType(&rdbwarm)) == RDB_OPCODE_FREQ);
+        rioRead(&rdbwarm, &byte, 1);
+        test_assert((type = rdbLoadType(&rdbwarm)) == RDB_TYPE_BITMAP);
+        sds key = rdbGenericLoadStringObject(&rdbwarm,RDB_LOAD_SDS,NULL);
+        test_assert(!sdscmp(key, save_key1->ptr));
+
+        /* consume object */
+        rdbKeyLoadData _load, *load = &_load;
+        rdbKeyLoadDataInit(load, type, db, key, -1, NOW);
+        sds metakey, metaval, subkey, subraw;
+        int cont, cf, err;
+
+        sds expected_metakey = rocksEncodeMetaKey(db, save_key1->ptr),
+            expected_metaextend = encodeBitmapSize(BITMAP_SUBKEY_SIZE * 2 + BITMAP_SUBKEY_SIZE / 2),
+            expected_metaval = rocksEncodeMetaVal(OBJ_BITMAP, -1, V, expected_metaextend);
+
+        bitmapLoadStart(load,&rdbwarm,&cf,&metakey,&metaval,&err);
+        test_assert(cf == META_CF && err == 0);
+        test_assert(!sdscmp(metakey,expected_metakey));
+        test_assert(!sdscmp(metaval,expected_metaval));
+
+        cont = bitmapLoad(load,&rdbwarm,&cf,&subkey,&subraw,&err);
+        test_assert(cf == DATA_CF && cont == 1 && err == 0);
+        test_assert(!sdscmp(subraw, rdb_subval1) && !sdscmp(subkey, raw_f1));
+
+        sdsfree(subkey), sdsfree(subraw);
+
+        cont = bitmapLoad(load,&rdbwarm,&cf,&subkey,&subraw,&err);
+        test_assert(cf == DATA_CF && cont == 1 && err == 0);
+        test_assert(!sdscmp(subraw, rdb_subval2) && !sdscmp(subkey, raw_f2));
+
+        sdsfree(subkey), sdsfree(subraw);
+
+        cont = bitmapLoad(load,&rdbwarm,&cf,&subkey,&subraw,&err);
+        test_assert(cf == DATA_CF && cont == 0 && err == 0);
+        test_assert(!sdscmp(subraw, rdb_subval3) && !sdscmp(subkey, raw_f3));
+
+        sdsfree(subkey), sdsfree(subraw);
+
+        test_assert(load->loaded_fields == 3);
+        test_assert(load->object_type == OBJ_BITMAP);
+        rdbKeyLoadDataDeinit(load);
+
+    }
+
+    TEST("bitmap - save & load hot RDB_TYPE_BITMAP") {
+        sds f1, f2, f3, subval1, rdb_subval1, rdb_subval2, rdb_subval3, coldraw, warmraw, hotraw, warm_str1, hot_bitmap;
+
+        robj *save_key1, *save_warm_bitmap1, *save_hot_bitmap0, *save_hot_bitmap1, *rdb_key1, *rdb_key2, *rdb_key3, *value1, *value2, *value3;
+
+        uint64_t V = server.swap_key_version = 0; /* reset to zero so that save & load with same version(0) */
+
+        save_key1 = createStringObject("save_key1",9);
+        dbDelete(db, save_key1);
+
+        f1 = bitmapEncodeSubkeyIdx(0), f2 = bitmapEncodeSubkeyIdx(1), f3 = bitmapEncodeSubkeyIdx(2);
+
+        sds raw_f1 = bitmapEncodeSubkey(db, save_key1->ptr, V, f1);
+        sds raw_f2 = bitmapEncodeSubkey(db, save_key1->ptr, V, f2);
+        sds raw_f3 = bitmapEncodeSubkey(db, save_key1->ptr, V, f3);
+
+        subval1 = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE);
+        subval1[0] = '1';
+
+        rdb_subval1 = bitmapEncodeSubval(createStringObject(subval1, sdslen(subval1)));
+        rdb_subval2 = bitmapEncodeSubval(createStringObject(NULL, BITMAP_SUBKEY_SIZE));
+        rdb_subval3 = bitmapEncodeSubval(createStringObject(NULL, BITMAP_SUBKEY_SIZE / 2));
+
+        rio rdbcold, rdbwarm, rdbhot, rdbhot2;
+        rdbKeySaveData _saveData; rdbKeySaveData *saveData = &_saveData;
+
+        decodedMeta _decoded_meta, *decoded_meta = &_decoded_meta;
+        decodedData _decoded_data, *decoded_data = &_decoded_data;
+        decoded_meta->dbid = db->id;
+        decoded_meta->key = save_key1->ptr;
+        decoded_meta->cf = META_CF;
+        decoded_meta->version = 0;
+        decoded_meta->object_type = OBJ_BITMAP;
+        decoded_meta->expire = -1;
+        decoded_meta->extend = encodeBitmapSize(BITMAP_SUBKEY_SIZE * 2 + BITMAP_SUBKEY_SIZE / 2);
+
+        decoded_data->dbid = db->id;
+        decoded_data->key = save_key1->ptr;
+        decoded_data->cf = DATA_CF;
+        decoded_data->version = 0;
+        decoded_data->rdbtype = RDB_TYPE_BITMAP;
+
+        /* rdbSave - save hot */
+        hot_bitmap = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE * 2 + BITMAP_SUBKEY_SIZE / 2);
+        hot_bitmap[0] = '1';
+
+        save_hot_bitmap1 = createStringObject(hot_bitmap, sdslen(hot_bitmap));
+
+        /* 3 subkeys are hot */
+        save_hot_bitmap1->type = OBJ_BITMAP;
+
+        bitmapMeta *hot_bitmap_meta = bitmapMetaCreate();
+
+        /* subkeys sum = 3, part {0,1,2} both in redis and rocks. */
+        bitmapMetaSetSubkeyStatus(hot_bitmap_meta, 2, 2, STATUS_HOT);
+        bitmapMetaSetSubkeyStatus(hot_bitmap_meta, 1, 1, STATUS_HOT);
+        bitmapMetaSetSubkeyStatus(hot_bitmap_meta, 0, 0, STATUS_HOT);
+
+        hot_bitmap_meta->pure_cold_subkeys_num = 0;
+        hot_bitmap_meta->size = BITMAP_SUBKEY_SIZE * 2 + BITMAP_SUBKEY_SIZE / 2;
+
+        objectMeta *hot_object_meta = createBitmapObjectMeta(0, hot_bitmap_meta);
+
+        dbAdd(db, save_key1, save_hot_bitmap1);
+        dbAddMeta(db, save_key1, hot_object_meta);
+
+        rioInitWithBuffer(&rdbhot,sdsempty());
+
+        test_assert(rdbKeySaveDataInit(saveData, db, (decodedResult*)decoded_meta) == 0);
+        test_assert(bitmapSaveStart(saveData, &rdbhot) == CUR_KEY_SAVE_FINISHED);
+
+        test_assert(bitmapSaveEnd(saveData,&rdbhot,0) == 0);
+
+        rdbKeySaveDataDeinit(saveData);
+
+        hotraw = rdbhot.io.buffer.ptr;
+        rioInitWithBuffer(&rdbhot,hotraw);
+
+        int type;
+        uint8_t byte;
+        
+        /* consume rdb header */
+        test_assert((type = rdbLoadType(&rdbhot)) == RDB_OPCODE_FREQ);
+        rioRead(&rdbhot, &byte, 1);
+        test_assert((type = rdbLoadType(&rdbhot)) == RDB_TYPE_BITMAP);
+        sds key = rdbGenericLoadStringObject(&rdbhot,RDB_LOAD_SDS,NULL);
+        test_assert(!sdscmp(key, save_key1->ptr));
+
+        /* consume object */
+        rdbKeyLoadData _load, *load = &_load;
+        rdbKeyLoadDataInit(load, type, db, key, -1, NOW);
+        sds metakey, metaval, subkey, subraw;
+        int cont, cf, err;
+
+        sds expected_metakey = rocksEncodeMetaKey(db, save_key1->ptr),
+            expected_metaextend = encodeBitmapSize(BITMAP_SUBKEY_SIZE * 2 + BITMAP_SUBKEY_SIZE / 2),
+            expected_metaval = rocksEncodeMetaVal(OBJ_BITMAP, -1, V, expected_metaextend);
+
+        bitmapLoadStart(load,&rdbhot,&cf,&metakey,&metaval,&err);
+        test_assert(cf == META_CF && err == 0);
+        test_assert(!sdscmp(metakey,expected_metakey));
+        test_assert(!sdscmp(metaval,expected_metaval));
+
+        cont = bitmapLoad(load,&rdbhot,&cf,&subkey,&subraw,&err);
+        test_assert(cf == DATA_CF && cont == 1 && err == 0);
+        test_assert(!sdscmp(subraw, rdb_subval1) && !sdscmp(subkey, raw_f1));
+
+        sdsfree(subkey), sdsfree(subraw);
+
+        cont = bitmapLoad(load,&rdbhot,&cf,&subkey,&subraw,&err);
+        test_assert(cf == DATA_CF && cont == 1 && err == 0);
+        test_assert(!sdscmp(subraw, rdb_subval2) && !sdscmp(subkey, raw_f2));
+
+        sdsfree(subkey), sdsfree(subraw);
+
+        cont = bitmapLoad(load,&rdbhot,&cf,&subkey,&subraw,&err);
+        test_assert(cf == DATA_CF && cont == 0 && err == 0);
+        test_assert(!sdscmp(subraw, rdb_subval3) && !sdscmp(subkey, raw_f3));
+
+        sdsfree(subkey), sdsfree(subraw);
+
+        test_assert(load->loaded_fields == 3);
+        test_assert(load->object_type == OBJ_BITMAP);
+        rdbKeyLoadDataDeinit(load);
     }
 
     server.swap_evict_step_max_subkeys = originEvictStepMaxSubkey;

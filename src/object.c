@@ -387,6 +387,7 @@ void decrRefCount(robj *o) {
         o->refcount--;
         switch(o->type) {
         case OBJ_STRING:
+        case OBJ_BITMAP:
             if (o->ptr) freeStringObject(o);
             break;
         case OBJ_LIST: if (o->ptr) freeListObject(o); break;
