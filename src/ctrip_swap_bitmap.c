@@ -579,16 +579,8 @@ int bitmapSwapAna(swapData *data, int thd, struct keyRequest *req,
             }
             break;
         case SWAP_DEL:
-            if (!swapDataPersisted(data)) {
-                /* If key is hot, swapAna must be executing in main-thread,
-                 * we can safely delete meta. */
-                dbDeleteMeta(data->db, data->key);
-                *intention = SWAP_NOP;
-                *intention_flags = 0;
-            } else {
-                *intention = SWAP_DEL;
-                *intention_flags = 0;
-            }
+            *intention = SWAP_DEL;
+            *intention_flags = 0;
             break;
         default:
             break;
@@ -917,8 +909,12 @@ int bitmapSwapDel(swapData *data, void *datactx_, int del_skip) {
     }
 
     if (del_skip) {
-        if (!swapDataIsCold(data))
-            dbDeleteMeta(data->db,data->key);
+        if (!swapDataIsCold(data)) {
+            /* different from bighash, set, no need to delete meta, just free bitmap meta, keep bitmap_type flag in meta */
+            objectMeta *meta = swapDataObjectMeta(data);
+            serverAssert(meta != NULL);
+            bitmapObjectMetaFree(meta);
+        }
         return 0;
     } else {
         if (!swapDataIsCold(data))

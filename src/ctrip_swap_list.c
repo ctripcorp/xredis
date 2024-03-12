@@ -1237,6 +1237,7 @@ int listObjectMetaIsHot(objectMeta *object_meta, robj *value) {
 void listObjectMetaFree(objectMeta *object_meta) {
     if (object_meta == NULL) return;
     listMetaFree(objectMetaGetPtr(object_meta));
+    objectMetaSetPtr(object_meta, NULL);
 }
 
 void listObjectMetaDup(struct objectMeta *dup_meta, struct objectMeta *object_meta) {
