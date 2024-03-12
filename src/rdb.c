@@ -663,7 +663,6 @@ int rdbLoadBinaryFloatValue(rio *rdb, float *val) {
 int rdbSaveObjectType(rio *rdb, robj *o) {
     switch (o->type) {
     case OBJ_STRING:
-    case OBJ_BITMAP:
         return rdbSaveType(rdb,RDB_TYPE_STRING);
     case OBJ_LIST:
         if (o->encoding == OBJ_ENCODING_QUICKLIST)
@@ -808,7 +807,7 @@ size_t rdbSaveStreamConsumers(rio *rdb, streamCG *cg) {
 ssize_t rdbSaveObject(rio *rdb, robj *o, robj *key) {
     ssize_t n = 0, nwritten = 0;
 
-    if (o->type == OBJ_STRING || o->type == OBJ_BITMAP) {
+    if (o->type == OBJ_STRING) {
         /* Save a string value */
         if ((n = rdbSaveStringObject(rdb,o)) == -1) return -1;
         nwritten += n;
@@ -1302,7 +1301,7 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi, int rordb) 
 
             objectMeta *meta = lookupMeta(db,&key);
             /* cold or warm key, and hot bitmap will be saved later in rdbSaveRorExtension. */
-            if (!rordb && !keyIsHot(meta, o) && meta->object_type != OBJ_BITMAP) {
+            if (!rordb && !keyIsHot(meta, o) && meta->swap_type != SWAP_TYPE_BITMAP) {
 #ifdef ROCKS_DEBUG
                 serverLog(LL_NOTICE, "[rdbSaveRio] key(%s) not hot: skipped.",keystr);
 #endif

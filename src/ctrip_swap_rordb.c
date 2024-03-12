@@ -341,7 +341,7 @@ err:
 }
 
 static int rdbSaveObjectMeta(rio *rdb, robj *key, objectMeta *object_meta) {
-    int opcode = rordbOpcodeFromObjectType(object_meta->object_type);
+    int opcode = rordbOpcodeFromSwapType(object_meta->swap_type);
     sds extend = objectMetaEncode(object_meta);
     if (opcode < 0 || extend == NULL) goto err;
     rdbSaveType(rdb,opcode);
@@ -380,7 +380,7 @@ err:
     return C_ERR;
 }
 
-int rordbLoadObjectMeta(rio *rdb, int object_type, OUT sds *pkey,
+int rordbLoadObjectMeta(rio *rdb, int swap_type, OUT sds *pkey,
         OUT objectMeta **pobject_meta) {
     uint64_t version;
     sds key = NULL, extend = NULL;
@@ -399,7 +399,7 @@ int rordbLoadObjectMeta(rio *rdb, int object_type, OUT sds *pkey,
         goto err;
     }
 
-    if (buildObjectMeta(object_type,version,extend,sdslen(extend),
+    if (buildObjectMeta(swap_type,version,extend,sdslen(extend),
                 &object_meta) == -1) {
         goto err;
     }
@@ -450,8 +450,8 @@ int rordbLoadDbType(rio *rdb, redisDb *db, int type) {
         robj key;
         sds keyptr = NULL;
         objectMeta *object_meta;
-        int object_type = rordbObjectTypeFromOpcode(type);
-        if (rordbLoadObjectMeta(rdb,object_type,&keyptr,&object_meta) == -1) {
+        int swap_type = rordbSwapTypeFromOpcode(type);
+        if (rordbLoadObjectMeta(rdb,swap_type,&keyptr,&object_meta) == -1) {
 #ifdef ROCKS_DEBUG
             serverLog(LL_NOTICE, "[rordbLoadDbType] meta of key(%s) loaded.",keyptr);
 #endif
@@ -650,10 +650,10 @@ int swapRordbTest(int argc, char *argv[], int accurate) {
             test_assert(rordbLoadDbType(rdb,db2,type) == C_OK);
         }
 
-        test_assert((om = lookupMeta(db2,key1)) && om->object_type == OBJ_HASH && om->len == 1);
-        test_assert((om = lookupMeta(db2,key2)) && om->object_type == OBJ_SET && om->len == 2);
-        test_assert((om = lookupMeta(db2,key3)) && om->object_type == OBJ_ZSET && om->len == 3);
-        test_assert((om = lookupMeta(db2,key4)) && om->object_type == OBJ_LIST);
+        test_assert((om = lookupMeta(db2,key1)) && om->swap_type == SWAP_TYPE_HASH && om->len == 1);
+        test_assert((om = lookupMeta(db2,key2)) && om->swap_type == SWAP_TYPE_SET && om->len == 2);
+        test_assert((om = lookupMeta(db2,key3)) && om->swap_type == SWAP_TYPE_ZSET && om->len == 3);
+        test_assert((om = lookupMeta(db2,key4)) && om->swap_type == SWAP_TYPE_LIST);
         lm = objectMetaGetPtr(om);
         test_assert(lm->len = 15 && lm->num == 3);
 

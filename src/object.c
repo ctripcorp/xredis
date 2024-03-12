@@ -387,7 +387,6 @@ void decrRefCount(robj *o) {
         o->refcount--;
         switch(o->type) {
         case OBJ_STRING:
-        case OBJ_BITMAP:
             if (o->ptr) freeStringObject(o);
             break;
         case OBJ_LIST: if (o->ptr) freeListObject(o); break;
@@ -616,7 +615,7 @@ int equalStringObjects(robj *a, robj *b) {
 }
 
 size_t stringObjectLen(robj *o) {
-    serverAssertWithInfo(NULL,o,o->type == OBJ_STRING || o->type == OBJ_BITMAP);
+    serverAssertWithInfo(NULL,o,o->type == OBJ_STRING);
     if (sdsEncodedObject(o)) {
         return sdslen(o->ptr);
     } else {

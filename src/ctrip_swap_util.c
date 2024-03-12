@@ -100,13 +100,13 @@ static inline char abbrev2ObjectType(char abbrev) {
 #define rocksEncodeVersion(version) htonu64(version)
 #define rocksDecodeVersion(version) ntohu64(version)
 
-sds rocksEncodeMetaVal(int object_type, long long expire, uint64_t version,
+sds rocksEncodeMetaVal(int swap_type, long long expire, uint64_t version,
         sds extend) {
     uint64_t encoded_version = rocksEncodeVersion(version);
     size_t len = 1 + sizeof(expire) + sizeof(encoded_version) +
         (extend ? sdslen(extend) : 0);
     sds raw = sdsnewlen(SDS_NOINIT,len), ptr = raw;
-    ptr[0] = objectType2Abbrev(object_type), ptr++;
+    ptr[0] = objectType2Abbrev(swap_type), ptr++;
     memcpy(ptr,&expire,sizeof(expire)), ptr+=sizeof(expire);
     memcpy(ptr,&encoded_version,sizeof(encoded_version));
     ptr += sizeof(encoded_version);
@@ -115,20 +115,20 @@ sds rocksEncodeMetaVal(int object_type, long long expire, uint64_t version,
 }
 
 /* extend: pointer to rawkey, not allocated. */
-int rocksDecodeMetaVal(const char *raw, size_t rawlen, int *pobject_type,
+int rocksDecodeMetaVal(const char *raw, size_t rawlen, int *pswap_type,
         long long *pexpire, uint64_t *pversion, const char **pextend,
         size_t *pextend_len) {
     const char *ptr = raw;
     size_t len = rawlen;
     long long expire;
-    int object_type;
+    int swap_type;
     uint64_t encoded_version;
 
     if (rawlen < 1 + sizeof(expire) + sizeof(encoded_version)) return -1;
 
-    if ((object_type = abbrev2ObjectType(ptr[0])) < 0) return -1;
+    if ((swap_type = abbrev2ObjectType(ptr[0])) < 0) return -1;
     ptr++, len--;
-    if (pobject_type) *pobject_type = object_type;
+    if (pswap_type) *pswap_type = swap_type;
 
     expire = *(long long*)ptr;
     ptr += sizeof(long long), len -= sizeof(long long);
@@ -675,7 +675,7 @@ int swapUtilTest(int argc, char **argv, int accurate) {
         sds empty = sdsempty(), rocksKey, rocksVal;
         sds key = sdsnew("key1");
         sds EXT = sdsfromlonglong(666);
-        int dbId = 123456789, object_type;
+        int dbId = 123456789, swap_type;
         const char *keystr = NULL, *extend;
         size_t klen = 12345, extlen = 12345;
         uint64_t version, V = 0x12345678;
@@ -697,8 +697,8 @@ int swapUtilTest(int argc, char **argv, int accurate) {
 
         /* util - encode & decode meta val */
         rocksVal = rocksEncodeMetaVal(OBJ_HASH,EXP,V,EXT);
-        rocksDecodeMetaVal(rocksVal,sdslen(rocksVal),&object_type,&expire,&version,&extend,&extlen);
-        test_assert(object_type = OBJ_HASH);
+        rocksDecodeMetaVal(rocksVal,sdslen(rocksVal),&swap_type,&expire,&version,&extend,&extlen);
+        test_assert(swap_type = SWAP_TYPE_HASH);
         test_assert(expire == EXP);
         test_assert(version == V);
         test_assert(extlen == sdslen(EXT) && memcmp(extend,EXT,extlen) == 0);

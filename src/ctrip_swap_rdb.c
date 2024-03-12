@@ -189,7 +189,7 @@ static int rdbKeySaveDataInitHot(rdbKeySaveData *save, redisDb *db,
     objectMeta *object_meta = lookupMeta(db,key);
     long long expire = getExpire(db,key);
 
-    serverAssert(value && object_meta->object_type == OBJ_BITMAP && keyIsHot(object_meta,value));
+    serverAssert(value && object_meta->swap_type == SWAP_TYPE_BITMAP && keyIsHot(object_meta,value));
 
     rdbKeySaveDataInitCommon(save,key,value,expire,object_meta);
 
@@ -208,23 +208,23 @@ static int rdbKeySaveDataInitWarm(rdbKeySaveData *save, redisDb *db,
 
     rdbKeySaveDataInitCommon(save,key,value,expire,object_meta);
 
-    switch (value->type) {
-    case OBJ_STRING:
+    switch (object_meta->swap_type) {
+    case SWAP_TYPE_STRING:
         wholeKeySaveInit(save);
         break;
-    case OBJ_HASH:
+    case SWAP_TYPE_HASH:
         hashSaveInit(save,SWAP_VERSION_ZERO,NULL,0);
         break;
-    case OBJ_SET:
+    case SWAP_TYPE_SET:
         setSaveInit(save,SWAP_VERSION_ZERO,NULL,0);
         break;
-    case OBJ_LIST:
+    case SWAP_TYPE_LIST:
         listSaveInit(save,SWAP_VERSION_ZERO,NULL,0);
         break;
-    case OBJ_ZSET:
+    case SWAP_TYPE_ZSET:
         zsetSaveInit(save,SWAP_VERSION_ZERO,NULL,0);
         break;
-    case OBJ_BITMAP:
+    case SWAP_TYPE_BITMAP:
         bitmapSaveInit(save,SWAP_VERSION_ZERO,NULL,0);
         break;
     default:
@@ -242,28 +242,28 @@ static int rdbKeySaveDataInitCold(rdbKeySaveData *save, redisDb *db,
 
     rdbKeySaveDataInitCommon(save,key,NULL,dm->expire,NULL);
 
-    switch (dm->object_type) {
-    case OBJ_STRING:
+    switch (dm->swap_type) {
+    case SWAP_TYPE_STRING:
         serverAssert(dm->extend == NULL);
         wholeKeySaveInit(save);
         break;
-    case OBJ_HASH:
+    case SWAP_TYPE_HASH:
         serverAssert(dm->extend != NULL);
         retval = hashSaveInit(save,dm->version,dm->extend,sdslen(dm->extend));
         break;
-    case OBJ_SET:
+    case SWAP_TYPE_SET:
         serverAssert(dm->extend != NULL);
         retval = setSaveInit(save,dm->version,dm->extend,sdslen(dm->extend));
         break;
-    case OBJ_LIST:
+    case SWAP_TYPE_LIST:
         serverAssert(dm->extend != NULL);
         retval = listSaveInit(save,dm->version,dm->extend,sdslen(dm->extend));
         break;
-    case OBJ_ZSET:
+    case SWAP_TYPE_ZSET:
         serverAssert(dm->extend != NULL);
         retval = zsetSaveInit(save,dm->version,dm->extend,sdslen(dm->extend));
         break;
-    case OBJ_BITMAP:
+    case SWAP_TYPE_BITMAP:
         serverAssert(dm->extend != NULL);
         retval = bitmapSaveInit(save,dm->version,dm->extend,sdslen(dm->extend));
         break;
@@ -299,7 +299,7 @@ int rdbKeySaveDataInit(rdbKeySaveData *save, redisDb *db, decodedResult *dr) {
         serverLog(LL_WARNING,"rdbKeySaveDataInit: key(%s) is hot, skipped",dr->key);
 #endif
         decrRefCount(key);
-        if (object_meta->object_type == OBJ_BITMAP) {
+        if (object_meta->swap_type == SWAP_TYPE_BITMAP) {
             return rdbKeySaveDataInitHot(save,db,key,value);
         } else {
             return INIT_SAVE_SKIP;
@@ -705,7 +705,7 @@ void rdbLoadStartLenMeta(struct rdbKeyLoadData *load, rio *rdb, int *cf,
 
     *cf = META_CF;
     *rawkey = rocksEncodeMetaKey(load->db,load->key);
-    *rawval = rocksEncodeMetaVal(load->object_type,load->expire,load->version,extend);
+    *rawval = rocksEncodeMetaVal(load->swap_type,load->expire,load->version,extend);
     *error = 0;
 
     sdsfree(extend);
@@ -1001,7 +1001,7 @@ int swapRdbTest(int argc, char *argv[], int accurate) {
         retval = ctripRdbLoadObject(rdbtype,&sdsrdb,db,mystring_key,-1,NOW,load);
         test_assert(!retval);
         test_assert(load->rdbtype == RDB_TYPE_STRING);
-        test_assert(load->object_type == OBJ_STRING);
+        test_assert(load->swap_type == SWAP_TYPE_STRING);
         test_assert(load->nfeeds == 2);
     }
 
@@ -1017,7 +1017,7 @@ int swapRdbTest(int argc, char *argv[], int accurate) {
         retval = ctripRdbLoadObject(rdbtype,&sdsrdb,db,myhash_key,-1,NOW,load);
         test_assert(!retval);
         test_assert(load->rdbtype == RDB_TYPE_HASH);
-        test_assert(load->object_type == OBJ_HASH);
+        test_assert(load->swap_type == SWAP_TYPE_HASH);
         test_assert(load->nfeeds == 4);
     }
 

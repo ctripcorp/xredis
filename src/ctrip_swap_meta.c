@@ -29,17 +29,17 @@
 #include "ctrip_swap.h"
 #include <ctype.h>
 
-void scanMetaInit(scanMeta *meta, int object_type, sds key, long long expire) {
+void scanMetaInit(scanMeta *meta, int swap_type, sds key, long long expire) {
     meta->key = key;
     meta->expire = expire;
-    meta->object_type = object_type;
+    meta->swap_type = swap_type;
 }
 
 void scanMetaDeinit(scanMeta *meta) {
     if (meta->key) sdsfree(meta->key);
     meta->key = NULL;
     meta->expire = -1;
-    meta->object_type = -1;
+    meta->swap_type = -1;
 }
 
 void metaScanResultMakeRoom(metaScanResult *result, int num) {
@@ -74,7 +74,7 @@ void metaScanResultSetNextSeek(metaScanResult *result, sds nextseek) {
     result->nextseek = nextseek;
 }
 
-void metaScanResultAppend(metaScanResult *result, int object_type, sds key, long long expire) {
+void metaScanResultAppend(metaScanResult *result, int swap_type, sds key, long long expire) {
     if (result->num == result->size) {
         int newsize = result->size +
             (result->size > 1024 ? 1024 : result->size);
@@ -82,7 +82,7 @@ void metaScanResultAppend(metaScanResult *result, int object_type, sds key, long
     }
 
     scanMeta *meta = &result->metas[result->num++];
-    scanMetaInit(meta,object_type,key,expire);
+    scanMetaInit(meta,swap_type,key,expire);
 }
 
 void freeScanMetaResult(metaScanResult *result) {
@@ -378,7 +378,7 @@ int metaScanDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
         const char *key;
         size_t keylen;
         long long expire;
-        int object_type;
+        int swap_type;
 
         serverAssert(cfs[i] == META_CF);
         if (rocksDecodeMetaKey(rawkeys[i],sdslen(rawkeys[i]),
@@ -387,12 +387,12 @@ int metaScanDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
             break;
         }
         if (rocksDecodeMetaVal(rawvals[i],sdslen(rawvals[i]),
-                &object_type,&expire,NULL,NULL,NULL)) {
+                &swap_type,&expire,NULL,NULL,NULL)) {
             retval = SWAP_ERR_DATA_DECODE_FAIL;
             break;
         }
 
-        metaScanResultAppend(result,object_type,sdsnewlen(key,keylen),expire);
+        metaScanResultAppend(result,swap_type,sdsnewlen(key,keylen),expire);
     }
 
     if (pdecoded) *pdecoded = (robj*)result;
@@ -789,7 +789,7 @@ int metaScanTest(int argc, char *argv[], int accurate) {
         result = (metaScanResult*)decoded;
         test_assert(result->num == onumkeys);
         test_assert(result->metas[0].expire == -1);
-        test_assert(result->metas[0].object_type == OBJ_HASH);
+        test_assert(result->metas[0].swap_type == SWAP_TYPE_HASH);
         test_assert(!strcmp(result->metas[0].key,"0"));
         test_assert(!sdscmp(result->nextseek,lastkey));
         for (i = 0; i < onumkeys; i++) {

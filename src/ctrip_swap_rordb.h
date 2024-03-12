@@ -65,32 +65,32 @@ static inline int rordbOpcodeIsDbType(int type) {
   return type >= RORDB_OPCODE_COLD_KEY_NUM && type < RORDB_OPCODE_LIMIT;
 }
 
-static inline int rordbOpcodeFromObjectType(int object_type) {
-  switch (object_type) {
-  case OBJ_HASH:
+static inline int rordbOpcodeFromSwapType(int swap_type) {
+  switch (swap_type) {
+  case SWAP_TYPE_HASH:
     return RORDB_OPCODE_HASH;
-  case OBJ_SET:
+  case SWAP_TYPE_SET:
     return RORDB_OPCODE_SET;
-  case OBJ_ZSET:
+  case SWAP_TYPE_ZSET:
     return RORDB_OPCODE_ZSET;
-  case OBJ_LIST:
+  case SWAP_TYPE_LIST:
     return RORDB_OPCODE_LIST;
   default:
-    serverPanic("unexpected object_type.");
+    serverPanic("unexpected swap_type.");
     return -1;
   }
 }
 
-static inline int rordbObjectTypeFromOpcode(int type) {
+static inline int rordbSwapTypeFromOpcode(int type) {
   switch (type) {
   case RORDB_OPCODE_HASH:
-    return OBJ_HASH;
+    return SWAP_TYPE_HASH;
   case RORDB_OPCODE_SET:
-    return OBJ_SET;
+    return SWAP_TYPE_SET;
   case RORDB_OPCODE_ZSET:
-    return OBJ_ZSET;
+    return SWAP_TYPE_ZSET;
   case RORDB_OPCODE_LIST:
-    return OBJ_LIST;
+    return SWAP_TYPE_LIST;
   default:
     serverPanic("unexpected type.");
     return -1;

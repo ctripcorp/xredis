@@ -1090,8 +1090,7 @@ void scanGenericCommand(client *c, robj *o, unsigned long cursor) {
         if (!filter && o == NULL && typename){
             char* type;
             if (metascan) {
-                /* curmeta->object_type  须 转化为 redis 中obj type */
-                type = (char*)strObjectType(curmeta->object_type);
+                type = (char*)strObjectType(curmeta->swap_type);
             } else {
                 robj* typecheck = lookupKeyReadWithFlags(c->db, kobj, LOOKUP_NOTOUCH);
                 type = getObjectTypeName(typecheck);

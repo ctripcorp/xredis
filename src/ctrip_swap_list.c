@@ -1170,7 +1170,7 @@ sds encodeListMeta(listMeta *lm) {
 sds encodeListObjectMeta(struct objectMeta *object_meta, void *aux) {
     UNUSED(aux);
     if (object_meta == NULL) return NULL;
-    serverAssert(object_meta->object_type == OBJ_LIST);
+    serverAssert(object_meta->swap_type == SWAP_TYPE_LIST);
     return encodeListMeta(objectMetaGetPtr(object_meta));
 }
 
@@ -1216,7 +1216,7 @@ err:
 }
 
 int decodeListObjectMeta(struct objectMeta *object_meta, const char *extend, size_t extlen) {
-    serverAssert(object_meta->object_type == OBJ_LIST);
+    serverAssert(object_meta->swap_type == SWAP_TYPE_LIST);
     serverAssert(objectMetaGetPtr(object_meta) == NULL);
     objectMetaSetPtr(object_meta,decodeListMeta(extend,extlen));
     return 0;
@@ -1224,7 +1224,7 @@ int decodeListObjectMeta(struct objectMeta *object_meta, const char *extend, siz
 
 
 int listObjectMetaIsHot(objectMeta *object_meta, robj *value) {
-    serverAssert(value && object_meta && object_meta->object_type == OBJ_LIST);
+    serverAssert(value && object_meta && object_meta->swap_type == SWAP_TYPE_LIST);
     listMeta *lm = objectMetaGetPtr(object_meta);
     if (lm == NULL) {
         return 1;
@@ -1242,7 +1242,7 @@ void listObjectMetaFree(objectMeta *object_meta) {
 
 void listObjectMetaDup(struct objectMeta *dup_meta, struct objectMeta *object_meta) {
     if (object_meta == NULL) return;
-    serverAssert(dup_meta->object_type == OBJ_LIST);
+    serverAssert(dup_meta->swap_type == SWAP_TYPE_LIST);
     serverAssert(objectMetaGetPtr(dup_meta) == NULL);
     if (objectMetaGetPtr(object_meta) == NULL) return;
     objectMetaSetPtr(dup_meta,listMetaDup(objectMetaGetPtr(object_meta)));
@@ -1821,7 +1821,7 @@ int listBeforeCall(swapData *data, keyRequest *key_request, client *c,
     object_meta = lookupMeta(data->db,data->key);
     if (object_meta == NULL) return 0;
 
-    serverAssert(object_meta->object_type == OBJ_LIST);
+    serverAssert(object_meta->swap_type == SWAP_TYPE_LIST);
     meta = objectMetaGetPtr(object_meta);
 
     for (int i = 0; i < 2; i++) {
@@ -1960,7 +1960,7 @@ int swapDataSetupList(swapData *d, void **pdatactx) {
 static inline listMeta *lookupListMeta(redisDb *db, robj *key) {
     objectMeta *object_meta = lookupMeta(db,key);
     if (object_meta == NULL) return NULL;
-    serverAssert(object_meta->object_type == OBJ_LIST);
+    serverAssert(object_meta->swap_type == SWAP_TYPE_LIST);
     return objectMetaGetPtr(object_meta);
 }
 
@@ -2170,7 +2170,7 @@ void listLoadStartWithValue(struct rdbKeyLoadData *load, rio *rdb, int *cf,
 
     *cf = META_CF;
     *rawkey = rocksEncodeMetaKey(load->db,load->key);
-    *rawval = rocksEncodeMetaVal(load->object_type,load->expire,load->version,extend);
+    *rawval = rocksEncodeMetaVal(load->swap_type,load->expire,load->version,extend);
 
     sdsfree(extend);
 }
@@ -2196,7 +2196,7 @@ void listLoadStartList(struct rdbKeyLoadData *load, rio *rdb, int *cf,
 
     *cf = META_CF;
     *rawkey = rocksEncodeMetaKey(load->db,load->key);
-    *rawval = rocksEncodeMetaVal(load->object_type,load->expire,load->version,extend);
+    *rawval = rocksEncodeMetaVal(load->swap_type,load->expire,load->version,extend);
     *error = 0;
 
     sdsfree(extend);
@@ -2309,7 +2309,7 @@ rdbKeyLoadType listLoadType = {
 void listLoadInit(rdbKeyLoadData *load) {
     load->type = &listLoadType;
     load->omtype = &listObjectMetaType;
-    load->object_type = OBJ_LIST;
+    load->swap_type = SWAP_TYPE_LIST;
 }
 
 #ifdef REDIS_TEST
@@ -3368,7 +3368,7 @@ int swapListDataTest(int argc, char *argv[], int accurate) {
         sdsfree(subraw), sdsfree(subkey);
 
         test_assert(load->loaded_fields == 3);
-        test_assert(load->object_type == OBJ_LIST);
+        test_assert(load->swap_type == SWAP_TYPE_LIST);
         rdbKeyLoadDataDeinit(load);
 
         sdsfree(rdbhot);
@@ -3459,7 +3459,7 @@ int swapListDataTest(int argc, char *argv[], int accurate) {
         sdsfree(subkey), sdsfree(subraw);
 
         test_assert(load->loaded_fields == 3);
-        test_assert(load->object_type == OBJ_LIST);
+        test_assert(load->swap_type == SWAP_TYPE_LIST);
 
         sdsfree(rdbwarm);
         sdsfree(metakey), sdsfree(metaval);
@@ -3499,7 +3499,7 @@ int swapListDataTest(int argc, char *argv[], int accurate) {
         decoded_meta->cf = META_CF;
         decoded_meta->extend = encodeListMeta(coldlm);
         decoded_meta->expire = -1;
-        decoded_meta->object_type = OBJ_LIST;
+        decoded_meta->swap_type = SWAP_TYPE_LIST;
         decoded_meta->version = V;
 
         rdbKeySaveData _save, *save = &_save;
@@ -3567,7 +3567,7 @@ int swapListDataTest(int argc, char *argv[], int accurate) {
         sdsfree(subkey), sdsfree(subraw);
 
         test_assert(load->loaded_fields == 3);
-        test_assert(load->object_type == OBJ_LIST);
+        test_assert(load->swap_type == SWAP_TYPE_LIST);
 
         sdsfree(rdbcold);
         sdsfree(metakey), sdsfree(metaval);

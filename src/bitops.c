@@ -486,7 +486,7 @@ robj *lookupStringForBitCommand(client *c, uint64_t maxbit) {
     if (o == NULL) {
         o = createObject(OBJ_STRING,sdsnewlen(NULL, byte+1));
         dbAdd(c->db,c->argv[1],o);
-        dbAddMeta(c->db,c->argv[1],createObjectMeta(OBJ_BITMAP,swapGetAndIncrVersion()));
+        dbAddMeta(c->db,c->argv[1],createBitmapObjectMarker());
     } else {
         o = dbUnshareStringValue(c->db,c->argv[1],o);
         objectMeta *om = lookupMeta(c->db,c->argv[1]);

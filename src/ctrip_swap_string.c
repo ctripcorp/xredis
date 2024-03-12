@@ -184,7 +184,6 @@ int wholeKeyDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
 /* If maxmemory policy is not LRU/LFU, rdbLoadObject might return shared
  * object, but swap needs individual object to track dirty/evict flags. */
 robj *dupSharedObject(robj *o) {
-    // 此处type 在decodeData 时确定, 无须扩展
     switch(o->type) {
     case OBJ_STRING:
         return dupStringObject(o);
@@ -328,7 +327,7 @@ void wholekeyLoadStart(struct rdbKeyLoadData *keydata, rio *rdb, int *cf,
     UNUSED(rdb);
     *cf = META_CF;
     *rawkey = rocksEncodeMetaKey(keydata->db,keydata->key);
-    *rawval = rocksEncodeMetaVal(keydata->object_type,keydata->expire,SWAP_VERSION_ZERO,NULL);
+    *rawval = rocksEncodeMetaVal(keydata->swap_type,keydata->expire,SWAP_VERSION_ZERO,NULL);
     *error = 0;
 }
 
@@ -363,7 +362,7 @@ rdbKeyLoadType wholekeyLoadType = {
 void wholeKeyLoadInit(rdbKeyLoadData *keydata) {
     keydata->type = &wholekeyLoadType;
     keydata->omtype = &wholekeyObjectMetaType;
-    keydata->object_type = OBJ_STRING;
+    keydata->swap_type = SWAP_TYPE_STRING;
 }
 
 
