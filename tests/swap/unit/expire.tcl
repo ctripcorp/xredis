@@ -138,3 +138,20 @@ start_server {tags "expire"} {
         r debug set-active-expire 1
     }
 }
+
+start_server {tags "unlink cold string"} {
+    test {swap out and unlink cold string} {
+        r set k v
+        after 999
+        r swap.evict k
+        after 999
+        r unlink k
+        after 10
+        set swap_rio_GET [getInfoProperty [r info swap] swap_rio_GET]
+        puts $swap_rio_GET
+        assert_equal [string match {*batch=0,count=0*} $swap_rio_GET] 1
+        set swap_rio_DEL [getInfoProperty [r info swap] swap_rio_DEL]
+        puts $swap_rio_DEL
+        assert_equal [string match {*batch=1,count=1*} $swap_rio_DEL] 1
+    }
+}
