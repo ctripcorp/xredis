@@ -2150,7 +2150,7 @@ typedef struct rdbKeySaveData {
   objectMeta *object_meta; /* own */
   long long expire;
   int saved;
-  void *iter; /* used by list (metaListIterator), used by bitmap () */
+  void *iter; /* used by list (metaListIterator), bitmap (bitmapSaveIterator) */
 } rdbKeySaveData;
 
 typedef struct rdbSaveRorExtensionStats {
@@ -2208,18 +2208,6 @@ typedef struct rdbKeyLoadType {
   void (*load_deinit)(struct rdbKeyLoadData *keydata);
 } rdbKeyLoadType;
 
-
-/* bitmap subkey size may differ in different config, we need transfer subkey of size A to size B, thus intermediate state is recorded in bitmapLoadInfo. */
-typedef struct bitmapLoadInfo
-{
-    sds loading_subval;   /* subval not yet finished loading. */
-    sds rdbraw_consuming; /* rdbraw read in previous load process, part of it has not been comsumed. */
-    long rdbraw_offset;  /* offset description for rdbraw_consuming, data behind offset is not yet consumed. */
-    long num_subkey_waiting_load; /* num of subkey waiting be loaded for self of bitmap object. */
-    long bitmap_size;
-} bitmapLoadInfo;
-
-
 typedef struct rdbKeyLoadData {
     rdbKeyLoadType *type;
     objectMetaType *omtype;
@@ -2235,7 +2223,7 @@ typedef struct rdbKeyLoadData {
     int loaded_fields;
     robj *value;
     void *iter;
-    bitmapLoadInfo *bitmap_info; /* only used in RDB_TYPE_BITMAP load process. */
+    void *load_info; /* only used in RDB_TYPE_BITMAP load process. */
 } rdbKeyLoadData;
 
 static inline sds rdbVerbatimNew(unsigned char rdbtype) {

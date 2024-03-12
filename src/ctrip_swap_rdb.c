@@ -872,6 +872,7 @@ int rdbKeyLoadDataInit(rdbKeyLoadData *load, int rdbtype,
     load->value = NULL;
     load->iter = NULL;
     load->version = swapGetAndIncrVersion();
+    load->load_info = NULL;
 
     switch(rdbtype) {
     case RDB_TYPE_STRING:
