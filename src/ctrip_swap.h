@@ -666,6 +666,8 @@ void swapDataMergeAbsentSubkey(swapData *data);
 int swapDataMayContainSubkey(swapData *data, int thd, robj *subkey);
 void *swapDataGetObjectMetaAux(swapData *data, void *datactx);
 
+void noSetupBeforeCall(keyRequest *key_request, client *c);
+
 static inline void swapDataSetObjectMeta(swapData *d, objectMeta *object_meta) {
     d->object_meta = object_meta;
 }
