@@ -140,10 +140,10 @@ int objectMetaEqual(struct objectMeta *oma, struct objectMeta *omb) {
 }
 
 int objectMetaRebuildFeed(struct objectMeta *rebuild_meta, uint64_t version,
-        const char *subkey, size_t sublen) {
+        const char *subkey, size_t sublen, robj *subval) {
     objectMetaType *omtype = getObjectMetaType(rebuild_meta->swap_type);
     if (omtype->rebuildFeed)
-        return omtype->rebuildFeed(rebuild_meta,version,subkey,sublen);
+        return omtype->rebuildFeed(rebuild_meta,version,subkey,sublen,subval);
     else
         return 0;
 }
@@ -209,8 +209,8 @@ int lenObjectMetaIsHot(objectMeta *object_meta, robj *value) {
 }
 
 static inline int lenObjectMetaRebuildFeed(struct objectMeta *rebuild_meta,
-        uint64_t version, const char *subkey, size_t sublen) {
-    UNUSED(sublen), UNUSED(version);
+        uint64_t version, const char *subkey, size_t sublen, robj *subval) {
+    UNUSED(sublen), UNUSED(version), UNUSED(subval);
 
     if (subkey) {
         rebuild_meta->len++;

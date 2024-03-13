@@ -29,8 +29,8 @@
 #include "ctrip_swap.h"
 #include "ctrip_roaring_bitmap.h"
 
-#define BITMAP_SUBKEY_SIZE 4096  /* default 4KB */
-#define BITS_NUM_IN_SUBKEY 32768
+#define BITMAP_SUBKEY_SIZE (server.swap_bitmap_subkey_size) /* default 4KB */
+#define BITS_NUM_IN_SUBKEY (BITMAP_SUBKEY_SIZE * 8)
 #define BITMAP_MAX_INDEX INT_MAX
 
 #define BITMAP_GET_SUBKEYS_NUM(size, subkey_size)  ((size - 1) / subkey_size + 1)
@@ -121,8 +121,7 @@ static inline bitmapMeta *bitmapMetaDup(bitmapMeta *bitmap_meta) {
 }
 
 int bitmapMetaEqual(bitmapMeta *dest_meta, bitmapMeta *src_meta) {
-    /* todo  此处还需比较 size, redisStatus 等成员， 且须*/
-    return dest_meta->pure_cold_subkeys_num == src_meta->pure_cold_subkeys_num;
+    return (dest_meta->pure_cold_subkeys_num == src_meta->pure_cold_subkeys_num) && (dest_meta->size == src_meta->size) && rbmIsEqual(dest_meta->subkeys_status, src_meta->subkeys_status);
 }
 
 static inline int bitmapMetaGetHotSubkeysNum(bitmapMeta *bitmap_meta, int start_subkey_idx, int end_subkey_idx)
@@ -244,12 +243,14 @@ int bitmapObjectMetaEqual(struct objectMeta *dest_om, struct objectMeta *src_om)
 }
 
 int bitmapObjectMetaRebuildFeed(struct objectMeta *rebuild_meta,
-                              uint64_t version, const char *subkey, size_t sublen) {
+                              uint64_t version, const char *subkey, size_t sublen, robj *subval) {
     UNUSED(version);
     bitmapMeta *meta = objectMetaGetPtr(rebuild_meta);
     if (sublen != sizeof(long)) return -1;
+    if (subval == NULL || subval->type != OBJ_STRING) return -1;
     if (subkey) {
         meta->pure_cold_subkeys_num++;
+        meta->size += stringObjectLen(subval);
         return 0;
     } else {
         return -1;
@@ -945,13 +946,18 @@ int bitmapObjectMetaIsMarker(objectMeta *object_meta) {
 
 void bitmapSetObjectMarkerIfNeeded(redisDb *db, robj *key) {
     objectMeta *object_meta = lookupMeta(db,key);
-    if (object_meta == NULL) dbAddMeta(db,key,createBitmapObjectMarker());
+    if (object_meta == NULL) {
+        dbAddMeta(db,key,createBitmapObjectMarker());
+        atomicIncr(server.stat_swap_string_switched_to_bitmap_count, 1);
+    }
 }
 
 void bitmapClearObjectMarkerIfNeeded(redisDb *db, robj *key) {
     objectMeta *object_meta = lookupMeta(db,key);
-    if (object_meta && bitmapObjectMetaIsMarker(object_meta))
+    if (object_meta && bitmapObjectMetaIsMarker(object_meta)) {
         dbDeleteMeta(db,key);
+        atomicIncr(server.stat_swap_bitmap_switched_to_string_count, 1);
+    }
 }
 
 int bitmapBeforeCall(swapData *data, keyRequest *key_request, client *c,
@@ -1691,6 +1697,13 @@ void bitmapLoadInit(rdbKeyLoadData *load) {
     load->swap_type = SWAP_TYPE_BITMAP;
     load->load_info = zmalloc(sizeof(bitmapLoadInfo));
     memset(load->load_info, 0, sizeof(bitmapLoadInfo));
+}
+
+sds genSwapBitmapStringSwitchedInfoString(sds info)
+{
+    info = sdscatprintf(info,
+            "stat_swap_string_switched_to_bitmap_count:%llu, stat_swap_bitmap_switched_to_string_count:%llu\r\n",server.stat_swap_string_switched_to_bitmap_count,server.stat_swap_bitmap_switched_to_string_count);
+    return info;
 }
 
 #ifdef REDIS_TEST
@@ -3045,9 +3058,9 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
     TEST("bitmap - save & load warm RDB_TYPE_BITMAP") {
         
-        sds f1, f2, f3, subval1, rdb_subval1, rdb_subval2, rdb_subval3, coldraw, warmraw, hotraw, warm_str1, hot_bitmap;
+        sds f1, f2, f3, subval1, rdb_subval1, rdb_subval2, rdb_subval3, warmraw, warm_str1;
 
-        robj *save_key1, *save_warm_bitmap1, *save_hot_bitmap0, *save_hot_bitmap1, *rdb_key1, *rdb_key2, *rdb_key3, *value1, *value2, *value3;
+        robj *save_key1, *save_warm_bitmap1;
 
         uint64_t V = server.swap_key_version = 1; /* reset to zero so that save & load with same version(0) */
 
@@ -3185,12 +3198,26 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(load->swap_type == SWAP_TYPE_BITMAP);
         rdbKeyLoadDataDeinit(load);
 
+        sdsfree(f1),sdsfree(f2),sdsfree(f3);
+        sdsfree(subval1);
+        sdsfree(rdb_subval1);
+        sdsfree(rdb_subval2);
+        sdsfree(rdb_subval3);
+        sdsfree(warmraw),sdsfree(warm_str1);
+
+        sdsfree(raw_f1),sdsfree(raw_f2),sdsfree(raw_f3);
+
+        sdsfree(metakey),sdsfree(metaval),sdsfree(subkey),sdsfree(subraw);
+        sdsfree(expected_metakey),sdsfree(expected_metaextend),sdsfree(expected_metaval);
+        sdsfree(key);
+
+        freeStringObject(save_key1),freeStringObject(save_warm_bitmap1);
     }
 
     TEST("bitmap - save & load hot RDB_TYPE_BITMAP") {
-        sds f1, f2, f3, subval1, rdb_subval1, rdb_subval2, rdb_subval3, coldraw, warmraw, hotraw, warm_str1, hot_bitmap;
+        sds f1, f2, f3, subval1, rdb_subval1, rdb_subval2, rdb_subval3, hotraw, hot_bitmap;
 
-        robj *save_key1, *save_warm_bitmap1, *save_hot_bitmap0, *save_hot_bitmap1, *rdb_key1, *rdb_key2, *rdb_key3, *value1, *value2, *value3;
+        robj *save_key1, *save_hot_bitmap1;
 
         uint64_t V = server.swap_key_version = 0; /* reset to zero so that save & load with same version(0) */
 
@@ -3311,6 +3338,22 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(load->loaded_fields == 3);
         test_assert(load->swap_type == SWAP_TYPE_BITMAP);
         rdbKeyLoadDataDeinit(load);
+
+        sdsfree(f1),sdsfree(f2),sdsfree(f3);
+        sdsfree(subval1);
+        sdsfree(rdb_subval1);
+        sdsfree(rdb_subval2);
+        sdsfree(rdb_subval3);
+        sdsfree(hotraw),sdsfree(hot_bitmap);
+
+        sdsfree(raw_f1),sdsfree(raw_f2),sdsfree(raw_f3);
+
+        sdsfree(metakey),sdsfree(metaval),sdsfree(subkey),sdsfree(subraw);
+        sdsfree(expected_metakey),sdsfree(expected_metaextend),sdsfree(expected_metaval);
+        sdsfree(key);
+
+        freeStringObject(save_key1),freeStringObject(save_hot_bitmap1);
+
     }
 
     server.swap_evict_step_max_subkeys = originEvictStepMaxSubkey;

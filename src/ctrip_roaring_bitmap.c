@@ -1125,6 +1125,9 @@ static inline int containersAreEqual(roaringContainer **destContainers, roaringC
 
 int rbmIsEqual(roaringBitmap* destRbm, roaringBitmap* srcRbm)
 {
+    if (destRbm == NULL && srcRbm == NULL) {
+        return 1;
+    }
     if (destRbm == NULL || srcRbm == NULL) {
         return 0;
     }

@@ -1812,6 +1812,9 @@ struct redisServer {
     list *swap_torewind_clients;
     list *swap_rewinding_clients;
     uint64_t swap_key_version;
+    size_t swap_bitmap_subkey_size;
+    redisAtomic unsigned long long stat_swap_bitmap_switched_to_string_count;
+    redisAtomic unsigned long long stat_swap_string_switched_to_bitmap_count;
 
     /* swap eviction */
     int swap_evict_inprogress_limit;

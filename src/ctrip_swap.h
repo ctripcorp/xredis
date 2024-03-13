@@ -499,7 +499,7 @@ typedef struct objectMetaType {
   void (*free)(struct objectMeta *object_meta);
   void (*duplicate)(struct objectMeta *dup_meta, struct objectMeta *object_meta);
   int (*equal)(struct objectMeta *oma, struct objectMeta *omb);
-  int (*rebuildFeed)(struct objectMeta *rebuild_meta, uint64_t version, const char *subkey, size_t sublen);
+  int (*rebuildFeed)(struct objectMeta *rebuild_meta, uint64_t version, const char *subkey, size_t sublen, robj *subval);
 } objectMetaType;
 
 typedef struct objectMeta {
@@ -527,7 +527,7 @@ int objectMetaDecode(struct objectMeta *object_meta, const char *extend, size_t 
 int keyIsHot(objectMeta *object_meta, robj *value);
 sds dumpObjectMeta(objectMeta *object_meta);
 int objectMetaEqual(struct objectMeta *oma, struct objectMeta *omb);
-int objectMetaRebuildFeed(struct objectMeta *object_meta, uint64_t version, const char *subkey, size_t sublen);
+int objectMetaRebuildFeed(struct objectMeta *object_meta, uint64_t version, const char *subkey, size_t sublen, robj *subval);
 
 static inline void *objectMetaGetPtr(objectMeta *object_meta) {
   return (void*)(long)object_meta->ptr;
@@ -665,8 +665,6 @@ void swapDataRetainAbsentSubkeys(swapData *data, int num, int *cfs, sds *rawkeys
 void swapDataMergeAbsentSubkey(swapData *data);
 int swapDataMayContainSubkey(swapData *data, int thd, robj *subkey);
 void *swapDataGetObjectMetaAux(swapData *data, void *datactx);
-
-void noSetupBeforeCall(keyRequest *key_request, client *c);
 
 static inline void swapDataSetObjectMeta(swapData *d, objectMeta *object_meta) {
     d->object_meta = object_meta;
@@ -968,6 +966,8 @@ int swapDataSetupBitmap(swapData *d, void **pdatactx);
 
 void bitmapSetObjectMarkerIfNeeded(redisDb *db, robj *key);
 void bitmapClearObjectMarkerIfNeeded(redisDb *db, robj *key);
+
+sds genSwapBitmapStringSwitchedInfoString(sds info);
 
 /* MetaScan */
 #define DEFAULT_SCANMETA_BUFFER 16
