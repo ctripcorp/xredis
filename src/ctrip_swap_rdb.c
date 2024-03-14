@@ -298,12 +298,12 @@ int rdbKeySaveDataInit(rdbKeySaveData *save, redisDb *db, decodedResult *dr) {
 #ifdef ROCKS_DEBUG
         serverLog(LL_WARNING,"rdbKeySaveDataInit: key(%s) is hot, skipped",dr->key);
 #endif
-        decrRefCount(key);
         if (object_meta->swap_type == SWAP_TYPE_BITMAP) {
             return rdbKeySaveDataInitHot(save,db,key,value);
         } else {
             return INIT_SAVE_SKIP;
         }
+        decrRefCount(key);
     } else if (value) { /* warm */
         return rdbKeySaveDataInitWarm(save,db,key,value);
     } else  { /* cold */

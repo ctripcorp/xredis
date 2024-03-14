@@ -2896,6 +2896,7 @@ standardConfig configs[] = {
     createBoolConfig("swap-dirty-subkeys-enabled", NULL, MODIFIABLE_CONFIG, server.swap_dirty_subkeys_enabled, 0, NULL, NULL),
     createBoolConfig("swap-persist-enabled", NULL, IMMUTABLE_CONFIG, server.swap_persist_enabled, 0, NULL, NULL),
     createBoolConfig("swap-repl-rordb-sync", NULL, MODIFIABLE_CONFIG, server.swap_repl_rordb_sync, 1, NULL, NULL),
+    createBoolConfig("swap-rdb-bitmap-encode-enabled", NULL, MODIFIABLE_CONFIG, server.swap_rdb_bitmap_encode_enabled, 1, NULL, NULL),
     createBoolConfig("rocksdb.data.cache_index_and_filter_blocks", "rocksdb.cache_index_and_filter_blocks", IMMUTABLE_CONFIG, server.rocksdb_data_cache_index_and_filter_blocks, 0, NULL, NULL),
     createBoolConfig("rocksdb.meta.cache_index_and_filter_blocks", NULL, IMMUTABLE_CONFIG, server.rocksdb_meta_cache_index_and_filter_blocks, 0, NULL, NULL),
     createBoolConfig("rocksdb.enable_pipelined_write", NULL, IMMUTABLE_CONFIG, server.rocksdb_enable_pipelined_write, 0, NULL, NULL),
