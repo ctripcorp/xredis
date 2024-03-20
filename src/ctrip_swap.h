@@ -964,6 +964,7 @@ objectMeta *createBitmapObjectMeta(uint64_t version, MOVE struct bitmapMeta *bit
 
 int swapDataSetupBitmap(swapData *d, void **pdatactx);
 
+objectMeta *createBitmapObjectMarker();
 void bitmapSetObjectMarkerIfNeeded(redisDb *db, robj *key);
 void bitmapClearObjectMarkerIfNeeded(redisDb *db, robj *key);
 

@@ -144,12 +144,10 @@ void rdbKeySaveDataDeinit(rdbKeySaveData *save) {
         decrRefCount(save->key);
         save->key = NULL;
     }
-    if (save->object_meta) {
-        freeObjectMeta(save->object_meta);
-        save->object_meta = NULL;
-    }
 
-    if (save->object_meta){
+    save->value = NULL;
+
+    if (save->object_meta) {
         freeObjectMeta(save->object_meta);
         save->object_meta = NULL;
     }

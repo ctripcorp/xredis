@@ -80,7 +80,7 @@ const char *strObjectType(int type) {
 }
 
 static inline char objectType2Abbrev(int object_type) {
-    char abbrevs[] = {'K','L','S','Z','H','M','X'};
+    char abbrevs[] = {'K','L','S','Z','H','M','X','B'};
     if (object_type >= 0 && object_type < (int)sizeof(abbrevs)) {
         return abbrevs[object_type];
     } else {
@@ -89,7 +89,7 @@ static inline char objectType2Abbrev(int object_type) {
 }
 
 static inline char abbrev2ObjectType(char abbrev) {
-    char abbrevs[] = {'K','L','S','Z','H','M','X'};
+    char abbrevs[] = {'K','L','S','Z','H','M','X','B'};
     for (size_t i = 0; i < sizeof(abbrevs); i++) {
         if (abbrevs[i] == abbrev) return i;
     }
