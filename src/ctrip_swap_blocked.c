@@ -84,6 +84,7 @@ swapUnblockCtx* createSwapUnblockCtx() {
         client *c = createClient(NULL);
         c->cmd = lookupCommandByCString("brpoplpush");
         c->db = server.db+i;
+        c->client_hold_mode = CLIENT_HOLD_MODE_EVICT;
         swap_dependency_block_ctx->mock_clients[i] = c;
     }
     return swap_dependency_block_ctx;
@@ -100,18 +101,13 @@ void releaseSwapUnblockCtx(swapUnblockCtx* swap_dependency_block_ctx) {
 void findSwapBlockedListKeyChain(redisDb* db, robj* key, dict* key_sets) {
     dictEntry *de = dictFind(db->blocking_keys,key);
     if(de) {
+        listIter li;
+        listNode *ln;
         list *clients = dictGetVal(de);
-        int numclients = listLength(clients);
-        while(numclients--) {
-            listNode *clientnode = listFirst(clients);
-            client *receiver = clientnode->value;
-
-            if (receiver->btype != BLOCKED_LIST) {
-                /* Put at the tail, so that at the next call
-                 * we'll not run into it again. */
-                listRotateHeadToTail(clients);
-                continue;
-            }
+        listRewind(clients,&li);
+        while ((ln = listNext(&li))) {
+            client *receiver = listNodeValue(ln);
+            if (receiver->btype != BLOCKED_LIST) continue;
             robj *dstkey = receiver->bpop.target;
             if (dstkey == NULL || dictAdd(key_sets, dstkey, NULL) != C_OK) continue;
             incrRefCount(dstkey);
