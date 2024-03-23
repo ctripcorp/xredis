@@ -565,7 +565,7 @@ swapScanSession *swapScanSessionsAssign(swapScanSessions *sessions) {
         }
         raxStop(&ri);
 
-        if (!swapScanSessionExpired(session)) session = NULL;
+        if (session && !swapScanSessionExpired(session)) session = NULL;
     }
 
     if (session) {
