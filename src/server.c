@@ -5256,6 +5256,10 @@ sds genRedisInfoString(const char *section) {
 
     /* Persistence */
     if (allsections || defsections || !strcasecmp(section,"persistence")) {
+        char rdb_last_save_size_hmem[64];
+        // rdb_last_save_size count by bit
+        bytesToHuman(rdb_last_save_size_hmem,server.rdb_last_save_size/8);
+
         if (sections++) info = sdscat(info,"\r\n");
         double fork_perc = 0;
         if (server.stat_module_progress) {
@@ -5277,6 +5281,8 @@ sds genRedisInfoString(const char *section) {
             "rdb_changes_since_last_save:%lld\r\n"
             "rdb_bgsave_in_progress:%d\r\n"
             "rdb_last_save_time:%jd\r\n"
+            "rdb_last_save_size:%jd\r\n"
+            "rdb_last_save_size_human:%s\r\n"
             "rdb_last_bgsave_status:%s\r\n"
             "rdb_last_bgsave_time_sec:%jd\r\n"
             "rdb_current_bgsave_time_sec:%jd\r\n"
@@ -5300,6 +5306,8 @@ sds genRedisInfoString(const char *section) {
             server.dirty,
             server.child_type == CHILD_TYPE_RDB,
             (intmax_t)server.lastsave,
+            (intmax_t)server.rdb_last_save_size,
+            rdb_last_save_size_hmem,
             (server.lastbgsave_status == C_OK) ? "ok" : "err",
             (intmax_t)server.rdb_save_time_last,
             (intmax_t)((server.child_type != CHILD_TYPE_RDB) ?

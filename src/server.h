@@ -1487,6 +1487,7 @@ struct redisServer {
     int rdb_del_sync_files;         /* Remove RDB files used only for SYNC if
                                        the instance does not use persistence. */
     time_t lastsave;                /* Unix time of last successful save */
+    off_t rdb_last_save_size;       /* Size of RDB to last successful save */
     time_t lastbgsave_try;          /* Unix time of last attempted bgsave */
     time_t rdb_save_time_last;      /* Time used by last RDB save run. */
     time_t rdb_save_time_start;     /* Current RDB save start time. */
@@ -1777,6 +1778,7 @@ struct redisServer {
     redisAtomic size_t swap_inprogress_batch; /* swap request inprogress batch */
     redisAtomic size_t swap_inprogress_count; /* swap request inprogress count */
     redisAtomic size_t swap_inprogress_memory;  /* swap consumed memory in bytes */
+    redisAtomic size_t swap_used_db_size; /* swap rocksdb used size */
     redisAtomic size_t swap_error_count;  /* swap error count */
     int swap_debug_rio_delay_micro; /* sleep swap_debug_rio_delay microsencods to simulate ssd delay. */
     int swap_debug_swapout_notify_delay_micro; /* sleep swap_debug_swapout_notify_delay microsencods

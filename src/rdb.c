@@ -1156,7 +1156,8 @@ int rdbSaveInfoAuxFields(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
     if (rdbSaveAuxFieldStrStr(rdb,"redis-ver",REDIS_VERSION) == -1) return -1;
     if (rdbSaveAuxFieldStrInt(rdb,"redis-bits",redis_bits) == -1) return -1;
     if (rdbSaveAuxFieldStrInt(rdb,"ctime",time(NULL)) == -1) return -1;
-    if (rdbSaveAuxFieldStrInt(rdb,"used-mem",zmalloc_used_memory()) == -1) return -1;
+    server.rdb_last_save_size = zmalloc_used_memory();
+    if (rdbSaveAuxFieldStrInt(rdb,"used-mem",server.rdb_last_save_size) == -1) return -1;
 
     /* Handle saving options that generate aux fields. */
     if (rsi) {

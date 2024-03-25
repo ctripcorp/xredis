@@ -363,13 +363,15 @@ sds genSwapExecInfoString(sds info) {
             "swap_inprogress_memory:%ld\r\n"
             "swap_inprogress_load_count:%d\r\n"
             "swap_load_paused:%d\r\n"
-            "swap_load_error_count:%lu\r\n",
+            "swap_load_error_count:%lu\r\n"
+            "swap_used_db_size:%d\r\n",
             server.swap_inprogress_batch,
             server.swap_inprogress_count,
             server.swap_inprogress_memory,
             server.swap_load_inprogress_count,
             server.swap_load_paused,
-            server.swap_load_err_cnt);
+            server.swap_load_err_cnt,
+            server.swap_used_db_size);
 
     for (j = 1; j < SWAP_TYPES; j++) {
         swapStat *s = &server.ror_stats->swap_stats[j];

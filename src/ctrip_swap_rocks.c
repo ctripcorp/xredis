@@ -1158,16 +1158,16 @@ static uint64_t rocksUsedDbSize(rocks *rocks) {
 }
 
 sds genSwapStorageInfoString(sds info) {
-	size_t swap_used_db_size = 0, swap_max_db_size = 0,
-           swap_disk_capacity = 0, swap_used_disk_size = 0;
+	size_t swap_max_db_size = 0, swap_disk_capacity = 0,
+           swap_used_disk_size = 0;
 	float swap_used_db_percent = 0, swap_used_disk_percent = 0;
     rocks *rocks = serverRocksGetReadLock();
 	struct statvfs stat;
 
 	if (rocks) {
-        swap_used_db_size = rocksUsedDbSize(rocks);
+        server.swap_used_db_size = rocksUsedDbSize(rocks);
 		swap_max_db_size = server.swap_max_db_size;
-		if (swap_max_db_size) swap_used_db_percent = (float)(swap_used_db_size) * 100/swap_max_db_size;
+		if (swap_max_db_size) swap_used_db_percent = (float)(server.swap_used_db_size) * 100/swap_max_db_size;
 	}
 
 	if (statvfs(ROCKS_DATA, &stat) == 0) {
@@ -1184,7 +1184,7 @@ sds genSwapStorageInfoString(sds info) {
 			"swap_disk_capacity:%lu\r\n"
 			"swap_used_disk_percent:%0.2f%%\r\n"
             "swap_error_count:%ld\r\n",
-			swap_used_db_size,
+			server.swap_used_db_size,
 			swap_max_db_size,
 			swap_used_db_percent,
 			swap_used_disk_size,
