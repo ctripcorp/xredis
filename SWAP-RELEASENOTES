@@ -1,4 +1,22 @@
 ================================================================================
+ror-1.3.1 Released Thu Mar 11 00:00:00 CST 2024
+================================================================================
+* [fix] fix crash caused by ltrim command(key request not correctly parsed).
+* [opt] del/unlink big string will not swap in whole string and cuase latency spike
+
+================================================================================
+ror-1.3.0 Released Fri Feb 23 00:00:00 CST 2024
+================================================================================
+* [new] introduce rordb(a new rdb file format that store cold keys as SST file)
+        to speedup fullresync.
+* [opt] reduce fullresync possibility: dont discard dispatched but not executed
+        command of slave client, so that if another replica psync with larger
+        offset wont result in full resync.
+* [opt] slowdown expire rate so that ror expire will not cause significant
+        latency spike.
+* [opt] memory usage swaps in only a subset of subkeys of hash/list/set/zset.
+
+================================================================================
 ror-1.2.4 Released Thu Nov 23 00:00:00 CST 2023
 ================================================================================
 * [new] support blob db (to reduce write amplification for big key)

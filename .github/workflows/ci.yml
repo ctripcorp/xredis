@@ -10,7 +10,7 @@ jobs:
    unit:
     strategy:
       matrix:
-        platform: [ubuntu-latest]
+        platform: [ubuntu-22.04]
     runs-on: ${{ matrix.platform }}
     steps:
     - uses: actions/checkout@v2
@@ -35,7 +35,7 @@ jobs:
    mem:
     strategy:
       matrix:
-        platform: [ubuntu-latest]
+        platform: [ubuntu-22.04]
     runs-on: ${{ matrix.platform }}
     steps:
     - uses: actions/checkout@v2
@@ -62,7 +62,7 @@ jobs:
    swap:
     strategy:
       matrix:
-        platform: [ubuntu-latest]
+        platform: [ubuntu-22.04]
     runs-on: ${{ matrix.platform }}
     steps:
     - uses: actions/checkout@v2
@@ -89,7 +89,7 @@ jobs:
    swap-asan:
     strategy:
       matrix:
-        platform: [ubuntu-latest]
+        platform: [ubuntu-22.04]
     runs-on: ${{ matrix.platform }}
     steps:
     - uses: actions/checkout@v2

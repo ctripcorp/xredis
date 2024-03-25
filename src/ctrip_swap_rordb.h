@@ -36,25 +36,37 @@
 
 #define RORDB_OPCODE_BASE             128
 #define RORDB_OPCODE(i)               (RORDB_OPCODE_BASE+i)
+
+#define RORDB_OBJECT_FLAGS_DIRTY_META (1<<0)
+#define RORDB_OBJECT_FLAGS_DIRTY_DATA (1<<1)
+#define RORDB_OBJECT_FLAGS_PERSISTENT (1<<2)
+#define RORDB_OBJECT_FLAGS_PERSIST_KEEP (1<<3)
+
+#define RORDB_OPCODE_OBJECT_FLAGS     RORDB_OPCODE(0)
+
 /* ror.sst opcodes */
-#define RORDB_OPCODE_SWAP_VERSION     RORDB_OPCODE(0)
-#define RORDB_OPCODE_SST              RORDB_OPCODE(1)
+#define RORDB_OPCODE_SWAP_VERSION     RORDB_OPCODE(1)
+#define RORDB_OPCODE_SST              RORDB_OPCODE(2)
 /* ror.db opcodes */
-#define RORDB_OPCODE_COLD_KEY_NUM     RORDB_OPCODE(2)
-#define RORDB_OPCODE_CUCKOO_FILTER    RORDB_OPCODE(3)
+#define RORDB_OPCODE_COLD_KEY_NUM     RORDB_OPCODE(3)
+#define RORDB_OPCODE_CUCKOO_FILTER    RORDB_OPCODE(4)
 /* String doesn't have object meta. */
-#define RORDB_OPCODE_HASH             RORDB_OPCODE(4)
-#define RORDB_OPCODE_SET              RORDB_OPCODE(5)
-#define RORDB_OPCODE_ZSET             RORDB_OPCODE(6)
-#define RORDB_OPCODE_LIST             RORDB_OPCODE(7)
-#define RORDB_OPCODE_BITMAP           RORDB_OPCODE(8)
+#define RORDB_OPCODE_HASH             RORDB_OPCODE(5)
+#define RORDB_OPCODE_SET              RORDB_OPCODE(6)
+#define RORDB_OPCODE_ZSET             RORDB_OPCODE(7)
+#define RORDB_OPCODE_LIST             RORDB_OPCODE(8)
+#define RORDB_OPCODE_BITMAP           RORDB_OPCODE(9)
 /* ror opcode must lt limit */
-#define RORDB_OPCODE_LIMIT            RORDB_OPCODE(9)
+#define RORDB_OPCODE_LIMIT            RORDB_OPCODE(10)
 
 #define RORDB_CHECKPOINT_DIR          "rordb_checkpoint"
 
 static inline int rordbOpcodeIsValid(int type) {
   return type >= RORDB_OPCODE_BASE && type < RORDB_OPCODE_LIMIT;
+}
+
+static inline int rordbOpcodeIsObjectFlags(int type) {
+  return type == RORDB_OPCODE_OBJECT_FLAGS;
 }
 
 static inline int rordbOpcodeIsSSTType(int type) {
@@ -97,6 +109,8 @@ static inline int rordbSwapTypeFromOpcode(int type) {
   }
 }
 
+int rordbSetObjectFlags(robj *val, long long object_flags);
+int rordbSaveObjectFlags(rio *rdb, robj *val);
 int rordbSaveAuxFields(rio *rdb);
 int rordbLoadAuxFields(robj *key, robj *val);
 int rordbSaveSST(rio *rdb);

@@ -75,7 +75,8 @@ static int setSwapAnaOutSelectSubkeys(swapData *data, setDataCtx *datactx,
     }
 
     count = MIN(count,(size_t)server.swap_evict_step_max_subkeys);
-    datactx->ctx.subkeys = zmalloc(count*sizeof(robj*));
+    datactx->ctx.type = BASE_SWAP_CTX_TYPE_SUBKEY;
+    datactx->ctx.sub.subkeys = zmalloc(count*sizeof(robj*));
 
     *may_keep_data = 1;
     if (select_type == SELECT_MAIN) {
@@ -85,7 +86,7 @@ static int setSwapAnaOutSelectSubkeys(swapData *data, setDataCtx *datactx,
             size_t vlen = sdslen(vstr);
             robj* subkey;
 
-            if ((size_t)datactx->ctx.num >= count ||
+            if ((size_t)datactx->ctx.sub.num >= count ||
                     evict_memory >= server.swap_evict_step_max_memory) {
                 /* Evict in small steps. */
                 if (vstr) sdsfree(vstr);
@@ -95,7 +96,7 @@ static int setSwapAnaOutSelectSubkeys(swapData *data, setDataCtx *datactx,
 
             subkey = createObject(OBJ_STRING, vstr);
             evict_memory += vlen;
-            datactx->ctx.subkeys[datactx->ctx.num++] = subkey;
+            datactx->ctx.sub.subkeys[datactx->ctx.sub.num++] = subkey;
         }
         setTypeReleaseIterator(si);
     } else {
@@ -106,7 +107,7 @@ static int setSwapAnaOutSelectSubkeys(swapData *data, setDataCtx *datactx,
 
         dirtySubkeysIteratorInit(&dss_iter, subkeys);
         while ((subkey = dirtySubkeysIteratorNext(&dss_iter,&sublen)) != NULL) {
-            if ((size_t)datactx->ctx.num >= count ||
+            if ((size_t)datactx->ctx.sub.num >= count ||
                     evict_memory >= server.swap_evict_step_max_memory) {
                 /* Evict big hash in small steps.
                  * There still may be dirty subkeys in memory, cant set clean
@@ -118,7 +119,7 @@ static int setSwapAnaOutSelectSubkeys(swapData *data, setDataCtx *datactx,
 
             /* check with lock hold so that evicting subkeys must exist. */
             if (setTypeIsMember(data->value,subkey->ptr)) {
-                datactx->ctx.subkeys[datactx->ctx.num++] = subkey;
+                datactx->ctx.sub.subkeys[datactx->ctx.sub.num++] = subkey;
                 evict_memory += sublen;
             } else {
                 listAddNodeTail(redundent_subkeys, subkey);
@@ -146,8 +147,8 @@ int setSwapAna(swapData *data, int thd, struct keyRequest *req,
     int cmd_intention = req->cmd_intention;
     uint32_t cmd_intention_flags = req->cmd_intention_flags;
 
-    serverAssert(req->type == KEYREQUEST_TYPE_SUBKEY);
-    serverAssert(req->b.num_subkeys >= 0);
+    serverAssert(req->type == KEYREQUEST_TYPE_SUBKEY ||
+            req->type == KEYREQUEST_TYPE_SAMPLE);
 
     switch (cmd_intention) {
         case SWAP_NOP:
@@ -159,10 +160,15 @@ int setSwapAna(swapData *data, int thd, struct keyRequest *req,
                 /* No need to swap for pure hot key */
                 *intention = SWAP_NOP;
                 *intention_flags = 0;
+            } else if (req->type == KEYREQUEST_TYPE_SAMPLE) {
+                datactx->ctx.type = BASE_SWAP_CTX_TYPE_SAMPLE;
+                datactx->ctx.spl.count = req->sp.count;
+                *intention = SWAP_IN;
+                *intention_flags = 0;
             } else if (req->b.num_subkeys == 0) {
                 if (cmd_intention_flags == SWAP_IN_DEL_MOCK_VALUE) {
                     /* DEL/UNLINK: Lazy delete current key. */
-                    datactx->ctx.ctx_flag = BIG_DATA_CTX_FLAG_MOCK_VALUE;
+                    datactx->ctx.ctx_flag |= BIG_DATA_CTX_FLAG_MOCK_VALUE;
                     *intention = SWAP_DEL;
                     *intention_flags = SWAP_FIN_DEL_SKIP;
                 } else if (cmd_intention_flags & SWAP_IN_DEL
@@ -186,50 +192,54 @@ int setSwapAna(swapData *data, int thd, struct keyRequest *req,
                 } else if (cmd_intention_flags == SWAP_IN_META) {
                     /* SCARD: swap in meta (with random field gets empty set)
                      * also SCARD command will be modified like dbsize. */
-                    datactx->ctx.num = 0;
-                    datactx->ctx.subkeys = zmalloc(sizeof(robj*));
-                    datactx->ctx.subkeys[datactx->ctx.num++] = createStringObject("foo",3);
+                    datactx->ctx.type = BASE_SWAP_CTX_TYPE_SUBKEY;
+                    datactx->ctx.sub.num = 0;
+                    datactx->ctx.sub.subkeys = zmalloc(sizeof(robj*));
+                    datactx->ctx.sub.subkeys[datactx->ctx.sub.num++] = createStringObject("foo",3);
                     *intention = SWAP_IN;
                     *intention_flags = 0;
                 } else {
                     /* SMEMBERS,SINTER..., swap in all fields */
-                    datactx->ctx.num = 0;
-                    datactx->ctx.subkeys = NULL;
+                    datactx->ctx.type = BASE_SWAP_CTX_TYPE_SUBKEY;
+                    datactx->ctx.sub.num = 0;
+                    datactx->ctx.sub.subkeys = NULL;
                     *intention = SWAP_IN;
                     *intention_flags = 0;
                 }
             } else { /* keyrequests with subkeys */
                 objectMeta *meta = swapDataObjectMeta(data);
                 if (req->cmd_intention_flags == SWAP_IN_DEL) {
-                    datactx->ctx.num = 0;
-                    datactx->ctx.subkeys = zmalloc(req->b.num_subkeys * sizeof(robj *));
+                    datactx->ctx.type = BASE_SWAP_CTX_TYPE_SUBKEY;
+                    datactx->ctx.sub.num = 0;
+                    datactx->ctx.sub.subkeys = zmalloc(req->b.num_subkeys * sizeof(robj *));
                     /* SREM: even if field is hot (exists in value), we still
                      * need to do ROCKS_DEL on those fields. */
                     for (int i = 0; i < req->b.num_subkeys; i++) {
                         robj *subkey = req->b.subkeys[i];
                         if (swapDataMayContainSubkey(data,thd,subkey)) {
                             incrRefCount(subkey);
-                            datactx->ctx.subkeys[datactx->ctx.num++] = subkey;
+                            datactx->ctx.sub.subkeys[datactx->ctx.sub.num++] = subkey;
                         }
                     }
-                    *intention = datactx->ctx.num > 0 ? SWAP_IN : SWAP_NOP;
+                    *intention = datactx->ctx.sub.num > 0 ? SWAP_IN : SWAP_NOP;
                     *intention_flags = SWAP_EXEC_IN_DEL;
                 } else if (meta->len == 0) {
                     *intention = SWAP_NOP;
                     *intention_flags = 0;
                 } else {
-                    datactx->ctx.num = 0;
-                    datactx->ctx.subkeys = zmalloc(req->b.num_subkeys * sizeof(robj *));
+                    datactx->ctx.type = BASE_SWAP_CTX_TYPE_SUBKEY;
+                    datactx->ctx.sub.num = 0;
+                    datactx->ctx.sub.subkeys = zmalloc(req->b.num_subkeys * sizeof(robj *));
                     for (int i = 0; i < req->b.num_subkeys; i++) {
                         robj *subkey = req->b.subkeys[i];
                         if (data->value == NULL || !setTypeIsMember(data->value, subkey->ptr)) {
                             if (swapDataMayContainSubkey(data,thd,subkey)) {
                                 incrRefCount(subkey);
-                                datactx->ctx.subkeys[datactx->ctx.num++] = subkey;
+                                datactx->ctx.sub.subkeys[datactx->ctx.sub.num++] = subkey;
                             }
                         }
                     }
-                    *intention = datactx->ctx.num > 0 ? SWAP_IN : SWAP_NOP;
+                    *intention = datactx->ctx.sub.num > 0 ? SWAP_IN : SWAP_NOP;
                     *intention_flags = 0;
                 }
             }
@@ -289,8 +299,14 @@ int setSwapAnaAction(swapData *data, int intention, void *datactx_, int *action)
 
     switch (intention) {
         case SWAP_IN:
-            if (datactx->ctx.num > 0) *action = ROCKS_GET; /* Swap in specific fields */
-            else *action = ROCKS_ITERATE; /* Swap in entire set(SMEMBERS) */
+            if (datactx->ctx.type == BASE_SWAP_CTX_TYPE_SUBKEY &&
+                    datactx->ctx.sub.num > 0) {
+                *action = ROCKS_GET; /* Swap in specific fields */
+            } else {
+                /* Swap in entire set(SMEMBERS) or sample some
+                 * subkey (MEMORY USAGE) */
+                *action = ROCKS_ITERATE;
+            }
             break;
         case SWAP_DEL:
             *action = ROCKS_NOP;
@@ -319,15 +335,15 @@ int setEncodeKeys(swapData *data, int intention, void *datactx_,
     int *cfs = NULL, i;
     uint64_t version = swapDataObjectVersion(data);
 
-    serverAssert(datactx->ctx.num);
-    cfs = zmalloc(sizeof(int)*datactx->ctx.num);
-    rawkeys = zmalloc(sizeof(sds)*datactx->ctx.num);
-    for (i = 0; i < datactx->ctx.num; i++) {
+    serverAssert(datactx->ctx.sub.num);
+    cfs = zmalloc(sizeof(int)*datactx->ctx.sub.num);
+    rawkeys = zmalloc(sizeof(sds)*datactx->ctx.sub.num);
+    for (i = 0; i < datactx->ctx.sub.num; i++) {
         cfs[i] = DATA_CF;
         rawkeys[i] = setEncodeSubkey(data->db,data->key->ptr,
-                                     version,datactx->ctx.subkeys[i]->ptr);
+                                     version,datactx->ctx.sub.subkeys[i]->ptr);
     }
-    *numkeys = datactx->ctx.num;
+    *numkeys = datactx->ctx.sub.num;
     *pcfs = cfs;
     *prawkeys = rawkeys;
 
@@ -338,33 +354,41 @@ int setEncodeData(swapData *data, int intention, void *datactx_,
                   int *numkeys, int **pcfs, sds **prawkeys, sds **prawvals) {
     setDataCtx *datactx = datactx_;
     uint64_t version = swapDataObjectVersion(data);
-    int *cfs = zmalloc(datactx->ctx.num*sizeof(int));
-    sds *rawkeys = zmalloc(datactx->ctx.num*sizeof(sds));
-    sds *rawvals = zmalloc(datactx->ctx.num*sizeof(sds));
+    int *cfs = zmalloc(datactx->ctx.sub.num*sizeof(int));
+    sds *rawkeys = zmalloc(datactx->ctx.sub.num*sizeof(sds));
+    sds *rawvals = zmalloc(datactx->ctx.sub.num*sizeof(sds));
     serverAssert(intention == SWAP_OUT);
-    for (int i = 0; i < datactx->ctx.num; i++) {
+    for (int i = 0; i < datactx->ctx.sub.num; i++) {
         cfs[i] = DATA_CF;
         rawkeys[i] = setEncodeSubkey(data->db,data->key->ptr,
-                version,datactx->ctx.subkeys[i]->ptr);
+                version,datactx->ctx.sub.subkeys[i]->ptr);
         rawvals[i] = sdsempty();
     }
-    *numkeys = datactx->ctx.num;
+    *numkeys = datactx->ctx.sub.num;
     *pcfs = cfs;
     *prawkeys = rawkeys;
     *prawvals = rawvals;
     return 0;
 }
 
-int setEncodeRange(struct swapData *data, int intention, void *datactx, int *limit,
+int setEncodeRange(struct swapData *data, int intention, void *datactx_, int *limit,
         uint32_t *flags, int *pcf, sds *start, sds *end) {
-    UNUSED(intention), UNUSED(datactx);
+    UNUSED(intention);
+    hashDataCtx *datactx = datactx_;
+
     uint64_t version = swapDataObjectVersion(data);
 
     *pcf = DATA_CF;
     *flags = 0;
     *start = rocksEncodeDataRangeStartKey(data->db,data->key->ptr,version);
     *end = rocksEncodeDataRangeEndKey(data->db,data->key->ptr,version);
-    *limit = ROCKS_ITERATE_NO_LIMIT;
+
+    if (datactx->ctx.type == BASE_SWAP_CTX_TYPE_SAMPLE) {
+        *limit = datactx->ctx.spl.count;
+    } else {
+        *limit =  ROCKS_ITERATE_NO_LIMIT;
+    }
+
     return 0;
 }
 
@@ -487,7 +511,7 @@ int setSwapOut(swapData *data, void *datactx, int clear_dirty, int *totally_out)
 
 int setSwapDel(swapData *data, void *datactx_, int del_skip) {
     setDataCtx* datactx = (setDataCtx*)datactx_;
-    if (datactx->ctx.ctx_flag == BIG_DATA_CTX_FLAG_MOCK_VALUE) {
+    if (datactx->ctx.ctx_flag & BIG_DATA_CTX_FLAG_MOCK_VALUE) {
         createFakeSetForDeleteIfCold(data);
     }
     if (del_skip) {
@@ -535,13 +559,13 @@ void *setCreateOrMergeObject(swapData *data, void *decoded_, void *datactx) {
 int setCleanObject(swapData *data, void *datactx_, int keep_data) {
     setDataCtx *datactx = datactx_;
     if (swapDataIsCold(data)) return 0;
-    for (int i = 0; i < datactx->ctx.num; i++) {
+    for (int i = 0; i < datactx->ctx.sub.num; i++) {
         if (data->dirty_subkeys) {
             dirtySubkeysRemove(data->dirty_subkeys,
-                    datactx->ctx.subkeys[i]->ptr);
+                    datactx->ctx.sub.subkeys[i]->ptr);
         }
 
-        if (!keep_data && setTypeRemove(data->value,datactx->ctx.subkeys[i]->ptr)) {
+        if (!keep_data && setTypeRemove(data->value,datactx->ctx.sub.subkeys[i]->ptr)) {
             swapDataObjectMetaModifyLen(data,1);
         }
     }
@@ -553,10 +577,12 @@ int setCleanObject(swapData *data, void *datactx_, int keep_data) {
 void freeSetSwapData(swapData *data_, void *datactx_) {
     UNUSED(data_);
     setDataCtx *datactx = datactx_;
-    for (int i = 0; i < datactx->ctx.num; i++) {
-        decrRefCount(datactx->ctx.subkeys[i]);
-    }
-    zfree(datactx->ctx.subkeys);
+	if (datactx->ctx.type == BASE_SWAP_CTX_TYPE_SUBKEY) {
+		for (int i = 0; i < datactx->ctx.sub.num; i++) {
+			decrRefCount(datactx->ctx.sub.subkeys[i]);
+		}
+	}
+    zfree(datactx->ctx.sub.subkeys);
     zfree(datactx);
 }
 
@@ -591,9 +617,10 @@ int swapDataSetupSet(swapData *d, OUT void **pdatactx) {
     d->type = &setSwapDataType;
     d->omtype = &setObjectMetaType;
     setDataCtx *datactx = zmalloc(sizeof(setDataCtx));
-    datactx->ctx.num = 0;
+    datactx->ctx.type = BASE_SWAP_CTX_TYPE_SUBKEY;
+    datactx->ctx.sub.num = 0;
     datactx->ctx.ctx_flag = BIG_DATA_CTX_FLAG_NONE;
-    datactx->ctx.subkeys = NULL;
+    datactx->ctx.sub.subkeys = NULL;
     *pdatactx = datactx;
     return 0;
 }
@@ -874,8 +901,9 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         uint32_t flags;
         sds start, end;
 
-        set1_ctx->ctx.num = 2;
-        set1_ctx->ctx.subkeys = mockSubKeys(2, sdsdup(f1), sdsdup(f2));
+        set1_ctx->ctx.type = BASE_SWAP_CTX_TYPE_SUBKEY;
+        set1_ctx->ctx.sub.num = 2;
+        set1_ctx->ctx.sub.subkeys = mockSubKeys(2, sdsdup(f1), sdsdup(f2));
         set1_data->object_meta = createSetObjectMeta(0,2);
         // encodeKeys - swap in subkeys
         setSwapAnaAction(set1_data, SWAP_IN, set1_ctx, &action);
@@ -888,7 +916,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
             || memcmp(expectEncodedKey,rawkeys[1],sdslen(rawkeys[1])) == 0);
 
         // encodeKeys - swap in whole key
-        set1_ctx->ctx.num = 0;
+        set1_ctx->ctx.sub.num = 0;
         setSwapAnaAction(set1_data, SWAP_IN, set1_ctx, &action);
         setEncodeRange(set1_data, SWAP_IN, set1_ctx, &numkeys, &flags, &cf, &start, &end);
         test_assert(ROCKS_ITERATE == action);
@@ -897,19 +925,19 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         test_assert(memcmp(expectEncodedKey, start, sdslen(start)) == 0);
 
         // encodeKeys - swap del
-        set1_ctx->ctx.num = 2;
+        set1_ctx->ctx.sub.num = 2;
         setSwapAnaAction(set1_data, SWAP_DEL, set1_ctx, &action);
         test_assert(0 == action);
 
         // encodeData - swap out
-        set1_ctx->ctx.num = 2;
+        set1_ctx->ctx.sub.num = 2;
         setSwapAnaAction(set1_data, SWAP_OUT, set1_ctx, &action);
         setEncodeData(set1_data, SWAP_OUT, set1_ctx, &numkeys, &cfs, &rawkeys, &rawvals);
         test_assert(action == ROCKS_PUT);
         test_assert(2 == numkeys);
 
         // decodeData - swap in
-        setDecodeData(set1_data, set1_ctx->ctx.num, cfs, rawkeys, rawvals, &decoded);
+        setDecodeData(set1_data, set1_ctx->ctx.sub.num, cfs, rawkeys, rawvals, &decoded);
         test_assert(NULL != decoded);
         test_assert(2 == setTypeSize(decoded));
 
@@ -959,7 +987,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         set1_meta->len=4;
         setSwapAna(set1_data,0,kr1,&intention,&intention_flags,set1_ctx);
         test_assert(intention == SWAP_IN && intention_flags == 0);
-        test_assert(set1_ctx->ctx.num > 0);
+        test_assert(set1_ctx->ctx.sub.num > 0);
 
         // swap in del mock value
         kr1->cmd_intention = SWAP_IN;
@@ -998,7 +1026,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         kr1->cmd_intention_flags = SWAP_IN_DEL;
         setSwapAna(set1_data,0,kr1,&intention,&intention_flags,set1_ctx);
         test_assert(intention == SWAP_IN && intention_flags == SWAP_EXEC_IN_DEL);
-        test_assert(set1_ctx->ctx.num == 2);
+        test_assert(set1_ctx->ctx.sub.num == 2);
 
         // swap in with subkeys - subkeys already in mem
         kr1->cmd_intention = SWAP_IN;
@@ -1006,7 +1034,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         set1_data->value = set1;
         setSwapAna(set1_data,0,kr1,&intention,&intention_flags,set1_ctx);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
-        test_assert(set1_ctx->ctx.num == 0);
+        test_assert(set1_ctx->ctx.sub.num == 0);
 
         // swap in with subkeys - subkeys not in mem
         kr1->cmd_intention = SWAP_IN;
@@ -1014,7 +1042,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         kr1->b.subkeys = mockSubKeys(2, sdsnew("new1"), sdsnew("new2"));
         setSwapAna(set1_data,0,kr1,&intention,&intention_flags,set1_ctx);
         test_assert(intention == SWAP_IN && intention_flags == 0);
-        test_assert(set1_ctx->ctx.num == 2);
+        test_assert(set1_ctx->ctx.sub.num == 2);
 
         // swap out - data not in mem
         set1_data->value = NULL;
@@ -1029,15 +1057,15 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         set1_data->object_meta = NULL;
         set1_data->cold_meta = NULL;
         set1_data->new_meta = NULL;
-        set1_ctx->ctx.num = 0;
+        set1_ctx->ctx.sub.num = 0;
         setSwapAna(set1_data,0,kr1,&intention,&intention_flags,set1_ctx);
         test_assert(intention == SWAP_OUT && intention_flags == 0);
-        test_assert(4 == set1_ctx->ctx.num);
+        test_assert(4 == set1_ctx->ctx.sub.num);
         test_assert(NULL != set1_data->new_meta);
 
         // swap out - data not dirty
         clearObjectDirty(set1);
-        set1_ctx->ctx.num = 0;
+        set1_ctx->ctx.sub.num = 0;
         set1_data->object_meta = createSetObjectMeta(0,0);
         set1_data->new_meta = NULL;
         int expectColdKey = db->cold_keys + 1;
@@ -1074,8 +1102,8 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
 
         /* hot => warm => cold */
         set1_data->new_meta = createSetObjectMeta(0,0);
-        set1_ctx->ctx.num = 2;
-        set1_ctx->ctx.subkeys = mockSubKeys(2, sdsdup(f1), sdsdup(f2));
+        set1_ctx->ctx.sub.num = 2;
+        set1_ctx->ctx.sub.subkeys = mockSubKeys(2, sdsdup(f1), sdsdup(f2));
         setCleanObject(set1_data, set1_ctx, 0);
         setSwapOut(set1_data, set1_ctx, 0, NULL);
         test_assert((m =lookupMeta(db,key1)) != NULL && m->len == 2);
@@ -1084,7 +1112,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
 
         set1_data->new_meta = NULL;
         set1_data->object_meta = m;
-        set1_ctx->ctx.subkeys = mockSubKeys(2, sdsdup(f3), sdsdup(f4));
+        set1_ctx->ctx.sub.subkeys = mockSubKeys(2, sdsdup(f3), sdsdup(f4));
         setCleanObject(set1_data, set1_ctx, 0);
         setSwapOut(set1_data, set1_ctx, 0, NULL);
         test_assert(lookupKey(db,key1,LOOKUP_NOTOUCH) == NULL);
@@ -1118,8 +1146,8 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         /* hot => cold */
         set1_data->object_meta = m;
         set1_data->value = s;
-        set1_ctx->ctx.num = 4;
-        set1_ctx->ctx.subkeys = mockSubKeys(4, sdsdup(f1), sdsdup(f2), sdsdup(f3), sdsdup(f4));
+        set1_ctx->ctx.sub.num = 4;
+        set1_ctx->ctx.sub.subkeys = mockSubKeys(4, sdsdup(f1), sdsdup(f2), sdsdup(f3), sdsdup(f4));
         setCleanObject(set1_data, set1_ctx, 0);
         setSwapOut(set1_data, set1_ctx, 0, NULL);
         test_assert((m = lookupMeta(db,key1)) == NULL);

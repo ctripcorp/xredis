@@ -168,15 +168,17 @@ static inline const char *requestLevelName(int level) {
 
 /* Both start and end are inclusive, see addListRangeReply for details. */
 typedef struct range {
-    int type; /* RANGE_LIST, RANGE_BIT_BITMAP, RANGE_BYTE_BITMAP*/
-    long long start;
-    long long end;
+  int type; /* RANGE_LIST, RANGE_BIT_BITMAP, RANGE_BYTE_BITMAP*/
+  long long start;
+  long long end;
+  int reverse; /* LTRIM command specifies range to keep, so swap in the reverse range */
 } range;
 
 #define KEYREQUEST_TYPE_KEY    0
 #define KEYREQUEST_TYPE_SUBKEY 1
 #define KEYREQUEST_TYPE_RANGE  2
 #define KEYREQUEST_TYPE_SCORE  3
+#define KEYREQUEST_TYPE_SAMPLE 4
 
 typedef struct argRewriteRequest {
   int mstate_idx; /* >=0 if current command is a exec, means index in mstate; -1 means req not in multi/exec */
@@ -213,6 +215,9 @@ typedef struct keyRequest{
       int reverse;
       int limit;
     } zs; /* zset score*/
+    struct {
+      int count;
+    } sp; /* sample */
   };
   argRewriteRequest arg_rewrite[2];
   swapCmdTrace *swap_cmd;
@@ -305,6 +310,8 @@ int getKeyRequestsBitcount(int dbid, struct redisCommand *cmd, robj **argv, int 
 int getKeyRequestsBitpos(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 int getKeyRequestsBitop(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 int getKeyRequestsBitField(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+
+int getKeyRequestsMemory(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 
 #define GET_KEYREQUESTS_RESULT_INIT { {{0}}, NULL, NULL, 0, MAX_KEYREQUESTS_BUFFER}
 
@@ -839,24 +846,28 @@ void freeClientSwapCmdTrace(client *c);
 #define REQ_SUBMITTED_BGSAVE (1ULL<<0)
 #define REQ_SUBMITTED_REPL_START (1ULL<<1)
 
-/* String */
-typedef struct wholeKeySwapData {
-  swapData d;
-} wholeKeySwapData;
-
-int swapDataSetupWholeKey(swapData *d, OUT void **datactx);
-
 /* Hash */
 typedef struct hashSwapData {
   swapData d;
 } hashSwapData;
 
 #define BIG_DATA_CTX_FLAG_NONE 0
-#define BIG_DATA_CTX_FLAG_MOCK_VALUE 1
+#define BIG_DATA_CTX_FLAG_MOCK_VALUE (1U<<0)
+
+#define BASE_SWAP_CTX_TYPE_SUBKEY 0
+#define BASE_SWAP_CTX_TYPE_SAMPLE 1
 
 typedef struct baseBigDataCtx {
-    int num;
-    robj **subkeys;
+    int type;
+    union {
+      struct {
+        int num;
+        robj **subkeys;
+      } sub;
+      struct {
+        int count;
+      } spl;
+    };
     int ctx_flag;
 } baseBigDataCtx;
 
@@ -868,6 +879,18 @@ int swapDataSetupHash(swapData *d, OUT void **datactx);
 
 #define hashObjectMetaType lenObjectMetaType
 #define createHashObjectMeta(version, len) createLenObjectMeta(OBJ_HASH, version, len)
+
+/* String */
+typedef struct wholeKeyDataCtx {
+    int ctx_flag;
+} wholeKeyDataCtx;
+
+typedef struct wholeKeySwapData {
+  swapData d;
+  wholeKeyDataCtx ctx[1]; 
+} wholeKeySwapData;
+
+int swapDataSetupWholeKey(swapData *d, OUT void **datactx);
 
 /* Set */
 typedef struct setSwapData {
@@ -926,8 +949,9 @@ void ctripListMetaDelRange(redisDb *db, robj *key, long ltrim, long rtrim);
 typedef struct zsetSwapData {
   swapData sd;
 } zsetSwapData;
-#define TYPE_NONE 0
-#define TYPE_ZS 1
+
+#define ZSET_SWAP_CTX_TYPE_NONE 0
+#define ZSET_SWAP_CTX_TYPE_ZS 1
 
 typedef struct zsetDataCtx {
 	baseBigDataCtx bdc;

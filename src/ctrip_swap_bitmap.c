@@ -506,7 +506,7 @@ int bitmapSwapAna(swapData *data, int thd, struct keyRequest *req,
             } else if (req->l.num_ranges == 0) {
                 if (cmd_intention_flags == SWAP_IN_DEL_MOCK_VALUE) {
                     /* DEL, unlink */
-                    datactx->ctx_flag = BIG_DATA_CTX_FLAG_MOCK_VALUE;
+                    datactx->ctx_flag |= BIG_DATA_CTX_FLAG_MOCK_VALUE;
                     *intention = SWAP_DEL;
                     *intention_flags = SWAP_FIN_DEL_SKIP;
                 } else if (cmd_intention_flags & SWAP_IN_DEL  /* cmd rename... */
@@ -929,7 +929,7 @@ static inline void mockBitmapForDeleteIfCold(swapData *data)
 
 int bitmapSwapDel(swapData *data, void *datactx_, int del_skip) {
     bitmapDataCtx* datactx = (bitmapDataCtx*)datactx_;
-    if (datactx->ctx_flag == BIG_DATA_CTX_FLAG_MOCK_VALUE) {
+    if (datactx->ctx_flag & BIG_DATA_CTX_FLAG_MOCK_VALUE) {
         mockBitmapForDeleteIfCold(data);
     }
 
@@ -2007,7 +2007,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         cold_keyReq1->cmd_intention = SWAP_IN, cold_keyReq1->cmd_intention_flags = SWAP_IN_DEL_MOCK_VALUE;
         swapDataAna(cold_data1,0,cold_keyReq1,&intention,&intention_flags,cold_ctx1);
         test_assert(intention == SWAP_DEL && intention_flags == SWAP_FIN_DEL_SKIP);
-        test_assert(cold_ctx1->ctx_flag == BIG_DATA_CTX_FLAG_MOCK_VALUE);
+        test_assert(cold_ctx1->ctx_flag & BIG_DATA_CTX_FLAG_MOCK_VALUE);
         bitmapDataCtxReset(cold_ctx1);
 
         cold_keyReq1->l.num_ranges = 0;

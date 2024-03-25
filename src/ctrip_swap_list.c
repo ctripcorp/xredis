@@ -197,40 +197,67 @@ void listMetaFree(listMeta *list_meta) {
     zfree(list_meta);
 }
 
-listMeta *listMetaNormalizeFromRequest(long ridx_shift, int num,
+int listMetaAppendSegment(listMeta *list_meta, int type, long index, long len);
+
+/* Note that we dont check range overlap but asserts range not overlap when
+ * calculating swap_meta, it's ok to do so because currently no command
+ * results in more that one range. */
+listMeta *listMetaNormalizeFromRequest(long ridx_shift, int num_ranges,
         range *ranges, long llen) {
-    range *r;
-    long req_len = 0;
-    listMeta *req_meta = NULL;
-    segment *seg, *segments = zmalloc(sizeof(segment)*num);
+    listMeta *req_meta = listMetaCreate();
 
-    for (int i = 0; i < num; i++) {
-        r = ranges + i, seg = segments + i;
+    for (int i = 0; i < num_ranges; i++) {
+        range *r = ranges + i;
+        long start = r->start, end = r->end;
+        int reverse = r->reverse, result;
 
-        /* See addListRangeReply for details. */
-        if (r->start < 0) r->start += llen;
-        if (r->end < 0) r->end += llen;
-        if (r->start < 0) r->start = 0;
+        /* See addListRangeReply & ltrimCommand for details. */
+        if (start < 0) start = llen+start;
+        if (end < 0) end = llen+end;
+        if (start < 0) start = 0;
 
-        if (r->start > r->end  || r->start > llen) goto end;
-        if (r->end >= llen) r->end = llen-1;
-
-        seg->type = SEGMENT_TYPE_HOT;
-        seg->index = r->start + ridx_shift;
-        seg->len = r->end-r->start+1;
-
-        req_len += seg->len;
+        if (start > end  || start >= llen) {
+            if (reverse) {
+                if (llen > 0) {
+                    result = listMetaAppendSegment(req_meta,SEGMENT_TYPE_HOT,
+                            ridx_shift,llen);
+                    serverAssert(result != -1);
+                }
+            }
+        } else {
+            if (end >= llen) end = llen-1;
+            if (reverse) {
+                if (end - start < 2) {
+                    /* NOTE: In order to correctly rewrite arg, we need to
+                     * swap start & stop in memory. */
+                    if (llen > 0) {
+                        result = listMetaAppendSegment(req_meta,
+                                SEGMENT_TYPE_HOT,ridx_shift,llen);
+                        serverAssert(result != -1);
+                    }
+                } else {
+                    start++, end--;
+                    long ltrim = start, rtrim = llen-end-1;
+                    if (ltrim > 0) {
+                        result = listMetaAppendSegment(req_meta,
+                                SEGMENT_TYPE_HOT,ridx_shift,ltrim);
+                        serverAssert(result != -1);
+                    }
+                    if (rtrim > 0) {
+                        result = listMetaAppendSegment(req_meta,
+                                SEGMENT_TYPE_HOT,ridx_shift+end+1,rtrim);
+                        serverAssert(result != -1);
+                    }
+                }
+            } else {
+                long rangelen = (end-start)+1;
+                result = listMetaAppendSegment(req_meta,SEGMENT_TYPE_HOT,
+                        ridx_shift+start,rangelen);
+                serverAssert(result != -1);
+            }
+        }
     }
 
-    req_meta = zmalloc(sizeof(listMeta));
-    req_meta->len = req_len;
-    req_meta->capacity = num;
-    req_meta->num = num;
-    req_meta->segments = segments;
-    segments = NULL;
-
-end:
-    zfree(segments);
     return req_meta;
 }
 
@@ -1350,9 +1377,10 @@ int listSwapAna(swapData *data, int thd, struct keyRequest *req,
             dbDeleteMeta(data->db,data->key);
             *intention = SWAP_NOP;
             *intention_flags = 0;
-        } else if (req->l.num_ranges == 0) {
+        } else if (req->type != KEYREQUEST_TYPE_SAMPLE &&
+                req->l.num_ranges == 0) {
             if (cmd_intention_flags == SWAP_IN_DEL_MOCK_VALUE) {
-                datactx->ctx_flag = BIG_DATA_CTX_FLAG_MOCK_VALUE;
+                datactx->ctx_flag |= BIG_DATA_CTX_FLAG_MOCK_VALUE;
                 *intention = SWAP_DEL;
                 *intention_flags = SWAP_FIN_DEL_SKIP;
             } else if (cmd_intention_flags == SWAP_IN_META) {
@@ -1387,14 +1415,16 @@ int listSwapAna(swapData *data, int thd, struct keyRequest *req,
             serverAssert(list_meta != NULL);
             long ridx_shift = listMetaGetRidxShift(list_meta);
 
-            req_meta = listMetaNormalizeFromRequest(ridx_shift,
-                    req->l.num_ranges,req->l.ranges,llen);
-
-            /* req_meta is NULL if range is not valid, in which case swap in
-             * all eles (e.g. ltrim removes all eles if range invalid) */
-            if (req_meta == NULL) {
-                req_meta = listMetaCreate();
-                listMetaAppendSegment(req_meta,SEGMENT_TYPE_HOT,ridx_shift,llen);
+            if (req->type == KEYREQUEST_TYPE_SAMPLE) {
+                range sample_ranges[1];
+                sample_ranges[0].start = 0;
+                sample_ranges[0].end = req->sp.count;
+                sample_ranges[0].reverse = 0;
+                req_meta = listMetaNormalizeFromRequest(ridx_shift,
+                        1,sample_ranges,llen);
+            } else {
+                req_meta = listMetaNormalizeFromRequest(ridx_shift,
+                        req->l.num_ranges,req->l.ranges,llen);
             }
 
             if (listMetaLength(req_meta,SEGMENT_TYPE_BOTH) > 0) {
@@ -1796,7 +1826,7 @@ int listSwapOut(swapData *data, void *datactx, int keep_data, int *totally_out) 
 
 int listSwapDel(swapData *data, void *datactx_, int del_skip) {
     listDataCtx* datactx = (listDataCtx*)datactx_;
-    if (datactx->ctx_flag == BIG_DATA_CTX_FLAG_MOCK_VALUE) {
+    if (datactx->ctx_flag & BIG_DATA_CTX_FLAG_MOCK_VALUE) {
         mockListForDeleteIfCold(data);
     }
     if (del_skip) {
@@ -2491,29 +2521,31 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
     TEST("list-meta: normalize from request") {
         listMeta *qm;
 
-        range ltrim1[2] = {{0,1},{-1,0}};
-        qm = listMetaNormalizeFromRequest(0,2,ltrim1,4);
-        test_assert(qm == NULL);
+        range ltrim1[1] = {{-1,0,1}};
+        qm = listMetaNormalizeFromRequest(0,1,ltrim1,4);
+        test_assert(qm->num == 1 && qm->len == 4);
+        test_assert(qm->segments[0].index == 0 && qm->segments[0].len == 4);
 
-
-        range ltrim2[2] = {{0,1},{-2,-1}};
-        qm = listMetaNormalizeFromRequest(0,2,ltrim2,4);
+        range ltrim2[1] = {{1,-2,1}};
+        qm = listMetaNormalizeFromRequest(0,1,ltrim2,4);
         test_assert(listMetaIsValid(qm,0));
-        test_assert(qm->num == 2 && qm->len == 4);
-        test_assert(qm->segments[0].index == 0 && qm->segments[0].len == 2);
-        test_assert(qm->segments[1].index == 2 && qm->segments[0].len == 2);
+        test_assert(qm->num == 1 && qm->len == 4);
+        test_assert(qm->segments[0].index == 0 && qm->segments[0].len == 4);
         listMetaFree(qm);
 
-        range within_range[2] = { {0,1},{-5,-4}};
-        qm = listMetaNormalizeFromRequest(0,2,within_range,4);
+        range ltrim3[2] = {{1,-1,1}};
+        qm = listMetaNormalizeFromRequest(0,1,ltrim3,4);
         test_assert(qm->num == 2 && qm->len == 3);
         test_assert(qm->segments[0].index == 0 && qm->segments[0].len == 2);
-        test_assert(qm->segments[1].index == 0 && qm->segments[1].len == 1);
+        test_assert(qm->segments[1].index == 3 && qm->segments[1].len == 1);
         listMetaFree(qm);
 
-        range exceed_range[2] = { {0,1},{-5,-5}};
-        qm = listMetaNormalizeFromRequest(0,2,exceed_range,4);
-        test_assert(qm == NULL);
+        range ltrim4[2] = {{0,-1,1}};
+        qm = listMetaNormalizeFromRequest(0,1,ltrim4,4);
+        test_assert(qm->num == 2 && qm->len == 2);
+        test_assert(qm->segments[0].index == 0 && qm->segments[0].len == 1);
+        test_assert(qm->segments[1].index == 3 && qm->segments[1].len == 1);
+        listMetaFree(qm);
     }
 
     TEST("list-meta: search overlaps") {
@@ -2586,8 +2618,8 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         listMeta *lm = listMetaCreate(), *qm, *sm;
         /* hot */
         listMetaAppendSegment(lm,SEGMENT_TYPE_HOT,0,4);
-        range ltrim[2] = { {0,0}, {-1,-1} };
-        qm = listMetaNormalizeFromRequest(0,2,ltrim,4);
+        range ltrim[2] = {{1,-2,1}};
+        qm = listMetaNormalizeFromRequest(0,1,ltrim,4);
         sm = listMetaCalculateSwapInMeta(lm,qm);
         test_assert(listMetaEmpty(sm));
         listMetaFree(sm);
@@ -2595,21 +2627,21 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         listMetaReset(lm);
         listMetaAppendSegment(lm,SEGMENT_TYPE_COLD,0,4);
         sm = listMetaCalculateSwapInMeta(lm,qm);
-        test_assert(sm->len == 2 && sm->num == 2);
+        test_assert(sm->len == 4 && sm->num == 1);
         listMetaFree(sm);
         /* warm */
         listMetaReset(lm);
         listMetaAppendSegment(lm,SEGMENT_TYPE_HOT,0,2);
         listMetaAppendSegment(lm,SEGMENT_TYPE_COLD,2,2);
         sm = listMetaCalculateSwapInMeta(lm,qm);
-        test_assert(sm->len == 1 && sm->num == 1);
+        test_assert(sm->len == 2 && sm->num == 1);
         listMetaFree(sm);
         listMetaFree(qm);
         /* complex */
         listMetaReset(lm);
         listMetaPush6Seg(lm);
 
-        range req1[1] = {{15,44}};
+        range req1[1] = {{15,44,0}};
         qm = listMetaNormalizeFromRequest(0,1,req1,60);
         sm = listMetaCalculateSwapInMeta(lm,qm);
         test_assert(sm->num == 2 && sm->len == 15);
@@ -2617,7 +2649,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         test_assert(sm->segments[1].index == 30 && sm->segments[1].len == 10);
         listMetaFree(qm), listMetaFree(sm);
 
-        range req2[5] = { {5,14}, {15,24}, {25,29}, {30,54}, {55,59}};
+        range req2[5] = { {5,14,0}, {15,24,0}, {25,29,0}, {30,54,0}, {55,59,0}};
         qm = listMetaNormalizeFromRequest(0,5,req2,60);
         sm = listMetaCalculateSwapInMeta(lm,qm);
         test_assert(sm->num == 3 && sm->len == 30);
@@ -2784,7 +2816,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         metaListPush6Seg(main);
 
         /* skip if overlaps with main hot */
-        range req1[1] = { {5,5} };
+        range req1[1] = { {5,5,0} };
         listMeta *meta1 = listMetaNormalizeFromRequest(0,1,req1,60);
         robj *list1 = createQuicklistObject();
         metaList *delta1 = metaListBuild(meta1,list1);
@@ -2794,7 +2826,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         metaListDestroy(delta1);
 
         /* merge with hot */
-        range req2[1] = { {10,11} };
+        range req2[1] = { {10,11,0} };
         listMeta *meta2 = listMetaNormalizeFromRequest(0,1,req2,60);
         robj *list2 = createQuicklistObject();
         metaList *delta2 = metaListBuild(meta2,list2);
@@ -2804,7 +2836,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         metaListDestroy(delta2);
 
         /* merge and split */
-        range req3[1] = { {14,15}, };
+        range req3[1] = { {14,15,0}, };
         listMeta *meta3 = listMetaNormalizeFromRequest(0,1,req3,60);
         robj *list3 = createQuicklistObject();
         metaList *delta3 = metaListBuild(meta3,list3);
@@ -2814,7 +2846,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         metaListDestroy(delta3);
 
         /* complex overlap */
-        range req4[3] = { {4,4}, {5,44}, {48,57} };
+        range req4[3] = { {4,4,0}, {5,44,0}, {48,57,0} };
         listMeta *meta4 = listMetaNormalizeFromRequest(0,3,req4,60);
         robj *list4 = createQuicklistObject();
         metaList *delta4 = metaListBuild(meta4,list4);
@@ -2824,7 +2856,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         metaListDestroy(delta4);
 
         /* edge case */
-        range req5[1] = { {1,1}};
+        range req5[1] = { {1,1,0}};
         listMeta *mainmeta5 = listMetaCreate(), *meta5 = listMetaNormalizeFromRequest(0,1,req5,3);
         listMetaAppendSegment(mainmeta5,SEGMENT_TYPE_HOT,0,1);
         listMetaAppendSegment(mainmeta5,SEGMENT_TYPE_COLD,1,2);
@@ -2846,7 +2878,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         metaListPush6Seg(main);
 
         /* skip if overlaps with main cold */
-        range req1[1] = { {10,11} };
+        range req1[1] = { {10,11,0} };
         listMeta *meta1 = listMetaNormalizeFromRequest(0,1,req1,60);
         turnListMeta2Type(meta1,SEGMENT_TYPE_COLD);
         test_assert(metaListExclude(main,meta1) == 0);
@@ -2854,7 +2886,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         listMetaFree(meta1);
 
         /* exclude cold segment */
-        range req2[1] = { {0,1} };
+        range req2[1] = { {0,1,0} };
         listMeta *meta2 = listMetaNormalizeFromRequest(0,1,req2,60);
         turnListMeta2Type(meta2,SEGMENT_TYPE_COLD);
         test_assert(metaListExclude(main,meta2) == 2);
@@ -2862,7 +2894,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         listMetaFree(meta2);
 
         /* exclude and split */
-        range req3[1] = { {25,26} };
+        range req3[1] = { {25,26,0} };
         listMeta *meta3 = listMetaNormalizeFromRequest(0,1,req3,60);
         turnListMeta2Type(meta3,SEGMENT_TYPE_COLD);
         test_assert(metaListExclude(main,meta3) == 2);
@@ -2870,7 +2902,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         listMetaFree(meta3);
 
         /* complex */
-        range req4[3] = { {5,14}, {15,44}, {50,52} };
+        range req4[3] = { {5,14,0}, {15,44,0}, {50,52,0} };
         listMeta *meta4 = listMetaNormalizeFromRequest(0,3,req4,60);
         turnListMeta2Type(meta4,SEGMENT_TYPE_COLD);
         test_assert(metaListExclude(main,meta4) == 18);
@@ -2889,7 +2921,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         selected = createQuicklistObject();
 
         /* skip if overlaps with main cold */
-        range req1[1] = { {10,11} };
+        range req1[1] = { {10,11,0} };
         listMeta *meta1 = listMetaNormalizeFromRequest(0,1,req1,60);
         turnListMeta2Type(meta1,SEGMENT_TYPE_COLD);
         test_assert(metaListSelect(main,meta1,selectElements,selected) == 0);
@@ -2897,7 +2929,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         listMetaFree(meta1);
 
         /* select cold segment */
-        range req2[1] = { {0,1} };
+        range req2[1] = { {0,1,0} };
         listMeta *meta2 = listMetaNormalizeFromRequest(0,1,req2,60);
         turnListMeta2Type(meta2,SEGMENT_TYPE_COLD);
         test_assert(metaListSelect(main,meta2,selectElements,selected) == 2);
@@ -2905,7 +2937,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         listMetaFree(meta2);
 
         /* exclude and split */
-        range req3[1] = { {25,26} };
+        range req3[1] = { {25,26,0} };
         listMeta *meta3 = listMetaNormalizeFromRequest(0,1,req3,60);
         turnListMeta2Type(meta3,SEGMENT_TYPE_COLD);
         test_assert(metaListSelect(main,meta3,selectElements,selected) == 2);
@@ -2914,7 +2946,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
 
         /* complex */
         decrRefCount(selected), selected = createQuicklistObject();
-        range req4[3] = { {5,14}, {15,44}, {50,52} };
+        range req4[3] = { {5,14,0}, {15,44,0}, {50,52,0} };
         listMeta *meta4 = listMetaNormalizeFromRequest(0,3,req4,60);
         turnListMeta2Type(meta4,SEGMENT_TYPE_COLD);
         test_assert(metaListSelect(main,meta4,selectElements,selected) == 20);
@@ -3022,7 +3054,7 @@ int swapListDataTest(int argc, char *argv[], int accurate) {
         uint32_t intention_flags;
         keyRequest kr[1];
         range *full = zmalloc(sizeof(range));
-        full->start = 0, full->end = 3;
+        full->start = 0, full->end = 3, full->reverse = 0;
         kr->level = REQUEST_LEVEL_KEY, kr->dbid = 0;
         /* nop: pure/hot/in.meta warm/... */
         kr->cmd_flags = CMD_SWAP_DATATYPE_LIST;

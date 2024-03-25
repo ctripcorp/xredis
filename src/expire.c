@@ -141,7 +141,7 @@ void activeExpireCycle(int type) {
     config_cycle_fast_duration = ACTIVE_EXPIRE_CYCLE_FAST_DURATION +
                                  ACTIVE_EXPIRE_CYCLE_FAST_DURATION/4*effort,
     config_cycle_slow_time_perc = ACTIVE_EXPIRE_CYCLE_SLOW_TIME_PERC +
-                                  2*effort,
+                                  2*server.swap_slow_expire_effort,
     config_cycle_acceptable_stale = ACTIVE_EXPIRE_CYCLE_ACCEPTABLE_STALE-
                                     effort;
 
