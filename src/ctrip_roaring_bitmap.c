@@ -824,7 +824,7 @@ static void rbmSetBucketsFull(roaringBitmap* rbm, uint8_t minBucket, uint8_t max
 
     /* the buckets alreaddy exist */
     if (leftLoc != rbm->bucketsNum && rightLoc != 0 && rbm->buckets[leftLoc] == minBucket &&
-        rbm->buckets[rightLoc - 1] == maxBucket && rightLoc - 1 - leftLoc == maxBucket - minBucket) {
+        rbm->buckets[rightLoc - 1] == maxBucket && rightLoc - 1 - leftLoc == (uint32_t)(maxBucket - minBucket)) {
         for (uint32_t i = leftLoc; i < rightLoc; i++) {
             transToFullContainer(rbm->containers[i]);
         }

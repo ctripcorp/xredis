@@ -552,7 +552,7 @@ static inline void keyLoadFixFeed(struct keyLoadFixData *fix, decodedData *d) {
     
     if (fix->rebuild_meta) {
         robj *subval = NULL;
-        if (fix->rebuild_meta->swap_type = SWAP_TYPE_BITMAP) {
+        if (fix->rebuild_meta->swap_type == SWAP_TYPE_BITMAP) {
             /* only need to load subval for bitmap meta rebuilding. */
             rio sdsrdb;
             rioInitWithBuffer(&sdsrdb,d->rdbraw);
