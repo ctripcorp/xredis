@@ -1420,8 +1420,7 @@ int bitmapSaveInit(rdbKeySaveData *save, uint64_t version, const char *extend, s
 /* bitmap subkey size may differ for different config, we need transfer subkey with size A to size B, thus intermediate state is recorded in bitmapLoadInfo. */
 typedef struct bitmapLoadInfo
 {
-    sds unfinished_new_subval;   /* new subval not yet finished. */
-    sds consuming_old_subval; /* subval read in previous load process, part of it has not been comsumed to transfer to subval with new size. */
+    sds consuming_old_subval; /* subval read , part of it has not been comsumed to transfer to subval with new size. */
     long consuming_offset;  /* offset description for consuming_old_subval, data behind offset is not yet consumed. */
     long num_old_subvals_waiting_load; /* num of old subvals waiting be load in rio. */
     long bitmap_size;
@@ -1472,159 +1471,87 @@ void bitmapLoadStart(struct rdbKeyLoadData *load, rio *rdb, int *cf,
 
 int bitmapLoad(struct rdbKeyLoadData *load, rio *rdb, int *cf,
         sds *rawkey, sds *rawval, int *error) {
-
+    
     bitmapLoadInfo *load_info = load->load_info;
-    int subkey_size = BITMAP_GET_SPECIFIED_SUBKEY_SIZE(load_info->bitmap_size, BITMAP_SUBKEY_SIZE, load->loaded_fields);   
 
+    int subkey_size = BITMAP_GET_SPECIFIED_SUBKEY_SIZE(load_info->bitmap_size, BITMAP_SUBKEY_SIZE, load->loaded_fields);   
     *error = RDB_LOAD_ERR_OTHER;
 
-    long consumed_len = 0;
-    long left_len_consuming_subval = load_info->consuming_old_subval == NULL ? 0 : sdslen(load_info->consuming_old_subval) - load_info->consuming_offset;
-    long needed_len_for_new_subval = load_info->unfinished_new_subval == NULL ? subkey_size : (subkey_size - sdslen(load_info->unfinished_new_subval));
+    long left_len_consuming_subval = 0;
 
     robj *old_subval_obj = NULL;
-    if (load_info->num_old_subvals_waiting_load != 0 && left_len_consuming_subval < needed_len_for_new_subval) {
-        /* need to load next old subval to make new subval. */
+    if (load_info->consuming_old_subval == NULL) {
+        serverAssert(load_info->consuming_offset == 0 && load_info->num_old_subvals_waiting_load != 0);
+
         if((old_subval_obj = rdbLoadStringObject(rdb)) == NULL) { 
             return 0;
         }
-        load_info->num_old_subvals_waiting_load -= 1;
-    } else {
-        serverAssert(load_info->consuming_old_subval != NULL);
+
+        load_info->consuming_old_subval = old_subval_obj->ptr;
+        load_info->consuming_offset == 0;
+        load_info->num_old_subvals_waiting_load--;
+
+        old_subval_obj->ptr = NULL;
+        decrRefCount(old_subval_obj);
     }
 
-    long old_subval_len = 0;
-    if (old_subval_obj != NULL) {
-        old_subval_len = stringObjectLen(old_subval_obj);
-    }
-    /* continue to make the unfinished subval */
-    if (load_info->unfinished_new_subval) {
-        /* old subval loaded before must have been consumed fully. */
-        serverAssert(load_info->consuming_old_subval == NULL && load_info->consuming_offset == 0 && old_subval_len != 0);
+    left_len_consuming_subval = sdslen(load_info->consuming_old_subval) - load_info->consuming_offset;
 
-        /* just try to consume the old subval loaded this time. */            
-        needed_len_for_new_subval = subkey_size - sdslen(load_info->unfinished_new_subval);
-        consumed_len = MIN(needed_len_for_new_subval, old_subval_len);
+    while (left_len_consuming_subval < subkey_size) {
+        serverAssert(load_info->num_old_subvals_waiting_load != 0);
 
-        load_info->unfinished_new_subval = sdscatlen(load_info->unfinished_new_subval, old_subval_obj->ptr, consumed_len);
-
-        if (consumed_len < old_subval_len) {
-            /* if old subval loaded not yet fully consumed */
-            load_info->consuming_old_subval = old_subval_obj->ptr;
-            load_info->consuming_offset == consumed_len;
-
-            old_subval_obj->ptr = NULL;
-            decrRefCount(old_subval_obj);
-        } else if (consumed_len == old_subval_len){
-            /* consumed_len == old_subval_len, raw loaded fully consumed. */
-            decrRefCount(old_subval_obj);
-        } else {
-            serverAssert(false);
+        if((old_subval_obj = rdbLoadStringObject(rdb)) == NULL) { 
+            return 0;
         }
 
-        if (sdslen(load_info->unfinished_new_subval) == subkey_size) {
-            /* if new subval finished . */
-            long subkey_idx = load->loaded_fields;
-            sds subkey_str = bitmapEncodeSubkeyIdx(subkey_idx);
+        long old_subval_len = stringObjectLen(old_subval_obj);
 
-            robj subval_obj;
-            initStaticStringObject(subval_obj, load_info->unfinished_new_subval);
+        load_info->consuming_old_subval = sdscatlen(load_info->consuming_old_subval, old_subval_obj->ptr, old_subval_len);
+        load_info->num_old_subvals_waiting_load--;
 
-            *cf = DATA_CF;
-            *rawkey = bitmapEncodeSubkey(load->db, load->key, load->version, subkey_str);
-            *rawval = bitmapEncodeSubval(&subval_obj);
-            *error = 0;
+        left_len_consuming_subval += old_subval_len;
 
-            sdsfree(subkey_str);
-            sdsfree(load_info->unfinished_new_subval);
-            load_info->unfinished_new_subval = NULL;
-
-            load->loaded_fields++;
-        } else {
-            /* subval not finished, just return. */
-            *cf = DATA_CF;
-            *rawkey = NULL;
-            *rawval = NULL;
-            *error = 0;
-        }
-
-        return load->loaded_fields < load->total_fields;
+        decrRefCount(old_subval_obj);
     }
 
-    /* not in the unfinished process of previous new subval, just make another new subval. */
 
-    sds new_subval_raw = NULL;
-    long new_subval_len = 0;
+    sds new_subval_raw = sdsnewlen(load_info->consuming_old_subval + load_info->consuming_offset, subkey_size);
 
-    needed_len_for_new_subval = subkey_size;
+    load_info->consuming_offset += subkey_size;
 
-    if (load_info->consuming_old_subval) {
-        /* try to consume previous old subval firstly if it existed. */
-        serverAssert(left_len_consuming_subval != 0);
+    serverAssert(load_info->consuming_offset <= sdslen(load_info->consuming_old_subval));
 
-        consumed_len = MIN(needed_len_for_new_subval, left_len_consuming_subval); 
-
-        new_subval_raw = sdsnewlen(load_info->consuming_old_subval + load_info->consuming_offset, consumed_len);
-        new_subval_len += consumed_len;
-
-        load_info->consuming_offset += consumed_len;
-
-        if (load_info->consuming_offset == sdslen(load_info->consuming_old_subval)) {
-            /* previous loaded raw fully consumed */
-            sdsfree(load_info->consuming_old_subval);
-            load_info->consuming_old_subval = NULL;
-            load_info->consuming_offset = 0;
-        }
+    if (load_info->consuming_offset == sdslen(load_info->consuming_old_subval)) {
+        /* consuming_old_subval fully consumed. */
+        sdsfree(load_info->consuming_old_subval);
+        load_info->consuming_old_subval = NULL;
+        load_info->consuming_offset = 0;
     }
 
-    /* try to consume old subval loaded this time. */
-    if (old_subval_len != 0 && new_subval_len < subkey_size) {
+    /* consuming_old_subval not fully consumed, resize to avoid occupying too much memory. */
+    if (load_info->consuming_offset > BITMAP_SUBKEY_SIZE) {
+        sds previous_str = load_info->consuming_old_subval;
+        load_info->consuming_old_subval = sdsnewlen(previous_str + load_info->consuming_offset, sdslen(previous_str) - load_info->consuming_offset);
+        load_info->consuming_offset = 0;
 
-        needed_len_for_new_subval = subkey_size - new_subval_len;
-        consumed_len = MIN(needed_len_for_new_subval, old_subval_len);
-
-        new_subval_raw = (new_subval_raw == NULL ? sdsnewlen(old_subval_obj->ptr, consumed_len) : sdscatlen(new_subval_raw, old_subval_obj->ptr, consumed_len));
-        new_subval_len += consumed_len;
-
-        if (consumed_len < old_subval_len) {
-            /* if old subval loaded not yet fully consumed */
-            load_info->consuming_old_subval = old_subval_obj->ptr;
-            load_info->consuming_offset = consumed_len;
-
-            old_subval_obj->ptr = NULL;
-            decrRefCount(old_subval_obj);
-        } else if (consumed_len == old_subval_len){
-            /* consumed_len == old_subval_len, old subval loaded fully consumed. */
-            decrRefCount(old_subval_obj);
-        } else {
-            serverAssert(false);
-        }
+        sdsfree(previous_str);
     }
 
-    if (new_subval_len == subkey_size) {
-        /* new subval finished. */
-        long subkey_idx = load->loaded_fields;
-        sds subkey_str = bitmapEncodeSubkeyIdx(subkey_idx);
+    /* new subval finished. */
+    long subkey_idx = load->loaded_fields;
+    sds subkey_str = bitmapEncodeSubkeyIdx(subkey_idx);
 
-        robj subval_obj;
-        initStaticStringObject(subval_obj, new_subval_raw);
+    robj subval_obj;
+    initStaticStringObject(subval_obj, new_subval_raw);
 
-        *cf = DATA_CF;
-        *rawkey = bitmapEncodeSubkey(load->db, load->key, load->version, subkey_str);
-        *rawval = bitmapEncodeSubval(&subval_obj);
-        *error = 0;
+    *cf = DATA_CF;
+    *rawkey = bitmapEncodeSubkey(load->db, load->key, load->version, subkey_str);
+    *rawval = bitmapEncodeSubval(&subval_obj);
+    *error = 0;
 
-        sdsfree(subkey_str);
-        sdsfree(new_subval_raw);
-        load->loaded_fields++;
-    } else {
-        /* new subval not finished, just return. */
-        *cf = DATA_CF;
-        *rawkey = NULL;
-        *rawval = NULL;
-        *error = 0;
-        load_info->unfinished_new_subval = new_subval_raw;
-    }
+    sdsfree(subkey_str);
+    sdsfree(new_subval_raw);
+    load->loaded_fields++;
 
     return load->loaded_fields < load->total_fields;
 }
@@ -3108,19 +3035,19 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(!sdscmp(metakey,expected_metakey));
         test_assert(!sdscmp(metaval,expected_metaval));
 
-        cont = bitmapLoad(load,&rdbcold,&cf,&subkey,&subraw,&err);
+        cont = rdbKeyLoad(load,&rdbcold,&cf,&subkey,&subraw,&err);
         test_assert(cf == DATA_CF && cont == 1 && err == 0);
         test_assert(!sdscmp(subraw, rdb_subval1) && !sdscmp(subkey, raw_f1));
 
         sdsfree(subkey), sdsfree(subraw);
 
-        cont = bitmapLoad(load,&rdbcold,&cf,&subkey,&subraw,&err);
+        cont = rdbKeyLoad(load,&rdbcold,&cf,&subkey,&subraw,&err);
         test_assert(cf == DATA_CF && cont == 1 && err == 0);
         test_assert(!sdscmp(subraw, rdb_subval2) && !sdscmp(subkey, raw_f2));
 
         sdsfree(subkey), sdsfree(subraw);
 
-        cont = bitmapLoad(load,&rdbcold,&cf,&subkey,&subraw,&err);
+        cont = rdbKeyLoad(load,&rdbcold,&cf,&subkey,&subraw,&err);
         test_assert(cf == DATA_CF && cont == 0 && err == 0);
         test_assert(!sdscmp(subraw, rdb_subval3) && !sdscmp(subkey, raw_f3));
 
@@ -3285,20 +3212,20 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(!sdscmp(metakey,expected_metakey));
         test_assert(!sdscmp(metaval,expected_metaval));
 
-        cont = bitmapLoad(load,&rdbwarm,&cf,&subkey,&subraw,&err);
+        cont = rdbKeyLoad(load,&rdbwarm,&cf,&subkey,&subraw,&err);
         test_assert(cf == DATA_CF && cont == 1 && err == 0);
         test_assert(!sdscmp(subraw, rdb_subval1));
         test_assert(!sdscmp(subkey, raw_f1));
 
         sdsfree(subkey), sdsfree(subraw);
 
-        cont = bitmapLoad(load,&rdbwarm,&cf,&subkey,&subraw,&err);
+        cont = rdbKeyLoad(load,&rdbwarm,&cf,&subkey,&subraw,&err);
         test_assert(cf == DATA_CF && cont == 1 && err == 0);
         test_assert(!sdscmp(subraw, rdb_subval2) && !sdscmp(subkey, raw_f2));
 
         sdsfree(subkey), sdsfree(subraw);
 
-        cont = bitmapLoad(load,&rdbwarm,&cf,&subkey,&subraw,&err);
+        cont = rdbKeyLoad(load,&rdbwarm,&cf,&subkey,&subraw,&err);
         test_assert(cf == DATA_CF && cont == 0 && err == 0);
         test_assert(!sdscmp(subraw, rdb_subval3) && !sdscmp(subkey, raw_f3));
 
@@ -3484,20 +3411,20 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(!sdscmp(metakey,expected_metakey));
         test_assert(!sdscmp(metaval,expected_metaval));
 
-        cont = bitmapLoad(load,&rdbwarm,&cf,&subkey,&subraw,&err);
+        cont = rdbKeyLoad(load,&rdbwarm,&cf,&subkey,&subraw,&err);
         test_assert(cf == DATA_CF && cont == 1 && err == 0);
         test_assert(!sdscmp(subraw, rdb_subval1));
         test_assert(!sdscmp(subkey, raw_f1));
 
         sdsfree(subkey), sdsfree(subraw);
 
-        cont = bitmapLoad(load,&rdbwarm,&cf,&subkey,&subraw,&err);
+        cont = rdbKeyLoad(load,&rdbwarm,&cf,&subkey,&subraw,&err);
         test_assert(cf == DATA_CF && cont == 1 && err == 0);
         test_assert(!sdscmp(subraw, rdb_subval2) && !sdscmp(subkey, raw_f2));
 
         sdsfree(subkey), sdsfree(subraw);
 
-        cont = bitmapLoad(load,&rdbwarm,&cf,&subkey,&subraw,&err);
+        cont = rdbKeyLoad(load,&rdbwarm,&cf,&subkey,&subraw,&err);
         test_assert(cf == DATA_CF && cont == 0 && err == 0);
         test_assert(!sdscmp(subraw, rdb_subval3) && !sdscmp(subkey, raw_f3));
 
@@ -3655,20 +3582,20 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(!sdscmp(metakey,expected_metakey));
         test_assert(!sdscmp(metaval,expected_metaval));
 
-        cont = bitmapLoad(load,&rdbhot,&cf,&subkey,&subraw,&err);
+        cont = rdbKeyLoad(load,&rdbhot,&cf,&subkey,&subraw,&err);
         test_assert(cf == DATA_CF && cont == 1 && err == 0);
         test_assert(!sdscmp(subraw, rdb_subval1));
         test_assert(!sdscmp(subkey, raw_f1));
 
         sdsfree(subkey), sdsfree(subraw);
 
-        cont = bitmapLoad(load,&rdbhot,&cf,&subkey,&subraw,&err);
+        cont = rdbKeyLoad(load,&rdbhot,&cf,&subkey,&subraw,&err);
         test_assert(cf == DATA_CF && cont == 1 && err == 0);
         test_assert(!sdscmp(subraw, rdb_subval2) && !sdscmp(subkey, raw_f2));
 
         sdsfree(subkey), sdsfree(subraw);
 
-        cont = bitmapLoad(load,&rdbhot,&cf,&subkey,&subraw,&err);
+        cont = rdbKeyLoad(load,&rdbhot,&cf,&subkey,&subraw,&err);
         test_assert(cf == DATA_CF && cont == 0 && err == 0);
         test_assert(!sdscmp(subraw, rdb_subval3) && !sdscmp(subkey, raw_f3));
 
@@ -3829,7 +3756,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(!sdscmp(metakey,expected_metakey));
         test_assert(!sdscmp(metaval,expected_metaval));
 
-        cont = bitmapLoad(load,&rdbhot,&cf,&subkey,&subraw,&err);
+        cont = rdbKeyLoad(load,&rdbhot,&cf,&subkey,&subraw,&err);
         test_assert(cf == DATA_CF && cont == 1 && err == 0);
         test_assert(!sdscmp(subraw, rdb_subval1));
 
@@ -3840,13 +3767,13 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
         sdsfree(subkey), sdsfree(subraw);
 
-        cont = bitmapLoad(load,&rdbhot,&cf,&subkey,&subraw,&err);
+        cont = rdbKeyLoad(load,&rdbhot,&cf,&subkey,&subraw,&err);
         test_assert(cf == DATA_CF && cont == 1 && err == 0);
         test_assert(!sdscmp(subraw, rdb_subval2) && !sdscmp(subkey, raw_f2));
 
         sdsfree(subkey), sdsfree(subraw);
 
-        cont = bitmapLoad(load,&rdbhot,&cf,&subkey,&subraw,&err);
+        cont = rdbKeyLoad(load,&rdbhot,&cf,&subkey,&subraw,&err);
         test_assert(cf == DATA_CF && cont == 0 && err == 0);
         test_assert(!sdscmp(subraw, rdb_subval3) && !sdscmp(subkey, raw_f3));
 
@@ -4001,7 +3928,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
             subkey = NULL, subraw = NULL;
 
-            cont = bitmapLoad(load,&rdbhot,&cf,&subkey,&subraw,&err);
+            cont = rdbKeyLoad(load,&rdbhot,&cf,&subkey,&subraw,&err);
             test_assert(cf == DATA_CF && err == 0);
 
             if (subkey != NULL) {
@@ -4193,7 +4120,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
             subkey = NULL, subraw = NULL;
 
-            cont = bitmapLoad(load,&rdbhot,&cf,&subkey,&subraw,&err);
+            cont = rdbKeyLoad(load,&rdbhot,&cf,&subkey,&subraw,&err);
             test_assert(cf == DATA_CF && err == 0);
 
             if (subkey != NULL) {
