@@ -2110,6 +2110,7 @@ void listSaveDeinit(rdbKeySaveData *save) {
 
 rdbKeySaveType listSaveType = {
     .save_start = listSaveStart,
+    .save_hot_ext = NULL,
     .save = listSave,
     .save_end = listSaveEnd,
     .save_deinit = listSaveDeinit,
@@ -3409,7 +3410,7 @@ int swapListDataTest(int argc, char *argv[], int accurate) {
         decoded->version = V;
 
         rdbKeySaveData _save, *save = &_save;
-        test_assert(rdbKeySaveDataInit(save,db,(decodedResult*)decoded) == 0/*INIT_SAVE_OK*/);
+        test_assert(rdbKeySaveWarmColdInit(save,db,(decodedResult*)decoded) == 0/*INIT_SAVE_OK*/);
         test_assert(rdbKeySaveStart(save,&rdb) == 0);
         decoded->subkey = ele2idx, decoded->rdbraw = ele2rdbraw;
         test_assert(rdbKeySave(save,&rdb,decoded) == 0 && save->saved == 2);
@@ -3504,7 +3505,7 @@ int swapListDataTest(int argc, char *argv[], int accurate) {
         decoded_meta->version = V;
 
         rdbKeySaveData _save, *save = &_save;
-        test_assert(rdbKeySaveDataInit(save,db,(decodedResult*)decoded_meta) == 0/*INIT_SAVE_OK*/);
+        test_assert(rdbKeySaveWarmColdInit(save,db,(decodedResult*)decoded_meta) == 0/*INIT_SAVE_OK*/);
         decodedResultDeinit((decodedResult*)decoded_meta);
 
         decodedData _decoded, *decoded = &_decoded;

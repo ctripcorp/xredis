@@ -1059,6 +1059,7 @@ int zsetSaveEnd(rdbKeySaveData *save, rio *rdb, int save_result) {
 
 rdbKeySaveType zsetSaveType = {
     .save_start = zsetSaveStart,
+    .save_hot_ext = NULL,
     .save = zsetSave,
     .save_end = zsetSaveEnd,
     .save_deinit = NULL,
@@ -1791,7 +1792,7 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
         dbDelete(db, key1);
         decoded_meta->extend = rocksEncodeObjectMetaLen(2);
         rioInitWithBuffer(&rdbcold,sdsempty());
-        test_assert(rdbKeySaveDataInit(saveData, db, (decodedResult*)decoded_meta) == 0);
+        test_assert(rdbKeySaveWarmColdInit(saveData, db, (decodedResult*)decoded_meta) == 0);
         test_assert(saveData->object_meta != NULL);
 
         test_assert(zsetSaveStart(saveData, &rdbcold) == 0);
@@ -1809,7 +1810,7 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
         zsetAdd(value,2.0,f2,ZADD_IN_NONE,&out_flags,NULL);
         dbAdd(db, key1, value);
         dbAddMeta(db, key1, createZsetObjectMeta(0,1));
-        test_assert(rdbKeySaveDataInit(saveData, db, (decodedResult*)decoded_meta) == 0);
+        test_assert(rdbKeySaveWarmColdInit(saveData, db, (decodedResult*)decoded_meta) == 0);
         test_assert(rdbKeySaveStart(saveData,&rdbwarm) == 0);
         decoded_data->version = saveData->object_meta->version;
         test_assert(rdbKeySave(saveData,&rdbwarm,decoded_data) == 0);

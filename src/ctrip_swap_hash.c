@@ -682,7 +682,6 @@ int hashSaveStart(rdbKeySaveData *save, rio *rdb) {
     return ret;
 }
 
-/* return 1 if hash still need to consume more rawkey. */
 int hashSave(rdbKeySaveData *save, rio *rdb, decodedData *decoded) {
     robj *key = save->key;
     serverAssert(!sdscmp(decoded->key, key->ptr));
@@ -732,6 +731,7 @@ int hashSaveEnd(rdbKeySaveData *save, rio *rdb, int save_result) {
 
 rdbKeySaveType hashSaveType = {
     .save_start = hashSaveStart,
+    .save_hot_ext = NULL,
     .save = hashSave,
     .save_end = hashSaveEnd,
     .save_deinit = NULL,
@@ -1174,10 +1174,10 @@ int swapDataHashTest(int argc, char **argv, int accurate) {
         decoded_fx->rdbtype = rdbv2[0];
 
         /* cold: skip orphan subkey */
-        init_result = rdbKeySaveDataInit(save,db,(decodedResult*)decoded_fx);
+        init_result = rdbKeySaveWarmColdInit(save,db,(decodedResult*)decoded_fx);
         test_assert(INIT_SAVE_SKIP == init_result);
 
-        test_assert(!rdbKeySaveDataInit(save,db,(decodedResult*)decoded_meta));
+        test_assert(!rdbKeySaveWarmColdInit(save,db,(decodedResult*)decoded_meta));
         test_assert(rdbKeySaveStart(save,&rdbcold) == 0);
 
         /* cold: skip old version subkey */
@@ -1207,10 +1207,10 @@ int swapDataHashTest(int argc, char **argv, int accurate) {
         dbAddMeta(db,&keyobj,object_meta);
 
         /* warm: skip orphan subkey */
-        init_result = rdbKeySaveDataInit(save,db,(decodedResult*)decoded_fx);
+        init_result = rdbKeySaveWarmColdInit(save,db,(decodedResult*)decoded_fx);
         test_assert(INIT_SAVE_SKIP == init_result);
 
-        test_assert(!rdbKeySaveDataInit(save,db,(decodedResult*)decoded_meta));
+        test_assert(!rdbKeySaveWarmColdInit(save,db,(decodedResult*)decoded_meta));
         test_assert(rdbKeySaveStart(save,&rdbwarm) == 0);
 
         /* warm: skip old version subkey */

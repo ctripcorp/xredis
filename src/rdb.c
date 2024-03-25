@@ -1241,6 +1241,11 @@ void rdbSaveProgress(rio *rdb, int rdbflags) {
     }
 }
 
+bool swapShouldSaveByRor(objectMeta *meta, robj *o)
+{
+    return !keyIsHot(meta, o) || meta->swap_type == SWAP_TYPE_BITMAP;
+}
+
 /* Produces a dump of the database in RDB format sending it to the specified
  * Redis I/O channel. On success C_OK is returned, otherwise C_ERR
  * is returned and part of the output, or all the output, can be
@@ -1271,6 +1276,8 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi, int rordb) 
     if (rordb && rordbSaveSST(rdb) == -1) goto werr;
 
     for (j = 0; j < server.dbnum; j++) {
+        list *hot_keys_extension = listCreate();
+
         redisDb *db = server.db+j;
         if (ctripDbSize(db) == 0) continue;
 
@@ -1300,13 +1307,16 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi, int rordb) 
             initStaticStringObject(key,keystr);
 
             objectMeta *meta = lookupMeta(db,&key);
-            /* cold or warm key, and hot bitmap will be saved later in rdbSaveRorExtension. */
-            if (!rordb && !keyIsHot(meta, o) && meta->swap_type != SWAP_TYPE_BITMAP) {
+            /* cold or warm key, will be saved later in rdbSaveRocks. 
+               Hot bitmap will be saved later in rdbSaveHotExtension. */
+            if (!rordb && swapShouldSaveByRor(meta, o)) {
 #ifdef ROCKS_DEBUG
                 serverLog(LL_NOTICE, "[rdbSaveRio] key(%s) not hot: skipped.",keystr);
 #endif
-                
-                
+                if (meta->swap_type == SWAP_TYPE_BITMAP && keyIsHot(meta, o)) {
+                    listAddNodeTail(hot_keys_extension, keystr);
+                }
+
                 continue;
             } else {
 #ifdef ROCKS_DEBUG
@@ -1325,10 +1335,10 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi, int rordb) 
         if (rordb) {
             if (rordbSaveDbRio(rdb,db) == -1) goto werr;
         } else {
-            /* Iterate DB.rocks writing every entry */
-            if (rdbSaveRorExtension(rdb,error,db,rdbflags)) goto werr;
+            if (rdbSaveHotExtension(rdb,error,db,hot_keys_extension,rdbflags)) goto werr;
+            if (rdbSaveRocks(rdb,error,db,rdbflags)) goto werr;
         }
-
+        listRelease(hot_keys_extension);
         dbResumeRehash(db);
     }
 

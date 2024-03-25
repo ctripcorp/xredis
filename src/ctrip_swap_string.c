@@ -311,6 +311,7 @@ int wholekeySave(rdbKeySaveData *keydata, rio *rdb, decodedData *decoded) {
 
 rdbKeySaveType wholekeyRdbSaveType = {
     .save_start = NULL,
+    .save_hot_ext = NULL,
     .save = wholekeySave,
     .save_end = NULL,
     .save_deinit = NULL,
@@ -681,7 +682,7 @@ int swapDataWholeKeyTest(int argc, char **argv, int accurate) {
         test_assert(!memcmp(dd->rdbraw,data_rawval+1,sdslen(dd->rdbraw)));
 
         rioInitWithBuffer(&sdsrdb, sdsempty());
-        test_assert(!rdbKeySaveDataInit(savedata,db,(decodedResult*)dm));
+        test_assert(!rdbKeySaveWarmColdInit(savedata,db,(decodedResult*)dm));
         test_assert(!wholekeySave(savedata,&sdsrdb,dd));
 
         rioInitWithBuffer(&sdsrdb,sdsrdb.io.buffer.ptr);

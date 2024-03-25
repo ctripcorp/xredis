@@ -2081,10 +2081,6 @@ void rocksIterGetError(rocksIter *it, char **error);
 #define DEFAULT_ZSET_MEMBER_SIZE 128
 #define DEFAULT_KEY_SIZE 48
 
-#define CUR_KEY_SAVE_FINISHED 1
-#define CUR_KEY_SAVE_OK 0
-#define CUR_KEY_SAVE_ERR -1
-
 typedef enum swapRdbSaveErrType {
     SAVE_ERR_NONE,
     SAVE_ERR_META_LEN_MISMATCH,
@@ -2140,6 +2136,7 @@ sds rocksIterDecodeStatsDump(rocksIterDecodeStats *stats);
 struct rdbKeySaveData;
 typedef struct rdbKeySaveType {
   int (*save_start)(struct rdbKeySaveData *keydata, rio *rdb);
+  int (*save_hot_ext)(struct rdbKeySaveData *keydata, rio *rdb);
   int (*save)(struct rdbKeySaveData *keydata, rio *rdb, decodedData *decoded);
   int (*save_end)(struct rdbKeySaveData *keydata, rio *rdb, int save_result);
   void (*save_deinit)(struct rdbKeySaveData *keydata);
@@ -2152,22 +2149,26 @@ typedef struct rdbKeySaveData {
   robj *value; /* ref: incrRefcount will cause cow */
   objectMeta *object_meta; /* own */
   long long expire;
+  int rdbtype; /* target rdb format, only used in bitmap saving. */
   int saved;
   void *iter; /* used by list (metaListIterator), bitmap (bitmapSaveIterator) */
 } rdbKeySaveData;
 
-typedef struct rdbSaveRorExtensionStats {
+typedef struct rdbSaveRocksStats {
     long long init_save_ok;
     long long init_save_skip;
     long long init_save_err;
     long long save_ok;
-} rdbSaveRorExtensionStats;
+} rdbSaveRocksStats;
 
 /* rdb save */
-int rdbSaveRorExtension(rio *rdb, int *error, redisDb *db, int rdbflags);
+int rdbSaveHotExtension(rio *rdb, int *error, redisDb *db, list *hot_keys_extension, int rdbflags);
+int rdbSaveRocks(rio *rdb, int *error, redisDb *db, int rdbflags);
 int rdbSaveKeyHeader(rio *rdb, robj *key, robj *evict, unsigned char rdbtype, long long expiretime);
-int rdbKeySaveDataInit(rdbKeySaveData *keydata, redisDb *db, decodedResult *dr);
+int rdbKeySaveHotExtensionInit(rdbKeySaveData *keydata, redisDb *db, sds keystr);
+int rdbKeySaveWarmColdInit(rdbKeySaveData *keydata, redisDb *db, decodedResult *dr);
 void rdbKeySaveDataDeinit(rdbKeySaveData *keydata);
+int rdbKeySaveHotExtension(struct rdbKeySaveData *keydata, rio *rdb);
 int rdbKeySaveStart(struct rdbKeySaveData *keydata, rio *rdb);
 int rdbKeySave(struct rdbKeySaveData *keydata, rio *rdb, decodedData *d);
 int rdbKeySaveEnd(struct rdbKeySaveData *keydata, rio *rdb, int save_result);
