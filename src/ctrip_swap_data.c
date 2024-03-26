@@ -80,7 +80,7 @@ int swapDataKeyRequestFinished(swapData *data) {
 
     if (data->persistence_deleted) {
         /* todo bitmap type*/
-        if (data->swap_type == SWAP_TYPE_STRING) {
+        if (data->swap_type == SWAP_TYPE_BITMAP) {
             objectMeta *object_meta = swapDataObjectMeta(data);
             serverAssert(object_meta != NULL);
             bitmapMetaFree(objectMetaGetPtr(object_meta));
