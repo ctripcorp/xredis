@@ -295,13 +295,34 @@ static inline void deltaBitmapFree(deltaBitmap *delta_bm)
     zfree(delta_bm);
 }
 
+robj *deltaBitmapMakeBitmapObject(deltaBitmap *delta_bm)
+{
+    robj *new_bitmap = createStringObject(NULL, delta_bm->subvals_total_len);
+
+    size_t offset_in_new_bitmap = 0;
+
+    for (int i = 0; i < delta_bm->subkeys_num; i++) {
+        memcpy((char*)new_bitmap->ptr + offset_in_new_bitmap, delta_bm->subvals[i], sdslen(delta_bm->subvals[i]));
+        offset_in_new_bitmap += sdslen(delta_bm->subvals[i]);
+    }
+    serverAssert(delta_bm->subvals_total_len == offset_in_new_bitmap);
+    return new_bitmap;
+}
+
 robj *bitmapObjectMerge(robj *bitmap_object, bitmapMeta *meta, deltaBitmap *delta_bm)
 {
-    size_t old_obj_len = 0;
-    if (bitmap_object) {
-        old_obj_len = stringObjectLen(bitmap_object);
+    serverAssert(bitmap_object && meta);
+    size_t old_obj_len = stringObjectLen(bitmap_object);
+
+    long needed_merge_in_len = 0;
+
+    for (int i = 0; i < delta_bm->subkeys_num; i++) {
+        if (bitmapMetaGetSubkeyStatus(meta, delta_bm->subkeys_logic_idx[i], delta_bm->subkeys_logic_idx[i]) == 0) {
+            needed_merge_in_len += sdslen(delta_bm->subvals[i]);
+        }
     }
-    robj *new_bitmap = createStringObject(NULL, old_obj_len + delta_bm->subvals_total_len);
+
+    robj *new_bitmap = createStringObject(NULL, old_obj_len + needed_merge_in_len);
 
     size_t offset_in_new_bitmap = 0;
     size_t offset_in_old_bitmap = 0;
@@ -311,17 +332,26 @@ robj *bitmapObjectMerge(robj *bitmap_object, bitmapMeta *meta, deltaBitmap *delt
     size_t actual_new_bitmap_len = 0;
 
     for (int i = 0; i < delta_bm->subkeys_num; i++) {
-        int subkeys_num_ahead = bitmapMetaGetHotSubkeysNum(meta, subkeys_idx_cursor, delta_bm->subkeys_logic_idx[i]);
-        if (bitmap_object != NULL && subkeys_num_ahead != 0) {
+        int subkeys_num_ahead = 0;
+        if (subkeys_idx_cursor <= delta_bm->subkeys_logic_idx[i] - 1) {
+            subkeys_num_ahead = bitmapMetaGetHotSubkeysNum(meta, subkeys_idx_cursor, delta_bm->subkeys_logic_idx[i] - 1);
+        }
+        if (subkeys_num_ahead != 0) {
             memcpy((char*)new_bitmap->ptr + offset_in_new_bitmap, (char*)bitmap_object->ptr + offset_in_old_bitmap, BITMAP_SUBKEY_SIZE * subkeys_num_ahead);
             offset_in_new_bitmap += BITMAP_SUBKEY_SIZE * subkeys_num_ahead;
             offset_in_old_bitmap += BITMAP_SUBKEY_SIZE * subkeys_num_ahead;
             actual_new_bitmap_len += BITMAP_SUBKEY_SIZE * subkeys_num_ahead;
         }
 
+
         memcpy((char*)new_bitmap->ptr + offset_in_new_bitmap, delta_bm->subvals[i], sdslen(delta_bm->subvals[i]));
         offset_in_new_bitmap += sdslen(delta_bm->subvals[i]);
         actual_new_bitmap_len += sdslen(delta_bm->subvals[i]);
+
+        if (bitmapMetaGetSubkeyStatus(meta, delta_bm->subkeys_logic_idx[i], delta_bm->subkeys_logic_idx[i]) == 1) {
+            /* subkey both exist in redis and rocksDb. */
+            offset_in_old_bitmap += sdslen(delta_bm->subvals[i]);
+        }
 
         subkeys_idx_cursor = delta_bm->subkeys_logic_idx[i] + 1;
     }
@@ -332,7 +362,7 @@ robj *bitmapObjectMerge(robj *bitmap_object, bitmapMeta *meta, deltaBitmap *delt
         actual_new_bitmap_len += (old_obj_len - offset_in_old_bitmap);
     }
 
-    serverAssert(old_obj_len + delta_bm->subvals_total_len == actual_new_bitmap_len);
+    serverAssert(old_obj_len + needed_merge_in_len == actual_new_bitmap_len);
     return new_bitmap;
 }
 
@@ -794,7 +824,7 @@ void *bitmapCreateOrMergeObject(swapData *data, void *decoded_, void *datactx)
     deltaBitmap *delta_bm = (deltaBitmap *)decoded_;
 
     if (swapDataIsCold(data)) {
-        result = bitmapObjectMerge(NULL, NULL, delta_bm);
+        result = deltaBitmapMakeBitmapObject(delta_bm);
     } else {
         bitmapMeta *meta = swapDataGetBitmapMeta(data);
         result = bitmapObjectMerge(data->value, meta, delta_bm);
@@ -858,6 +888,9 @@ static inline robj *bitmapObjectFreeColdSubkeys(robj *value, bitmapDataCtx *data
 {
     /* from subkey idx = 0 to right to swap out subkeys in bitmap. */
     size_t bitmap_size = stringObjectLen(value);
+
+    serverAssert(datactx->subkeys_total_size != 0);
+
     size_t left_size = bitmap_size - datactx->subkeys_total_size;
 
     return createStringObject((char*)value->ptr + datactx->subkeys_total_size, left_size);
@@ -896,25 +929,30 @@ int bitmapSwapOut(swapData *data, void *datactx_, int keep_data, int *totally_ou
 
     bitmapDataCtx *datactx = datactx_;
 
-    size_t bitmap_old_size = stringObjectLen(data->value);
-    size_t bitmap_new_size = datactx->newbitmap == NULL ? bitmap_old_size : stringObjectLen(datactx->newbitmap);
-
-    if (bitmap_new_size == 0) {
-        /* all subkeys swapped out, key turnning into cold:
-         * - rocks-meta should have already persisted.
-         * - object_meta and value will be deleted by dbDelete, expire already
-         *   deleted by swap framework. */
-        dbDelete(data->db,data->key);
-        if (totally_out) *totally_out = 1;
-    } else if (bitmap_new_size < bitmap_old_size) {
-        dbOverwrite(data->db, data->key, datactx->newbitmap);
-        setObjectPersistent(datactx->newbitmap);
-        if (totally_out) *totally_out = 0;
-    } else if (bitmap_new_size == bitmap_old_size) {
+    if (datactx->newbitmap == NULL) {
         /* keep data */
         if (totally_out) *totally_out = 0;
+        return 0;
     } else {
-        serverAssert(false);
+        size_t bitmap_old_size = stringObjectLen(data->value);
+        size_t bitmap_new_size = stringObjectLen(datactx->newbitmap);
+
+        if (bitmap_new_size == 0) {
+            /* all subkeys swapped out, key turnning into cold:
+                * - rocks-meta should have already persisted.
+                * - object_meta and value will be deleted by dbDelete, expire already
+                *   deleted by swap framework. */
+            dbDelete(data->db,data->key);
+            decrRefCount(datactx->newbitmap);
+            datactx->newbitmap = NULL;
+            if (totally_out) *totally_out = 1;
+        } else if (bitmap_new_size < bitmap_old_size) {
+            dbOverwrite(data->db, data->key, datactx->newbitmap);
+            setObjectPersistent(datactx->newbitmap);
+            if (totally_out) *totally_out = 0;
+        } else {
+            serverAssert(false);
+        }
     }
     return 0;
 }
