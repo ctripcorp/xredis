@@ -1146,6 +1146,7 @@ int bitmapSaveStart(rdbKeySaveData *save, rio *rdb) {
 
     bitmapMeta *bitmap_meta = objectMetaGetPtr(save->object_meta);
 
+    serverAssert(bitmap_meta != NULL);
     if ((rdbSaveLen(rdb, bitmap_meta->size)) == -1) {
         return -1;
     }
@@ -1168,15 +1169,24 @@ int bitmapSaveToRdbString(rdbKeySaveData *save, rio *rdb)
 
 int bitmapSaveToRdbBitmap(rdbKeySaveData *save, rio *rdb)
 {
+    size_t bitmap_size = 0;
+
     bitmapMeta *bitmap_meta = objectMetaGetPtr(save->object_meta);
-    if ((rdbSaveLen(rdb, bitmap_meta->size)) == -1)
+    if (bitmap_meta == NULL) {
+        /* just a marker */
+        bitmap_size = stringObjectLen(save->value);
+    } else {
+        bitmap_size = bitmap_meta->size;
+        serverAssert(bitmap_meta->pure_cold_subkeys_num == 0 && bitmap_meta->size == stringObjectLen(save->value));
+    }
+
+    if ((rdbSaveLen(rdb, bitmap_size)) == -1)
         return -1;
     if ((rdbSaveLen(rdb, BITMAP_SUBKEY_SIZE)) == -1)
         return -1;
 
     /* hot bitmap object will be saved here, not like other types which saved in rdbSaveKeyValuePair(). */
-    size_t waiting_save_size = stringObjectLen(save->value);
-    serverAssert(bitmap_meta->pure_cold_subkeys_num == 0 && bitmap_meta->size == waiting_save_size);
+    size_t waiting_save_size = bitmap_size;
 
     size_t subkey_size = BITMAP_SUBKEY_SIZE;
     size_t offset = 0;
@@ -1788,6 +1798,22 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         sdsfree(str);
         decrRefCount(bitmap1);
         freeObjectMeta(object_meta1);
+
+        robj *tmp_key = createStringObject("tmp_key", 7);
+        robj *tmp_value = createStringObject("tmp_value", 9);
+
+        dbAdd(db, tmp_key, tmp_value);
+
+        bitmapSetObjectMarkerIfNeeded(db, tmp_key);
+        objectMeta *object_meta = lookupMeta(db,tmp_key);
+        test_assert(object_meta->swap_type == SWAP_TYPE_BITMAP);
+
+        bitmapClearObjectMarkerIfNeeded(db, tmp_key);
+
+        test_assert(lookupMeta(db,tmp_key) == NULL);
+
+        dbDelete(db, tmp_key);
+        decrRefCount(tmp_key);
     }
 
     TEST("bitmap - swapAna") {
