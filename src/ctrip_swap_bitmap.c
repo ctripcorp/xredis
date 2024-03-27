@@ -341,15 +341,14 @@ typedef struct bitmapDataCtx {
     size_t subkeys_total_size;  /* only used in swap out */
     int subkeys_num;
     int *subkeys_logic_idx;
-    robj *newbitmap;
+    robj *newbitmap; /* ref */
     argRewriteRequest arg_reqs[2];
 } bitmapDataCtx;
 
 void bitmapDataCtxReset(bitmapDataCtx *datactx)
 {
     zfree(datactx->subkeys_logic_idx);
-    if (datactx->newbitmap)
-        decrRefCount(datactx->newbitmap);
+    datactx->newbitmap = NULL;
     memset(datactx, 0, sizeof(bitmapDataCtx));
 }
 
@@ -953,8 +952,7 @@ void bitmapSwapDataFree(swapData *data_, void *datactx_) {
     UNUSED(data_);
     bitmapDataCtx *datactx = datactx_;
     zfree(datactx->subkeys_logic_idx);
-    if (datactx->newbitmap)
-        decrRefCount(datactx->newbitmap);
+    datactx->newbitmap = NULL;
     zfree(datactx);
 }
 
