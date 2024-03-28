@@ -1243,7 +1243,7 @@ void rdbSaveProgress(rio *rdb, int rdbflags) {
 
 bool swapShouldSaveByRor(objectMeta *meta, robj *o)
 {
-    return !keyIsHot(meta, o) || meta->swap_type == SWAP_TYPE_BITMAP;
+    return !keyIsHot(meta, o) || (meta != NULL && meta->swap_type == SWAP_TYPE_BITMAP);
 }
 
 /* Produces a dump of the database in RDB format sending it to the specified

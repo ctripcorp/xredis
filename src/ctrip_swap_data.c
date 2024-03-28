@@ -79,8 +79,8 @@ int swapDataKeyRequestFinished(swapData *data) {
     }
 
     if (data->persistence_deleted) {
-        /* todo bitmap type*/
         if (data->swap_type == SWAP_TYPE_BITMAP) {
+            /* bitmap need to keep marker. */
             objectMeta *object_meta = swapDataObjectMeta(data);
             serverAssert(object_meta != NULL);
             bitmapMetaFree(objectMetaGetPtr(object_meta));

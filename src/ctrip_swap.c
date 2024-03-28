@@ -436,7 +436,6 @@ void keyRequestProceed(void *lock, int flush, redisDb *db, robj *key,
 
 allset:
 
-            // 注释：  ana 中主要还是分析， 有swapout 命名但 没有swap out 动作
     if ((errcode = swapDataAna(data,SWAP_ANA_THD_MAIN,ctx->key_request,&swap_intention,
                 &swap_intention_flags,datactx))) {
         if (errcode == SWAP_ERR_DATA_WRONG_TYPE_ERROR) {
@@ -463,7 +462,7 @@ allset:
 
     req = swapDataRequestNew(swap_intention,swap_intention_flags,ctx,data,
             datactx,ctx->key_request->trace,keyRequestSwapFinished,ctx,msgs);
-    // 注释 这里feed 是实际将解析 请求 挂上 消费队列
+
     swapBatchCtxFeed(server.swap_batch_ctx,flush,req,thread_idx);
 
     return;

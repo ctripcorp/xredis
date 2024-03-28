@@ -69,7 +69,9 @@ robj *unshareStringValue(robj *o) {
 
 const char *strObjectType(int type) {
     switch (type) {
-    case OBJ_STRING: return "string";
+    case OBJ_STRING:
+    case SWAP_TYPE_BITMAP:
+        return "string";
     case OBJ_HASH: return "hash";
     case OBJ_LIST: return "list";
     case OBJ_SET: return "set";
