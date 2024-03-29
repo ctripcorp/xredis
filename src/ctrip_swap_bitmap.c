@@ -1030,8 +1030,8 @@ void bitmapClearObjectMarkerIfNeeded(redisDb *db, robj *key) {
 int bitmapBeforeCall(swapData *data, keyRequest *key_request, client *c,
         void *datactx_) {
 
-    /* Clear bitmap marker if string command touching bitmap */
-    if (key_request && (key_request->cmd_flags & CMD_SWAP_DATATYPE_STRING))
+    /* Clear bitmap marker if non-bitmap command touching bitmap */
+    if (key_request && !(key_request->cmd_flags & CMD_SWAP_DATATYPE_BITMAP))
         bitmapClearObjectMarkerIfNeeded(data->db,data->key);
 
     bitmapDataCtx *datactx = datactx_;
@@ -1799,28 +1799,6 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         warm_keyReq3->cmd_flags = CMD_SWAP_DATATYPE_BITMAP;
         warm_keyReq3->l.num_ranges = 0;
         warm_keyReq3->l.ranges = NULL;
-
-
-        // /* 3 subkeys in cold bitmap*/
-        // cold_key1 = createStringObject("cold_key1",9);
-        // cold_meta1 = createBitmapObjectMeta(0, NULL);
-
-        // size_t size = 3 * BITMAP_SUBKEY_SIZE;
-        // sds coldBitmapSize = encodeBitmapSize(size);
-
-        // bitmapObjectMetaDecode(cold_meta1, coldBitmapSize, sdslen(coldBitmapSize));
-
-        // incrRefCount(cold_key1);
-        // cold_keyReq1->key = cold_key1;
-        // cold_keyReq1->level = REQUEST_LEVEL_KEY;
-        // cold_keyReq1->type = KEYREQUEST_TYPE_SUBKEY;
-        // cold_keyReq1->cmd_flags = CMD_SWAP_DATATYPE_BITMAP;
-        // cold_keyReq1->l.num_ranges = 0;
-        // cold_keyReq1->l.ranges = NULL;
-
-        // cold_data1 = createSwapData(db, cold_key1, NULL, NULL);
-        // swapDataSetupMeta(cold_data1, SWAP_TYPE_BITMAP, -1, (void**)&cold_ctx1);
-        // swapDataSetObjectMeta(cold_data1, cold_meta1);
 
         sdsfree(str1);
         str1 = NULL;
