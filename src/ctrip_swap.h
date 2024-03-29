@@ -991,6 +991,7 @@ int swapDataSetupBitmap(swapData *d, void **pdatactx);
 objectMeta *createBitmapObjectMarker();
 void bitmapSetObjectMarkerIfNeeded(redisDb *db, robj *key);
 void bitmapClearObjectMarkerIfNeeded(redisDb *db, robj *key);
+void bitmapMetaTransToMarkerIfNeeded(objectMeta *object_meta);
 
 sds genSwapBitmapStringSwitchedInfoString(sds info);
 

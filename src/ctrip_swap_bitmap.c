@@ -594,14 +594,11 @@ int bitmapSwapAna(swapData *data, int thd, struct keyRequest *req,
                 *intention = SWAP_NOP;
                 *intention_flags = 0;
             } else {
-                /* purely hot bitmap to swap out, need to set meta */
                 if (!swapDataPersisted(data)) {
-                    /* meta marker existed. */
+                    /* bitmap meta or marker must exist. */
                     objectMeta *object_meta = swapDataObjectMeta(data);
                     serverAssert(object_meta != NULL);
-                    bitmapMeta *meta = bitmapMetaCreate();
-                    bitmapMetaInit(meta, data->value);
-                    objectMetaSetPtr(object_meta, meta);
+                    bitmapMarkerTransToMetaIfNeeded(object_meta, data->value);
                 }
 
                 int may_keep_data;
@@ -980,10 +977,10 @@ int bitmapSwapDel(swapData *data, void *datactx_, int del_skip) {
 
     if (del_skip) {
         if (!swapDataIsCold(data)) {
-            /* different from bighash, set, no need to delete meta, just free bitmap meta, keep bitmap_type flag in meta */
+            /* different from bighash, set, no need to delete meta, just free bitmap meta, keep bitmap Marker in db.meta. */
             objectMeta *meta = swapDataObjectMeta(data);
             serverAssert(meta != NULL);
-            bitmapObjectMetaFree(meta);
+            bitmapMetaTransToMarkerIfNeeded(meta);
         }
         return 0;
     } else {
@@ -1023,16 +1020,41 @@ void bitmapClearObjectMarkerIfNeeded(redisDb *db, robj *key) {
     objectMeta *object_meta = lookupMeta(db,key);
     if (object_meta && bitmapObjectMetaIsMarker(object_meta)) {
         dbDeleteMeta(db,key);
-        atomicIncr(server.stat_swap_bitmap_switched_to_string_count, 1);
+        atomicIncr(server.stat_swap_bitmap_switched_to_other_obj_count, 1);
+    }
+}
+
+void bitmapMetaTransToMarkerIfNeeded(objectMeta *object_meta) {
+    if (!bitmapObjectMetaIsMarker(object_meta)) {
+        bitmapMetaFree(objectMetaGetPtr(object_meta));
+        objectMetaSetPtr(object_meta, NULL);
+    }
+}
+
+void bitmapMarkerTransToMetaIfNeeded(objectMeta *object_meta, robj *value) {
+    serverAssert(value != NULL);
+    if (bitmapObjectMetaIsMarker(object_meta)) {
+        bitmapMeta *meta = bitmapMetaCreate();
+        bitmapMetaInit(meta, value);
+        objectMetaSetPtr(object_meta, meta);
     }
 }
 
 int bitmapBeforeCall(swapData *data, keyRequest *key_request, client *c,
         void *datactx_) {
 
-    /* Clear bitmap marker if non-bitmap command touching bitmap */
-    if (key_request && !(key_request->cmd_flags & CMD_SWAP_DATATYPE_BITMAP))
+    /* Clear bitmap marker if non-bitmap command touching bitmap. 
+     * note: all string command: set,get,etc
+     *       part set command: sunionstore,sdiffstore
+     *       part zset command:zunionstore,zinterstore,zdiffstore
+     *                    georadius ... STORE key,
+     * it's sure no need to rewrite. */
+    if (key_request && (key_request->cmd_flags & CMD_SWAP_DATATYPE_STRING ||
+        key_request->cmd_flags & CMD_SWAP_DATATYPE_SET ||
+        key_request->cmd_flags & CMD_SWAP_DATATYPE_ZSET)) {
         bitmapClearObjectMarkerIfNeeded(data->db,data->key);
+        return 0;
+    }
 
     bitmapDataCtx *datactx = datactx_;
     argRewriteRequest first_arg_req = datactx->arg_reqs[0];
@@ -1046,8 +1068,8 @@ int bitmapBeforeCall(swapData *data, keyRequest *key_request, client *c,
     serverAssert(object_meta != NULL && object_meta->swap_type == SWAP_TYPE_BITMAP);
     bitmapMeta *bitmap_meta = objectMetaGetPtr(object_meta);
 
+    /* no need to rewrite. */
     if (swapDataIsHot(data)) {
-        /* bitmap is purely hot, never swapped out */
         return 0;
     }
 
@@ -1654,7 +1676,7 @@ void bitmapLoadInit(rdbKeyLoadData *load) {
 sds genSwapBitmapStringSwitchedInfoString(sds info)
 {
     info = sdscatprintf(info,
-            "stat_swap_string_switched_to_bitmap_count:%llu, stat_swap_bitmap_switched_to_string_count:%llu\r\n",server.stat_swap_string_switched_to_bitmap_count,server.stat_swap_bitmap_switched_to_string_count);
+            "stat_swap_string_switched_to_bitmap_count:%llu, stat_swap_bitmap_switched_to_other_obj_count:%llu\r\n",server.stat_swap_string_switched_to_bitmap_count,server.stat_swap_bitmap_switched_to_other_obj_count);
     return info;
 }
 

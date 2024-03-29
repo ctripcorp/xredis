@@ -3682,7 +3682,7 @@ void InitServerLast() {
     server.rocksdb_internal_stats = NULL;
     server.swap_draining_master = NULL;
     server.stat_swap_string_switched_to_bitmap_count = 0;
-    server.stat_swap_bitmap_switched_to_string_count = 0;
+    server.stat_swap_bitmap_switched_to_other_obj_count = 0;
     serverRocksInit();
     server.util_task_manager = createRocksdbUtilTaskManager();
     asyncCompleteQueueInit();

@@ -79,14 +79,13 @@ int swapDataKeyRequestFinished(swapData *data) {
     }
 
     if (data->persistence_deleted) {
-        if (data->swap_type == SWAP_TYPE_BITMAP) {
-            /* bitmap need to keep marker. */
-            objectMeta *object_meta = swapDataObjectMeta(data);
-            serverAssert(object_meta != NULL);
-            bitmapMetaFree(objectMetaGetPtr(object_meta));
-            objectMetaSetPtr(object_meta, NULL);
-        } else {
+        if (data->swap_type != SWAP_TYPE_BITMAP) {
             dbDeleteMeta(data->db, data->key);
+        } else {
+            /* bitmap need to keep marker. */
+            objectMeta *bitmap_meta = lookupMeta(data->db,data->key);
+            serverAssert(bitmap_meta != NULL);
+            bitmapMetaTransToMarkerIfNeeded(bitmap_meta);
         }
     }
 
@@ -117,6 +116,7 @@ int swapDataAna(swapData *d, int thd, struct keyRequest *key_request,
     }
 
     if (d->type->swapAna) {
+        /* non-keyspace command, need to check if it's compatible */
         if (!(key_request->cmd_flags & CMD_SWAP_DATATYPE_KEYSPACE)) {
             int cmd_string_compatible =
                 (key_request->cmd_flags & CMD_SWAP_DATATYPE_STRING) ||
