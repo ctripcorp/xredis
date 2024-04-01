@@ -51,7 +51,8 @@ objectMetaType wholekeyObjectMetaType = {
 /* ------------------- whole key swap data ----------------------------- */
 int wholeKeySwapAna(swapData *data, int thd, struct keyRequest *req,
         int *intention, uint32_t *intention_flags, void *datactx_) {
-    wholeKeyDataCtx *datactx = datactx_;
+    /* for string type, store ctx_flag in struct swapData's `void *extends[2];` */
+    long *datactx = datactx_;
     int cmd_intention = req->cmd_intention;
     uint32_t cmd_intention_flags = req->cmd_intention_flags;
 
@@ -67,7 +68,7 @@ int wholeKeySwapAna(swapData *data, int thd, struct keyRequest *req,
                 *intention_flags = SWAP_EXEC_IN_DEL;
             } else if (cmd_intention_flags & SWAP_IN_DEL_MOCK_VALUE) {
                 /* DEL/UNLINK: Lazy delete current key. */
-                datactx->ctx_flag |= BIG_DATA_CTX_FLAG_MOCK_VALUE;
+                *datactx |= BIG_DATA_CTX_FLAG_MOCK_VALUE;
                 *intention = SWAP_DEL;
                 *intention_flags = SWAP_FIN_DEL_SKIP;
             } else {
@@ -250,8 +251,8 @@ int wholeKeySwapDel(swapData *data, void *datactx_, int async) {
     redisDb *db = data->db;
     robj *key = data->key;
 
-    wholeKeyDataCtx* datactx = (wholeKeyDataCtx*)datactx_;
-    if (datactx->ctx_flag & BIG_DATA_CTX_FLAG_MOCK_VALUE) {
+    long *datactx = datactx_;
+    if (*datactx & BIG_DATA_CTX_FLAG_MOCK_VALUE) {
         createFakeWholeKeyForDeleteIfCold(data);
     }
 
@@ -291,10 +292,10 @@ swapDataType wholeKeySwapDataType = {
 int swapDataSetupWholeKey(swapData *d, OUT void **pdatactx) {
     d->type = &wholeKeySwapDataType;
     d->omtype = &wholekeyObjectMetaType;
-    // if (datactx) *datactx = NULL;
-    wholeKeyDataCtx *datactx = zmalloc(sizeof(wholeKeyDataCtx));
-    datactx->ctx_flag = BIG_DATA_CTX_FLAG_NONE;
-    *pdatactx = datactx;
+    /* for string type, store ctx_flag in struct swapData's `void *extends[2];` */
+    long *datactx = d->extends;
+    *datactx = BIG_DATA_CTX_FLAG_NONE;
+    *pdatactx = d->extends;
     return 0;
 }
 
