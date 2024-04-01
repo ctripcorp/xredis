@@ -26,6 +26,7 @@ proc set_data r {
 }
 
 proc build_pure_hot_data r {
+    r config set swap-debug-evict-keys 0
     # each fragment need to set 1 bit, for bitcount test 
     r flushdb
     set_data r
