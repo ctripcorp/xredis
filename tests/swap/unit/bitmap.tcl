@@ -34,22 +34,22 @@ proc build_pure_hot_data r {
 proc build_hot_data r {
     # build hot data
     build_pure_hot_data r
-	swap.evict mybitmap1
+	r swap.evict mybitmap1
     assert_equal {11} [r bitcount mybitmap1]
 }
 
 proc build_extend_hot_data r {
     # build hot data
     build_pure_hot_data r
-	swap.evict mybitmap1
+	r swap.evict mybitmap1
     assert_equal {11} [r bitcount mybitmap1]
-    r setbit 368639 1
+    r setbit mybitmap1 368639 1
 }
 
 proc build_cold_data r {
     # build cold data
 	build_hot_data r
-    swap.evict mybitmap1
+    r swap.evict mybitmap1
 }
 
 proc build_warm_data r {
@@ -58,8 +58,6 @@ proc build_warm_data r {
 }
 
 proc check_data r {
-    assert_equal {1} [r getbit mybitmap1 32767]
-    assert_equal {1} [r getbit mybitmap1 65535]
     assert_equal {1} [r getbit mybitmap1 98303]
     assert_equal {1} [r getbit mybitmap1 131071]
     assert_equal {1} [r getbit mybitmap1 163839]
@@ -70,15 +68,12 @@ proc check_data r {
     assert_equal {1} [r getbit mybitmap1 327679]
     assert_equal {1} [r getbit mybitmap1 335871]
     
-    assert_equal {11} [r bitcount mybitmap1]
     assert_equal {2} [r bitcount mybitmap1 0 9216]
     assert_equal {3} [r bitcount mybitmap1 9216 20480]
     assert_equal {6} [r bitcount mybitmap1 20480 43008]
 
     assert_equal {8}  [r bitfield mybitmap1 get u4 32767]
     assert_equal {8}  [r bitfield_ro mybitmap1 get u4 65535]
-
-    assert_equal {41984} [r bitop not dest mybitmap1]
 
     assert_equal {32767} [r bitpos mybitmap1 1 0]
     assert_equal {98303} [r bitpos mybitmap1 1 9216]
@@ -115,21 +110,29 @@ proc check_data r {
 
 start_server {
     tags {"bitmap swap"}
-} {
+}   {
     test {pure hot full and non full swap out} {
         build_pure_hot_data r
-        swap.evict mybitmap1
+        r swap.evict mybitmap1
 
         check_data r
+        assert_equal {1} [r getbit mybitmap1 32767]
+        assert_equal {1} [r getbit mybitmap1 65535]
+        assert_equal {41984} [r bitop not dest mybitmap1]
+        assert_equal {11} [r bitcount mybitmap1]
 
         set bak_evict_step [lindex [r config get swap-evict-step-max-memory] 1]
         # swap-evict-step-max-memory 5kb
         r config set swap-evict-step-max-memory 5120
-        swap.evict mybitmap1
+        r swap.evict mybitmap1
         
         check_data r
-        del mybitmap1
-        del mybitmap2
+        assert_equal {1} [r getbit mybitmap1 32767]
+        assert_equal {1} [r getbit mybitmap1 65535]
+        assert_equal {41984} [r bitop not dest mybitmap1]
+        assert_equal {11} [r bitcount mybitmap1]
+        r del mybitmap1
+        r del mybitmap2
 
         r config set swap-evict-step-max-memory $bak_evict_step
     }
@@ -139,11 +142,15 @@ start_server {
 		build_hot_data r
         assert [object_is_hot r mybitmap1]
 
-        swap.evict mybitmap1
+        r swap.evict mybitmap1
 
 		check_data r
-        del mybitmap1
-        del mybitmap2
+        assert_equal {1} [r getbit mybitmap1 32767]
+        assert_equal {1} [r getbit mybitmap1 65535]
+        assert_equal {41984} [r bitop not dest mybitmap1]
+        assert_equal {11} [r bitcount mybitmap1]
+        r del mybitmap1
+        r del mybitmap2
         assert_equal {0} [r bitcount mybitmap1 0]
     }
 
@@ -156,11 +163,15 @@ start_server {
 		build_hot_data r
         assert [object_is_hot r mybitmap1]
 
-        swap.evict mybitmap1
+        r swap.evict mybitmap1
 
 		check_data r
-        del mybitmap1
-        del mybitmap2
+        assert_equal {1} [r getbit mybitmap1 32767]
+        assert_equal {1} [r getbit mybitmap1 65535]
+        assert_equal {41984} [r bitop not dest mybitmap1]
+        assert_equal {11} [r bitcount mybitmap1]
+        r del mybitmap1
+        r del mybitmap2
         assert_equal {0} [r bitcount mybitmap1 0]
 
         r config set swap-evict-step-max-memory $bak_evict_step
@@ -171,14 +182,18 @@ start_server {
         assert_equal {1} [r getbit mybitmap1 163839]
 
         # swap in fragment {0, 3}
-        assert_equal {1} [r getbit mybitmap1 0]
+        assert_equal {0} [r getbit mybitmap1 0]
         assert [object_is_warm r mybitmap1]
         # fragment {0, 3} is warm
-        swap.evict mybitmap1
+        r swap.evict mybitmap1
 
 		check_data r
-        del mybitmap1
-        del mybitmap2
+        assert_equal {1} [r getbit mybitmap1 32767]
+        assert_equal {1} [r getbit mybitmap1 65535]
+        assert_equal {41984} [r bitop not dest mybitmap1]
+        assert_equal {11} [r bitcount mybitmap1]
+        r del mybitmap1
+        r del mybitmap2
         assert_equal {0} [r getbit mybitmap1 0]
 
         r config set swap-evict-step-max-memory $bak_evict_step
@@ -191,13 +206,13 @@ start_server {
         assert [object_is_warm r mybitmap1]
 
         # swap in fragment {0, 3}
-        assert_equal {1} [r getbit mybitmap1 0]
+        assert_equal {0} [r getbit mybitmap1 0]
         assert [object_is_warm r mybitmap1]
         # fragment {0, 3} is warm
-        swap.evict mybitmap1
+        r swap.evict mybitmap1
 
-        del mybitmap1
-        del mybitmap2
+        r del mybitmap1
+        r del mybitmap2
         assert_equal {0} [r bitcount mybitmap1]
     }
 
@@ -207,8 +222,12 @@ start_server {
         # fragment {0, 1, 2} is cold
         assert_equal {11} [r bitcount mybitmap1]
 		check_data r
-        del mybitmap1
-        del mybitmap2
+        assert_equal {1} [r getbit mybitmap1 32767]
+        assert_equal {1} [r getbit mybitmap1 65535]
+        assert_equal {41984} [r bitop not dest mybitmap1]
+        assert_equal {11} [r bitcount mybitmap1]
+        r del mybitmap1
+        r del mybitmap2
         assert_equal {0} [r bitcount mybitmap1]
         r config set swap-evict-step-max-memory $bak_evict_step
     }
@@ -217,15 +236,14 @@ start_server {
         # build mybitmap1 20kb size, count by bit
         # 5 fragment
         build_warm_data r
-        setbit mybitmap1 163839 1
-        setbit mybitmap1 0 1
-        swap.evict mybitmap1
+        r setbit mybitmap1 163839 1
+        r setbit mybitmap1 0 1
+        r swap.evict mybitmap1
         assert_equal {1} [r getbit mybitmap1 163839]
         # fragment {0, 1, 2, 3} is cold
-        assert_equal {11} [r bitcount mybitmap1]
-		check_data r
-        del mybitmap1
-        del mybitmap2
+        assert_equal {12} [r bitcount mybitmap1]
+        r del mybitmap1
+        r del mybitmap2
         assert_equal {0} [r bitcount mybitmap1]
     }
 
@@ -233,32 +251,36 @@ start_server {
         build_cold_data r
         assert_equal {11} [r bitcount mybitmap1]
 		check_data r
-        del mybitmap1
-        del mybitmap2
+        assert_equal {1} [r getbit mybitmap1 32767]
+        assert_equal {1} [r getbit mybitmap1 65535]
+        assert_equal {41984} [r bitop not dest mybitmap1]
+        assert_equal {11} [r bitcount mybitmap1]
+        r del mybitmap1
+        r del mybitmap2
         assert_equal {0} [r bitcount mybitmap1]
     }
 
     test {cold non full swap in} {
         build_cold_data r
 
-        assert_equal {1} [r getbit mybitmap1 0]
+        assert_equal {0} [r getbit mybitmap1 0]
         assert [object_is_warm r mybitmap1]
 		check_data r
-        del mybitmap1
-        del mybitmap2
+        assert_equal {1} [r getbit mybitmap1 32767]
+        assert_equal {1} [r getbit mybitmap1 65535]
+        assert_equal {41984} [r bitop not dest mybitmap1]
+        assert_equal {11} [r bitcount mybitmap1]
+        r del mybitmap1
+        r del mybitmap2
         assert_equal {0} [r bitcount mybitmap1]
     }
 }
 
-start_server {
+start_server  {
     tags {"bitmap to string"}
-    
+}  {
     test "GETBIT against string-encoded key" {
-        set bak_evict_step [lindex [r config get swap-evict-step-max-memory] 1]
-        # swap-evict-step-max-memory 5kb
-        r config set swap-evict-step-max-memory 5120
-        # build mybitmap1 10kb size
-        setbit mykey 81919 1
+        r setbit mykey 81919 1
 
         r setbit mykey 1 1
         r setbit mykey 3 1
@@ -266,12 +288,11 @@ start_server {
         r setbit mykey 9 1
         r setbit mykey 11 1
 
-        swap.evict mykey
+        r swap.evict mykey
         assert_equal "TP" [r getrange mykey 0 1]
         assert_equal "\x01" [r getrange mykey 10239 10239]
-        swap.evict mykey
+        r swap.evict mykey
         assert_equal 6 [r bitcount mykey]
-        r config set swap-evict-step-max-memory $bak_evict_step
     }
 
     test "SETBIT against non-existing key" {
@@ -285,7 +306,6 @@ start_server {
         # Ascii "@" is integer 64 = 01 00 00 00
         r set mykey "@"
         r swap.evict mykey
-		r setbit mykey 11 1 mykey
 
         assert_equal 0 [r setbit mykey 2 1]
         assert_equal [binary format B* 01100000] [r get mykey]
@@ -370,14 +390,18 @@ proc build_cold_rdb r {
 
 start_server {
     tags {"bitmap rdb"}
-    
+}   {
     test {pure hot rdbsave and rdbload} {
         # mybitmap 41kb
         build_pure_hot_data r
         r debug reload
         check_data r
-        del mybitmap1
-        del mybitmap2
+        assert_equal {1} [r getbit mybitmap1 32767]
+        assert_equal {1} [r getbit mybitmap1 65535]
+        assert_equal {41984} [r bitop not dest mybitmap1]
+        assert_equal {11} [r bitcount mybitmap1]
+        r del mybitmap1
+        r del mybitmap2
         assert_equal {0} [r bitcount mybitmap1]
     }
 
@@ -387,26 +411,13 @@ start_server {
 
         r debug reload
         check_data r
-        del mybitmap1
-        del mybitmap2
+        assert_equal {1} [r getbit mybitmap1 32767]
+        assert_equal {1} [r getbit mybitmap1 65535]
+        assert_equal {46080} [r bitop not dest mybitmap1]
+        assert_equal {12} [r bitcount mybitmap1]
+        r del mybitmap1
+        r del mybitmap2
         assert_equal {0} [r bitcount mybitmap1]
-    }
-
-    test {warm rdbsave and rdbload} {
-        set bak_evict_step [lindex [r config get swap-evict-step-max-memory] 1]
-        # swap-evict-step-max-memory 1kb
-        r config set swap-evict-step-max-memory 1024
-        build_warm_rdb r
-
-        check_data r
-        r debug reload
-        check_data r
-
-        del mybitmap1
-        del mybitmap2
-        assert_equal {0} [r bitcount mybitmap1]
-        assert_equal {0} [r bitcount mybitmap2]
-        r config set swap-evict-step-max-memory $bak_evict_step
     }
 
     test {cold rdbsave and rdbload} {
@@ -417,11 +428,19 @@ start_server {
         build_cold_data r
 
         check_data r
+        assert_equal {1} [r getbit mybitmap1 32767]
+        assert_equal {1} [r getbit mybitmap1 65535]
+        assert_equal {41984} [r bitop not dest mybitmap1]
+        assert_equal {11} [r bitcount mybitmap1]
         r debug reload
         check_data r
+        assert_equal {1} [r getbit mybitmap1 32767]
+        assert_equal {1} [r getbit mybitmap1 65535]
+        assert_equal {41984} [r bitop not dest mybitmap1]
+        assert_equal {11} [r bitcount mybitmap1]
 
-        del mybitmap1
-        del mybitmap2
+        r del mybitmap1
+        r del mybitmap2
     }
 
     test {cold rdbsave and rdbload with bitmap-subkey-size exchange 4096 to 2048} {
@@ -432,6 +451,10 @@ start_server {
         r CONFIG SET bitmap-subkey-size 2048
         r DEBUG RELOAD NOSAVE
         check_data r
+        assert_equal {1} [r getbit mybitmap1 32767]
+        assert_equal {1} [r getbit mybitmap1 65535]
+        assert_equal {41984} [r bitop not dest mybitmap1]
+        assert_equal {11} [r bitcount mybitmap1]
         r CONFIG SET bitmap-subkey-size 4096
     }
 
@@ -444,10 +467,16 @@ start_server {
         r CONFIG SET bitmap-subkey-size 4096
         r DEBUG RELOAD NOSAVE
         check_data r
+        assert_equal {1} [r getbit mybitmap1 32767]
+        assert_equal {1} [r getbit mybitmap1 65535]
+        assert_equal {41984} [r bitop not dest mybitmap1]
+        assert_equal {11} [r bitcount mybitmap1]
     }
 }
 
-start_server {tags {"bitmap"} overrides {save ""}} {
+start_server {
+    tags {"bitmap chaos test"}
+}  {
     start_server {overrides {save ""}} {
         set master_host [srv 0 host]
         set master_port [srv 0 port]
@@ -518,7 +547,7 @@ start_server {tags {"bitmap"} overrides {save ""}} {
                             set randIdx [randomInt $bitmap_max_length]
                             $r1 GETBIT $mybitmap $randIdx
                         } {
-                            $r1 SWAP.EVICT $mybitmap
+                            $r1 r swap.evict $mybitmap
                         } {
                             $r1 GET $mybitmap
                         } {
