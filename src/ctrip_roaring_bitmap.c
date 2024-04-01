@@ -31,7 +31,7 @@
 #include "ctrip_roaring_bitmap.h"
 #include <assert.h>
 
-#define CONTAINER_BITS 12  // default save the lower 12 bits in the container, no more than 16
+#define CONTAINER_BITS 12  /* default save the lower 12 bits in the container, no more than 16 */
 #define BUCKET_MAX_BITS 8
 #define BITMAP_CONTAINER_CAPACITY (1 << CONTAINER_BITS) /* bits num */
 #define BITMAP_CONTAINER_SIZE (1 << (CONTAINER_BITS - 3))
@@ -1138,20 +1138,20 @@ int rbmIsEqual(roaringBitmap* destRbm, roaringBitmap* srcRbm)
     return containersAreEqual(destRbm->containers, srcRbm->containers, destRbm->bucketsNum);
 }
 
-static inline uint32_t arrayContainerGetBitPos(roaringContainer *container, uint8_t bitIdxPrefix, uint32_t **idxArrCursor, uint32_t bitsNum)
+static inline uint32_t arrayContainerLocateSetBitPos(roaringContainer *container, uint8_t bitIdxPrefix, uint32_t *idxArrCursor, uint32_t bitsNum)
 {
     uint32_t leftNum = bitsNum;
     uint32_t idxPrefix = bitIdxPrefix;
     for (int i = 0; i < container->elementsNum && leftNum != 0; i++) {
         uint32_t bitIdx = (idxPrefix << CONTAINER_BITS) + container->a.array[i];
-        **idxArrCursor = bitIdx;
-        (*idxArrCursor)++;
+        *idxArrCursor = bitIdx;
+        idxArrCursor++;
         leftNum--;
     }
     return bitsNum - leftNum;
 }
 
-static inline uint32_t bitmapContainerGetBitPos(roaringContainer *container, uint8_t bitIdxPrefix, uint32_t **idxArrCursor, uint32_t bitsNum)
+static inline uint32_t bitmapContainerLocateSetBitPos(roaringContainer *container, uint8_t bitIdxPrefix, uint32_t *idxArrCursor, uint32_t bitsNum)
 {
     uint32_t idxPrefix = bitIdxPrefix;
     uint32_t leftBytes = BITMAP_CONTAINER_SIZE;
@@ -1181,8 +1181,8 @@ static inline uint32_t bitmapContainerGetBitPos(roaringContainer *container, uin
         for (int i = 0; i < 8 && leftNum != 0; i++) {
             if (word & (1 << i)) {
                 uint32_t bitIdx = i + bytePos * BITS_NUM_IN_BYTE + (idxPrefix << CONTAINER_BITS);
-                **idxArrCursor = bitIdx;
-                (*idxArrCursor)++;
+                *idxArrCursor = bitIdx;
+                idxArrCursor++;
                 leftNum--;
             }
         }
@@ -1192,18 +1192,18 @@ static inline uint32_t bitmapContainerGetBitPos(roaringContainer *container, uin
     return bitsNum - leftNum;
 }
 
-static inline uint32_t fullContainerGetBitPos(uint8_t bitIdxPrefix, uint32_t **idxArrCursor, uint32_t bitsNum) {
+static inline uint32_t fullContainerLocateSetBitPos(uint8_t bitIdxPrefix, uint32_t *idxArrCursor, uint32_t bitsNum) {
     uint32_t idxPrefix = bitIdxPrefix;
     uint32_t leftNum = bitsNum;
     for (int i = 0; i < CONTAINER_CAPACITY && leftNum != 0; i++, leftNum--) {
         uint32_t bitIdx = (idxPrefix << CONTAINER_BITS) + i;
-        **idxArrCursor = bitIdx;
-        (*idxArrCursor)++;
+        *idxArrCursor = bitIdx;
+        idxArrCursor++;
     }
     return bitsNum - leftNum;
 }
 
-static inline uint32_t bucketGetBitPos(roaringBitmap *rbm, uint8_t bucketPhyIdx, uint32_t **idxArrCursor, uint32_t bitsNum)
+static inline uint32_t bucketLocateSetBitPos(roaringBitmap *rbm, uint8_t bucketPhyIdx, uint32_t *idxArrCursor, uint32_t bitsNum)
 {
     uint8_t bitIdxPrefix = rbm->buckets[bucketPhyIdx];
     roaringContainer *container = rbm->containers[bucketPhyIdx];
@@ -1211,24 +1211,25 @@ static inline uint32_t bucketGetBitPos(roaringBitmap *rbm, uint8_t bucketPhyIdx,
         return 0;
     }
     if (container->type == CONTAINER_TYPE_ARRAY) {
-        return arrayContainerGetBitPos(container, bitIdxPrefix, idxArrCursor, bitsNum);
+        return arrayContainerLocateSetBitPos(container, bitIdxPrefix, idxArrCursor, bitsNum);
     } else if (container->type == CONTAINER_TYPE_BITMAP) {
-        return bitmapContainerGetBitPos(container, bitIdxPrefix, idxArrCursor, bitsNum);
+        return bitmapContainerLocateSetBitPos(container, bitIdxPrefix, idxArrCursor, bitsNum);
     } else {
-        return fullContainerGetBitPos(bitIdxPrefix, idxArrCursor, bitsNum);
+        return fullContainerLocateSetBitPos(bitIdxPrefix, idxArrCursor, bitsNum);
     }
 }
 
-uint32_t rbmGetBitPos(roaringBitmap* rbm, uint32_t bitsNum, uint32_t *idxArr)
+uint32_t rbmLocateSetBitPos(roaringBitmap* rbm, uint32_t bitsNum, uint32_t *idxArr)
 {
     if (rbm == NULL || bitsNum == 0 || idxArr == NULL) {
         return 0;
     }
-    uint32_t *tmpIdxArr = idxArr;
+    uint32_t *idxArrCursor = idxArr;
     uint32_t leftBitsNum = bitsNum;
     for (int i = 0; i < rbm->bucketsNum; i++) {
-        uint32_t realBitsNum = bucketGetBitPos(rbm, i, &tmpIdxArr, leftBitsNum);
+        uint32_t realBitsNum = bucketLocateSetBitPos(rbm, i, idxArrCursor, leftBitsNum);
         leftBitsNum -= realBitsNum;
+        idxArrCursor += realBitsNum;
         if (leftBitsNum == 0) {
             return bitsNum;
         }
@@ -1802,7 +1803,7 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
 
             uint32_t *idxArr = zmalloc(sizeof(uint32_t) * CONTAINER_CAPACITY);
 
-            bitNum = rbmGetBitPos(rbm, 6, idxArr);
+            bitNum = rbmLocateSetBitPos(rbm, 6, idxArr);
             test_assert(bitNum == 5);
             test_assert(idxArr[0] == 4);
             test_assert(idxArr[1] == 5);
@@ -1811,7 +1812,7 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             test_assert(idxArr[4] == 8);
 
             rbmClearBitRange(rbm, 6, 8);    /* [4, 5] */
-            bitNum = rbmGetBitPos(rbm, 6, idxArr);
+            bitNum = rbmLocateSetBitPos(rbm, 6, idxArr);
             test_assert(bitNum == 2);
             test_assert(idxArr[0] == 4);
             test_assert(idxArr[1] == 5);
@@ -1819,12 +1820,12 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             /* array container 量级 */
             /* 正常测 */
             rbmSetBitRange(rbm, 10, 200);  /* [4, 5]   [10 ,200] */
-            bitNum = rbmGetBitPos(rbm, 100, idxArr);
+            bitNum = rbmLocateSetBitPos(rbm, 100, idxArr);
             test_assert(bitNum == 100);
             test_assert(idxArr[0] == 4);
             test_assert(idxArr[99] == 107);
 
-            bitNum = rbmGetBitPos(rbm, 200, idxArr);
+            bitNum = rbmLocateSetBitPos(rbm, 200, idxArr);
             test_assert(bitNum == 193);
             test_assert(idxArr[0] == 4);
             test_assert(idxArr[192] == 200);
@@ -1840,12 +1841,12 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             /* Bitmap container 量级 */
             rbmSetBitRange(rbm, 200, 1000);   /* 存在区间 100 ~ 150， 160 ~ 190 , 200 ~ 1000 */ /* 触发array container 转为Bitmapcontainer */
 
-            bitNum = rbmGetBitPos(rbm, 1000, idxArr);
+            bitNum = rbmLocateSetBitPos(rbm, 1000, idxArr);
             test_assert(bitNum == 883);
             test_assert(idxArr[0] == 100);
             test_assert(idxArr[882] == 1000);
 
-            bitNum = rbmGetBitPos(rbm, 800, idxArr);
+            bitNum = rbmLocateSetBitPos(rbm, 800, idxArr);
             test_assert(bitNum == 800);
             test_assert(idxArr[0] == 100);
             test_assert(idxArr[799] == 917);
@@ -1867,7 +1868,7 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             /* across Container bitmap, full , array */
             rbmSetBitRange(rbm, 200, 4096 * 2 + 1);   /* 存在区间 100 ~150， 160 ~ 190 , 200 ~ 4096 * 2 + 1 */
 
-            bitNum = rbmGetBitPos(rbm, 4096 * 2 + 1, idxArr);
+            bitNum = rbmLocateSetBitPos(rbm, 4096 * 2 + 1, idxArr);
             test_assert(bitNum == 8076);
             test_assert(idxArr[0] == 100);
             test_assert(idxArr[8075] == 4096 * 2 + 1);
@@ -1882,13 +1883,13 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             rbmSetBitRange(rbm, 4096 + 1, 4096 * 2 - 1); /* 重新产生 full container */
 
             /*  full container, mid of container */
-            bitNum = rbmGetBitPos(rbm, 4096, idxArr);
+            bitNum = rbmLocateSetBitPos(rbm, 4096, idxArr);
             test_assert(bitNum == 4096);
             test_assert(idxArr[0] == 100);
             test_assert(idxArr[4095] == 4213);
 
             /*  full container, end of container */
-            bitNum = rbmGetBitPos(rbm, 8074, idxArr);
+            bitNum = rbmLocateSetBitPos(rbm, 8074, idxArr);
             test_assert(bitNum == 8074);
             test_assert(idxArr[0] == 100);
             test_assert(idxArr[8073] == 4096 * 2 - 1);

@@ -36,4 +36,4 @@
 #define roaring_calloc zcalloc
 #define roaring_free zfree
 
-#endif // __CTRIP_ROARING_MALLOC_H__
+#endif

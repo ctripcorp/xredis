@@ -708,7 +708,7 @@ static inline uint64_t swapDataObjectVersion(swapData *d) {
 
 static inline int swapDataPersisted(swapData *d) {
     if (d->swap_type == SWAP_TYPE_BITMAP && d->object_meta) {
-        return objectMetaGetPtr(d->object_meta) != NULL;
+        return !bitmapObjectMetaIsMarker(d->object_meta);
     }
     return d->object_meta || d->cold_meta;
 }
@@ -989,6 +989,7 @@ objectMeta *createBitmapObjectMeta(uint64_t version, MOVE struct bitmapMeta *bit
 int swapDataSetupBitmap(swapData *d, void **pdatactx);
 
 objectMeta *createBitmapObjectMarker();
+int bitmapObjectMetaIsMarker(objectMeta *object_meta);
 void bitmapSetObjectMarkerIfNeeded(redisDb *db, robj *key);
 void bitmapClearObjectMarkerIfNeeded(redisDb *db, robj *key);
 void bitmapMetaTransToMarkerIfNeeded(objectMeta *object_meta);

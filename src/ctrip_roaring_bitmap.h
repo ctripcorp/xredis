@@ -48,6 +48,6 @@ void rbmdup(roaringBitmap* destRbm, roaringBitmap* srcRbm);
 int rbmIsEqual(roaringBitmap* destRbm, roaringBitmap* srcRbm);
 
 /* Counting bitsNum bits of '1' from front to back， return real number of '1' bits, and output the indexs to idxArr(malloc by caller),  */
-uint32_t rbmGetBitPos(roaringBitmap* rbm, uint32_t bitsNum, uint32_t *idxArr);
+uint32_t rbmLocateSetBitPos(roaringBitmap* rbm, uint32_t bitsNum, uint32_t *idxArr);
 
 #endif
