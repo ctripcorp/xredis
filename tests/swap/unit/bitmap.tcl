@@ -505,15 +505,12 @@ start_server {
                         # in bit
                         set bitmap_max_length 335872
                         set block_timeout 0.1
-                        set trim_shink_max 4
 
                         set count 0
                         set mybitmap "mybitmap-[randomInt $bitmaps]"
                         # set mybitmap_len [$r1 llen $mybitmap]
                         set mybitmap_len [expr {[$r1 strlen $mybitmap] * 8}]
 
-                        set mybitmap_start [randomInt $trim_shink] 
-                        set mybitmap_stop [expr $mybitmap_len - [randomInt $trim_shink]]
                         set otherbitmap "mybitmap-[randomInt $bitmaps]"
                         set src_direction [randpath {return LEFT} {return RIGHT}]
                         set dst_direction [randpath {return LEFT} {return RIGHT}]
@@ -527,19 +524,21 @@ start_server {
                             $r1 BITFIELD $mybitmap get u4 $randIdx
                         } {
                             set randIdx [randomInt $bitmap_max_length]
-                            set randVal [randomInt 2]
-                            $r1 BITFIELD_RO $mybitmap set u4 $randIdx $randVal
+                            $r1 BITFIELD_RO $mybitmap get u4 $randIdx
                         } {
                             $r1 BITOP NOT dest $mybitmap
                         } {
-                            $r1 BITPOS $mybitmap
+                            set randVal [randomInt 2]
+                            $r1 BITPOS $mybitmap $randVal
                         } {
+                            set randVal [randomInt 2]
                             set randIdx [randomInt $bitmap_max_length]
-                            $r1 BITPOS $mybitmap $randIdx
+                            $r1 BITPOS $mybitmap $randVal $randIdx
                         } {
+                            set randVal [randomInt 2]
                             set randIdx1 [randomInt $bitmap_max_length]
                             set randIdx2 [randomInt $bitmap_max_length]
-                            $r1 BITPOS $mybitmap $randIdx1 $randIdx2
+                            $r1 BITPOS $mybitmap $randVal $randIdx1 $randIdx2
                         } {
                             set randIdx [randomInt $bitmap_max_length]
                             set randVal [randomInt 2]
