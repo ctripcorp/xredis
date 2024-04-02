@@ -1194,13 +1194,15 @@ int getKeyRequestsBitpos(int dbid, struct redisCommand *cmd, robj **argv,
         getKeyRequestsSingleKey(result, argv[1], SWAP_IN, 0, cmd->flags, dbid);
     } else if (argc == 4) {
         if (getLongLongFromObject(argv[3],&start) != C_OK) return -1;
+
+        /* max size of bitmap is 512MB, last possible bit (equal to 2^32 - 1, UINT_MAX), start and end specify a byte index, UINT_MAX could cover the range. */
         getKeyRequestsSingleKeyWithRanges(dbid, cmd, argv, argc,
-                                          result, 1, 3, 4, RANGE_BYTE_BITMAP, 1/*num_ranges*/, start, LONG_MAX,0); /* -1 means the end of bitmap object. */
+                                          result, 1, -1, -1, RANGE_BYTE_BITMAP, 1/*num_ranges*/, start, UINT_MAX, 0);
     } else {
         if (getLongLongFromObject(argv[3],&start) != C_OK) return -1;
         if (getLongLongFromObject(argv[4],&end) != C_OK) return -1;
         getKeyRequestsSingleKeyWithRanges(dbid, cmd, argv, argc,
-                                          result, 1, 3, 4, RANGE_BYTE_BITMAP, 1/*num_ranges*/, start, end,0);
+                                          result, 1, -1, -1, RANGE_BYTE_BITMAP, 1/*num_ranges*/, start, end, 0);
     }
     return 0;
 }
