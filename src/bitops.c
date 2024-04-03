@@ -493,7 +493,7 @@ robj *lookupStringForBitCommand(client *c, uint64_t maxbit) {
         metaBitmap meta_bitmap;
         serverAssert(om != NULL && om->swap_type == SWAP_TYPE_BITMAP);
         metaBitmapInit(&meta_bitmap, om->ptr, o);
-        ctripGrowMetaBitmap(&meta_bitmap, byte+1);
+        metaBitmapGrow(&meta_bitmap, byte+1);
     }
     return o;
 }
@@ -834,13 +834,82 @@ void bitcountCommand(client *c) {
     }
 }
 
-/* BITPOS key bit [start [end]] */
-void bitposCommand(client *c) {
-    robj *o;
-    long bit, start, end, strlen;
+void metaBitmapBitpos(metaBitmap *meta_bitmap, client *c, long bit)
+{
+    long start, end, strlen;
     unsigned char *p;
     char llbuf[LONG_STR_SIZE];
     int end_given = 0;
+    robj *o = meta_bitmap->bitmap;
+
+    p = getObjectReadOnlyString(o,&strlen,llbuf);
+
+    /* maybe meta is just a marker */
+    size_t bitmap_size = meta_bitmap->meta == NULL? strlen:metaBitmapGetSize(meta_bitmap);
+    /* Parse start/end range if any. */
+    if (c->argc == 4 || c->argc == 5) {
+        if (getLongFromObjectOrReply(c,c->argv[3],&start,NULL) != C_OK)
+            return;
+        if (c->argc == 5) {
+            if (getLongFromObjectOrReply(c,c->argv[4],&end,NULL) != C_OK)
+                return;
+            end_given = 1;
+        } else {
+            end = bitmap_size-1;
+        }
+        /* Convert negative indexes */
+        if (start < 0) start = bitmap_size+start;
+        if (end < 0) end = bitmap_size+end;
+        if (start < 0) start = 0;
+        if (end < 0) end = 0;
+        if (end >= bitmap_size) end = bitmap_size-1;
+    } else if (c->argc == 3) {
+        /* The whole string. */
+        start = 0;
+        end = bitmap_size-1;
+    } else {
+        /* Syntax error. */
+        addReplyErrorObject(c,shared.syntaxerr);
+        return;
+    }
+
+    /* For empty ranges (start > end) we return -1 as an empty range does
+     * not contain a 0 nor a 1. */
+    if (start > end) {
+        addReplyLongLong(c, -1);
+    } else {
+
+        long cold_subkeys_size = metaBitmapGetColdSubkeysSize(meta_bitmap, start);
+
+        start -= cold_subkeys_size;
+        end -= cold_subkeys_size;
+
+        long bytes = end-start+1;
+        long long pos = redisBitpos(p+start,bytes,bit);
+
+        /* If we are looking for clear bits, and the user specified an exact
+         * range with start-end, we can't consider the right of the range as
+         * zero padded (as we do when no explicit end is given).
+         *
+         * So if redisBitpos() returns the first bit outside the range,
+         * we return -1 to the caller, to mean, in the specified range there
+         * is not a single "0" bit. */
+        if (end_given && bit == 0 && pos == (long long)bytes<<3) {
+            addReplyLongLong(c,-1);
+            return;
+        }
+        if (pos != -1) pos += (long long)start<<3; /* Adjust for the bytes we skipped. */
+
+        pos += cold_subkeys_size * 8;
+        addReplyLongLong(c,pos);
+    }
+    return;
+}
+
+/* BITPOS key bit [start [end]] */
+void bitposCommand(client *c) {
+    robj *o;
+    long bit;
 
     /* Parse the bit argument to understand what we are looking for, set
      * or clear bits. */
@@ -859,57 +928,12 @@ void bitposCommand(client *c) {
         return;
     }
     if (checkType(c,o,OBJ_STRING)) return;
-    p = getObjectReadOnlyString(o,&strlen,llbuf);
 
-    /* Parse start/end range if any. */
-    if (c->argc == 4 || c->argc == 5) {
-        if (getLongFromObjectOrReply(c,c->argv[3],&start,NULL) != C_OK)
-            return;
-        if (c->argc == 5) {
-            if (getLongFromObjectOrReply(c,c->argv[4],&end,NULL) != C_OK)
-                return;
-            end_given = 1;
-        } else {
-            end = strlen-1;
-        }
-        /* Convert negative indexes */
-        if (start < 0) start = strlen+start;
-        if (end < 0) end = strlen+end;
-        if (start < 0) start = 0;
-        if (end < 0) end = 0;
-        if (end >= strlen) end = strlen-1;
-    } else if (c->argc == 3) {
-        /* The whole string. */
-        start = 0;
-        end = strlen-1;
-    } else {
-        /* Syntax error. */
-        addReplyErrorObject(c,shared.syntaxerr);
-        return;
-    }
-
-    /* For empty ranges (start > end) we return -1 as an empty range does
-     * not contain a 0 nor a 1. */
-    if (start > end) {
-        addReplyLongLong(c, -1);
-    } else {
-        long bytes = end-start+1;
-        long long pos = redisBitpos(p+start,bytes,bit);
-
-        /* If we are looking for clear bits, and the user specified an exact
-         * range with start-end, we can't consider the right of the range as
-         * zero padded (as we do when no explicit end is given).
-         *
-         * So if redisBitpos() returns the first bit outside the range,
-         * we return -1 to the caller, to mean, in the specified range there
-         * is not a single "0" bit. */
-        if (end_given && bit == 0 && pos == (long long)bytes<<3) {
-            addReplyLongLong(c,-1);
-            return;
-        }
-        if (pos != -1) pos += (long long)start<<3; /* Adjust for the bytes we skipped. */
-        addReplyLongLong(c,pos);
-    }
+    objectMeta *om = lookupMeta(c->db,c->argv[1]);
+    metaBitmap meta_bitmap;
+    serverAssert(om != NULL && om->swap_type == SWAP_TYPE_BITMAP);
+    metaBitmapInit(&meta_bitmap, om->ptr, o);
+    metaBitmapBitpos(&meta_bitmap, c, bit);
 }
 
 /* BITFIELD key subcommmand-1 arg ... subcommand-2 arg ... subcommand-N ...

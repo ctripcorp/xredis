@@ -166,7 +166,7 @@ static inline int bitmapMetaGetHotSubkeysIdx(bitmapMeta *meta, int subkeys_num, 
     return rbmLocateSetBitPos(meta->subkeys_status, subkeys_num, (uint32_t*)subkeys_idx);
 }
 
-static inline void bitmapMetaGrowHot(bitmapMeta *bitmap_meta, size_t extendSize)
+static inline void bitmapMetaGrow(bitmapMeta *bitmap_meta, size_t extendSize)
 {
     serverAssert(extendSize > 0);
     if (bitmap_meta == NULL) {
@@ -395,7 +395,9 @@ void bitmapSwapAnaInSelectSubKeys(swapData *data, bitmapDataCtx *datactx, struct
     if (range->type == RANGE_BIT_BITMAP) {
         serverAssert(range->start == range->end);
         if (range->start < 0) {
-            /* setbit, getbit command, argument offset is non-negative. */
+            /* setbit, getbit command, argument offset is non-negative, 
+             * which will be check firstly in setbitCommand/getbitCommand,
+             * so no need to swap in. */
             return;
         }
         required_subkey_start_idx = range->start / BITS_NUM_IN_SUBKEY;
@@ -436,9 +438,12 @@ void bitmapSwapAnaInSelectSubKeys(swapData *data, bitmapDataCtx *datactx, struct
         required_subkey_end_idx = end / BITMAP_SUBKEY_SIZE;
     }
 
-    /* bitcount, bitpos command, if start > end after adjusting, it's treated as error, return 0 or -1, so no need to swap in subkeys. */
+    /* bitcount, bitpos command, if start > end after adjusting, it's treated as error, 
+     * which will be checked after checking if the object exist in bitposCommand/bitcountCommand,
+     * so we need to ensure the hot object exist. */
     if (required_subkey_start_idx > required_subkey_end_idx) {
-        return;
+        required_subkey_start_idx = 0;
+        required_subkey_end_idx = 0;
     }
 
     int subkey_num_need_swapin = required_subkey_end_idx - required_subkey_start_idx + 1 - bitmapMetaGetHotSubkeysNum(meta, required_subkey_start_idx, required_subkey_end_idx);
@@ -1201,7 +1206,12 @@ void metaBitmapInit(metaBitmap *meta_bitmap, struct bitmapMeta *bitmap_meta, rob
     meta_bitmap->bitmap = bitmap;
 }
 
-void ctripGrowMetaBitmap(metaBitmap *meta_bitmap, size_t byte)
+long metaBitmapGetSize(metaBitmap *meta_bitmap)
+{
+    return meta_bitmap->meta->size;
+}
+
+void metaBitmapGrow(metaBitmap *meta_bitmap, size_t byte)
 {
     sds bitmap_str = meta_bitmap->bitmap->ptr;
     size_t oldlen = sdslen(bitmap_str);
@@ -1213,8 +1223,33 @@ void ctripGrowMetaBitmap(metaBitmap *meta_bitmap, size_t byte)
     }
     serverAssert(newlen > oldlen);
     /* newlen > oldlen */
-    bitmapMetaGrowHot(meta_bitmap->meta, newlen - oldlen);
+    bitmapMetaGrow(meta_bitmap->meta, newlen - oldlen);
     return;
+}
+
+/* metaBitmap get the size of cold subkeys ahead of the offset, not include the subkey that offset exists. */
+long metaBitmapGetColdSubkeysSize(metaBitmap *meta_bitmap, long offset)
+{
+    if (meta_bitmap->meta == NULL) {
+        /* object meta is just marker, bitmap meta is NULL, bitmap is pure hot. */
+        return 0;
+    }
+
+    int subkey_idx = offset / BITMAP_SUBKEY_SIZE;
+    if (subkey_idx == 0) {
+        /* no cold subkeys ahead. */
+        return 0;
+    }
+
+    int subkeys_num_ahead = bitmapMetaGetHotSubkeysNum(meta_bitmap->meta, 0, subkey_idx - 1);
+    int cold_subkeys_num_ahead = subkey_idx - subkeys_num_ahead;
+
+    if (subkeys_num_ahead == subkey_idx) {
+        /* no cold subkeys ahead. */
+        return 0;
+    } else {
+        return cold_subkeys_num_ahead * BITMAP_SUBKEY_SIZE;
+    }
 }
 
 /* bitmap save */
@@ -1909,7 +1944,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         meta_buf1 = NULL;
     }
 
-    TEST("bitmap - meta api test rebuildFeed ctripGrowMetaBitmap marker") {
+    TEST("bitmap - meta api test rebuildFeed metaBitmapGrow marker") {
     
         bitmapMeta *bitmap_meta1;
         bitmap_meta1 = bitmapMetaCreate();
@@ -1942,7 +1977,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
         metaBitmap meta_bitmap;
         metaBitmapInit(&meta_bitmap, bitmap_meta1, bitmap1);
-        ctripGrowMetaBitmap(&meta_bitmap, BITMAP_SUBKEY_SIZE*6);
+        metaBitmapGrow(&meta_bitmap, BITMAP_SUBKEY_SIZE*6);
 
         test_assert(bitmap_meta1->pure_cold_subkeys_num == 4);
         test_assert(stringObjectLen(bitmap1) == BITMAP_SUBKEY_SIZE*6);
