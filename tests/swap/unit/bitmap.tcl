@@ -1,7 +1,98 @@
-proc build_small_bitmap r {
+proc set_small_bitmap r {
     # only one subkey
     r setbit small_bitmap 0 1
 }
+
+proc build_pure_hot_small_bitmap r {
+    # each fragment need to set 1 bit, for bitcount test 
+    r flushdb
+    set_small_bitmap r
+}
+
+proc build_hot_small_bitmap r {
+    # build hot data
+    build_pure_hot_small_bitmap r
+	r swap.evict small_bitmap
+    assert_equal {1} [r bitcount small_bitmap]
+}
+
+proc build_cold_small_bitmap r {
+    # build cold data
+	build_pure_hot_small_bitmap r
+    r swap.evict small_bitmap
+}
+
+proc check_small_bitmap_getbit0 r {
+    # normal getbit 
+    assert_equal {1} [r getbit small_bitmap 0]
+}
+
+proc check_small_bitmap_getbit1 r {
+    # abnormal getbit 
+    assert_equal {ERR bit offset is not an integer or out of range} [r getbit small_bitmap -1]
+}
+
+proc check_small_bitmap_bitcount0 r {
+    # normal bitcount
+    assert_equal {1} [r bitcount small_bitmap 0 0]
+}
+
+proc check_small_bitmap_bitcount1 r {
+    # normal bitcount
+    assert_equal {1} [r bitcount small_bitmap]
+}
+
+proc check_small_bitmap_bitcount2 r {
+    # abnormal bitcount
+    assert_equal {1} [r bitcount small_bitmap 0 -2]
+}
+
+proc check_small_bitmap_bitcount3 r {
+    # abnormal bitcount
+    assert_equal {1} [r bitcount small_bitmap -1 2]
+}
+
+proc check_small_bitmap_bitpos0 r {
+    assert_equal {0} [r bitpos small_bitmap 1 0]
+}
+
+proc check_small_bitmap_bitpos1 r {
+    assert_equal {-1} [r bitpos small_bitmap 1 1]
+}
+
+proc check_small_bitmap_bitpos2 r {
+    assert_equal {0} [r bitpos small_bitmap 1 -1]
+}
+
+proc check_small_bitmap_bitpos3 r {
+    assert_equal {1} [r bitpos small_bitmap 0 0]
+}
+
+proc check_small_bitmap_bitpos4 r {
+    assert_equal {-1} [r bitpos small_bitmap 0 1]
+}
+
+proc check_small_bitmap_bitpos5 r {
+    assert_equal {1} [r bitpos small_bitmap 0 -1]
+}
+
+proc check_small_bitmap_bitpos6 r {
+    assert_equal {0} [r bitpos small_bitmap 1 0 2]
+}
+
+proc check_small_bitmap_bitpos7 r {
+    assert_equal {0} [r bitpos small_bitmap 1 -1 1]
+}
+
+proc check_small_bitmap_bitpos8 r {
+    assert_equal {1} [r bitpos small_bitmap 0 0 2]
+}
+
+proc check_small_bitmap_bitpos9 r {
+    assert_equal {1} [r bitpos small_bitmap 0 -1 1]
+}
+
+
 
 proc set_data r {
 	# 335872 bit = 41 kb
@@ -45,14 +136,14 @@ proc build_hot_data r {
 }
 
 #   condition:
-#  hot  ###########
+#  hot  ############
 #  cold ###########
 proc build_extend_hot_data r {
     # build hot data
     build_pure_hot_data r
 	r swap.evict mybitmap1
-    assert_equal {11} [r bitcount mybitmap1]
     r setbit mybitmap1 368639 1
+    assert_equal {12} [r bitcount mybitmap1]
 }
 
 proc build_cold_data r {
@@ -67,12 +158,14 @@ proc build_warm_data r {
 }
 
 #   condition:
-#  hot  #____#____#
+#  hot  #_#__#_#__#
 #  cold ###########
 proc build_warm_with_hole1 {
     build_cold_data r
     r getbit mybitmap1 32767
+    r getbit mybitmap1 98303
     r getbit mybitmap1 196607
+    r getbit mybitmap1 262143
     r getbit mybitmap1 335871
 }
 
@@ -86,21 +179,22 @@ proc build_warm_with_hole2 {
 }
 
 #   condition:
-#   hot  ____#_____#
+#   hot  ____#___#_#
 #   cold ###########
 proc build_warm_with_hole3 {
     build_cold_data r
     r getbit mybitmap1 163839
+    r getbit mybitmap1 294911
     r getbit mybitmap1 335871
 }
 
 #   condition:
-#   hot  ##__##_____
+#   hot  #_#_##_____
 #   cold ########### 
 proc build_warm_with_hole4 {
     build_cold_data r
-    r getbit mybitmap1 1
-    r getbit mybitmap1 65535 
+    r setbit mybitmap1 32767
+    r getbit mybitmap1 98303 
     r getbit mybitmap1 163839
     r getbit mybitmap1 196607 
 }
@@ -147,6 +241,10 @@ proc check_mybitmap1_getbit0 r {
     assert_equal {1} [r getbit mybitmap1 335871]
     assert_equal {0} [r getbit mybitmap1 335872]
 
+}
+
+proc check_mybitmap1_getbit1 r {
+
     # Abnormal getbit
     assert_equal {ERR bit offset is not an integer or out of range} [r getbit mybitmap1 -1]
 }
@@ -154,21 +252,24 @@ proc check_mybitmap1_getbit0 r {
 proc check_mybitmap1_bitcount0 r {
     # normal bitcount
     assert_equal {2} [r bitcount mybitmap1 0 9216]
+    assert_equal {2} [r bitcount mybitmap1 5000 15000]
     assert_equal {3} [r bitcount mybitmap1 9216 20480]
+    assert_equal {3} [r bitcount mybitmap1 15000 25000]
     assert_equal {6} [r bitcount mybitmap1 20480 43008]
 }
 
 proc check_mybitmap1_bitcount1 r {
     # Abnormal bitcount
     assert_equal {9} [r bitcount mybitmap1 10000 2000000]
-    assert_equal {5} [r bitcount mybitmap1 10000 -10000]
     assert_equal {9} [r bitcount mybitmap1 10000 2147483647]
     assert_equal {11} [r bitcount mybitmap1 -2147483648 2147483647]
     assert_equal {0} [r bitcount mybitmap1 2000000 10000]
-    assert_equal {0} [r bitcount mybitmap1 -10000 10000]
 
+    assert_equal {5} [r bitcount mybitmap1 10000 -10000]
+    assert_equal {0} [r bitcount mybitmap1 -10000 10000]
     assert_equal {7} [r bitcount mybitmap1 -41984 -11984]
     assert_equal {0} [r bitcount mybitmap1 -11984 -41984]
+    assert_equal {3} [r bitcount mybitmap1 -21984 -11984]
 }
 
 proc check_mybitmap1_bitpos0 r {
@@ -176,8 +277,13 @@ proc check_mybitmap1_bitpos0 r {
     assert_equal {32767} [r bitpos mybitmap1 1 0]
     assert_equal {98303} [r bitpos mybitmap1 1 9216]
     assert_equal {196607} [r bitpos mybitmap1 1 20480]
-    assert_equal {196607} [r bitpos mybitmap1 1 20480 43008]
     assert_equal {335871} [r bitpos mybitmap1 1 41983]
+
+    assert_equal {32767} [r bitpos mybitmap1 1 0 9216]
+    assert_equal {65535} [r bitpos mybitmap1 1 5000 15000]
+    assert_equal {98303} [r bitpos mybitmap1 1 9216 20480]
+    assert_equal {131071} [r bitpos mybitmap1 1 15000 25000]
+    assert_equal {196607} [r bitpos mybitmap1 1 20480 43008]
 }
 
 proc check_mybitmap1_bitpos1 r {
@@ -185,48 +291,65 @@ proc check_mybitmap1_bitpos1 r {
     assert_equal {0} [r bitpos mybitmap1 0 0]
     assert_equal {73728} [r bitpos mybitmap1 0 9216]
     assert_equal {163840} [r bitpos mybitmap1 0 20480]
-    assert_equal {163840} [r bitpos mybitmap1 0 20480 43008]
     assert_equal {335864} [r bitpos mybitmap1 0 41983]
+
+    assert_equal {0} [r bitpos mybitmap1 0 0 9216]
+    assert_equal {40000} [r bitpos mybitmap1 0 5000 15000]
+    assert_equal {73728} [r bitpos mybitmap1 0 9216 20480]
+    assert_equal {120000} [r bitpos mybitmap1 0 15000 25000]
+    assert_equal {163840} [r bitpos mybitmap1 0 20480 43008]
 }
 
 proc check_mybitmap1_bitpos2 r {
     # Abnormal bitpos
 
+    assert_equal {-1} [r bitpos mybitmap1 1 41984]
+    assert_equal {-1} [r bitpos mybitmap1 1 2147483647]
+
     assert_equal {327679} [r bitpos mybitmap1 1 -1984]
     assert_equal {262143} [r bitpos mybitmap1 1 -11984]
     assert_equal {98303} [r bitpos mybitmap1 1 -31984]
     assert_equal {32767} [r bitpos mybitmap1 1 -41984]
-        
+    assert_equal {32767} [r bitpos mybitmap1 1 -2147483648]
+
+    assert_equal {98303} [r bitpos mybitmap1 1 10000 2000000]
+    assert_equal {98303} [r bitpos mybitmap1 1 10000 2147483647]
+    assert_equal {-1} [r bitpos mybitmap1 1 2000000 10000]
+    assert_equal {-1} [r bitpos mybitmap1 1 20000 10000]
+
+    assert_equal {163839} [r bitpos mybitmap1 1 -21984 -11984]
     assert_equal {32767} [r bitpos mybitmap1 1 -41984 -11984]
     assert_equal {-1} [r bitpos mybitmap1 1 -11984 -41984]
 
-    assert_equal {-1} [r bitpos mybitmap1 1 41984]
-    assert_equal {98303} [r bitpos mybitmap1 1 10000 2000000]
     assert_equal {98303} [r bitpos mybitmap1 1 10000 -10000]
-    assert_equal {98303} [r bitpos mybitmap1 1 10000 2147483647]
     assert_equal {32767} [r bitpos mybitmap1 1 -2147483648 2147483647]
-    assert_equal {-1} [r bitpos mybitmap1 1 2000000 10000]
     assert_equal {-1} [r bitpos mybitmap1 1 -10000 10000]
 }
 
 proc check_mybitmap1_bitpos3 r {
     # Abnormal bitpos
 
+    assert_equal {-1} [r bitpos mybitmap1 0 41984]
+    assert_equal {-1} [r bitpos mybitmap1 0 2147483647]
+
     assert_equal {320000} [r bitpos mybitmap1 0 -1984]
     assert_equal {240000} [r bitpos mybitmap1 0 -11984]
     assert_equal {80000} [r bitpos mybitmap1 0 -31984]
     assert_equal {0} [r bitpos mybitmap1 0 -41984]
+    assert_equal {0} [r bitpos mybitmap1 0 -2147483648]
         
+    assert_equal {80000} [r bitpos mybitmap1 0 10000 2000000]
+    assert_equal {80000} [r bitpos mybitmap1 0 10000 2147483647]
+    assert_equal {-1} [r bitpos mybitmap1 0 2000000 10000]
+    assert_equal {-1} [r bitpos mybitmap1 0 20000 10000]
+
+    assert_equal {160000} [r bitpos mybitmap1 0 -21984 -11984]
     assert_equal {0} [r bitpos mybitmap1 0 -41984 -11984]
     assert_equal {-1} [r bitpos mybitmap1 0 -11984 -41984]
 
-    assert_equal {-1} [r bitpos mybitmap1 0 41984]
-    assert_equal {80000} [r bitpos mybitmap1 0 10000 2000000]
     assert_equal {80000} [r bitpos mybitmap1 0 10000 -10000]
-    assert_equal {80000} [r bitpos mybitmap1 0 10000 2147483647]
     assert_equal {0} [r bitpos mybitmap1 0 -2147483648 2147483647]
 
-    assert_equal {-1} [r bitpos mybitmap1 0 2000000 10000]
     assert_equal {-1} [r bitpos mybitmap1 0 -10000 10000]
 }
 
@@ -252,7 +375,13 @@ proc check_mybitmap1_bitfield r {
 }
 
 proc check_mybitmap1_bitop r {
-    assert_equal {41984} [r bitop not dest mybitmap1]
+
+    r setbit src1 32767 1
+    r setbit src2 335871 1
+    r swap.evict src1
+    r swap.evict src2
+    assert_equal {41984} [r bitop XOR dest mybitmap1 src1 src2]
+    assert_equal {9} [r bitcount dest]
 }
 
 proc check_mybitmap2 r {
@@ -279,7 +408,34 @@ proc check_mybitmap2 r {
 start_server {
     tags {"bitmap swap"}
 }   {
-    test {pure hot full and non full swap out} {
+    test {pure hot full swap out} {
+        set bak_evict_step [lindex [r config get swap-evict-step-max-memory] 1]
+        build_pure_hot_data r
+        r swap.evict mybitmap1
+
+        check_data r
+        assert_equal {1} [r getbit mybitmap1 32767]
+        assert_equal {1} [r getbit mybitmap1 65535]
+        assert_equal {41984} [r bitop not dest mybitmap1]
+        assert_equal {11} [r bitcount mybitmap1]
+
+        set bak_evict_step [lindex [r config get swap-evict-step-max-memory] 1]
+        # swap-evict-step-max-memory 5kb
+        r config set swap-evict-step-max-memory 5120
+        r swap.evict mybitmap1
+        
+        check_data r
+        assert_equal {1} [r getbit mybitmap1 32767]
+        assert_equal {1} [r getbit mybitmap1 65535]
+        assert_equal {41984} [r bitop not dest mybitmap1]
+        assert_equal {11} [r bitcount mybitmap1]
+        r del mybitmap1
+        r del mybitmap2
+
+        r config set swap-evict-step-max-memory $bak_evict_step
+    }
+
+    test {pure hot non full swap out} {
         build_pure_hot_data r
         r swap.evict mybitmap1
 
