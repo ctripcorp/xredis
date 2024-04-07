@@ -1275,8 +1275,9 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi, int rordb) 
     if (rordb && rordbSaveAuxFields(rdb) == -1) goto werr;
     if (rordb && rordbSaveSST(rdb) == -1) goto werr;
 
+    list *hot_keys_extension = NULL;
     for (j = 0; j < server.dbnum; j++) {
-        list *hot_keys_extension = listCreate();
+        hot_keys_extension = listCreate();
 
         redisDb *db = server.db+j;
         if (ctripDbSize(db) == 0) continue;
@@ -1340,7 +1341,6 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi, int rordb) 
             if (rdbSaveHotExtension(rdb,error,db,hot_keys_extension,rdbflags)) goto werr;
             if (rdbSaveRocks(rdb,error,db,rdbflags)) goto werr;
         }
-        listRelease(hot_keys_extension);
         dbResumeRehash(db);
     }
 
@@ -1369,11 +1369,13 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi, int rordb) 
     cksum = rdb->cksum;
     memrev64ifbe(&cksum);
     if (rioWrite(rdb,&cksum,8) == 0) goto werr;
+    if(hot_keys_extension) listRelease(hot_keys_extension);
     return C_OK;
 
 werr:
     if (error && *error == 0) *error = errno;
     if (di) dictReleaseIterator(di);
+    if(hot_keys_extension) listRelease(hot_keys_extension);
     return C_ERR;
 }
 

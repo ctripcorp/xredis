@@ -577,6 +577,14 @@ static inline int swapObjectMetaIsHot(swapObjectMeta *som) {
     }
 }
 
+/* bitmap marker */
+objectMeta *createBitmapObjectMarker();
+int bitmapObjectMetaIsMarker(objectMeta *object_meta);
+void bitmapSetObjectMarkerIfNeeded(redisDb *db, robj *key);
+void bitmapClearObjectMarkerIfNeeded(redisDb *db, robj *key);
+void bitmapMetaTransToMarkerIfNeeded(objectMeta *object_meta);
+void bitmapMarkerTransToMetaIfNeeded(objectMeta *object_meta, robj *value);
+
 /* Data */
 #define SWAP_DATA_ABSENT_SUBKEYS_INIT 4
 #define SWAP_DATA_ABSENT_SUBKEYS_LINEAR 1024
@@ -975,6 +983,12 @@ struct bitmapMeta;
 
 void bitmapMetaFree(struct bitmapMeta *bitmap_meta);
 
+objectMeta *createBitmapObjectMeta(uint64_t version, MOVE struct bitmapMeta *bitmap_meta);
+
+int swapDataSetupBitmap(swapData *d, void **pdatactx);
+
+sds genSwapBitmapStringSwitchedInfoString(sds info);
+
 /* Meta bitmap */
 typedef struct metaBitmap {
     struct bitmapMeta *meta;
@@ -986,18 +1000,6 @@ long metaBitmapGetSize(metaBitmap *meta_bitmap);
 void metaBitmapGrow(metaBitmap *meta_bitmap, size_t byte);
 long metaBitmapGetColdSubkeysSize(metaBitmap *meta_bitmap, long offset);
 void metaBitmapBitpos(metaBitmap *meta_bitmap, client *c, long bit);
-
-objectMeta *createBitmapObjectMeta(uint64_t version, MOVE struct bitmapMeta *bitmap_meta);
-
-int swapDataSetupBitmap(swapData *d, void **pdatactx);
-
-objectMeta *createBitmapObjectMarker();
-int bitmapObjectMetaIsMarker(objectMeta *object_meta);
-void bitmapSetObjectMarkerIfNeeded(redisDb *db, robj *key);
-void bitmapClearObjectMarkerIfNeeded(redisDb *db, robj *key);
-void bitmapMetaTransToMarkerIfNeeded(objectMeta *object_meta);
-
-sds genSwapBitmapStringSwitchedInfoString(sds info);
 
 /* MetaScan */
 #define DEFAULT_SCANMETA_BUFFER 16

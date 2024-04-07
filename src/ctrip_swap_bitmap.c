@@ -904,18 +904,19 @@ int bitmapSwapIn(swapData *data, void *result, void *datactx) {
 }
 
 static int bitmapCleanObject(swapData *data, void *datactx_, int keep_data) {
-    if (swapDataIsCold(data)) {
+    bitmapDataCtx *datactx = datactx_;
+    
+    if (swapDataIsCold(data) || datactx->subkeys_num == 0) {
         return 0;
     }
 
-    bitmapDataCtx *datactx = datactx_;
     bitmapMeta *meta = swapDataGetBitmapMeta(data);
     if (!keep_data) {
         robj *decoded_bitmap = getDecodedObject(data->value);
 
         /* from subkey idx = 0 to max idx to evict subkeys in bitmap.
          * the evicting way determined in bitmapSwapAnaOutSelectSubkeys */
-
+        serverAssert(datactx->subkeys_num > 0);
         int evicted_max_idx = datactx->subkeys_logic_idx[datactx->subkeys_num - 1];
 
         long hot_subkeys_num = bitmapMetaGetHotSubkeysNum(meta, 0, evicted_max_idx);
