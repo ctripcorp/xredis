@@ -33,10 +33,10 @@
 #define BITS_NUM_IN_SUBKEY (BITMAP_SUBKEY_SIZE * 8)
 #define BITMAP_MAX_INDEX INT_MAX
 
-#define BITMAP_GET_SUBKEYS_NUM(size, subkey_size)  ((int)(((size - 1) / subkey_size + 1)))
+#define BITMAP_GET_SUBKEYS_NUM(size, subkey_size) (size == 0 ? 0 : ((int)(((size - 1) / subkey_size + 1))))
 
 #define BITMAP_GET_SPECIFIED_SUBKEY_SIZE(size, subkey_size, idx) \
-    idx == (BITMAP_GET_SUBKEYS_NUM(size, subkey_size) - 1) ? (size - subkey_size * idx) : subkey_size
+    (idx == (BITMAP_GET_SUBKEYS_NUM(size, subkey_size) - 1) ? (size - subkey_size * idx) : subkey_size)
 
 /* utils */
 
@@ -54,7 +54,7 @@ static inline long decodeBitmapSize(const char *str)
 
 static inline sds bitmapEncodeSubkeyIdx(long idx) {
     idx = htonu64(idx);
-    return sdsnewlen(&idx,sizeof(idx));
+    return sdsnewlen(&idx,sizeof(long));
 }
 
 static inline long bitmapDecodeSubkeyIdx(const char *str, size_t len) {
@@ -212,11 +212,11 @@ int bitmapObjectMetaIsHot(struct objectMeta *object_meta, robj *value)
 {
     UNUSED(value);
     serverAssert(object_meta && object_meta->swap_type == SWAP_TYPE_BITMAP);
-    bitmapMeta *meta = objectMetaGetPtr(object_meta);
-    if (meta == NULL) {
+    if (bitmapObjectMetaIsMarker(object_meta)) {
         /* ptr not set, bitmap is purely hot, never swapped out */
         return 1;
     } else {
+        bitmapMeta *meta = objectMetaGetPtr(object_meta);
         return meta->pure_cold_subkeys_num == 0;
     }
 }
@@ -239,6 +239,7 @@ int bitmapObjectMetaRebuildFeed(struct objectMeta *rebuild_meta,
                               uint64_t version, const char *subkey, size_t sublen, robj *subval) {
     UNUSED(version);
     bitmapMeta *meta = objectMetaGetPtr(rebuild_meta);
+    serverAssert(meta != NULL);
     if (sublen != sizeof(long)) return -1;
     if (subval == NULL || subval->type != OBJ_STRING) return -1;
     if (subkey) {
@@ -449,6 +450,14 @@ void bitmapSwapAnaInSelectSubKeys(swapData *data, bitmapDataCtx *datactx, struct
     int subkey_num_need_swapin = required_subkey_end_idx - required_subkey_start_idx + 1 - bitmapMetaGetHotSubkeysNum(meta, required_subkey_start_idx, required_subkey_end_idx);
 
     serverAssert(subkey_num_need_swapin >= 0);
+
+    int hot_subkeys_num = 0;
+    if (data->value != NULL) {
+        hot_subkeys_num = BITMAP_GET_SUBKEYS_NUM(stringObjectLen(data->value), BITMAP_SUBKEY_SIZE);
+    }
+
+    serverAssert(hot_subkeys_num + subkey_num_need_swapin <= subkeys_num);
+
     /* subkeys required are all in redis */
     if (subkey_num_need_swapin == 0) {
         /* subkeys required have been in redis.*/
@@ -484,7 +493,11 @@ int bitmapSwapAnaOutSelectSubkeys(swapData *data, bitmapDataCtx *datactx, int *m
     int noswap; /* if need to swap ? */
     bitmapMeta *meta = swapDataGetBitmapMeta(data);
 
-    int hot_subkeys_num = BITMAP_GET_SUBKEYS_NUM(stringObjectLen(data->value), BITMAP_SUBKEY_SIZE);
+    int subkeys_num = BITMAP_GET_SUBKEYS_NUM(meta->size, BITMAP_SUBKEY_SIZE);
+
+    int hot_subkeys_num = BITMAP_GET_SUBKEYS_NUM(stringObjectLen(data->value), BITMAP_SUBKEY_SIZE);  // value 可能 等于 NULL
+    serverAssert(hot_subkeys_num == bitmapMetaGetHotSubkeysNum(meta, 0, subkeys_num - 1));
+
     int subkeys_num_may_swapout = 0;
 
     /* only SELECT_MAIN */
@@ -876,12 +889,7 @@ int bitmapSwapIn(swapData *data, void *result, void *datactx) {
     /* hot key no need to swap in, this must be a warm or cold key. */
     serverAssert(swapDataPersisted(data));
 
-    if (result == NULL) {
-        if (data->value) overwriteObjectPersistent(data->value,!data->persistence_deleted);
-        return 0;
-    }
-
-    if (swapDataIsCold(data) /* may be empty */) {
+    if (swapDataIsCold(data) && result != NULL /* may be empty */) {
         /* cold key swapped in result. */
         robj *swapin = createSwapInBitmapObject(result);
         /* mark persistent after data swap in without
@@ -894,10 +902,18 @@ int bitmapSwapIn(swapData *data, void *result, void *datactx) {
             data->cold_meta = NULL; /* moved */
         }
     } else {
-        /* update bitmap obj */
-        robj *swapin = createSwapInBitmapObject(result);
-        overwriteObjectPersistent(swapin,!data->persistence_deleted);
-        dbOverwrite(data->db, data->key, swapin);
+        if (result) {
+            robj *merged_obj = createSwapInBitmapObject(result);
+
+            /* replace the object ptr */
+            sds old_ptr = data->value->ptr;
+            sdsfree(old_ptr);
+
+            data->value->ptr = merged_obj->ptr;
+            merged_obj->ptr = NULL;
+            decrRefCount(merged_obj);
+        }
+        if (data->value) overwriteObjectPersistent(data->value,!data->persistence_deleted);
     }
 
     return 0;
@@ -943,7 +959,6 @@ static int bitmapCleanObject(swapData *data, void *datactx_, int keep_data) {
  * swapout only updates db.dict keyspace, meta (db.meta/db.expire) swapped
  * out by swap framework. */
 int bitmapSwapOut(swapData *data, void *datactx_, int keep_data, int *totally_out) {
-    UNUSED(datactx_);
     serverAssert(!swapDataIsCold(data));
 
     if (keep_data) {
@@ -971,10 +986,19 @@ int bitmapSwapOut(swapData *data, void *datactx_, int keep_data, int *totally_ou
             datactx->newbitmap = NULL;
             if (totally_out) *totally_out = 1;
         } else if (bitmap_new_size < bitmap_old_size) {
-            dbOverwrite(data->db, data->key, datactx->newbitmap);
-            setObjectPersistent(datactx->newbitmap);
+            /* replace the object ptr */
+            sds old_ptr = data->value->ptr;
+            sdsfree(old_ptr);
+
+            data->value->ptr = datactx->newbitmap->ptr;
+            datactx->newbitmap->ptr = NULL;
+            decrRefCount(datactx->newbitmap);
+            datactx->newbitmap = NULL;
+
+            setObjectPersistent(data->value); /* persistent data exist. */
             if (totally_out) *totally_out = 0;
         } else {
+            /* no keep data, bitmap_new_size != bitmap_old_size */
             serverAssert(false);
         }
     }
@@ -1087,7 +1111,7 @@ int bitmapBeforeCall(swapData *data, keyRequest *key_request, client *c,
     serverAssert(object_meta != NULL && object_meta->swap_type == SWAP_TYPE_BITMAP);
 
     /* no need to rewrite. */
-    if (swapDataIsHot(data)) {
+    if (bitmapObjectMetaIsHot(object_meta, lookupKey(data->db,data->key,LOOKUP_NOTOUCH))) {
         return 0;
     }
 
@@ -1166,6 +1190,13 @@ int bitmapBeforeCall(swapData *data, keyRequest *key_request, client *c,
     }
 
     return 0;
+}
+
+int bitmapMergedIsHot(swapData *d, void *result, void *datactx) {
+    UNUSED(result);
+    UNUSED(datactx);
+    objectMeta *meta = swapDataObjectMeta(d);
+    return bitmapObjectMetaIsHot(meta, NULL);
 }
 
 swapDataType bitmapSwapDataType = {
@@ -1632,7 +1663,8 @@ int bitmapLoad(struct rdbKeyLoadData *load, rio *rdb, int *cf,
     
     bitmapLoadInfo *load_info = load->load_info;
 
-    size_t subkey_size = BITMAP_GET_SPECIFIED_SUBKEY_SIZE(load_info->bitmap_size, BITMAP_SUBKEY_SIZE, load->loaded_fields);   
+    size_t subkey_size = BITMAP_GET_SPECIFIED_SUBKEY_SIZE(load_info->bitmap_size, BITMAP_SUBKEY_SIZE, load->loaded_fields);
+    serverAssert(subkey_size >= 0);
     *error = RDB_LOAD_ERR_OTHER;
 
     size_t left_len_consuming_subval = 0;

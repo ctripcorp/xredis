@@ -1947,7 +1947,7 @@ int listMetaMergedIsHot(listMeta *main_meta, listMeta *delta_meta) {
 
 int listMergedIsHot(swapData *d, void *result, void *datactx) {
     listMeta *main_meta, *delta_meta;
-    metaList *delta = result; /* 如果是 merge 了, 为null， 如果是create的，不为 null*/
+    metaList *delta = result;
     UNUSED(datactx);
     main_meta = swapDataGetListMeta(d);
     delta_meta = delta ? delta->meta : NULL;

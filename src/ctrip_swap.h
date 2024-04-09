@@ -753,7 +753,6 @@ int swapDataObjectMergedIsHot(swapData *data, void *result, void *datactx);
 #define hashMergedIsHot swapDataObjectMergedIsHot
 #define zsetMergedIsHot swapDataObjectMergedIsHot
 #define wholeKeyMergedIsHot swapDataObjectMergedIsHot
-#define bitmapMergedIsHot swapDataObjectMergedIsHot
 
 /* Debug msgs */
 #ifdef SWAP_DEBUG

@@ -954,9 +954,7 @@ void rbmDestory(roaringBitmap* rbm)
 
 void rbmSetBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit)
 {
-    if (rbm == NULL || minBit > maxBit) {
-        return;
-    }
+    serverAssert(rbm != NULL && minBit <= maxBit);
 
     uint32_t firstBucketIdx = minBit >> CONTAINER_BITS;
     uint32_t lastBucketIdx = maxBit >> CONTAINER_BITS;
@@ -998,9 +996,7 @@ void rbmSetBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit)
 
 uint32_t rbmGetBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit)
 {
-    if (rbm == NULL || minBit > maxBit) {
-        return 0;
-    }
+    serverAssert(rbm != NULL && minBit <= maxBit);
     uint32_t firstBucketIdx = minBit >> CONTAINER_BITS;
     uint32_t lastBucketIdx = maxBit >> CONTAINER_BITS;
 
@@ -1033,9 +1029,7 @@ uint32_t rbmGetBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit)
 
 void rbmClearBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit)
 {
-    if (rbm == NULL || minBit > maxBit) {
-        return;
-    }
+    serverAssert(rbm != NULL && minBit <= maxBit);
     uint32_t firstBucketIdx = minBit >> CONTAINER_BITS;
     uint32_t lastBucketIdx = maxBit >> CONTAINER_BITS;
 
@@ -1094,9 +1088,8 @@ static inline void containersDup(roaringContainer **destContainers, roaringConta
 
 void rbmdup(roaringBitmap* destRbm, roaringBitmap* srcRbm)
 {
-    if (destRbm == NULL || srcRbm == NULL) {
-        return;
-    }
+    serverAssert(destRbm != NULL && srcRbm != NULL);
+    serverAssert(destRbm->buckets == NULL && destRbm->containers == NULL);
     destRbm->bucketsNum = srcRbm->bucketsNum;
     destRbm->buckets = roaring_malloc(destRbm->bucketsNum * sizeof(uint8_t));
     memcpy(destRbm->buckets, srcRbm->buckets, sizeof(uint8_t) * destRbm->bucketsNum);
@@ -1125,12 +1118,7 @@ static inline int containersAreEqual(roaringContainer **destContainers, roaringC
 
 int rbmIsEqual(roaringBitmap* destRbm, roaringBitmap* srcRbm)
 {
-    if (destRbm == NULL && srcRbm == NULL) {
-        return 1;
-    }
-    if (destRbm == NULL || srcRbm == NULL) {
-        return 0;
-    }
+    serverAssert(destRbm != NULL && srcRbm != NULL);
     if (destRbm->bucketsNum != srcRbm->bucketsNum || 0 != memcmp(destRbm->buckets, srcRbm->buckets, destRbm->bucketsNum *
             sizeof(uint8_t))) {
         return 0;
@@ -1221,9 +1209,7 @@ static inline uint32_t bucketLocateSetBitPos(roaringBitmap *rbm, uint8_t bucketP
 
 uint32_t rbmLocateSetBitPos(roaringBitmap* rbm, uint32_t bitsNum, uint32_t *idxArr)
 {
-    if (rbm == NULL || bitsNum == 0 || idxArr == NULL) {
-        return 0;
-    }
+    serverAssert(rbm != NULL || bitsNum != 0 || idxArr != NULL);
     uint32_t *idxArrCursor = idxArr;
     uint32_t leftBitsNum = bitsNum;
     for (int i = 0; i < rbm->bucketsNum; i++) {
