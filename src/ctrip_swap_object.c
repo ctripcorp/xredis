@@ -161,6 +161,9 @@ int keyIsHot(objectMeta *object_meta, robj *value) {
 struct listMeta;
 sds listMetaDump(sds result, struct listMeta *lm);
 
+struct bitmapMeta;
+sds bitmapMetaDump(sds result, struct bitmapMeta *bm);
+
 sds dumpObjectMeta(objectMeta *object_meta) {
     sds result = sdsempty();
     if (object_meta == NULL) {
@@ -176,6 +179,10 @@ sds dumpObjectMeta(objectMeta *object_meta) {
         result = sdscat(result,"list_meta=");
         struct listMeta *meta = objectMetaGetPtr(object_meta);;
         result = listMetaDump(result,meta);
+    } else if (omtype == &bitmapObjectMetaType) {
+        result = sdscat(result,"bitmap_meta=");
+        struct bitmapMeta *meta = objectMetaGetPtr(object_meta);;
+        result = bitmapMetaDump(result,meta);
     } else {
         result = sdscat(result,"list_meta=<unknown>");
     }

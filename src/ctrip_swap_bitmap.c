@@ -230,6 +230,17 @@ void bitmapObjectMetaDup(struct objectMeta *dup_meta, struct objectMeta *object_
     objectMetaSetPtr(dup_meta, bitmapMetaDup(objectMetaGetPtr(object_meta)));
 }
 
+sds bitmapMetaDump(sds result, bitmapMeta *bm) {
+    // check marker
+    if (bm == NULL) {
+        result = sdscatprintf(result,"(marker=true,size=0,pure_cold_subkeys_num=0)");
+    } else {
+        result = sdscatprintf(result,"(marker=false,size=%ld,pure_cold_subkeys_num=%ld)",
+            bm->size,bm->pure_cold_subkeys_num);
+    }
+    return result;
+}
+
 int bitmapObjectMetaEqual(struct objectMeta *dest_om, struct objectMeta *src_om) {
     bitmapMeta *dest_meta = objectMetaGetPtr(dest_om);
     bitmapMeta *src_meta = objectMetaGetPtr(src_om);
