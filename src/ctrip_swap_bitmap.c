@@ -849,13 +849,26 @@ void *bitmapCreateOrMergeObject(swapData *data, void *decoded_, void *datactx)
     robj *result = NULL;
     deltaBitmap *delta_bm = (deltaBitmap *)decoded_;
 
+    if (delta_bm->subkeys_num == 0) {
+        return NULL;
+    }
+
     if (swapDataIsCold(data)) {
         result = deltaBitmapMakeBitmapObject(delta_bm);
     } else {
         bitmapMeta *meta = swapDataGetBitmapMeta(data);
         robj *decoded_bitmap = getDecodedObject(data->value);
-        result = bitmapObjectMerge(decoded_bitmap, meta, delta_bm);
+        robj *merged_obj = bitmapObjectMerge(decoded_bitmap, meta, delta_bm);
         decrRefCount(decoded_bitmap);
+
+        /* replace the old object ptr */
+        sds old_ptr = data->value->ptr;
+        sdsfree(old_ptr);
+
+        data->value->ptr = merged_obj->ptr;
+        merged_obj->ptr = NULL;
+        decrRefCount(merged_obj);
+        result = NULL;
     }
 
     bitmapMeta *meta = swapDataGetBitmapMeta(data);
@@ -899,17 +912,7 @@ int bitmapSwapIn(swapData *data, void *result, void *datactx) {
             data->cold_meta = NULL; /* moved */
         }
     } else {
-        if (result) {
-            robj *merged_obj = createSwapInBitmapObject(result);
-
-            /* replace the object ptr */
-            sds old_ptr = data->value->ptr;
-            sdsfree(old_ptr);
-
-            data->value->ptr = merged_obj->ptr;
-            merged_obj->ptr = NULL;
-            decrRefCount(merged_obj);
-        }
+        if (result) decrRefCount(result);
         if (data->value) overwriteObjectPersistent(data->value,!data->persistence_deleted);
     }
 
@@ -2580,7 +2583,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(bitmap_meta->pure_cold_subkeys_num == 0);
         test_assert(bitmap_meta->size == BITMAP_SUBKEY_SIZE * 7 + BITMAP_SUBKEY_SIZE / 2);
         test_assert(rbmGetBitRange(bitmap_meta->subkeys_status, 0, BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE) - 1) == 8);
-        test_assert(stringObjectLen(result) == BITMAP_SUBKEY_SIZE * 7 + BITMAP_SUBKEY_SIZE / 2);
+        test_assert(stringObjectLen(warm_data2->value) == BITMAP_SUBKEY_SIZE * 7 + BITMAP_SUBKEY_SIZE / 2);
 
         test_assert(bitmapMergedIsHot(warm_data2, result, warm_ctx2) == 1);
 
