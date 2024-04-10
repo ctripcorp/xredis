@@ -176,8 +176,9 @@ static inline void bitmapMetaGrow(bitmapMeta *bitmap_meta, size_t extendSize)
     bitmap_meta->size += extendSize;
     int subkeys_num = BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE);
 
-    subkeys_num = MAX(subkeys_num, old_subkeys_num);
-    rbmSetBitRange(bitmap_meta->subkeys_status, old_subkeys_num, subkeys_num - 1);
+    if (subkeys_num > old_subkeys_num) {
+        rbmSetBitRange(bitmap_meta->subkeys_status, old_subkeys_num, subkeys_num - 1);
+    }
 }
 
 /* bitmap object meta */
@@ -262,7 +263,7 @@ objectMetaType bitmapObjectMetaType = {
 };
 
 /* delta bitmap */
-
+/* just used in swap out process. */
 typedef struct deltaBitmap {
     sds *subvals;
     size_t subvals_total_len;
@@ -270,11 +271,14 @@ typedef struct deltaBitmap {
     int *subkeys_logic_idx;
 } deltaBitmap;
 
+
 static inline deltaBitmap *deltaBitmapCreate(int num)
 {
     deltaBitmap *delta_bm = zmalloc(sizeof(deltaBitmap));
     delta_bm->subvals = zmalloc(sizeof(sds) * num);
+    memset(delta_bm->subvals, 0, sizeof(sds) * num);
     delta_bm->subkeys_logic_idx = zmalloc(num * sizeof(int));
+    memset(delta_bm->subkeys_logic_idx, 0, num * sizeof(int));
     delta_bm->subkeys_num = 0;
     delta_bm->subvals_total_len = 0;
     return delta_bm;
@@ -455,7 +459,6 @@ void bitmapSwapAnaInSelectSubKeys(swapData *data, bitmapDataCtx *datactx, struct
     if (data->value != NULL) {
         hot_subkeys_num = BITMAP_GET_SUBKEYS_NUM(stringObjectLen(data->value), BITMAP_SUBKEY_SIZE);
     }
-
     serverAssert(hot_subkeys_num + subkey_num_need_swapin <= subkeys_num);
 
     /* subkeys required are all in redis */
@@ -593,17 +596,13 @@ int bitmapSwapAna(swapData *data, int thd, struct keyRequest *req,
                     *intention = SWAP_NOP;
                     *intention_flags = 0;
                 } else if (cmd_intention_flags == SWAP_IN_META) {
-                    if (!swapDataIsCold(data)) {
-                        *intention = SWAP_NOP;
-                        *intention_flags = 0;
-                    } else {
-                        /* swap in first element if cold */
-                        datactx->subkeys_num = 1;
-                        datactx->subkeys_logic_idx = zmalloc(sizeof(int));
-                        datactx->subkeys_logic_idx[0] = 0;
-                        *intention = SWAP_IN;
-                        *intention_flags = 0;
-                    }
+
+                    /* swap in first element if cold */
+                    datactx->subkeys_num = 1;
+                    datactx->subkeys_logic_idx = zmalloc(sizeof(int));
+                    datactx->subkeys_logic_idx[0] = 0;
+                    *intention = SWAP_IN;
+                    *intention_flags = 0;
                 } else {
                     /* string, keyspace ... operation */
                     /* swap in all subkeys, and keep them in rocks. */
@@ -745,13 +744,8 @@ int bitmapEncodeRange(struct swapData *data, int intention, void *datactx, int *
 
 robj *bitmapGetSubVal(robj *o, int phyIdx)
 {
-    size_t subval_size = 0;
-    size_t left_size = stringObjectLen(o) - BITMAP_SUBKEY_SIZE * phyIdx;
-    if (left_size < BITMAP_SUBKEY_SIZE) {
-        subval_size = left_size;
-    } else {
-        subval_size = BITMAP_SUBKEY_SIZE;
-    }
+    serverAssert(o != NULL && phyIdx >= 0);
+    size_t subval_size = BITMAP_GET_SPECIFIED_SUBKEY_SIZE(stringObjectLen(o), BITMAP_SUBKEY_SIZE, phyIdx);
 
     robj *decoded_bitmap = getDecodedObject(o);
     robj *subval_obj = createStringObject((char*)decoded_bitmap->ptr + phyIdx * BITMAP_SUBKEY_SIZE, subval_size);
@@ -821,6 +815,8 @@ int bitmapDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
         if (rocksDecodeDataKey(rawkeys[i],sdslen(rawkeys[i]),
                                &dbid,&keystr,&klen,&subkey_version,&subkeystr,&slen) < 0)
             continue;
+        if (!swapDataPersisted(data))
+            continue;
         if (version != subkey_version)
             continue;
 
@@ -866,13 +862,14 @@ void *bitmapCreateOrMergeObject(swapData *data, void *decoded_, void *datactx)
 
     /* update meta */
     for (int i = 0; i < delta_bm->subkeys_num; i++) {
-        rbmSetBitRange(meta->subkeys_status, delta_bm->subkeys_logic_idx[i], delta_bm->subkeys_logic_idx[i]);
+        if (rbmGetBitRange(meta->subkeys_status, delta_bm->subkeys_logic_idx[i], delta_bm->subkeys_logic_idx[i]) == 0) {
+            meta->pure_cold_subkeys_num -= 1;
+            rbmSetBitRange(meta->subkeys_status, delta_bm->subkeys_logic_idx[i], delta_bm->subkeys_logic_idx[i]);
+        }
     }
-    meta->pure_cold_subkeys_num -= delta_bm->subkeys_num;
 
     /* bitmap only swap in the subkeys that don't exist in redis, so no need to judge like hash, set. */
     deltaBitmapFree(delta_bm);
-    delta_bm = NULL;
     return result;
 }
 
@@ -938,10 +935,10 @@ static int bitmapCleanObject(swapData *data, void *datactx_, int keep_data) {
         long hot_subkeys_num = bitmapMetaGetHotSubkeysNum(meta, 0, evicted_max_idx);
         serverAssert(hot_subkeys_num == datactx->subkeys_num);
 
-        size_t bitmap_size = stringObjectLen(data->value);
+        size_t bitmap_size = stringObjectLen(decoded_bitmap);
         serverAssert(datactx->subkeys_total_size != 0);
         size_t left_size = bitmap_size - datactx->subkeys_total_size;
-        datactx->newbitmap = createStringObject((char*)data->value->ptr + datactx->subkeys_total_size, left_size);
+        datactx->newbitmap = createStringObject((char*)decoded_bitmap->ptr + datactx->subkeys_total_size, left_size);
 
         decrRefCount(decoded_bitmap);
 
@@ -959,6 +956,7 @@ static int bitmapCleanObject(swapData *data, void *datactx_, int keep_data) {
  * swapout only updates db.dict keyspace, meta (db.meta/db.expire) swapped
  * out by swap framework. */
 int bitmapSwapOut(swapData *data, void *datactx_, int keep_data, int *totally_out) {
+    UNUSED(datactx_);
     serverAssert(!swapDataIsCold(data));
 
     if (keep_data) {
@@ -1102,11 +1100,11 @@ int bitmapBeforeCall(swapData *data, keyRequest *key_request, client *c,
     bitmapDataCtx *datactx = datactx_;
     argRewriteRequest first_arg_req = datactx->arg_reqs[0];
 
-    /* no need to rewrite. */
-    if (first_arg_req.arg_idx < 0) {
+    /* 1. no arg need to rewrite.
+     * 2. no need to rewrite bitcount,bitpos arg. */
+    if (first_arg_req.arg_idx < 0 || first_arg_req.arg_type == RANGE_BYTE_BITMAP) {
         return 0;
     }
-
     objectMeta *object_meta = lookupMeta(data->db,data->key);
     serverAssert(object_meta != NULL && object_meta->swap_type == SWAP_TYPE_BITMAP);
 
@@ -1117,8 +1115,6 @@ int bitmapBeforeCall(swapData *data, keyRequest *key_request, client *c,
 
     serverAssert(!bitmapObjectMetaIsMarker(object_meta));
     bitmapMeta *bitmap_meta = objectMetaGetPtr(object_meta);
-
-    bool offset_arg_is_byte = first_arg_req.arg_type == RANGE_BYTE_BITMAP ? true : false;
 
     for (int i = 0; i < 2; i++) {
         argRewriteRequest arg_req = datactx->arg_reqs[i];
@@ -1137,30 +1133,13 @@ int bitmapBeforeCall(swapData *data, keyRequest *key_request, client *c,
 
         serverAssert(ret == C_OK);
 
-        if (!offset_arg_is_byte && offset < 0) {
+        if (offset < 0) {
             /* setbit, getbit command, argument offset is non-negative.
              * command must be syntax error, just return. */
             return 0;
         }
 
-        if (offset_arg_is_byte && offset < 0) {
-            /* bitcount command, maybe range is negative, so we adjust it to the equal positive range firstly. */
-            offset = bitmap_meta->size + offset;
-            if (offset < 0) 
-                offset = 0;
-        }
-
-        if (offset_arg_is_byte && i == 1 && offset >= bitmap_meta->size) {
-            /* argument end in bitcount */
-            offset = bitmap_meta->size - 1;
-        }
-
-        int subkey_idx = 0;
-        if (offset_arg_is_byte) {
-            subkey_idx = offset / BITMAP_SUBKEY_SIZE;
-        } else {
-            subkey_idx = offset / BITS_NUM_IN_SUBKEY;
-        }
+        int subkey_idx = offset / BITS_NUM_IN_SUBKEY;
 
         if (subkey_idx == 0) {
             /* no hole in front of idx = 0 of bitmap, no need to rewrite. */
@@ -1173,19 +1152,11 @@ int bitmapBeforeCall(swapData *data, keyRequest *key_request, client *c,
             /* no need to modify offset */
             continue;
         } else {
-            if (offset_arg_is_byte) {
-                /* bitcount */
-                long long newOffset = offset - cold_subkeys_num_ahead * BITMAP_SUBKEY_SIZE;
+            /* setbit, getbit */
+            long long newOffset = offset - cold_subkeys_num_ahead * BITS_NUM_IN_SUBKEY;
 
-                robj *new_arg = createObject(OBJ_STRING,sdsfromlonglong(newOffset));
-                clientArgRewrite(c, arg_req, new_arg);
-            } else {
-                /* setbit, getbit */
-                long long newOffset = offset - cold_subkeys_num_ahead * BITS_NUM_IN_SUBKEY;
-
-                robj *new_arg = createObject(OBJ_STRING,sdsfromlonglong(newOffset));
-                clientArgRewrite(c, arg_req, new_arg);
-            }
+            robj *new_arg = createObject(OBJ_STRING,sdsfromlonglong(newOffset));
+            clientArgRewrite(c, arg_req, new_arg);
         }
     }
 
@@ -2887,26 +2858,26 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         datactx->arg_reqs[0].arg_type = RANGE_BYTE_BITMAP;
         datactx->arg_reqs[1].arg_type = RANGE_BYTE_BITMAP;
 
-        rewriteResetClientCommandCString(c, 4, "bITCOUNT", "mybitmap", "8292", "12388"); /* 4096 * 2 + 100,  4096 * 3 + 100*/
-        bitmapBeforeCall(data, NULL, c, datactx);
-        test_assert(!strcmp(c->argv[2]->ptr,"100"));
-        test_assert(!strcmp(c->argv[3]->ptr,"4196"));
-        clientArgRewritesRestore(c);
-        test_assert(!strcmp(c->argv[2]->ptr,"8292"));
-        test_assert(!strcmp(c->argv[3]->ptr,"12388"));
+        // rewriteResetClientCommandCString(c, 4, "bITCOUNT", "mybitmap", "8292", "12388"); /* 4096 * 2 + 100,  4096 * 3 + 100*/
+        // bitmapBeforeCall(data, NULL, c, datactx);
+        // test_assert(!strcmp(c->argv[2]->ptr,"100"));
+        // test_assert(!strcmp(c->argv[3]->ptr,"4196"));
+        // clientArgRewritesRestore(c);
+        // test_assert(!strcmp(c->argv[2]->ptr,"8292"));
+        // test_assert(!strcmp(c->argv[3]->ptr,"12388"));
 
-        datactx->arg_reqs[0].mstate_idx = -1;
-        datactx->arg_reqs[1].mstate_idx = -1;
-        datactx->arg_reqs[0].arg_idx = 2;
-        datactx->arg_reqs[1].arg_idx = 3;
+        // datactx->arg_reqs[0].mstate_idx = -1;
+        // datactx->arg_reqs[1].mstate_idx = -1;
+        // datactx->arg_reqs[0].arg_idx = 2;
+        // datactx->arg_reqs[1].arg_idx = 3;
 
-        datactx->arg_reqs[0].arg_type = RANGE_BYTE_BITMAP;
-        datactx->arg_reqs[1].arg_type = RANGE_BYTE_BITMAP;
+        // datactx->arg_reqs[0].arg_type = RANGE_BYTE_BITMAP;
+        // datactx->arg_reqs[1].arg_type = RANGE_BYTE_BITMAP;
 
-        /* BITCOUNT key [start end], both of start end may not exist.  */
-        rewriteResetClientCommandCString(c, 2, "bITCOUNT", "mybitmap");
-        bitmapBeforeCall(data, NULL, c, datactx);
-        clientArgRewritesRestore(c);
+        // /* BITCOUNT key [start end], both of start end may not exist.  */
+        // rewriteResetClientCommandCString(c, 2, "bITCOUNT", "mybitmap");
+        // bitmapBeforeCall(data, NULL, c, datactx);
+        // clientArgRewritesRestore(c);
 
         /* bitpos */
         // datactx->arg_reqs[0].mstate_idx = -1;

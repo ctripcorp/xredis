@@ -1181,7 +1181,7 @@ int getKeyRequestsBitcount(int dbid, struct redisCommand *cmd, robj **argv,
         if (getLongLongFromObject(argv[2],&start) != C_OK) return -1;
         if (getLongLongFromObject(argv[3],&end) != C_OK) return -1;
         getKeyRequestsSingleKeyWithRanges(dbid, cmd, argv, argc,
-                                          result, 1, 2, 3, RANGE_BYTE_BITMAP, 1/*num_ranges*/, start, end,0);
+                                          result, 1, -1, -1, RANGE_BYTE_BITMAP, 1/*num_ranges*/, start, end,0);
     }
     return 0;
 }

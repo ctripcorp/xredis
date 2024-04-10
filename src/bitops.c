@@ -785,17 +785,17 @@ void bitopCommand(client *c) {
     addReplyLongLong(c,maxlen); /* Return the output string length in bytes. */
 }
 
-/* BITCOUNT key [start end] */
-void bitcountCommand(client *c) {
-    robj *o;
+void metaBitmapBitcount(metaBitmap *meta_bitmap, client *c)
+{
     long start, end, strlen;
     unsigned char *p;
     char llbuf[LONG_STR_SIZE];
+    robj *o = meta_bitmap->bitmap;
 
-    /* Lookup, check for type, and return 0 for non existing keys. */
-    if ((o = lookupKeyReadOrReply(c,c->argv[1],shared.czero)) == NULL ||
-        checkType(c,o,OBJ_STRING)) return;
     p = getObjectReadOnlyString(o,&strlen,llbuf);
+
+    /* maybe meta is just a marker */
+    size_t bitmap_size = meta_bitmap->meta == NULL? strlen:metaBitmapGetSize(meta_bitmap);
 
     /* Parse start/end range if any. */
     if (c->argc == 4) {
@@ -808,15 +808,15 @@ void bitcountCommand(client *c) {
             addReply(c,shared.czero);
             return;
         }
-        if (start < 0) start = strlen+start;
-        if (end < 0) end = strlen+end;
+        if (start < 0) start = bitmap_size+start;
+        if (end < 0) end = bitmap_size+end;
         if (start < 0) start = 0;
         if (end < 0) end = 0;
-        if (end >= strlen) end = strlen-1;
+        if (end >= bitmap_size) end = bitmap_size-1;
     } else if (c->argc == 2) {
         /* The whole string. */
         start = 0;
-        end = strlen-1;
+        end = bitmap_size-1;
     } else {
         /* Syntax error. */
         addReplyErrorObject(c,shared.syntaxerr);
@@ -828,10 +828,30 @@ void bitcountCommand(client *c) {
     if (start > end) {
         addReply(c,shared.czero);
     } else {
+        long cold_subkeys_size = metaBitmapGetColdSubkeysSize(meta_bitmap, start);
+
+        start -= cold_subkeys_size;
+        end -= cold_subkeys_size;
+
         long bytes = end-start+1;
 
         addReplyLongLong(c,redisPopcount(p+start,bytes));
     }
+}
+
+/* BITCOUNT key [start end] */
+void bitcountCommand(client *c) {
+    robj *o;
+
+    /* Lookup, check for type, and return 0 for non existing keys. */
+    if ((o = lookupKeyReadOrReply(c,c->argv[1],shared.czero)) == NULL ||
+        checkType(c,o,OBJ_STRING)) return;
+
+    objectMeta *om = lookupMeta(c->db,c->argv[1]);
+    metaBitmap meta_bitmap;
+    serverAssert(om != NULL && om->swap_type == SWAP_TYPE_BITMAP);
+    metaBitmapInit(&meta_bitmap, om->ptr, o);
+    metaBitmapBitcount(&meta_bitmap, c);
 }
 
 void metaBitmapBitpos(metaBitmap *meta_bitmap, client *c, long bit)

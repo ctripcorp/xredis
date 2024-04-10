@@ -999,6 +999,7 @@ long metaBitmapGetSize(metaBitmap *meta_bitmap);
 void metaBitmapGrow(metaBitmap *meta_bitmap, size_t byte);
 long metaBitmapGetColdSubkeysSize(metaBitmap *meta_bitmap, long offset);
 void metaBitmapBitpos(metaBitmap *meta_bitmap, client *c, long bit);
+void metaBitmapBitcount(metaBitmap *meta_bitmap, client *c);
 
 /* MetaScan */
 #define DEFAULT_SCANMETA_BUFFER 16
