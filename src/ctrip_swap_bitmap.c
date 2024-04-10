@@ -233,9 +233,9 @@ void bitmapObjectMetaDup(struct objectMeta *dup_meta, struct objectMeta *object_
 sds bitmapMetaDump(sds result, bitmapMeta *bm) {
     // check marker
     if (bm == NULL) {
-        result = sdscatprintf(result,"(marker=true,size=0,pure_cold_subkeys_num=0)");
+        result = sdscatprintf(result,"(marker=true,size=0,pure_cold_subkeys_num=0,)");
     } else {
-        result = sdscatprintf(result,"(marker=false,size=%ld,pure_cold_subkeys_num=%ld)",
+        result = sdscatprintf(result,"(marker=false,size=%ld,pure_cold_subkeys_num=%ld,)",
             bm->size,bm->pure_cold_subkeys_num);
     }
     return result;
@@ -356,17 +356,17 @@ robj *bitmapObjectMerge(robj *bitmap_object, bitmapMeta *meta, deltaBitmap *delt
             actual_new_bitmap_len += BITMAP_SUBKEY_SIZE * subkeys_num_ahead;
         }
 
-
-        memcpy((char*)new_bitmap->ptr + offset_in_new_bitmap, delta_bm->subvals[i], sdslen(delta_bm->subvals[i]));
-        offset_in_new_bitmap += sdslen(delta_bm->subvals[i]);
-        actual_new_bitmap_len += sdslen(delta_bm->subvals[i]);
-
         if (bitmapMetaGetSubkeyStatus(meta, delta_bm->subkeys_logic_idx[i], delta_bm->subkeys_logic_idx[i]) == 1) {
-            /* subkey both exist in redis and rocksDb. */
-            offset_in_old_bitmap += sdslen(delta_bm->subvals[i]);
+            /* subkey both exist in redis and rocksDb.
+             * need to copy the buffer in old bitmap, so remain the hot subkey copying in next operation. */
+            subkeys_idx_cursor = delta_bm->subkeys_logic_idx[i];
+        } else {
+            memcpy((char*)new_bitmap->ptr + offset_in_new_bitmap, delta_bm->subvals[i], sdslen(delta_bm->subvals[i]));
+            offset_in_new_bitmap += sdslen(delta_bm->subvals[i]);
+            actual_new_bitmap_len += sdslen(delta_bm->subvals[i]);
+            subkeys_idx_cursor = delta_bm->subkeys_logic_idx[i] + 1;
         }
 
-        subkeys_idx_cursor = delta_bm->subkeys_logic_idx[i] + 1;
     }
 
     if (offset_in_old_bitmap < old_obj_len) {
@@ -509,7 +509,7 @@ int bitmapSwapAnaOutSelectSubkeys(swapData *data, bitmapDataCtx *datactx, int *m
 
     int subkeys_num = BITMAP_GET_SUBKEYS_NUM(meta->size, BITMAP_SUBKEY_SIZE);
 
-    int hot_subkeys_num = BITMAP_GET_SUBKEYS_NUM(stringObjectLen(data->value), BITMAP_SUBKEY_SIZE);  // value 可能 等于 NULL
+    int hot_subkeys_num = BITMAP_GET_SUBKEYS_NUM(stringObjectLen(data->value), BITMAP_SUBKEY_SIZE);
     serverAssert(hot_subkeys_num == bitmapMetaGetHotSubkeysNum(meta, 0, subkeys_num - 1));
 
     int subkeys_num_may_swapout = 0;
@@ -886,9 +886,9 @@ void *bitmapCreateOrMergeObject(swapData *data, void *decoded_, void *datactx)
 
     /* update meta */
     for (int i = 0; i < delta_bm->subkeys_num; i++) {
-        if (rbmGetBitRange(meta->subkeys_status, delta_bm->subkeys_logic_idx[i], delta_bm->subkeys_logic_idx[i]) == 0) {
+        if (bitmapMetaGetSubkeyStatus(meta, delta_bm->subkeys_logic_idx[i], delta_bm->subkeys_logic_idx[i]) == 0) {
             meta->pure_cold_subkeys_num -= 1;
-            rbmSetBitRange(meta->subkeys_status, delta_bm->subkeys_logic_idx[i], delta_bm->subkeys_logic_idx[i]);
+            bitmapMetaSetSubkeyStatus(meta, delta_bm->subkeys_logic_idx[i], delta_bm->subkeys_logic_idx[i], STATUS_HOT);
         }
     }
 
