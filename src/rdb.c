@@ -1342,6 +1342,8 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi, int rordb) 
             if (rdbSaveRocks(rdb,error,db,rdbflags)) goto werr;
         }
         dbResumeRehash(db);
+        listRelease(hot_keys_extension);
+        hot_keys_extension = NULL;
     }
 
     /* If we are storing the replication information on disk, persist
@@ -1369,13 +1371,19 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi, int rordb) 
     cksum = rdb->cksum;
     memrev64ifbe(&cksum);
     if (rioWrite(rdb,&cksum,8) == 0) goto werr;
-    if(hot_keys_extension) listRelease(hot_keys_extension);
+    if (hot_keys_extension) {
+        listRelease(hot_keys_extension);
+        hot_keys_extension = NULL;
+    }
     return C_OK;
 
 werr:
     if (error && *error == 0) *error = errno;
     if (di) dictReleaseIterator(di);
-    if(hot_keys_extension) listRelease(hot_keys_extension);
+    if (hot_keys_extension) {
+        listRelease(hot_keys_extension);
+        hot_keys_extension = NULL;
+    }
     return C_ERR;
 }
 

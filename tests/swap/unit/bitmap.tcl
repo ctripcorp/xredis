@@ -5,7 +5,6 @@ proc set_small_bitmap {}  {
 
 proc build_pure_hot_small_bitmap {}  {
     # each fragment need to set 1 bit, for bitcount test 
-    r flushdb
     set_small_bitmap
     assert [bitmap_object_is_pure_hot r mybitmap1]
 }
@@ -97,9 +96,23 @@ proc check_small_bitmap_bitpos9 {}  {
     assert_equal {1} [r bitpos small_bitmap 0 -1 1]
 }
 
-
-
+# only serve for checking
 proc set_data0 {} {
+	# 335872 bit = 41 kb
+    r setbit mybitmap0 32767 1
+    r setbit mybitmap0 65535 1
+    r setbit mybitmap0 98303 1
+    r setbit mybitmap0 131071 1
+    r setbit mybitmap0 163839 1
+    r setbit mybitmap0 196607 1
+    r setbit mybitmap0 229375 1
+    r setbit mybitmap0 262143 1
+    r setbit mybitmap0 294911 1
+    r setbit mybitmap0 327679 1
+    r setbit mybitmap0 335871 1
+}
+
+proc set_data1 {} {
 	# 335872 bit = 41 kb
     r setbit mybitmap1 32767 1
     r setbit mybitmap1 65535 1
@@ -114,7 +127,7 @@ proc set_data0 {} {
     r setbit mybitmap1 335871 1
 }
 
-proc set_data1 {} {
+proc set_data2 {} {
 	# 335872 bit = 41 kb
     r setbit mybitmap2 32767 1
     r setbit mybitmap2 65535 1
@@ -131,9 +144,14 @@ proc set_data1 {} {
 
 proc build_pure_hot_data {}  {
     # each fragment need to set 1 bit, for bitcount test 
-    r flushdb
-    set_data0
+    set_data1
     assert [bitmap_object_is_pure_hot r mybitmap1]
+}
+
+proc build_pure_hot_data2 {}  {
+    # each fragment need to set 1 bit, for bitcount test 
+    set_data2
+    assert [bitmap_object_is_pure_hot r mybitmap2]
 }
 
 proc build_cold_data {}  {
@@ -772,25 +790,36 @@ proc check_mybitmap2  {}  {
 }
 
 proc check_mybitmap1_is_right {} {
-    set_data1
-    assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap2]
+    set_data0
+    assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap0]
 
    # press_enter_to_continue
 
     assert_equal {11} [r bitcount mybitmap1 0 41983]
-    assert_equal {11} [r bitcount mybitmap2]
+    assert_equal {11} [r bitcount mybitmap0]
     assert_equal {0} [r bitcount dest]
 }
 
 proc check_extend_mybitmap1_is_right {} {
-    set_data1
-    assert_equal {46080} [r bitop XOR dest mybitmap1 mybitmap2]
+    set_data0
+    assert_equal {46080} [r bitop XOR dest mybitmap1 mybitmap0]
 
    # press_enter_to_continue
 
     assert_equal {12} [r bitcount mybitmap1]
-    assert_equal {11} [r bitcount mybitmap2]
+    assert_equal {11} [r bitcount mybitmap0]
     assert_equal {1} [r bitcount dest]
+}
+
+proc check_mybitmap2_is_right {} {
+    set_data0
+    assert_equal {41984} [r bitop XOR dest mybitmap2 mybitmap0]
+
+   # press_enter_to_continue
+
+    assert_equal {11} [r bitcount mybitmap2 0 41983]
+    assert_equal {11} [r bitcount mybitmap0]
+    assert_equal {0} [r bitcount dest]
 }
 
 start_server {
@@ -1023,14 +1052,14 @@ start_server {
 
         check_mybitmap1_bitpos54
 
-        set_data1
+        set_data0
         #press_enter_to_continue
-        assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap2]
+        assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap0]
 
         # press_enter_to_continue
 
         assert_equal {18} [r bitcount mybitmap1 0 41983]
-        assert_equal {11} [r bitcount mybitmap2]
+        assert_equal {11} [r bitcount mybitmap0]
         assert_equal {7} [r bitcount dest]
 
         r flushdb
@@ -1134,14 +1163,14 @@ start_server {
 
         check_mybitmap1_bitpos54
 
-        set_data1
+        set_data0
         #press_enter_to_continue
-        assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap2]
+        assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap0]
 
         # press_enter_to_continue
 
         assert_equal {18} [r bitcount mybitmap1 0 41983]
-        assert_equal {11} [r bitcount mybitmap2]
+        assert_equal {11} [r bitcount mybitmap0]
         assert_equal {7} [r bitcount dest]
 
         r flushdb
@@ -1321,12 +1350,12 @@ start_server {
             eval $data_str
 
             check_mybitmap1_bitpos54
-            set_data1
+            set_data0
 
-            assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap2]
+            assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap0]
 
             assert_equal {18} [r bitcount mybitmap1 0 41983]
-            assert_equal {11} [r bitcount mybitmap2]
+            assert_equal {11} [r bitcount mybitmap0]
             assert_equal {7} [r bitcount dest]
 
             r flushdb
@@ -1440,12 +1469,12 @@ start_server {
 
         check_mybitmap1_bitpos54
 
-        set_data1
+        set_data0
 
-        assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap2]
+        assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap0]
 
         assert_equal {18} [r bitcount mybitmap1 0 41983]
-        assert_equal {11} [r bitcount mybitmap2]
+        assert_equal {11} [r bitcount mybitmap0]
         assert_equal {7} [r bitcount dest]
 
         r flushdb
@@ -1636,140 +1665,93 @@ start_server  {
     }
 }
 
-proc build_pure_hot_rdb  {}  {
-    r flushdb
-    r setbit mybitmap1 0 1
-    r setbit mybitmap1 335871 1
-    r setbit mybitmap2 0 1
-    r setbit mybitmap2 335871 1
-    assert_equal [bitmap_object_is_pure_hot r mybitmap1]
-}
-
-proc build_extend_hot_rdb  {}  {
-    r flushdb
-    r setbit mybitmap1 0 1
-    r setbit mybitmap1 335871 1
-    r swap.evict mybitmap1
-    wait_key_cold r mybitmap1
-    r bitcount mybitmap1
-    r setbit mybitmap1 368639 1
-
-    r setbit mybitmap2 0 1
-    r setbit mybitmap2 335871 1
-    r swap.evict mybitmap2
-    wait_key_cold r mybitmap2
-    r bitcount mybitmap2
-    r setbit mybitmap2 368639 1
-    assert_equal [object_is_hot r mybitmap1]
-}
-
-proc build_warm_rdb  {}  {
-    r flushdb
-    # mybitmap 41kb
-    r setbit mybitmap1 0 1
-    r setbit mybitmap1 335871 1
-    r swap.evict mybitmap1
-    wait_key_cold r mybitmap1
-    r bitcount mybitmap1
-    r setbit mybitmap1 368639 1
-
-    r setbit mybitmap2 0 1
-    r setbit mybitmap2 335871 1
-    r swap.evict mybitmap2
-    wait_key_cold r mybitmap2
-    r bitcount mybitmap2
-    r setbit mybitmap2 368639 1
-    assert_equal [object_is_warm r mybitmap1]
-}
-
-proc build_cold_rdb  {}  {
-    r flushdb
-    r setbit mybitmap1 0 1
-    r setbit mybitmap1 335871 1
-    r swap.evict mybitmap1
-    r bitcount mybitmap1
-    r setbit mybitmap1 368639 1
-
-    r setbit mybitmap2 0 1
-    r setbit mybitmap2 335871 1
-    r swap.evict mybitmap2
-    r bitcount mybitmap2
-    r setbit mybitmap2 368639 1
-    r debug reload
-    assert_equal [object_is_cold r mybitmap1]
-}
-
 start_server {
     tags {"bitmap rdb"}
 }   {
     r config set swap-debug-evict-keys 0
 
     test {pure hot rdbsave and rdbload} {
+        r flushdb
+
         # mybitmap 41kb
         build_pure_hot_data
+
+        build_pure_hot_data2
+
         r debug reload
         # check_data
-        assert_equal {1} [r getbit mybitmap1 32767]
-        assert_equal {1} [r getbit mybitmap1 65535]
-        assert_equal {41984} [r bitop not dest mybitmap1]
-        assert_equal {11} [r bitcount mybitmap1]
-        r del mybitmap1
-        r del mybitmap2
-        assert_equal {0} [r bitcount mybitmap1]
+
+        check_mybitmap1_is_right
+        check_mybitmap2_is_right
+
+        r flushdb
     }
 
     test {extend hot rdbsave and rdbload} {
+        r flushdb
+
         # mybitmap 41kb
         build_extend_hot_data
 
         r debug reload
         # check_data
-        assert_equal {1} [r getbit mybitmap1 32767]
-        assert_equal {1} [r getbit mybitmap1 65535]
-        assert_equal {46080} [r bitop not dest mybitmap1]
-        assert_equal {12} [r bitcount mybitmap1]
-        r del mybitmap1
-        r del mybitmap2
-        assert_equal {0} [r bitcount mybitmap1]
+
+        check_extend_mybitmap1_is_right
+
+        r flushdb
+    }
+
+    test {hot rdbsave and rdbload} {
+        r flushdb
+
+        # mybitmap 41kb
+        build_hot_data
+
+        r debug reload
+        # check_data
+
+        check_mybitmap1_is_right
+
+        r flushdb
     }
 
     test {cold rdbsave and rdbload} {
-
+        r flushdb
         # mybitmap 41kb
         build_cold_data
 
-        # check_data
-        assert_equal {1} [r getbit mybitmap1 32767]
-        assert_equal {1} [r getbit mybitmap1 65535]
-        assert_equal {41984} [r bitop not dest mybitmap1]
-        assert_equal {11} [r bitcount mybitmap1]
         r debug reload
         # check_data
-        assert_equal {1} [r getbit mybitmap1 32767]
-        assert_equal {1} [r getbit mybitmap1 65535]
-        assert_equal {41984} [r bitop not dest mybitmap1]
-        assert_equal {11} [r bitcount mybitmap1]
+        check_mybitmap1_is_right
 
-        r del mybitmap1
-        r del mybitmap2
+        r flushdb
     }
 
-    test {cold rdbsave and rdbload with bitmap-subkey-size exchange 4096 to 2048} {
+    test {warm rdbsave and rdbload} {
         # mybitmap 41kb
-        r CONFIG SET bitmap-subkey-size 2048
-        build_cold_data
 
-        r SAVE
-        r DEBUG RELOAD NOSAVE
-        # check_data
-        assert_equal {1} [r getbit mybitmap1 32767]
-        assert_equal {1} [r getbit mybitmap1 65535]
-        assert_equal {41984} [r bitop not dest mybitmap1]
-        assert_equal {11} [r bitcount mybitmap1]
-        r CONFIG SET bitmap-subkey-size 4096
+        for {set i 0} {$i <= 6} {incr i} {
+            r flushdb
+
+            set data_str "build_warm_with_hole"
+
+            append data_str $i
+            
+            eval $data_str
+
+            r debug reload
+            # check_data
+            
+            check_mybitmap1_is_right
+            
+            r flushdb
+        }
     }
+
 
     test {cold rdbsave and rdbload with bitmap-subkey-size exchange 2048 to 4096} {
+        r flushdb
+
         # mybitmap 41kb
         r CONFIG SET bitmap-subkey-size 2048
 
@@ -1778,11 +1760,11 @@ start_server {
         r SAVE
         r CONFIG SET bitmap-subkey-size 4096
         r DEBUG RELOAD NOSAVE
+
         # check_data
-        assert_equal {1} [r getbit mybitmap1 32767]
-        assert_equal {1} [r getbit mybitmap1 65535]
-        assert_equal {41984} [r bitop not dest mybitmap1]
-        assert_equal {11} [r bitcount mybitmap1]
+        check_mybitmap1_is_right
+
+        r flushdb
     }
 }
 
