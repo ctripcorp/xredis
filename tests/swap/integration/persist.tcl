@@ -143,6 +143,7 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         r sadd myset1 a b c
         r rpush mylist1 a b c
         r zadd myzset1 10 a 20 b 30 c
+        r setbit mybitmap1 335871 1
 
         after 100
 
@@ -151,20 +152,23 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         r sadd myset1 b 1 2
         r rpush mylist1 1 2
         r zadd myzset1 21 b 40 1 50 2
+        r setbit mybitmap1 0 1
 
-        assert_equal [r dbsize] 5
+        assert_equal [r dbsize] 6
         assert_equal [r get mystring1] v1
         assert_equal [r hmget myhash1 a b c 1 2] {a0 b1 c0 10 20}
         assert_equal [r lrange mylist1 0 -1] {a b c 1 2}
         assert_equal [r ZRANGEBYSCORE myzset1 -inf +inf WITHSCORES] {a 10 b 21 c 30 1 40 2 50}
+        assert_equal [r bitcount mybitmap1] {2}
 
         restart_server 0 true false
 
-        assert_equal [r dbsize] 5
+        assert_equal [r dbsize] 6
         assert_equal [r get mystring1] v1
         assert_equal [r hmget myhash1 a b c 1 2] {a0 b1 c0 10 20}
         assert_equal [r lrange mylist1 0 -1] {a b c 1 2}
         assert_equal [r ZRANGEBYSCORE myzset1 -inf +inf WITHSCORES] {a 10 b 21 c 30 1 40 2 50}
+        assert_equal [r bitcount mybitmap1] {2}
     }
 
     test {persist dirty keys triggered by swap} {
@@ -174,9 +178,18 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         r hdel myhash2 a
         wait_key_clean r myhash2
 
+        r hmset mybitmap2 0 1
+        r hmset mybitmap2 335871 1
+        wait_key_clean r mybitmap2
+        assert_equal [r getbit mybitmap2 0] {1}
+        assert_equal [r getbit mybitmap2 335871] {1}
+        r setbit mybitmap2 0 0
+        wait_key_clean r mybitmap2
+
         restart_server 0 true false
 
         assert_equal [r hmget myhash2 a b c 1 2] {{} b0 c0 10 20}
+        assert_equal [r bitcount mybitmap2] {1}
     }
 
     test {clean keys stays in memory} {
@@ -185,17 +198,20 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         r sadd myset3 a b c
         r rpush mylist3 a b c
         r zadd myzset3 10 a 20 b 30 c
+        r setbit mybitmap3 335871 1
 
         wait_key_clean r mystring3
         wait_key_clean r myhash3
         wait_key_clean r myset3
         wait_key_clean r myzset3
+        wait_key_clean r mybitmap3
 
         r get mystring3
         r hgetall myhash3
         r smembers myset3
         r lrange mylist3 0 -1
         r ZRANGEBYSCORE myzset3 -inf +inf
+        r getbit mybitmap3
 
         assert [object_is_hot r mystring3]
         assert [object_is_hot r myhash3]
@@ -204,6 +220,7 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         # in either rocksdb or redis.
         assert [object_is_cold r mylist3]
         assert [object_is_hot r myzset3]
+        assert [object_is_hot r mybitmap3]
     }
 
     test {persist multiple times untill clean for big keys} {
