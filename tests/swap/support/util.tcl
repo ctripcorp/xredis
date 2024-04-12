@@ -74,13 +74,6 @@ proc object_is_cold {r key} {
 
 proc object_is_warm {r key} {
     set str [$r swap object $key]
-    if { [swap_object_property $str cold_meta swap_type] == 7 } {
-        if { [swap_object_property $str value at] != "" && [swap_object_property $str cold_meta pure_cold_subkeys_num] != "" && [swap_object_property $str hot_meta swap_type] != "" } {
-            set _ 1
-        } else {
-            set _ 0
-        }
-    }
     if { [swap_object_property $str value at] != "" && [swap_object_property $str hot_meta swap_type] != ""} {
         set _ 1
     } else {
@@ -109,7 +102,7 @@ proc object_is_hot {r key} {
             # 预期 hot44444444444444444444 非空
             # puts "\nhot44444444444444444444 [swap_object_property $str value at]"
             # 预期 hot55555555555555555555 为 0
-            # puts "\nhot55555555555555555555 [swap_object_property $str cold_meta pure_cold_subkeys_num]"
+            # puts "\nhot55555555555555555555 [swap_object_property $str hot_meta pure_cold_subkeys_num]"
             # 预期 hot66666666666666666666 非空
             # puts "\nhot66666666666666666666 [swap_object_property $str hot_meta swap_type]"
             if { [swap_object_property $str value at] != "" && [swap_object_property $str hot_meta pure_cold_subkeys_num] == 0 && [swap_object_property $str hot_meta swap_type] != "" } {
