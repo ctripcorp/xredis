@@ -70,6 +70,7 @@ set ::disk_tests {
     swap/unit/slowlog
     swap/unit/scripting
     swap/unit/bitmap
+    swap/unit/bitmap_persist
     unit/shutdown
     ctrip/gtid_merge
     ctrip/gtid
