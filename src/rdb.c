@@ -1277,10 +1277,10 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi, int rordb) 
 
     list *hot_keys_extension = NULL;
     for (j = 0; j < server.dbnum; j++) {
-        hot_keys_extension = listCreate();
-
         redisDb *db = server.db+j;
         if (ctripDbSize(db) == 0) continue;
+
+        hot_keys_extension = listCreate();
 
         /* Write the SELECT DB opcode */
         if (rdbSaveType(rdb,RDB_OPCODE_SELECTDB) == -1) goto werr;
@@ -1342,8 +1342,10 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi, int rordb) 
             if (rdbSaveRocks(rdb,error,db,rdbflags)) goto werr;
         }
         dbResumeRehash(db);
-        listRelease(hot_keys_extension);
-        hot_keys_extension = NULL;
+        if (hot_keys_extension) {
+            listRelease(hot_keys_extension);
+            hot_keys_extension = NULL;
+        }
     }
 
     /* If we are storing the replication information on disk, persist

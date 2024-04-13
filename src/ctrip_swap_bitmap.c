@@ -244,7 +244,7 @@ sds bitmapMetaDump(sds result, bitmapMeta *bm) {
     if (bm == NULL) {
         result = sdscatprintf(result,"(marker=true,size=0,pure_cold_subkeys_num=0,)");
     } else {
-        result = sdscatprintf(result,"(marker=false,size=%ld,pure_cold_subkeys_num=%ld,)",
+        result = sdscatprintf(result,"(marker=false,size=%ld,pure_cold_subkeys_num=%d,)",
             bm->size,bm->pure_cold_subkeys_num);
     }
     return result;
@@ -521,6 +521,7 @@ int bitmapSwapAnaOutSelectSubkeys(swapData *data, bitmapDataCtx *datactx, int *m
     int subkeys_num = BITMAP_GET_SUBKEYS_NUM(meta->size, BITMAP_SUBKEY_SIZE);
 
     int hot_subkeys_num = BITMAP_GET_SUBKEYS_NUM(stringObjectLen(data->value), BITMAP_SUBKEY_SIZE);
+    // ToDo: failed assert
     serverAssert(hot_subkeys_num == bitmapMetaGetHotSubkeysNum(meta, 0, subkeys_num - 1));
 
     int subkeys_num_may_swapout = 0;
@@ -877,6 +878,9 @@ void *bitmapCreateOrMergeObject(swapData *data, void *decoded_, void *datactx)
 
     if (swapDataIsCold(data)) {
         result = deltaBitmapMakeBitmapObject(delta_bm);
+        serverLog(LL_NOTICE, "bitmapCreateOrMergeObject create cold obj, result ref count: %d",
+            result->refcount
+        );
     } else {
         bitmapMeta *meta = swapDataGetBitmapMeta(data);
         robj *decoded_bitmap = getDecodedObject(data->value);
@@ -920,6 +924,12 @@ int bitmapSwapIn(swapData *data, void *result, void *datactx) {
     UNUSED(datactx);
     /* hot key no need to swap in, this must be a warm or cold key. */
     serverAssert(swapDataPersisted(data));
+    if (result) {
+        robj* _result = result;
+        serverLog(LL_NOTICE, "bitmapSwapIn, result ref count: %d",
+                _result->refcount
+        );
+    }
 
     if (swapDataIsCold(data) && result != NULL /* may be empty */) {
         /* cold key swapped in result. */
@@ -1525,11 +1535,10 @@ int bitmapSave(rdbKeySaveData *save, rio *rdb, decodedData *decoded) {
         subvalobj = unshareStringValue(subvalobj);
         /* steal subvalobj sds */
         sds subval = subvalobj->ptr;
-        subvalobj->ptr = NULL;
-
+        int retval = rdbWriteRaw(rdb,subval,sdslen(subval));
         decrRefCount(subvalobj);
 
-        if (rdbWriteRaw(rdb,subval,sdslen(subval)) == -1) {
+        if (retval == -1) {
             return -1;
         }
 
