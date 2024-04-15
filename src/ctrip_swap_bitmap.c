@@ -1400,6 +1400,7 @@ int bitmapSaveHotSubkeysUntill(rdbKeySaveData *save, rio *rdb, int idx, int rdbt
     serverAssert(idx - iter->subkey_idx == hot_subkeys_num_to_save);
 
     if (rdbtype == RDB_TYPE_STRING) {
+        /* RDB_TYPE_STRING */
 
         size_t hot_subkeys_size_to_save;
 

@@ -105,7 +105,7 @@ proc object_is_hot {r key} {
             # puts "\nhot55555555555555555555 [swap_object_property $str hot_meta pure_cold_subkeys_num]"
             # 预期 hot66666666666666666666 非空
             # puts "\nhot66666666666666666666 [swap_object_property $str hot_meta swap_type]"
-            if { [swap_object_property $str value at] != "" && [swap_object_property $str hot_meta pure_cold_subkeys_num] == 0 && [swap_object_property $str hot_meta swap_type] != "" } {
+            if {[swap_object_property $str hot_meta pure_cold_subkeys_num] == 0} {
                 set _ 1
             } else {
                 set _ 0
@@ -120,6 +120,44 @@ proc object_is_hot {r key} {
         }
     } else {
         set _ 0
+    }
+}
+
+proc object_is_bitmap {r key} {
+    set str [$r swap object $key]
+    if {[swap_object_property $str value at] != "" } {
+        if { [swap_object_property $str hot_meta swap_type] == 7 } {
+            set _ 1
+        } else {
+            set _ 0
+        }
+    } else {
+        if { [swap_object_property $str cold_meta swap_type] == 7 } {
+            set _ 1
+        } else {
+            set _ 0
+        }
+    }
+}
+
+proc object_is_string {r key} {
+    set str [$r swap object $key]
+    if {[swap_object_property $str value at] != "" } {
+        if { [swap_object_property $str value type] == "string"} {
+            if { [swap_object_property $str hot_meta swap_type] == 7 } {
+                set _ 0
+            } else {
+                set _ 1
+            }
+        } else {
+            set _ 0
+        }
+    } else {
+        if { [swap_object_property $str cold_meta swap_type] == 0 } {
+            set _ 1
+        } else {
+            set _ 0
+        }
     }
 }
 

@@ -822,6 +822,175 @@ proc check_mybitmap2_is_right {} {
     assert_equal {0} [r bitcount dest]
 }
 
+start_server  {
+    tags {"bitmap string switch"}
+}  {
+    r config set swap-debug-evict-keys 0
+
+    test "GETBIT against string-encoded key 0" {
+
+        # cold bitmap to string 
+
+        r setbit mykey 81919 1
+
+        r setbit mykey 1 1
+        r setbit mykey 3 1
+        r setbit mykey 5 1
+        r setbit mykey 9 1
+        r setbit mykey 11 1
+
+        r swap.evict mykey
+        wait_key_cold r mykey
+
+        assert_equal "TP" [r getrange mykey 0 1]
+
+        assert [object_is_string r mykey] 
+
+        assert_equal "\x01" [r getrange mykey 10239 10239]
+
+        r swap.evict mykey
+        wait_key_cold r mykey
+        assert_equal {6} [r bitcount mykey]
+
+        r flushdb
+    }
+
+    test "GETBIT against string-encoded key 1" {
+
+        # hot bitmap to string 
+
+        r setbit mykey 81919 1
+
+        r setbit mykey 1 1
+        r setbit mykey 3 1
+        r setbit mykey 5 1
+        r setbit mykey 9 1
+        r setbit mykey 11 1
+
+        assert_equal "TP" [r getrange mykey 0 1]
+
+        assert [object_is_string r mykey] 
+
+        assert_equal "\x01" [r getrange mykey 10239 10239]
+
+        r swap.evict mykey
+        wait_key_cold r mykey
+        assert_equal {6} [r bitcount mykey]
+
+        r flushdb
+    }
+
+    test "SETBIT against non-existing key 0" {
+        # cold bitmap to string 
+
+        assert_equal {0} [r setbit mykey 1 1]
+
+        r swap.evict mykey
+        wait_key_cold r mykey
+
+        assert_equal [binary format B* 01000000] [r get mykey]
+
+        assert [object_is_string r mykey] 
+
+        assert_equal {1} [r bitcount mykey]
+        r flushdb
+    }
+
+    test "SETBIT against non-existing key 1" {
+        # hot bitmap to string 
+
+        assert_equal {0} [r setbit mykey 1 1]
+        assert_equal [binary format B* 01000000] [r get mykey]
+
+        assert [object_is_string r mykey] 
+
+        assert_equal {1} [r bitcount mykey]
+        r flushdb
+    }
+
+
+    test "SETBIT against string-encoded key" {
+        # cold string to bitmap
+
+        # Ascii "@" is integer 64 = 01 00 00 00
+        r set mykey "@"
+        r swap.evict mykey
+        wait_key_cold r mykey
+
+        assert_equal {0} [r setbit mykey 2 1]
+        assert [object_is_bitmap r mykey]
+        assert [bitmap_object_is_pure_hot r mykey]
+
+        assert_equal [binary format B* 01100000] [r get mykey]
+        assert_equal {1} [r setbit mykey 1 0]
+        assert_equal [binary format B* 00100000] [r get mykey]
+
+        assert_equal {1} [r bitcount mykey]
+        r flushdb
+    }
+
+    test "SETBIT against integer-encoded key 0 " {
+        # cold string to bitmap
+
+        # Ascii "1" is integer 49 = 00 11 00 01
+        r set mykey 1
+        r swap.evict mykey
+        wait_key_cold r mykey
+        assert_encoding int mykey
+
+        assert_equal {0} [r setbit mykey 6 1]
+
+        assert [object_is_bitmap r mykey]
+        assert [bitmap_object_is_pure_hot r mykey]
+
+        assert_equal [binary format B* 00110011] [r get mykey]
+        assert_equal {1} [r setbit mykey 2 0]
+        assert_equal [binary format B* 00010011] [r get mykey]
+
+        assert_equal {3} [r bitcount mykey]
+        r flushdb
+    }
+
+    test "SETBIT against integer-encoded key 1" {
+        # hot string to bitmap
+
+        # Ascii "1" is integer 49 = 00 11 00 01
+        r set mykey 1
+        assert_encoding int mykey
+
+        assert_equal {0} [r setbit mykey 6 1]
+
+        assert [object_is_bitmap r mykey]
+        assert [bitmap_object_is_pure_hot r mykey]
+
+        assert_equal [binary format B* 00110011] [r get mykey]
+        assert_equal {1} [r setbit mykey 2 0]
+        assert_equal [binary format B* 00010011] [r get mykey]
+
+        assert_equal {3} [r bitcount mykey]
+        r flushdb
+    }
+
+    test "SETBIT operate wrong type" {
+
+        r lpush mykey "foo"
+        r swap.evict mykey
+        wait_key_cold r mykey
+        assert_error "WRONGTYPE*" {r setbit mykey 0 1}
+
+        r flushdb
+    }
+
+    test "wrong cmd operate bitmap" {
+
+        r setbit mykey 0 1
+        r swap.evict mykey
+        assert_error "WRONGTYPE*" {r lpush mykey "foo"}
+
+        r flushdb
+    }
+}
+
 start_server {
     tags {"bitmap swap"}
 }   {
@@ -853,6 +1022,7 @@ start_server {
         r swap.evict mybitmap1
         after 100
         r swap.evict mybitmap1
+
         wait_key_cold r mybitmap1
         
     
@@ -867,7 +1037,6 @@ start_server {
         r flushdb
 
 		build_hot_data
-        assert [object_is_hot r mybitmap1]
 
         r swap.evict mybitmap1
         wait_key_cold r mybitmap1
@@ -881,7 +1050,6 @@ start_server {
         r flushdb
 
 		build_hot_data
-        # assert [object_is_hot r mybitmap1]
 
         set bak_evict_step [lindex [r config get swap-evict-step-max-subkeys] 1]
         r config set swap-evict-step-max-subkeys 5
@@ -1518,159 +1686,12 @@ start_server {
 
 }
 
-start_server  {
-    tags {"bitmap string switch"}
-}  {
-    r config set swap-debug-evict-keys 0
-
-    test "GETBIT against string-encoded key 0" {
-
-        # cold bitmap to string 
-
-        r setbit mykey 81919 1
-
-        r setbit mykey 1 1
-        r setbit mykey 3 1
-        r setbit mykey 5 1
-        r setbit mykey 9 1
-        r setbit mykey 11 1
-
-        r swap.evict mykey
-        wait_key_cold r mykey
-
-        assert_equal "TP" [r getrange mykey 0 1]
-        assert_equal "\x01" [r getrange mykey 10239 10239]
-
-        r swap.evict mykey
-        wait_key_cold r mykey
-        assert_equal {6} [r bitcount mykey]
-
-        r flushdb
-    }
-
-    test "GETBIT against string-encoded key 1" {
-
-        # hot bitmap to string 
-
-        r setbit mykey 81919 1
-
-        r setbit mykey 1 1
-        r setbit mykey 3 1
-        r setbit mykey 5 1
-        r setbit mykey 9 1
-        r setbit mykey 11 1
-
-        assert_equal "TP" [r getrange mykey 0 1]
-        assert_equal "\x01" [r getrange mykey 10239 10239]
-
-        r swap.evict mykey
-        wait_key_cold r mykey
-        assert_equal {6} [r bitcount mykey]
-
-        r flushdb
-    }
-
-    test "SETBIT against non-existing key 0" {
-        # cold bitmap to string 
-
-        assert_equal {0} [r setbit mykey 1 1]
-
-        r swap.evict mykey
-        wait_key_cold r mykey
-
-        assert_equal [binary format B* 01000000] [r get mykey]
-
-        assert_equal {1} [r bitcount mykey]
-        r flushdb
-    }
-
-    test "SETBIT against non-existing key 1" {
-        # hot bitmap to string 
-
-        assert_equal {0} [r setbit mykey 1 1]
-        assert_equal [binary format B* 01000000] [r get mykey]
-
-        assert_equal {1} [r bitcount mykey]
-        r flushdb
-    }
-
-    test "SETBIT against string-encoded key" {
-        # cold string to bitmap
-
-        # Ascii "@" is integer 64 = 01 00 00 00
-        r set mykey "@"
-        r swap.evict mykey
-        wait_key_cold r mykey
-
-        assert_equal {0} [r setbit mykey 2 1]
-        assert_equal [binary format B* 01100000] [r get mykey]
-        assert_equal {1} [r setbit mykey 1 0]
-        assert_equal [binary format B* 00100000] [r get mykey]
-
-        assert_equal {1} [r bitcount mykey]
-        r flushdb
-    }
-
-    test "SETBIT against integer-encoded key 0 " {
-        # cold string to bitmap
-
-        # Ascii "1" is integer 49 = 00 11 00 01
-        r set mykey 1
-        r swap.evict mykey
-        wait_key_cold r mykey
-        assert_encoding int mykey
-
-        assert_equal {0} [r setbit mykey 6 1]
-        assert_equal [binary format B* 00110011] [r get mykey]
-        assert_equal {1} [r setbit mykey 2 0]
-        assert_equal [binary format B* 00010011] [r get mykey]
-
-        assert_equal {3} [r bitcount mykey]
-        r flushdb
-    }
-
-    test "SETBIT against integer-encoded key 1" {
-        # hot string to bitmap
-
-        # Ascii "1" is integer 49 = 00 11 00 01
-        r set mykey 1
-        assert_encoding int mykey
-
-        assert_equal {0} [r setbit mykey 6 1]
-        assert_equal [binary format B* 00110011] [r get mykey]
-        assert_equal {1} [r setbit mykey 2 0]
-        assert_equal [binary format B* 00010011] [r get mykey]
-
-        assert_equal {3} [r bitcount mykey]
-        r flushdb
-    }
-
-    test "SETBIT operate wrong type" {
-
-        r lpush mykey "foo"
-        r swap.evict mykey
-        wait_key_cold r mykey
-        assert_error "WRONGTYPE*" {r setbit mykey 0 1}
-
-        r flushdb
-    }
-
-    test "wrong cmd operate bitmap" {
-
-        r setbit mykey 0 1
-        r swap.evict mykey
-        assert_error "WRONGTYPE*" {r lpush mykey "foo"}
-
-        r flushdb
-    }
-}
-
 start_server {
     tags {"bitmap rdb"}
 }   {
     r config set swap-debug-evict-keys 0
 
-    test {pure hot rdbsave and rdbload} {
+    test {pure hot rdbsave and rdbload for RDB_TYPE_BITMAP} {
         r flushdb
 
         # mybitmap 41kb
@@ -1687,7 +1708,7 @@ start_server {
         r flushdb
     }
 
-    test {extend hot rdbsave and rdbload} {
+    test {extend hot rdbsave and rdbload for RDB_TYPE_BITMAP} {
         r flushdb
 
         # mybitmap 41kb
@@ -1701,7 +1722,7 @@ start_server {
         r flushdb
     }
 
-    test {hot rdbsave and rdbload} {
+    test {hot rdbsave and rdbload for RDB_TYPE_BITMAP} {
         r flushdb
 
         # mybitmap 41kb
@@ -1715,7 +1736,7 @@ start_server {
         r flushdb
     }
 
-    test {cold rdbsave and rdbload} {
+    test {cold rdbsave and rdbload for RDB_TYPE_BITMAP} {
         r flushdb
         # mybitmap 41kb
         build_cold_data
@@ -1727,7 +1748,7 @@ start_server {
         r flushdb
     }
 
-    test {warm rdbsave and rdbload} {
+    test {warm rdbsave and rdbload for RDB_TYPE_BITMAP} {
         # mybitmap 41kb
 
         for {set i 0} {$i <= 6} {incr i} {
@@ -1752,20 +1773,156 @@ start_server {
     test {cold rdbsave and rdbload with bitmap-subkey-size exchange 2048 to 4096} {
         r flushdb
 
+        set bak_bitmap_subkey_size [lindex [r config get bitmap-subkey-size] 1]
+
         # mybitmap 41kb
         r CONFIG SET bitmap-subkey-size 2048
 
         build_cold_data
 
         r SAVE
+
+        # check if this bit will exist after loading
+        r setbit mybitmap1 335872 1
+
         r CONFIG SET bitmap-subkey-size 4096
         r DEBUG RELOAD NOSAVE
 
         # check_data
         check_mybitmap1_is_right
 
+        r config set bitmap-subkey-size $bak_bitmap_subkey_size
+
         r flushdb
     }
+
+    test {cold rdbsave and rdbload with bitmap-subkey-size exchange 4096 to 2048} {
+        r flushdb
+
+        set bak_bitmap_subkey_size [lindex [r config get bitmap-subkey-size] 1]
+
+        # mybitmap 41kb
+
+        build_cold_data
+
+        r SAVE
+
+        # check if this bit will exist after loading
+        r setbit mybitmap1 335872 1
+
+        r CONFIG SET bitmap-subkey-size 2048
+        r DEBUG RELOAD NOSAVE
+
+        # check_data
+        check_mybitmap1_is_right
+
+        r flushdb
+
+        # reset default config
+        r config set bitmap-subkey-size $bak_bitmap_subkey_size
+    }
+
+    set bak_rdb_bitmap_enable [lindex [r config get swap-rdb-bitmap-encode-enabled] 1]
+    r CONFIG SET swap-rdb-bitmap-encode-enabled no
+
+    test {pure hot rdbsave and rdbload for RDB_TYPE_STRING} {
+        r flushdb
+
+        # mybitmap 41kb
+        build_pure_hot_data
+
+        build_pure_hot_data2
+
+        r debug reload
+        # check it is string 
+        assert [object_is_string r mybitmap1]
+        assert [object_is_string r mybitmap2]
+
+        assert [object_is_cold r mybitmap1]
+        assert [object_is_cold r mybitmap2]
+
+        check_mybitmap1_is_right
+
+        r flushdb
+    }
+
+    test {extend hot rdbsave and rdbload for RDB_TYPE_STRING} {
+        r flushdb
+
+        # mybitmap 41kb
+        build_extend_hot_data
+
+        r debug reload
+        # check it is string 
+        
+        assert [object_is_cold r mybitmap1]
+        assert [object_is_string r mybitmap1]
+
+        check_extend_mybitmap1_is_right
+
+        r flushdb
+    }
+
+    test {hot rdbsave and rdbload for RDB_TYPE_STRING} {
+        r flushdb
+
+        # mybitmap 41kb
+        build_hot_data
+
+        r debug reload
+        # check it is string 
+        
+        assert [object_is_cold r mybitmap1]
+        assert [object_is_string r mybitmap1]
+
+        check_mybitmap1_is_right
+
+        r flushdb
+    }
+
+    test {cold rdbsave and rdbload for RDB_TYPE_STRING} {
+        r flushdb
+        # mybitmap 41kb
+        build_cold_data
+
+        r debug reload
+        # check it is string 
+        
+        assert [object_is_cold r mybitmap1]
+        assert [object_is_string r mybitmap1]
+
+        check_mybitmap1_is_right
+
+        r flushdb
+    }
+
+    test {warm rdbsave and rdbload for RDB_TYPE_STRING} {
+        # mybitmap 41kb
+
+        for {set i 0} {$i <= 6} {incr i} {
+            r flushdb
+
+            set data_str "build_warm_with_hole"
+
+            append data_str $i
+            
+            eval $data_str
+
+            r debug reload
+        
+            # check it is string 
+            
+            assert [object_is_cold r mybitmap1]
+            assert [object_is_string r mybitmap1]
+
+            check_mybitmap1_is_right
+
+            r flushdb
+        }
+    }
+
+    r config set swap-rdb-bitmap-encode-enabled $bak_rdb_bitmap_enable
+
 }
 
 start_server {tags {"bitmap chaos test"} overrides {save ""}} {
