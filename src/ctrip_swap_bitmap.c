@@ -1120,9 +1120,15 @@ int bitmapBeforeCall(swapData *data, keyRequest *key_request, client *c,
         return 0;
     }
     objectMeta *object_meta = lookupMeta(data->db,data->key);
+
+    /* no bitmap in memory, no need to rewrite for hot bitmap. */
+    if (object_meta == NULL) {
+        return 0;
+    }
+
     serverAssert(object_meta != NULL && object_meta->swap_type == SWAP_TYPE_BITMAP);
 
-    /* no need to rewrite. */
+    /* no need to rewrite for hot bitmap. */
     if (bitmapObjectMetaIsHot(object_meta, lookupKey(data->db,data->key,LOOKUP_NOTOUCH))) {
         return 0;
     }

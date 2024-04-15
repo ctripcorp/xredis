@@ -94,6 +94,42 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         assert_equal [r zcard myzset0] 3
         r config set swap-evict-step-max-subkeys $bak_evict_step
     }
+
+    test {persist keep data (bitmap)} {
+
+        r setbit mybitmap0 335871 1
+
+        after 100
+        assert [object_is_hot r mybitmap0]
+
+        assert_equal {1} [r bitcount mybitmap0]
+
+        r swap.evict mybitmap0
+        wait_key_cold r mybitmap0
+
+        # bitcount turn hot, mark data dirty, persist keep all subkeys & clear dirty
+        assert_equal {1} [r bitcount mybitmap0]
+        assert_equal {1} [r setbit mybitmap0 335871 0]
+
+        after 100
+        assert [object_is_hot r mybitmap0]
+        assert_equal {0} [r bitcount mybitmap0]
+
+        r swap.evict mybitmap0
+        wait_key_cold r mybitmap0
+        set bak_evict_step [lindex [r config get swap-evict-step-max-subkeys] 1]
+        r config set swap-evict-step-max-subkeys 2
+
+        # bitcount turn hot, mark data dirty, delete partial subkeys & clear dirty
+        assert_equal {0} [r bitcount mybitmap0]
+
+        assert_equal {0} [r setbit mybitmap0 368639 1]
+
+        wait_key_clean r mybitmap0
+        assert [object_is_warm r mybitmap0]
+        assert_equal {1} [r bitcount mybitmap0]
+        r config set swap-evict-step-max-subkeys $bak_evict_step
+    }
 }
 
 start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subkeys-enabled yes}} {
