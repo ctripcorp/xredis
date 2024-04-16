@@ -274,6 +274,19 @@ proc object_meta_len {r key} {
     }
 }
 
+proc object_meta_pure_cold_subkeys_num {r key} {
+    set str [$r swap object $key]
+    set subkeys_num [swap_object_property $str hot_meta pure_cold_subkeys_num]
+    if {$subkeys_num == ""} {
+        set subkeys_num [swap_object_property $str cold_meta pure_cold_subkeys_num]
+    }
+    if {$subkeys_num != ""} {
+        set _ $subkeys_num
+    } else {
+        set _ 0
+    }
+}
+
 proc object_meta_version {r key} {
     if { [catch {$r swap object $key} e] } {
         set _ 0

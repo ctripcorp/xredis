@@ -880,7 +880,7 @@ void *bitmapCreateOrMergeObject(swapData *data, void *decoded_, void *datactx)
         result = deltaBitmapMakeBitmapObject(delta_bm);
         serverLog(LL_NOTICE, "bitmapCreateOrMergeObject create cold obj, result ref count: %d",
             result->refcount
-        );
+        );  // debuging, need to delete 
     } else {
         bitmapMeta *meta = swapDataGetBitmapMeta(data);
         robj *decoded_bitmap = getDecodedObject(data->value);
@@ -928,7 +928,7 @@ int bitmapSwapIn(swapData *data, void *result, void *datactx) {
         robj* _result = result;
         serverLog(LL_NOTICE, "bitmapSwapIn, result ref count: %d",
                 _result->refcount
-        );
+        ); // debuging, need to delete 
     }
 
     if (swapDataIsCold(data) && result != NULL /* may be empty */) {
@@ -1089,7 +1089,6 @@ void bitmapSetObjectMarkerIfNeeded(redisDb *db, robj *key) {
     objectMeta *object_meta = lookupMeta(db,key);
     if (object_meta == NULL) {
         dbAddMeta(db,key,createBitmapObjectMarker());
-        atomicIncr(server.stat_swap_string_switched_to_bitmap_count, 1);
     }
 }
 
@@ -1097,7 +1096,6 @@ void bitmapClearObjectMarkerIfNeeded(redisDb *db, robj *key) {
     objectMeta *object_meta = lookupMeta(db,key);
     if (object_meta && bitmapObjectMetaIsMarker(object_meta)) {
         dbDeleteMeta(db,key);
-        atomicIncr(server.stat_swap_bitmap_switched_to_other_obj_count, 1);
     }
 }
 
@@ -1130,6 +1128,9 @@ int bitmapBeforeCall(swapData *data, keyRequest *key_request, client *c,
         ((key_request->cmd_flags & CMD_SWAP_DATATYPE_SET) && (key_request->cmd_flags & CMD_SWAP_DATATYPE_KEYSPACE)) ||
         ((key_request->cmd_flags & CMD_SWAP_DATATYPE_ZSET) && (key_request->cmd_flags & CMD_SWAP_DATATYPE_KEYSPACE)))) {
         bitmapClearObjectMarkerIfNeeded(data->db,data->key);
+        if (key_request->cmd_flags & CMD_SWAP_DATATYPE_STRING) {
+            atomicIncr(server.swap_bitmap_switched_to_string_count, 1);
+        }
         return 0;
     }
 
@@ -1792,7 +1793,7 @@ void bitmapLoadInit(rdbKeyLoadData *load) {
 sds genSwapBitmapStringSwitchedInfoString(sds info)
 {
     info = sdscatprintf(info,
-            "stat_swap_string_switched_to_bitmap_count:%llu, stat_swap_bitmap_switched_to_other_obj_count:%llu\r\n",server.stat_swap_string_switched_to_bitmap_count,server.stat_swap_bitmap_switched_to_other_obj_count);
+            "bitmap_string_switched_count:string_to_bitmap_count=%llu, bitmap_to_string_count=%llu\r\n",server.swap_string_switched_to_bitmap_count,server.swap_bitmap_switched_to_string_count);
     return info;
 }
 
