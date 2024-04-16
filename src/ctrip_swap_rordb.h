@@ -87,6 +87,8 @@ static inline int rordbOpcodeFromSwapType(int swap_type) {
     return RORDB_OPCODE_ZSET;
   case SWAP_TYPE_LIST:
     return RORDB_OPCODE_LIST;
+  case SWAP_TYPE_BITMAP:
+    return RORDB_OPCODE_BITMAP;
   default:
     serverPanic("unexpected swap_type.");
     return -1;
@@ -103,6 +105,8 @@ static inline int rordbSwapTypeFromOpcode(int type) {
     return SWAP_TYPE_ZSET;
   case RORDB_OPCODE_LIST:
     return SWAP_TYPE_LIST;
+  case RORDB_OPCODE_BITMAP:
+    return SWAP_TYPE_BITMAP;
   default:
     serverPanic("unexpected type.");
     return -1;

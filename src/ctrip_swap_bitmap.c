@@ -94,7 +94,10 @@ static inline void bitmapMetaInit(bitmapMeta *meta, robj *value)
 }
 
 static inline sds bitmapMetaEncode(bitmapMeta *bm) {
-    serverAssert(bm != NULL);
+    if (bm == NULL) {
+        /* maybe it is just a marker. */
+        return encodeBitmapSize(0);
+    }
     return encodeBitmapSize(bm->size);
 }
 
@@ -102,7 +105,12 @@ static inline bitmapMeta *bitmapMetaDecode(const char *extend, size_t extend_len
     serverAssert(extend_len == sizeof(long));
     bitmapMeta *bitmap_meta = bitmapMetaCreate();
 
-    bitmap_meta->size = decodeBitmapSize(extend);
+    long size = decodeBitmapSize(extend);
+    if (size == 0) {
+        /* maybe it is just a marker. */
+        return NULL;
+    }
+    bitmap_meta->size = size;
     bitmap_meta->pure_cold_subkeys_num = BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE);
     return bitmap_meta;
 }
@@ -170,6 +178,7 @@ static inline void bitmapMetaGrow(bitmapMeta *bitmap_meta, size_t extendSize)
 {
     serverAssert(extendSize > 0);
     if (bitmap_meta == NULL) {
+        /* just a marker, no need to modify.*/
         return;
     }
     int old_subkeys_num = BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE);
@@ -400,6 +409,7 @@ void bitmapSwapAnaInSelectSubKeys(swapData *data, bitmapDataCtx *datactx, struct
     objectMeta *object_meta = swapDataObjectMeta(data);
     serverAssert(!bitmapObjectMetaIsMarker(object_meta));
     bitmapMeta *meta = swapDataGetBitmapMeta(data);
+    serverAssert(meta != NULL);
 
     long required_subkey_start_idx = 0;
     long required_subkey_end_idx = 0;
@@ -506,6 +516,7 @@ int bitmapSwapAnaOutSelectSubkeys(swapData *data, bitmapDataCtx *datactx, int *m
 {
     int noswap; /* if need to swap ? */
     bitmapMeta *meta = swapDataGetBitmapMeta(data);
+    serverAssert(meta != NULL);
 
     int subkeys_num = BITMAP_GET_SUBKEYS_NUM(meta->size, BITMAP_SUBKEY_SIZE);
 
@@ -946,6 +957,7 @@ static int bitmapCleanObject(swapData *data, void *datactx_, int keep_data) {
         serverAssert(datactx->subkeys_num > 0);
         int evicted_max_idx = datactx->subkeys_logic_idx[datactx->subkeys_num - 1];
 
+        serverAssert(meta != NULL);
         long hot_subkeys_num = bitmapMetaGetHotSubkeysNum(meta, 0, evicted_max_idx);
         serverAssert(hot_subkeys_num == datactx->subkeys_num);
 
@@ -1401,6 +1413,7 @@ int bitmapSaveHotSubkeysUntill(rdbKeySaveData *save, rio *rdb, int idx, int rdbt
     robj *decoded_bitmap = getDecodedObject(save->value);
 
     bitmapMeta *bitmap_meta = objectMetaGetPtr(save->object_meta);
+    serverAssert(bitmap_meta != NULL);
 
     int hot_subkeys_num_to_save = bitmapMetaGetHotSubkeysNum(bitmap_meta, iter->subkey_idx, idx - 1);
     serverAssert(idx - iter->subkey_idx == hot_subkeys_num_to_save);
