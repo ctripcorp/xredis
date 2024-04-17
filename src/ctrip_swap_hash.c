@@ -468,6 +468,9 @@ int hashSwapIn(swapData *data, void *result, void *datactx) {
     UNUSED(datactx);
     /* hot key no need to swap in, this must be a warm or cold key. */
     serverAssert(swapDataPersisted(data));
+    serverLog(LL_NOTICE, "hashSwapIn 471 ==> key %p ref %d str %s",
+        data->key, data->key->refcount, (char *)data->key->ptr
+    );  // debug, to delete 
     if (swapDataIsCold(data) && result != NULL /* may be empty */) {
         /* cold key swapped in result (may be empty). */
         robj *swapin = createSwapInObject(result);
@@ -480,6 +483,10 @@ int hashSwapIn(swapData *data, void *result, void *datactx) {
             dbAddMeta(data->db,data->key,data->cold_meta);
             data->cold_meta = NULL; /* moved */
         }
+        serverLog(LL_NOTICE, "hashSwapIn 486 ==> key %p ref %d str %s, val %p ref %d str %s",
+            data->key, data->key->refcount, (char *)data->key->ptr,
+            swapin, swapin->refcount, (char *)swapin->ptr
+        ); // debug, to delete 
     } else {
         if (result) decrRefCount(result);
         if (data->value) overwriteObjectPersistent(data->value,!data->persistence_deleted);
@@ -561,6 +568,9 @@ void *hashCreateOrMergeObject(swapData *data, void *decoded_, void *datactx) {
         if (decoded) {
             swapDataObjectMetaModifyLen(data,-hashTypeLength(decoded));
         }
+        serverLog(LL_NOTICE, "hashCreateOrMergeObject 571 ==> result %p ref %d str %s",
+            result, result->refcount, (char *)result->ptr
+        );
     } else {
         hashTypeIterator *hi;
         robj *argv[2], subkeyobj, subvalobj;

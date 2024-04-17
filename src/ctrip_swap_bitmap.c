@@ -878,14 +878,47 @@ void *bitmapCreateOrMergeObject(swapData *data, void *decoded_, void *datactx)
 
     if (swapDataIsCold(data)) {
         result = deltaBitmapMakeBitmapObject(delta_bm);
-        serverLog(LL_NOTICE, "bitmapCreateOrMergeObject create cold obj, result ref count: %d",
-            result->refcount
-        );  // debuging, need to delete 
+        serverLog(LL_NOTICE, "bitmapCreateOrMergeObject 881 create cold obj result %p ref %d str %s",
+            result, result->refcount, (char *)result->ptr
+        );  // debug, to delete
     } else {
         bitmapMeta *meta = swapDataGetBitmapMeta(data);
+
+        if (data->value->refcount > 0) {
+            serverLog(LL_NOTICE, "bitmapCreateOrMergeObject 888 create non cold obj data->value %p ref %d str %s",
+                data->value, data->value->refcount, (char *)data->value->ptr
+            );  // debug, to delete
+        }
+
         robj *decoded_bitmap = getDecodedObject(data->value);
+
+        if (decoded_bitmap->refcount > 0) {
+            serverLog(LL_NOTICE, "bitmapCreateOrMergeObject 896 create non cold obj decoded_bitmap %p ref %d str %s",
+                decoded_bitmap, decoded_bitmap->refcount, (char *)decoded_bitmap->ptr
+            );  // debug, to delete
+        }
+
         robj *merged_obj = bitmapObjectMerge(decoded_bitmap, meta, delta_bm);
+
+        if (decoded_bitmap->refcount > 0) {
+            serverLog(LL_NOTICE, "bitmapCreateOrMergeObject 904 create non cold obj decoded_bitmap %p ref %d str %s",
+                decoded_bitmap, decoded_bitmap->refcount, (char *)decoded_bitmap->ptr
+            );  // debug, to delete
+        }
+
         decrRefCount(decoded_bitmap);
+
+        if (decoded_bitmap->refcount > 0) {
+            serverLog(LL_NOTICE, "bitmapCreateOrMergeObject 911 create non cold obj decoded_bitmap %p ref %d str %s",
+                decoded_bitmap, decoded_bitmap->refcount, (char *)decoded_bitmap->ptr
+            );  // debug, to delete
+        }
+
+        if (merged_obj->refcount > 0) {
+            serverLog(LL_NOTICE, "bitmapCreateOrMergeObject 918 create non cold obj merged_obj %p ref %d str %s",
+                merged_obj, merged_obj->refcount, (char *)merged_obj->ptr
+            );  // debug, to delete
+        }
 
         /* replace the old object ptr */
         sds old_ptr = data->value->ptr;
@@ -894,6 +927,7 @@ void *bitmapCreateOrMergeObject(swapData *data, void *decoded_, void *datactx)
         data->value->ptr = merged_obj->ptr;
         merged_obj->ptr = NULL;
         decrRefCount(merged_obj);
+
         result = NULL;
     }
 
@@ -926,25 +960,41 @@ int bitmapSwapIn(swapData *data, void *result, void *datactx) {
     serverAssert(swapDataPersisted(data));
     if (result) {
         robj* _result = result;
-        serverLog(LL_NOTICE, "bitmapSwapIn, result ref count: %d",
-                _result->refcount
-        ); // debuging, need to delete 
+        serverLog(LL_NOTICE, "bitmapSwapIn 943 result %p ref %d str %s",
+            _result, _result->refcount, _result->ptr
+        );  // debug, to delete
     }
 
     if (swapDataIsCold(data) && result != NULL /* may be empty */) {
         /* cold key swapped in result. */
         robj *swapin = createSwapInBitmapObject(result);
+        robj* _result = result;
+        serverLog(LL_NOTICE, "bitmapSwapIn 951 result %p ref %d str %s",
+            _result, _result->refcount, _result->ptr
+        );  // debug, to delete
         /* mark persistent after data swap in without
          * persistence deleted, or mark non-persistent else */
         overwriteObjectPersistent(swapin,!data->persistence_deleted);
         dbAdd(data->db,data->key,swapin);
+        serverLog(LL_NOTICE, "bitmapSwapIn 958 result %p ref %d str %s",
+            _result, _result->refcount, _result->ptr
+        );  // debug, to delete
         /* expire will be swapped in later by swap framework. */
         if (data->cold_meta) {
             dbAddMeta(data->db, data->key, data->cold_meta);
             data->cold_meta = NULL; /* moved */
         }
+        serverLog(LL_NOTICE, "bitmapSwapIn 966 result %p ref %d str %s",
+            _result, _result->refcount, _result->ptr
+        );  // debug, to delete
     } else {
-        if (result) decrRefCount(result);
+        if (result) {
+            robj* _result = result;
+            serverLog(LL_NOTICE, "bitmapSwapIn 973 result %p ref %d str %s",
+                _result, _result->refcount, _result->ptr
+            );  // debug, to delete
+            decrRefCount(result);
+        }
         if (data->value) overwriteObjectPersistent(data->value,!data->persistence_deleted);
     }
 
@@ -1383,6 +1433,7 @@ int bitmapSaveToRdbBitmap(rdbKeySaveData *save, rio *rdb)
 
         if (rdbSaveStringObject(rdb, &subvalobj) == -1) {
             sdsfree(subval);
+            decrRefCount(decoded_bitmap);
             return -1;
         }
 
@@ -1443,11 +1494,13 @@ int bitmapSaveHotSubkeysUntill(rdbKeySaveData *save, rio *rdb, int idx, int rdbt
         }
 
         if (rdbWriteRaw(rdb, (char*)decoded_bitmap->ptr + iter->offset, hot_subkeys_size_to_save) == -1) {
+            decrRefCount(decoded_bitmap);
             return -1;
         }
 
         iter->subkey_idx = idx;
         iter->offset += hot_subkeys_size_to_save;
+        decrRefCount(decoded_bitmap);
 
         return 0;
     }
@@ -1470,6 +1523,7 @@ int bitmapSaveHotSubkeysUntill(rdbKeySaveData *save, rio *rdb, int idx, int rdbt
 
         if (rdbSaveStringObject(rdb, &subvalobj) == -1) {
             sdsfree(subval);
+            decrRefCount(decoded_bitmap);
             return -1;
         }
 

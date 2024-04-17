@@ -341,6 +341,11 @@ int dbSyncDelete(redisDb *db, robj *key) {
     dictEntry *de = dictUnlink(db->dict,key->ptr);
     if (de) {
         robj *val = dictGetVal(de);
+        if (val) {
+            serverLog(LL_NOTICE, "dbSyncDelete 345 ==> key %p ref %d str %s, val %p ref %d",
+                key, key->refcount, (char *)key->ptr, val, val->refcount); // debug, to delete
+        }
+
         /* Tells the module that the key has been unlinked from the database. */
         moduleNotifyKeyUnlink(key,val);
         dictFreeUnlinkedEntry(db->dict,de);
@@ -745,6 +750,10 @@ void delGenericCommand(client *c, int lazy) {
 
     for (j = 1; j < c->argc; j++) {
         expireIfNeeded(c->db,c->argv[j]);
+        robj* k = c->argv[j];
+        serverLog(LL_NOTICE, "delGenericCommand 753 key %p ref %d str %s",
+            k, k->refcount, (char *)k->ptr
+        );  // debug, to delete
         int deleted  = lazy ? dbAsyncDelete(c->db,c->argv[j]) :
                               dbSyncDelete(c->db,c->argv[j]);
         if (deleted) {
