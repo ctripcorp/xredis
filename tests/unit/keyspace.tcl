@@ -379,20 +379,26 @@ start_server {tags {"keyspace"}} {
 
     test {MOVE basic usage} {
         r set mykey foobar
+        r setbit mybitmap 1000 1
         r move mykey 10
+        r move mybitmap 10
         set res {}
         lappend res [r exists mykey]
+        lappend res [r exists mybitmap]
         lappend res [r dbsize]
         r select 10
         lappend res [r get mykey]
+        lappend res [r bitcount mybitmap]
         lappend res [r dbsize]
         r select 9
         format $res
-    } [list 0 0 foobar 1]
+    } [list 0 0 0 foobar 1 2]
 
     test {MOVE against key existing in the target DB} {
         r set mykey hello
+        r setbit mybitmap 1000 1
         r move mykey 10
+        r move mybitmap 10
     } {0}
 
     test {MOVE against non-integer DB (#1428)} {
@@ -419,11 +425,16 @@ start_server {tags {"keyspace"}} {
         r flushdb
         r select 9
         r set mykey foo
+        r setbit mybitmap 10 1
         r move mykey 10
+        r move mybitmap 10
         assert {[r ttl mykey] == -2}
+        assert {[r ttl mybitmap] == -2}
         r select 10
         assert {[r ttl mykey] == -1}
+        assert {[r ttl mybitmap] == -1}
         assert {[r get mykey] eq "foo"}
+        assert {[r getbit mybitmap 10] eq 1}
         r select 9
     }
 
