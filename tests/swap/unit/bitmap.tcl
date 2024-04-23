@@ -43,84 +43,30 @@ proc build_cold_small_bitmap {}  {
     assert [object_is_cold r small_bitmap1]
 }
 
-proc check_small_bitmap1_getbit0 {}  {
-    # normal getbit 
-    assert_equal {1} [r getbit small_bitmap1 0]
+array list small_bitmap1_getbit {
+    {0} {assert_equal {1} [r getbit small_bitmap1 0]}
+    {1} {assert_equal {0} [r getbit small_bitmap1 10]}
+    {2} {assert_error "ERR*" {r getbit small_bitmap1 -1}}
 }
 
-proc check_small_bitmap1_getbit1 {}  {
-    # normal getbit 
-    assert_equal {0} [r getbit small_bitmap1 10]
+array list small_bitmap1_bitcount {
+    {0} {assert_equal {1} [r bitcount small_bitmap1 0 0]}
+    {1} {assert_equal {1} [r bitcount small_bitmap1]}
+    {2} {assert_equal {1} [r bitcount small_bitmap1 0 -2]}
+    {3} {assert_equal {1} [r bitcount small_bitmap1 -1 2]}
 }
 
-proc check_small_bitmap1_getbit2 {}  {
-    # abnormal getbit 
-    assert_error "ERR*" {r getbit small_bitmap1 -1}
-}
-
-proc check_small_bitmap1_bitcount0 {}  {
-    # normal bitcount
-    assert_equal {1} [r bitcount small_bitmap1 0 0]
-}
-
-proc check_small_bitmap1_bitcount1 {}  {
-    # normal bitcount
-    assert_equal {1} [r bitcount small_bitmap1]
-}
-
-proc check_small_bitmap1_bitcount2 {}  {
-    # abnormal bitcount
-    assert_equal {1} [r bitcount small_bitmap1 0 -2]
-}
-
-proc check_small_bitmap1_bitcount3 {}  {
-    # abnormal bitcount
-    assert_equal {1} [r bitcount small_bitmap1 -1 2]
-}
-
-proc check_small_bitmap1_bitpos0 {}  {
-    assert_equal {0} [r bitpos small_bitmap1 1 0]
-}
-
-proc check_small_bitmap1_bitpos1 {}  {
-    assert_equal {-1} [r bitpos small_bitmap1 1 1]
-}
-
-proc check_small_bitmap1_bitpos2 {}  {
-    assert_equal {0} [r bitpos small_bitmap1 1 -1]
-}
-
-proc check_small_bitmap1_bitpos3 {}  {
-    assert_equal {1} [r bitpos small_bitmap1 0 0]
-}
-
-proc check_small_bitmap1_bitpos4 {}  {
-    assert_equal {-1} [r bitpos small_bitmap1 0 1]
-}
-
-proc check_small_bitmap1_bitpos5 {}  {
-    assert_equal {1} [r bitpos small_bitmap1 0 -1]
-}
-
-proc check_small_bitmap1_bitpos6 {}  {
-    assert_equal {0} [r bitpos small_bitmap1 1 0 2]
-}
-
-proc check_small_bitmap1_bitpos7 {}  {
-    assert_equal {0} [r bitpos small_bitmap1 1 -1 1]
-}
-
-proc check_small_bitmap1_bitpos8 {}  {
-    assert_equal {1} [r bitpos small_bitmap1 0 0 2]
-}
-
-proc check_small_bitmap1_bitpos9 {}  {
-    assert_equal {1} [r bitpos small_bitmap1 0 -1 1]
-}
-
-proc check_small_bitmap1_bitfield0  {}  {
-    # normal bitfield
-    assert_equal {3}  [r BITFIELD small_bitmap1 INCRBY u2 0 1]
+array list small_bitmap1_bitpos {
+    {0} {assert_equal {0} [r bitpos small_bitmap1 1 0]}
+    {1} {assert_equal {-1} [r bitpos small_bitmap1 1 1]}
+    {2} {assert_equal {0} [r bitpos small_bitmap1 1 -1]}
+    {3} {assert_equal {1} [r bitpos small_bitmap1 0 0]}
+    {4} {assert_equal {-1} [r bitpos small_bitmap1 0 1]}
+    {5} {assert_equal {1} [r bitpos small_bitmap1 0 -1]}
+    {6} {assert_equal {0} [r bitpos small_bitmap1 1 0 2]}
+    {7} {assert_equal {0} [r bitpos small_bitmap1 1 -1 1]}
+    {8} {assert_equal {1} [r bitpos small_bitmap1 0 0 2]}
+    {9} {assert_equal {1} [r bitpos small_bitmap1 0 -1 1]}
 }
 
 proc check_small_bitmap1_bitop0  {}  {
@@ -615,312 +561,68 @@ proc check_mybitmap1_bitcount14  {}  {
     assert_equal {3} [r bitcount mybitmap1 -21984 -11984]
 }
 
-proc check_mybitmap1_bitpos0  {}  {
-    # normal bitpos
-    assert_equal {32767} [r bitpos mybitmap1 1]
+#===> refactor begin
+
+array list check_mybitmap1_bitpos {
+    {1} {assert_equal {32767} [r bitpos mybitmap1 1]}
+    {2} {assert_equal {32767} [r bitpos mybitmap1 1 0]}
+    {3} {assert_equal {98303} [r bitpos mybitmap1 1 9216]}
+    {4} {assert_equal {196607} [r bitpos mybitmap1 1 20480]}
+    {5} {assert_equal {335871} [r bitpos mybitmap1 1 41983]}
+    {6} {assert_equal {32767} [r bitpos mybitmap1 1 0 9216]}
+    {7} {assert_equal {65535} [r bitpos mybitmap1 1 5000 15000]}
+    {8} {assert_equal {98303} [r bitpos mybitmap1 1 9216 20480]}
+    {9} {assert_equal {131071} [r bitpos mybitmap1 1 15000 25000]}
+    {10} {assert_equal {196607} [r bitpos mybitmap1 1 20480 43008]}
+    {11} {assert_equal {0} [r bitpos mybitmap1 0]}
+    {12} {assert_equal {0} [r bitpos mybitmap1 0 0]}
+    {13} {assert_equal {73728} [r bitpos mybitmap1 0 9216]}
+    {14} {assert_equal {163840} [r bitpos mybitmap1 0 20480]}
+    {15} {assert_equal {335864} [r bitpos mybitmap1 0 41983]}
+    {16} {assert_equal {0} [r bitpos mybitmap1 0 0 9216]}
+    {17} {assert_equal {40000} [r bitpos mybitmap1 0 5000 15000]}
+    {18} {assert_equal {73728} [r bitpos mybitmap1 0 9216 20480]}
+    {19} {assert_equal {120000} [r bitpos mybitmap1 0 15000 25000]}
+    {20} {assert_equal {163840} [r bitpos mybitmap1 0 20480 43008]}
+    {21} {assert_equal {-1} [r bitpos mybitmap1 1 41984]}
+    {22} {assert_equal {-1} [r bitpos mybitmap1 1 2147483647]}
+    {23} {assert_equal {327679} [r bitpos mybitmap1 1 -1984]}
+    {24} {assert_equal {262143} [r bitpos mybitmap1 1 -11984]}
+    {25} {assert_equal {98303} [r bitpos mybitmap1 1 -31984]}
+    {26} {assert_equal {32767} [r bitpos mybitmap1 1 -41984]}
+    {27} {assert_equal {32767} [r bitpos mybitmap1 1 -2147483648]}
+    {28} {assert_equal {98303} [r bitpos mybitmap1 1 10000 2000000]}
+    {29} {assert_equal {98303} [r bitpos mybitmap1 1 10000 2147483647]}
+    {30} {assert_equal {-1} [r bitpos mybitmap1 1 2000000 10000]}
+    {31} {assert_equal {-1} [r bitpos mybitmap1 1 20000 10000]}
+    {32} {assert_equal {163839} [r bitpos mybitmap1 1 -21984 -11984]}
+    {33} {assert_equal {32767} [r bitpos mybitmap1 1 -41984 -11984]}
+    {34} {assert_equal {-1} [r bitpos mybitmap1 1 -11984 -41984]}
+    {35} {assert_equal {98303} [r bitpos mybitmap1 1 10000 -10000]}
+    {36} {assert_equal {32767} [r bitpos mybitmap1 1 -2147483648 2147483647]}
+    {37} {assert_equal {-1} [r bitpos mybitmap1 1 -10000 10000]}
+    {38} {assert_equal {-1} [r bitpos mybitmap1 0 41984]}
+    {39} {assert_equal {-1} [r bitpos mybitmap1 0 2147483647]}
+    {40} {assert_equal {320000} [r bitpos mybitmap1 0 -1984]}
+    {41} {assert_equal {240000} [r bitpos mybitmap1 0 -11984]}
+    {42} {assert_equal {80000} [r bitpos mybitmap1 0 -31984]}
+    {43} {assert_equal {0} [r bitpos mybitmap1 0 -41984]}
+    {44} {assert_equal {0} [r bitpos mybitmap1 0 -2147483648]}
+    {45} {assert_equal {80000} [r bitpos mybitmap1 0 10000 2000000]}
+    {46} {assert_equal {80000} [r bitpos mybitmap1 0 10000 2147483647]}
+    {47} {assert_equal {-1} [r bitpos mybitmap1 0 2000000 10000]}
+    {48} {assert_equal {-1} [r bitpos mybitmap1 0 20000 10000]}
+    {49} {assert_equal {160000} [r bitpos mybitmap1 0 -21984 -11984]}
+    {50} {assert_equal {0} [r bitpos mybitmap1 0 -41984 -11984]}
+    {51} {assert_equal {-1} [r bitpos mybitmap1 0 -11984 -41984]}
+    {52} {assert_equal {80000} [r bitpos mybitmap1 0 10000 -10000]}
+    {53} {assert_equal {0} [r bitpos mybitmap1 0 -2147483648 2147483647]}
+    {54} {assert_equal {-1} [r bitpos mybitmap1 0 -10000 10000]}
 }
 
-proc check_mybitmap1_bitpos1  {}  {
-    # normal bitpos
-    assert_equal {32767} [r bitpos mybitmap1 1 0]
-}
+#<===refactor end
 
-proc check_mybitmap1_bitpos2  {}  {
-    # normal bitpos
-    assert_equal {98303} [r bitpos mybitmap1 1 9216]
-}
-
-proc check_mybitmap1_bitpos3  {}  {
-    # normal bitpos
-    assert_equal {196607} [r bitpos mybitmap1 1 20480]
-}
-
-proc check_mybitmap1_bitpos4  {}  {
-    # normal bitpos
-    assert_equal {335871} [r bitpos mybitmap1 1 41983]
-}
-
-proc check_mybitmap1_bitpos5  {}  {
-    # normal bitpos
-    assert_equal {32767} [r bitpos mybitmap1 1 0 9216]
-}
-
-proc check_mybitmap1_bitpos6  {}  {
-    # normal bitpos
-    assert_equal {65535} [r bitpos mybitmap1 1 5000 15000]
-}
-
-proc check_mybitmap1_bitpos7  {}  {
-    # normal bitpos
-    assert_equal {98303} [r bitpos mybitmap1 1 9216 20480]
-}
-
-proc check_mybitmap1_bitpos8  {}  {
-    # normal bitpos
-    assert_equal {131071} [r bitpos mybitmap1 1 15000 25000]
-}
-
-proc check_mybitmap1_bitpos9  {}  {
-    # normal bitpos
-    assert_equal {196607} [r bitpos mybitmap1 1 20480 43008]
-}
-
-proc check_mybitmap1_bitpos10  {}  {
-    # normal bitpos
-    assert_equal {0} [r bitpos mybitmap1 0]
-}
-
-proc check_mybitmap1_bitpos11  {}  {
-    # normal bitpos
-    assert_equal {0} [r bitpos mybitmap1 0 0]
-}
-
-proc check_mybitmap1_bitpos12  {}  {
-    # normal bitpos
-    assert_equal {73728} [r bitpos mybitmap1 0 9216]
-}
-
-proc check_mybitmap1_bitpos13  {}  {
-    # normal bitpos
-    assert_equal {163840} [r bitpos mybitmap1 0 20480]
-}
-
-proc check_mybitmap1_bitpos14  {}  {
-    # normal bitpos
-    assert_equal {335864} [r bitpos mybitmap1 0 41983]
-}
-
-proc check_mybitmap1_bitpos15  {}  {
-    # normal bitpos
-    assert_equal {0} [r bitpos mybitmap1 0 0 9216]
-}
-
-proc check_mybitmap1_bitpos16  {}  {
-    # normal bitpos
-    assert_equal {40000} [r bitpos mybitmap1 0 5000 15000]
-}
-
-proc check_mybitmap1_bitpos17  {}  {
-    # normal bitpos
-    assert_equal {73728} [r bitpos mybitmap1 0 9216 20480]
-}
-
-proc check_mybitmap1_bitpos18  {}  {
-    # normal bitpos
-    assert_equal {120000} [r bitpos mybitmap1 0 15000 25000]
-}
-
-proc check_mybitmap1_bitpos19  {}  {
-    # normal bitpos
-    assert_equal {163840} [r bitpos mybitmap1 0 20480 43008]
-}
-
-proc check_mybitmap1_bitpos20  {}  {
-    # Abnormal bitpos
-
-    assert_equal {-1} [r bitpos mybitmap1 1 41984]
-
-}
-
-proc check_mybitmap1_bitpos21  {}  {
-    # Abnormal bitpos
-
-    assert_equal {-1} [r bitpos mybitmap1 1 2147483647]
-
-}
-
-proc check_mybitmap1_bitpos22  {}  {
-    # Abnormal bitpos
-
-    assert_equal {327679} [r bitpos mybitmap1 1 -1984]
-}
-
-proc check_mybitmap1_bitpos23  {}  {
-    # Abnormal bitpos
-
-    assert_equal {262143} [r bitpos mybitmap1 1 -11984]
-}
-
-proc check_mybitmap1_bitpos24  {}  {
-    # Abnormal bitpos
-    assert_equal {98303} [r bitpos mybitmap1 1 -31984]
-}
-
-proc check_mybitmap1_bitpos25  {}  {
-    # Abnormal bitpos
-
-    assert_equal {32767} [r bitpos mybitmap1 1 -41984]
-}
-
-proc check_mybitmap1_bitpos26  {}  {
-    # Abnormal bitpos
-    assert_equal {32767} [r bitpos mybitmap1 1 -2147483648]
-}
-
-proc check_mybitmap1_bitpos27  {}  {
-    # Abnormal bitpos
-
-    assert_equal {98303} [r bitpos mybitmap1 1 10000 2000000]
-}
-
-proc check_mybitmap1_bitpos28  {}  {
-    # Abnormal bitpos
-
-    assert_equal {98303} [r bitpos mybitmap1 1 10000 2147483647]
-}
-
-proc check_mybitmap1_bitpos29  {}  {
-    # Abnormal bitpos
-    assert_equal {-1} [r bitpos mybitmap1 1 2000000 10000]
-}
-
-proc check_mybitmap1_bitpos30  {}  {
-    # Abnormal bitpos
-
-    assert_equal {-1} [r bitpos mybitmap1 1 20000 10000]
-
-}
-
-proc check_mybitmap1_bitpos31  {}  {
-    # Abnormal bitpos
-    assert_equal {163839} [r bitpos mybitmap1 1 -21984 -11984]
-}
-
-proc check_mybitmap1_bitpos32  {}  {
-    # Abnormal bitpos
-
-    assert_equal {32767} [r bitpos mybitmap1 1 -41984 -11984]
-}
-
-proc check_mybitmap1_bitpos33  {}  {
-    # Abnormal bitpos
-
-    assert_equal {-1} [r bitpos mybitmap1 1 -11984 -41984]
-
-}
-
-proc check_mybitmap1_bitpos34  {}  {
-    # Abnormal bitpos
-
-    assert_equal {98303} [r bitpos mybitmap1 1 10000 -10000]
-}
-
-proc check_mybitmap1_bitpos35  {}  {
-    # Abnormal bitpos
-
-    assert_equal {32767} [r bitpos mybitmap1 1 -2147483648 2147483647]
-}
-
-proc check_mybitmap1_bitpos36  {}  {
-    # Abnormal bitpos
-
-    assert_equal {-1} [r bitpos mybitmap1 1 -10000 10000]
-}
-
-proc check_mybitmap1_bitpos37  {}  {
-    # Abnormal bitpos
-
-    assert_equal {-1} [r bitpos mybitmap1 0 41984]
-
-}
-
-proc check_mybitmap1_bitpos38  {}  {
-    # Abnormal bitpos
-
-    assert_equal {-1} [r bitpos mybitmap1 0 2147483647]
-
-}
-
-proc check_mybitmap1_bitpos39  {}  {
-    # Abnormal bitpos
-
-    assert_equal {320000} [r bitpos mybitmap1 0 -1984]
-}
-
-proc check_mybitmap1_bitpos40  {}  {
-    # Abnormal bitpos
-
-    assert_equal {240000} [r bitpos mybitmap1 0 -11984]
-}
-
-proc check_mybitmap1_bitpos41  {}  {
-    # Abnormal bitpos
-
-    assert_equal {80000} [r bitpos mybitmap1 0 -31984]
-}
-
-proc check_mybitmap1_bitpos42  {}  {
-    # Abnormal bitpos
-    assert_equal {0} [r bitpos mybitmap1 0 -41984]
-}
-
-proc check_mybitmap1_bitpos43  {}  {
-    # Abnormal bitpos
-    assert_equal {0} [r bitpos mybitmap1 0 -2147483648]
-        
-}
-
-proc check_mybitmap1_bitpos44  {}  {
-    # Abnormal bitpos
-        
-    assert_equal {80000} [r bitpos mybitmap1 0 10000 2000000]
-}
-
-proc check_mybitmap1_bitpos45  {}  {
-    # Abnormal bitpos
-
-    assert_equal {80000} [r bitpos mybitmap1 0 10000 2147483647]
-}
-
-proc check_mybitmap1_bitpos46  {}  {
-    # Abnormal bitpos
-    assert_equal {-1} [r bitpos mybitmap1 0 2000000 10000]
-}
-
-proc check_mybitmap1_bitpos47  {}  {
-    # Abnormal bitpos
-
-    assert_equal {-1} [r bitpos mybitmap1 0 20000 10000]
-
-}
-
-proc check_mybitmap1_bitpos48  {}  {
-    # Abnormal bitpos
-
-    assert_equal {160000} [r bitpos mybitmap1 0 -21984 -11984]
-}
-
-proc check_mybitmap1_bitpos49  {}  {
-    # Abnormal bitpos
-    assert_equal {0} [r bitpos mybitmap1 0 -41984 -11984]
-}
-
-proc check_mybitmap1_bitpos50  {}  {
-    # Abnormal bitpos
-
-    assert_equal {-1} [r bitpos mybitmap1 0 -11984 -41984]
-
-}
-
-proc check_mybitmap1_bitpos51  {}  {
-    # Abnormal bitpos
-
-    assert_equal {80000} [r bitpos mybitmap1 0 10000 -10000]
-}
-
-proc check_mybitmap1_bitpos52  {}  {
-    # Abnormal bitpos
-
-    assert_equal {0} [r bitpos mybitmap1 0 -2147483648 2147483647]
-}
-
-proc check_mybitmap1_bitpos53  {}  {
-    # Abnormal bitpos
-
-    assert_equal {-1} [r bitpos mybitmap1 0 -10000 10000]
-}
-
-proc check_mybitmap1_bitpos54  {}  {
+proc check_mybitmap1_bitpos  {}  {
     # find clear bit from out of range(when all bit 1 in range)
     assert_equal {0} [r setbit mybitmap1 335870 1]
     assert_equal {0} [r setbit mybitmap1 335869 1]
@@ -1375,68 +1077,39 @@ start_server {
     }
 
     test {small_bitmap pure hot getbit} {
-            
-        for {set j 0} {$j <= 2} {incr j} {
-
+        foreach {key value} [array get small_bitmap1_getbit] {
             build_pure_hot_small_bitmap
-
-            set cmd_str "check_small_bitmap1_getbit"
-
-            append cmd_str $j
-
-            eval $cmd_str
-
+            eval $value
             check_small_bitmap1_is_right
-
             r flushdb
         }
     }
 
     test {small_bitmap pure hot bitcount} {
-            
-        for {set j 0} {$j <= 3} {incr j} {
-
+        foreach {key value} [array get small_bitmap1_bitcount] {
             build_pure_hot_small_bitmap
-
-            set cmd_str "check_small_bitmap1_bitcount"
-
-            append cmd_str $j
-
-            eval $cmd_str
-
+            eval $value
             check_small_bitmap1_is_right
-
             r flushdb
         }
     }
 
     test {small_bitmap pure hot bitpos} {
-            
-        for {set j 0} {$j <= 9} {incr j} {
-
+        foreach {key value} [array get small_bitmap1_bitpos] {
             build_pure_hot_small_bitmap
-
-            set cmd_str "check_small_bitmap1_bitpos"
-
-            append cmd_str $j
-
-            eval $cmd_str
-
-            # puts $cmd_str
-
+            eval $value
             check_small_bitmap1_is_right
-
             r flushdb
         }
     }
 
     test {small_bitmap pure hot bitfield 0} {
-            
-        build_pure_hot_small_bitmap
-
-        check_small_bitmap1_bitfield0
-        assert_equal {2} [r bitcount small_bitmap1]
-        r flushdb
+        foreach {key value} [array get small_bitmap1_bitfield] {
+            build_pure_hot_small_bitmap
+            eval $value
+            assert_equal {2} [r bitcount small_bitmap1]
+            r flushdb
+        }
     }
 
     test {small_bitmap pure hot bitop 0} {
@@ -1458,68 +1131,40 @@ start_server {
     }
 
     test {small_bitmap hot getbit} {
-            
-        for {set j 0} {$j <= 2} {incr j} {
-
+        foreach {key value} [array get small_bitmap1_getbit] {
             build_hot_small_bitmap
-
-            set cmd_str "check_small_bitmap1_getbit"
-
-            append cmd_str $j
-
-            eval $cmd_str
-
+            eval $value
             check_small_bitmap1_is_right
-
             r flushdb
         }
     }
 
     test {small_bitmap hot bitcount} {
-            
-        for {set j 0} {$j <= 3} {incr j} {
-
+        foreach {key value} [array get small_bitmap1_bitcount] {
             build_hot_small_bitmap
-
-            set cmd_str "check_small_bitmap1_bitcount"
-
-            append cmd_str $j
-
-            eval $cmd_str
-
+            eval $value
             check_small_bitmap1_is_right
-
             r flushdb
         }
     }
 
     test {small_bitmap hot bitpos} {
-            
-        for {set j 0} {$j <= 9} {incr j} {
-
+        foreach {key value} [array get small_bitmap1_bitpos] {
             build_hot_small_bitmap
-
-            set cmd_str "check_small_bitmap1_bitpos"
-
-            append cmd_str $j
-
-            eval $cmd_str
-
-            #puts $cmd_str
-
+            eval $value
             check_small_bitmap1_is_right
-
             r flushdb
         }
     }
 
     test {small_bitmap hot bitfield 0} {
-            
-        build_hot_small_bitmap
-
-        check_small_bitmap1_bitfield0
-        assert_equal {2} [r bitcount small_bitmap1]
-        r flushdb
+        foreach {key value} [array get small_bitmap1_bitfield] {
+            build_hot_small_bitmap
+            eval $value
+            assert_equal {3}  [r BITFIELD small_bitmap1 INCRBY u2 0 1]
+            assert_equal {2} [r bitcount small_bitmap1]
+            r flushdb
+        }
     }
 
     test {small_bitmap hot bitop 0} {
@@ -1572,14 +1217,13 @@ start_server {
     }
 
     test {small_bitmap extend hot bitfield 0} {
-            
-        build_extend_hot_small_bitmap
-
-        check_small_bitmap1_bitfield0
-
-        assert_equal {3} [r bitcount small_bitmap1]
-
-        r flushdb
+        foreach {key value} [array get small_bitmap1_bitfield] {
+            build_extend_hot_small_bitmap
+            eval $value
+            assert_equal {3}  [r BITFIELD small_bitmap1 INCRBY u2 0 1]
+            assert_equal {3} [r bitcount small_bitmap1]
+            r flushdb
+        }
     }
 
     test {small_bitmap extend hot bitop 0} {
@@ -1601,76 +1245,49 @@ start_server {
     }
 
     test {small_bitmap cold getbit} {
-            
-        for {set j 0} {$j <= 2} {incr j} {
-
+        foreach {key value} [array get small_bitmap1_getbit] {
             build_cold_small_bitmap
-
-            set cmd_str "check_small_bitmap1_getbit"
-
-            append cmd_str $j
-
-            eval $cmd_str
-
+            eval $value
             check_small_bitmap1_is_right
-
             r flushdb
         }
     }
 
     test {small_bitmap cold bitcount} {
-            
-        for {set j 0} {$j <= 3} {incr j} {
-
+        foreach {key value} [array get small_bitmap1_bitcount] {
             build_cold_small_bitmap
-
-            set cmd_str "check_small_bitmap1_bitcount"
-
-            append cmd_str $j
-
-            eval $cmd_str
-
+            eval $value
             check_small_bitmap1_is_right
-
             r flushdb
         }
     }
 
     test {small_bitmap cold bitpos} {
-            
-        for {set j 0} {$j <= 9} {incr j} {
-
+        foreach {key value} [array get small_bitmap1_bitpos] {
             build_cold_small_bitmap
-
-            set cmd_str "check_small_bitmap1_bitpos"
-
-            append cmd_str $j
-
-            eval $cmd_str
-
+            eval $value
             check_small_bitmap1_is_right
-
             r flushdb
         }
     }
 
     test {small_bitmap cold bitfield 0} {
-            
-        build_cold_small_bitmap
-
-        check_small_bitmap1_bitfield0
-        assert_equal {2} [r bitcount small_bitmap1]
-
-        r flushdb
+        foreach {key value} [array get small_bitmap1_bitfield] {
+            build_cold_small_bitmap
+            eval $value
+            assert_equal {3}  [r BITFIELD small_bitmap1 INCRBY u2 0 1]
+            assert_equal {2} [r bitcount small_bitmap1]
+            r flushdb
+        }
     }
 
     test {small_bitmap cold bitop 0} {
-            
-        build_cold_small_bitmap
-
-        check_small_bitmap1_bitop0
-
-        r flushdb
+        foreach {key value} [array get small_bitmap1_bitop] {
+            build_cold_small_bitmap
+            eval $value
+            check_small_bitmap1_bitop0
+            r flushdb
+        }
     }
 
     test {small_bitmap cold bitop 1} {
@@ -2062,21 +1679,10 @@ start_server {
     }
 
     test {pure hot bitpos} {
-            
-        for {set j 0} {$j <= 53} {incr j} {
-
+        foreach {key value} [array get check_mybitmap1_bitpos] {
             build_pure_hot_data
-
-            set cmd_str "check_mybitmap1_bitpos"
-
-            append cmd_str $j
-
-            eval $cmd_str
-
-            # puts $cmd_str
-
+            eval $value
             check_mybitmap1_is_right
-
             r flushdb
         }
     }
@@ -2085,7 +1691,7 @@ start_server {
             
         build_pure_hot_data
 
-        check_mybitmap1_bitpos54
+        check_mybitmap1_bitpos
 
         set_data0
         #press_enter_to_continue
@@ -2177,21 +1783,10 @@ start_server {
     }
 
     test {hot bitpos} {
-            
-        for {set j 0} {$j <= 53} {incr j} {
-
+        foreach {key value} [array get check_mybitmap1_bitpos] {
             build_hot_data
-
-            set cmd_str "check_mybitmap1_bitpos"
-
-            append cmd_str $j
-
-            eval $cmd_str
-
-            #puts $cmd_str
-
+            eval $value
             check_mybitmap1_is_right
-
             r flushdb
         }
     }
@@ -2200,7 +1795,7 @@ start_server {
             
         build_hot_data
 
-        check_mybitmap1_bitpos54
+        check_mybitmap1_bitpos
 
         set_data0
         #press_enter_to_continue
@@ -2384,19 +1979,10 @@ start_server {
             set data_str "build_warm_with_hole"
 
             append data_str $i
-            
-            for {set j 0} {$j <= 53} {incr j} {
-
+            foreach {key value} [array get check_mybitmap1_bitpos] {
                 eval $data_str
-
-                set cmd_str "check_mybitmap1_bitpos"
-
-                append cmd_str $j
-
-                eval $cmd_str
-
+                eval $value
                 check_mybitmap1_is_right
-
                 r flushdb
             }
         }
@@ -2413,7 +1999,7 @@ start_server {
             
             eval $data_str
 
-            check_mybitmap1_bitpos54
+            check_mybitmap1_bitpos
             set_data0
 
             assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap0]
@@ -2527,19 +2113,10 @@ start_server {
     }
 
     test {cold bitpos} {
-            
-        for {set j 0} {$j <= 53} {incr j} {
-
+        foreach {key value} [array get check_mybitmap1_bitpos] {
             build_cold_data
-
-            set cmd_str "check_mybitmap1_bitpos"
-
-            append cmd_str $j
-
-            eval $cmd_str
-
+            eval $value
             check_mybitmap1_is_right
-
             r flushdb
         }
     }
@@ -2548,7 +2125,7 @@ start_server {
             
         build_cold_data
 
-        check_mybitmap1_bitpos54
+        check_mybitmap1_bitpos
 
         set_data0
 
