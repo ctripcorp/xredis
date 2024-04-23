@@ -977,6 +977,8 @@ struct bitmapMeta;
 
 void bitmapMetaFree(struct bitmapMeta *bitmap_meta);
 
+size_t bitmapMetaGetSize(struct bitmapMeta *bitmap_meta);
+
 objectMeta *createBitmapObjectMeta(uint64_t version, MOVE struct bitmapMeta *bitmap_meta);
 
 int swapDataSetupBitmap(swapData *d, void **pdatactx);

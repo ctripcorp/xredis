@@ -34,11 +34,7 @@ swapData *createSwapData(redisDb *db, robj *key, robj *value, robj *dirty_subkey
     if (key) incrRefCount(key);
     data->key = key;
     if (value) {
-    //     int bef = value->refcount;
         incrRefCount(value);
-    //     serverLog(LL_NOTICE, "createSwapData 38 value %p ref_bef %d ref_aft %d str %s",
-    //         value, bef, value->refcount, (char *)value->ptr
-    //     );  // debug, to delete
     }
     data->value = value;
     if (dirty_subkeys) incrRefCount(dirty_subkeys);
