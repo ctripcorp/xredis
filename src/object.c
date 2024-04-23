@@ -532,9 +532,6 @@ robj *getDecodedObject(robj *o) {
     if (sdsEncodedObject(o)) {
         int bef = o->refcount;
         incrRefCount(o);
-        serverLog(LL_NOTICE, "getDecodedObject 535 o %p ref_bef %d ref_aft %d str %s",
-            o, bef, o->refcount, (char *)o->ptr
-        );  // debug, to delete
         return o;
     }
     if (o->type == OBJ_STRING && o->encoding == OBJ_ENCODING_INT) {
@@ -543,9 +540,6 @@ robj *getDecodedObject(robj *o) {
 
         ll2string(buf,32,(long)o->ptr);
         dec = createStringObject(buf,strlen(buf));
-        serverLog(LL_NOTICE, "getDecodedObject 546 dec %p ref_bef %d ref_aft %d str %s",
-            o, dec, dec->refcount, (char *)dec->ptr
-        );  // debug, to delete
         return dec;
     } else {
         serverPanic("Unknown encoding type");

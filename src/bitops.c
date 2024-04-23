@@ -773,7 +773,9 @@ void bitopCommand(client *c) {
     /* Store the computed value into the target key */
     if (maxlen) {
         o = createObject(OBJ_STRING,res);
+        bitmapClearObjectMarkerIfNeeded(c->db,targetkey);
         setKey(c,c->db,targetkey,o);
+        bitmapSetObjectMarkerIfNeeded(c->db,targetkey);
         notifyKeyspaceEventDirty(NOTIFY_STRING,"set",targetkey,c->db->id,o,NULL);
         decrRefCount(o);
         server.dirty++;

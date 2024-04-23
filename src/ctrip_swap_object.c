@@ -349,29 +349,32 @@ size_t ctrip_objectComputeSize(robj *val, int samples, objectMeta *object_meta) 
 
     serverAssert(val && object_meta);
 
-    switch (val->type) {
-    case OBJ_STRING:
+    switch (object_meta->swap_type) {
+    case SWAP_TYPE_STRING:
         total_size = hot_size;
         break;
-    case OBJ_HASH:
+    case SWAP_TYPE_HASH:
         hot_len = hashTypeLength(val);
         total_len = object_meta->len + hot_len;
         total_size = hot_size * total_len / hot_len;
         break;
-    case OBJ_SET:
+    case SWAP_TYPE_SET:
         hot_len = setTypeSize(val);
         total_len = object_meta->len + hot_len;
         total_size = hot_size * total_len / hot_len;
         break;
-    case OBJ_ZSET:
+    case SWAP_TYPE_ZSET:
         hot_len = zsetLength(val);
         total_len = object_meta->len + hot_len;
         total_size = hot_size * total_len / hot_len;
         break;
-    case OBJ_LIST:
+    case SWAP_TYPE_LIST:
         hot_len = listTypeLength(val);
         total_len = ctripListTypeLength(val,object_meta);
         total_size = hot_size * total_len / hot_len;
+        break;
+    case SWAP_TYPE_BITMAP:
+        total_size = bitmapMetaGetSize(object_meta->ptr);
         break;
     default:
         total_size = hot_size;
