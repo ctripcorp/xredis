@@ -109,13 +109,13 @@ static inline sds bitmapMetaEncode(bitmapMeta *bm) {
 
 static inline bitmapMeta *bitmapMetaDecode(const char *extend, size_t extend_len) {
     serverAssert(extend_len == sizeof(long));
-    bitmapMeta *bitmap_meta = bitmapMetaCreate();
 
     long size = decodeBitmapSize(extend);
     if (size == 0) {
         /* maybe it is just a marker. */
         return NULL;
     }
+    bitmapMeta *bitmap_meta = bitmapMetaCreate();
     bitmap_meta->size = size;
     bitmap_meta->pure_cold_subkeys_num = BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE);
     return bitmap_meta;
@@ -928,7 +928,7 @@ static inline robj *createSwapInBitmapObject(robj *newval) {
     return swapin;
 }
 
-int bitmapSwapIn(swapData *data, void *result, void *datactx) {
+int bitmapSwapIn(swapData *data, MOVE void *result, void *datactx) {
     UNUSED(datactx);
     /* hot key no need to swap in, this must be a warm or cold key. */
     serverAssert(swapDataPersisted(data));
