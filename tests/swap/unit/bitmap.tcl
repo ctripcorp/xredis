@@ -747,7 +747,7 @@ start_server {
 
     test {small_bitmap pure hot bitfield} {
         build_pure_hot_small_bitmap small_bitmap1
-        eval $value
+        assert_equal {3}  [r BITFIELD small_bitmap1 INCRBY u2 0 1]
         assert_equal {2} [r bitcount small_bitmap1]
         r flushdb
     }
@@ -758,9 +758,23 @@ start_server {
         r flushdb
     }
 
-    test {extend small_bitmap pure hot bitop} {
+    test {small_bitmap pure hot bitop 1} {
+            
         build_pure_hot_small_bitmap small_bitmap1
-        check_extend_small_bitmap1_bitop
+
+        r setbit src1 0 1
+        r setbit src2 2 1
+
+        after 100
+        r swap.evict src1
+        wait_key_cold r src1
+
+        after 100
+        r swap.evict src2
+        wait_key_cold r src2
+        assert_equal {1} [r bitop XOR small_bitmap1 src1 src2]
+        assert_equal {2} [r bitcount small_bitmap1]
+
         r flushdb
     }
 
@@ -799,15 +813,29 @@ start_server {
         r flushdb
     }
 
-    test {small_bitmap hot bitop} {
+    test {small_bitmap hot bitop overwrite} {
         build_hot_small_bitmap small_bitmap1
         check_small_bitmap1_bitop
         r flushdb
     }
 
-    test {extend small_bitmap hot bitop} {
+    test {small_bitmap hot bitop} {
+            
         build_hot_small_bitmap small_bitmap1
-        check_extend_small_bitmap1_bitop
+
+        r setbit src1 0 1
+        r setbit src2 2 1
+
+        after 100
+        r swap.evict src1
+        wait_key_cold r src1
+
+        after 100
+        r swap.evict src2
+        wait_key_cold r src2
+        assert_equal {1} [r bitop XOR small_bitmap1 src1 src2]
+        assert_equal {2} [r bitcount small_bitmap1]
+
         r flushdb
     }
 
@@ -835,7 +863,6 @@ start_server {
 
     test {small_bitmap extend hot bitfield} {
         build_extend_hot_small_bitmap small_bitmap1
-        eval $value
         assert_equal {3}  [r BITFIELD small_bitmap1 INCRBY u2 0 1]
         assert_equal {3} [r bitcount small_bitmap1]
         r flushdb
@@ -900,7 +927,6 @@ start_server {
 
     test {small_bitmap cold bitfield} {
         build_cold_small_bitmap small_bitmap1
-        eval $value
         assert_equal {3}  [r BITFIELD small_bitmap1 INCRBY u2 0 1]
         assert_equal {2} [r bitcount small_bitmap1]
         r flushdb
@@ -915,9 +941,20 @@ start_server {
         }
     }
 
-    test {extend small_bitmap cold bitop} {
+    test {small_bitmap cold bitop overwrite} {
         build_cold_small_bitmap small_bitmap1
-        check_extend_small_bitmap1_bitop
+        r setbit src1 0 1
+        r setbit src2 2 1
+
+        after 100
+        r swap.evict src1
+        wait_key_cold r src1
+
+        after 100
+        r swap.evict src2
+        wait_key_cold r src2
+        assert_equal {1} [r bitop XOR small_bitmap1 small_bitmap1 src1 src2]
+        assert_equal {1} [r bitcount small_bitmap1]
         r flushdb
     }
 
