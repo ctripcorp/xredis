@@ -436,7 +436,7 @@ start_server  {
 }  {
     r config set swap-debug-evict-keys 0
 
-    test "GETBIT against string-encoded key old bitmap to string" { 
+    test "cold bitmap to string checking character" { 
         r setbit mykey 81919 1
         r setbit mykey 1 1
         r setbit mykey 3 1
@@ -457,7 +457,27 @@ start_server  {
         r flushdb
     }
 
-    test "GETBIT against string-encoded key hot bitmap to string" {
+    test "warm bitmap to string checking character" {
+        r setbit mykey 81919 1
+        r setbit mykey 1 1
+        r setbit mykey 3 1
+        r setbit mykey 5 1
+        r setbit mykey 9 1
+        r setbit mykey 11 1
+
+        r swap.evict mykey
+        wait_key_cold r mykey
+        r getbit mykey 40000
+        assert_equal "TP" [r getrange mykey 0 1]
+        assert [object_is_string r mykey] 
+        assert_equal "\x01" [r getrange mykey 10239 10239]
+        r swap.evict mykey
+        wait_key_cold r mykey
+        assert_equal {6} [r bitcount mykey]
+        r flushdb
+    }
+
+    test "hot bitmap to string checking character" {
         r setbit mykey 81919 1
         r setbit mykey 1 1
         r setbit mykey 3 1
@@ -473,7 +493,7 @@ start_server  {
         r flushdb
     }
 
-    test "SETBIT against non-existing key cold bitmap to string" {
+    test "cold bitmap to string checking binary" {
         assert_equal {0} [r setbit mykey 1 1]
         r swap.evict mykey
         wait_key_cold r mykey
@@ -483,7 +503,7 @@ start_server  {
         r flushdb
     }
 
-    test "SETBIT against non-existing key hot bitmap to string" {
+    test "hot bitmap to string checking binary" {
         assert_equal {0} [r setbit mykey 1 1]
         assert_equal [binary format B* 01000000] [r get mykey]
         assert [object_is_string r mykey] 
@@ -491,8 +511,7 @@ start_server  {
         r flushdb
     }
 
-
-    test "SETBIT against string-encoded key" {
+    test "cold string to bitmap checking character" {
         # cold string to bitmap
         # Ascii "@" is integer 64 = 01 00 00 00
         r set mykey "@"
@@ -508,7 +527,7 @@ start_server  {
         r flushdb
     }
 
-    test "SETBIT against integer-encoded key cold string to bitmap" {
+    test "cold string to bitmap checking binary" {
         # Ascii "1" is integer 49 = 00 11 00 01
         r set mykey 1
         r swap.evict mykey
@@ -524,7 +543,7 @@ start_server  {
         r flushdb
     }
 
-    test "SETBIT against integer-encoded key hot string to bitmap" {
+    test "hot string to bitmap checking binary" {
         # Ascii "1" is integer 49 = 00 11 00 01
         r set mykey 1
         assert_encoding int mykey
@@ -752,13 +771,13 @@ start_server {
         r flushdb
     }
 
-    test {small_bitmap pure hot bitop} {
+    test {small_bitmap pure hot bitop overwrite} {
         build_pure_hot_small_bitmap small_bitmap1
         check_small_bitmap1_bitop
         r flushdb
     }
 
-    test {small_bitmap pure hot bitop 1} {
+    test {small_bitmap pure hot bitop} {
             
         build_pure_hot_small_bitmap small_bitmap1
 
@@ -868,7 +887,7 @@ start_server {
         r flushdb
     }
 
-    test {small_bitmap extend hot bitop xor 3 keys} {
+    test {small_bitmap extend hot bitop overwrite} {
         build_extend_hot_small_bitmap small_bitmap1
         r setbit src1 0 1
         r setbit src2 2 1
@@ -883,7 +902,7 @@ start_server {
         r flushdb
     }
 
-    test {small_bitmap extend hot bitop xor 2 keys} {
+    test {small_bitmap extend hot bitop} {
         build_extend_hot_small_bitmap small_bitmap1
         r setbit src1 0 1
         r setbit src2 2 1
@@ -932,13 +951,12 @@ start_server {
         r flushdb
     }
 
-    test {small_bitmap cold bitop} {
+    test {small_bitmap cold bitop overwrite} {
         build_cold_small_bitmap small_bitmap1
         check_small_bitmap1_bitop
         r flushdb
-    }
 
-    test {small_bitmap cold bitop overwrite} {
+    test {small_bitmap cold bitop} {
         build_cold_small_bitmap small_bitmap1
         r setbit src1 0 1
         r setbit src2 2 1
@@ -950,8 +968,8 @@ start_server {
         after 100
         r swap.evict src2
         wait_key_cold r src2
-        assert_equal {1} [r bitop XOR small_bitmap1 small_bitmap1 src1 src2]
-        assert_equal {1} [r bitcount small_bitmap1]
+        assert_equal {1} [r bitop XOR small_bitmap1 src1 src2]
+        assert_equal {2} [r bitcount small_bitmap1]
         r flushdb
     }
 
