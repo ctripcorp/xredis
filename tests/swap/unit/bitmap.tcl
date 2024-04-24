@@ -445,8 +445,7 @@ start_server  {
 }  {
     r config set swap-debug-evict-keys 0
 
-    test "GETBIT against string-encoded key 0" {
-        # cold bitmap to string 
+    test "GETBIT against string-encoded key old bitmap to string" { 
         r setbit mykey 81919 1
         r setbit mykey 1 1
         r setbit mykey 3 1
@@ -467,8 +466,7 @@ start_server  {
         r flushdb
     }
 
-    test "GETBIT against string-encoded key 1" {
-        # hot bitmap to string 
+    test "GETBIT against string-encoded key hot bitmap to string" {
         r setbit mykey 81919 1
         r setbit mykey 1 1
         r setbit mykey 3 1
@@ -484,8 +482,7 @@ start_server  {
         r flushdb
     }
 
-    test "SETBIT against non-existing key 0" {
-        # cold bitmap to string 
+    test "SETBIT against non-existing key cold bitmap to string" {
         assert_equal {0} [r setbit mykey 1 1]
         r swap.evict mykey
         wait_key_cold r mykey
@@ -495,8 +492,7 @@ start_server  {
         r flushdb
     }
 
-    test "SETBIT against non-existing key 1" {
-        # hot bitmap to string 
+    test "SETBIT against non-existing key hot bitmap to string" {
         assert_equal {0} [r setbit mykey 1 1]
         assert_equal [binary format B* 01000000] [r get mykey]
         assert [object_is_string r mykey] 
@@ -521,8 +517,7 @@ start_server  {
         r flushdb
     }
 
-    test "SETBIT against integer-encoded key 0 " {
-        # cold string to bitmap
+    test "SETBIT against integer-encoded key cold string to bitmap" {
         # Ascii "1" is integer 49 = 00 11 00 01
         r set mykey 1
         r swap.evict mykey
@@ -538,8 +533,7 @@ start_server  {
         r flushdb
     }
 
-    test "SETBIT against integer-encoded key 1" {
-        # hot string to bitmap
+    test "SETBIT against integer-encoded key hot string to bitmap" {
         # Ascii "1" is integer 49 = 00 11 00 01
         r set mykey 1
         assert_encoding int mykey
