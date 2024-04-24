@@ -548,24 +548,21 @@ static inline void keyLoadFixFeed(struct keyLoadFixData *fix, decodedData *d) {
     /* skip obselete subkeys, note that this rule also works for string,
      * subkey version never equal string version (i.e. zero). */
     if (fix->version != d->version) return;
-
+    robj *subval = NULL;
+    if (fix->rebuild_meta && fix->rebuild_meta->swap_type == SWAP_TYPE_BITMAP) {
+        /* only need to load subval for bitmap meta rebuilding. */
+        rio sdsrdb;
+        rioInitWithBuffer(&sdsrdb,d->rdbraw);
+        subval = rdbLoadStringObject(&sdsrdb);
+    }
     
-    if (fix->rebuild_meta) {
-        robj *subval = NULL;
-        if (fix->rebuild_meta->swap_type == SWAP_TYPE_BITMAP) {
-            /* only need to load subval for bitmap meta rebuilding. */
-            rio sdsrdb;
-            rioInitWithBuffer(&sdsrdb,d->rdbraw);
-            subval = rdbLoadStringObject(&sdsrdb);
-        }
-        if (objectMetaRebuildFeed(fix->rebuild_meta,d->version,d->subkey,sdslen(d->subkey),subval)) {
-            fix->feed_err++;
-        }
-        if (subval != NULL) 
-            freeStringObject(subval);
+    if (fix->rebuild_meta && objectMetaRebuildFeed(fix->rebuild_meta,d->version,d->subkey,sdslen(d->subkey),subval)) {
+        fix->feed_err++;
     } else {
         fix->feed_ok++;
     }
+    if (subval != NULL) 
+        freeStringObject(subval);
 }
 
 #define FIX_NONE 0

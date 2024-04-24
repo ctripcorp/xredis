@@ -1417,6 +1417,7 @@ int listSwapAna(swapData *data, int thd, struct keyRequest *req,
 
             if (req->type == KEYREQUEST_TYPE_SAMPLE) {
                 range sample_ranges[1];
+                sample_ranges[0].type = RANGE_LIST;
                 sample_ranges[0].start = 0;
                 sample_ranges[0].end = req->sp.count;
                 sample_ranges[0].reverse = 0;
@@ -2521,26 +2522,26 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
     TEST("list-meta: normalize from request") {
         listMeta *qm;
 
-        range ltrim1[1] = {{-1,0,1}};
+        range ltrim1[1] = {{RANGE_LIST,-1,0,1}};
         qm = listMetaNormalizeFromRequest(0,1,ltrim1,4);
         test_assert(qm->num == 1 && qm->len == 4);
         test_assert(qm->segments[0].index == 0 && qm->segments[0].len == 4);
 
-        range ltrim2[1] = {{1,-2,1}};
+        range ltrim2[1] = {{RANGE_LIST,1,-2,1}};
         qm = listMetaNormalizeFromRequest(0,1,ltrim2,4);
         test_assert(listMetaIsValid(qm,0));
         test_assert(qm->num == 1 && qm->len == 4);
         test_assert(qm->segments[0].index == 0 && qm->segments[0].len == 4);
         listMetaFree(qm);
 
-        range ltrim3[2] = {{1,-1,1}};
+        range ltrim3[2] = {{RANGE_LIST,1,-1,1}};
         qm = listMetaNormalizeFromRequest(0,1,ltrim3,4);
         test_assert(qm->num == 2 && qm->len == 3);
         test_assert(qm->segments[0].index == 0 && qm->segments[0].len == 2);
         test_assert(qm->segments[1].index == 3 && qm->segments[1].len == 1);
         listMetaFree(qm);
 
-        range ltrim4[2] = {{0,-1,1}};
+        range ltrim4[2] = {{RANGE_LIST,0,-1,1}};
         qm = listMetaNormalizeFromRequest(0,1,ltrim4,4);
         test_assert(qm->num == 2 && qm->len == 2);
         test_assert(qm->segments[0].index == 0 && qm->segments[0].len == 1);
@@ -2618,7 +2619,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         listMeta *lm = listMetaCreate(), *qm, *sm;
         /* hot */
         listMetaAppendSegment(lm,SEGMENT_TYPE_HOT,0,4);
-        range ltrim[2] = {{1,-2,1}};
+        range ltrim[2] = {{RANGE_LIST,1,-2,1}};
         qm = listMetaNormalizeFromRequest(0,1,ltrim,4);
         sm = listMetaCalculateSwapInMeta(lm,qm);
         test_assert(listMetaEmpty(sm));
@@ -2641,7 +2642,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         listMetaReset(lm);
         listMetaPush6Seg(lm);
 
-        range req1[1] = {{15,44,0}};
+        range req1[1] = {{RANGE_LIST,15,44,0}};
         qm = listMetaNormalizeFromRequest(0,1,req1,60);
         sm = listMetaCalculateSwapInMeta(lm,qm);
         test_assert(sm->num == 2 && sm->len == 15);
@@ -2649,7 +2650,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         test_assert(sm->segments[1].index == 30 && sm->segments[1].len == 10);
         listMetaFree(qm), listMetaFree(sm);
 
-        range req2[5] = { {5,14,0}, {15,24,0}, {25,29,0}, {30,54,0}, {55,59,0}};
+        range req2[5] = { {RANGE_LIST,5,14,0}, {RANGE_LIST,15,24,0}, {RANGE_LIST,25,29,0}, {RANGE_LIST,30,54,0}, {RANGE_LIST,55,59,0}};
         qm = listMetaNormalizeFromRequest(0,5,req2,60);
         sm = listMetaCalculateSwapInMeta(lm,qm);
         test_assert(sm->num == 3 && sm->len == 30);
@@ -2816,7 +2817,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         metaListPush6Seg(main);
 
         /* skip if overlaps with main hot */
-        range req1[1] = { {5,5,0} };
+        range req1[1] = { {RANGE_LIST,5,5,0} };
         listMeta *meta1 = listMetaNormalizeFromRequest(0,1,req1,60);
         robj *list1 = createQuicklistObject();
         metaList *delta1 = metaListBuild(meta1,list1);
@@ -2826,7 +2827,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         metaListDestroy(delta1);
 
         /* merge with hot */
-        range req2[1] = { {10,11,0} };
+        range req2[1] = { {RANGE_LIST,10,11,0} };
         listMeta *meta2 = listMetaNormalizeFromRequest(0,1,req2,60);
         robj *list2 = createQuicklistObject();
         metaList *delta2 = metaListBuild(meta2,list2);
@@ -2836,7 +2837,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         metaListDestroy(delta2);
 
         /* merge and split */
-        range req3[1] = { {14,15,0}, };
+        range req3[1] = { {RANGE_LIST,14,15,0}, };
         listMeta *meta3 = listMetaNormalizeFromRequest(0,1,req3,60);
         robj *list3 = createQuicklistObject();
         metaList *delta3 = metaListBuild(meta3,list3);
@@ -2846,7 +2847,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         metaListDestroy(delta3);
 
         /* complex overlap */
-        range req4[3] = { {4,4,0}, {5,44,0}, {48,57,0} };
+        range req4[3] = { {RANGE_LIST,4,4,0}, {RANGE_LIST,5,44,0}, {RANGE_LIST,48,57,0} };
         listMeta *meta4 = listMetaNormalizeFromRequest(0,3,req4,60);
         robj *list4 = createQuicklistObject();
         metaList *delta4 = metaListBuild(meta4,list4);
@@ -2856,7 +2857,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         metaListDestroy(delta4);
 
         /* edge case */
-        range req5[1] = { {1,1,0}};
+        range req5[1] = { {RANGE_LIST,1,1,0}};
         listMeta *mainmeta5 = listMetaCreate(), *meta5 = listMetaNormalizeFromRequest(0,1,req5,3);
         listMetaAppendSegment(mainmeta5,SEGMENT_TYPE_HOT,0,1);
         listMetaAppendSegment(mainmeta5,SEGMENT_TYPE_COLD,1,2);
@@ -2878,7 +2879,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         metaListPush6Seg(main);
 
         /* skip if overlaps with main cold */
-        range req1[1] = { {10,11,0} };
+        range req1[1] = { {RANGE_LIST,10,11,0} };
         listMeta *meta1 = listMetaNormalizeFromRequest(0,1,req1,60);
         turnListMeta2Type(meta1,SEGMENT_TYPE_COLD);
         test_assert(metaListExclude(main,meta1) == 0);
@@ -2886,7 +2887,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         listMetaFree(meta1);
 
         /* exclude cold segment */
-        range req2[1] = { {0,1,0} };
+        range req2[1] = { {RANGE_LIST,0,1,0} };
         listMeta *meta2 = listMetaNormalizeFromRequest(0,1,req2,60);
         turnListMeta2Type(meta2,SEGMENT_TYPE_COLD);
         test_assert(metaListExclude(main,meta2) == 2);
@@ -2894,7 +2895,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         listMetaFree(meta2);
 
         /* exclude and split */
-        range req3[1] = { {25,26,0} };
+        range req3[1] = { {RANGE_LIST,25,26,0} };
         listMeta *meta3 = listMetaNormalizeFromRequest(0,1,req3,60);
         turnListMeta2Type(meta3,SEGMENT_TYPE_COLD);
         test_assert(metaListExclude(main,meta3) == 2);
@@ -2902,7 +2903,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         listMetaFree(meta3);
 
         /* complex */
-        range req4[3] = { {5,14,0}, {15,44,0}, {50,52,0} };
+        range req4[3] = { {RANGE_LIST,5,14,0}, {RANGE_LIST,15,44,0}, {RANGE_LIST,50,52,0} };
         listMeta *meta4 = listMetaNormalizeFromRequest(0,3,req4,60);
         turnListMeta2Type(meta4,SEGMENT_TYPE_COLD);
         test_assert(metaListExclude(main,meta4) == 18);
@@ -2921,7 +2922,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         selected = createQuicklistObject();
 
         /* skip if overlaps with main cold */
-        range req1[1] = { {10,11,0} };
+        range req1[1] = { {RANGE_LIST,10,11,0} };
         listMeta *meta1 = listMetaNormalizeFromRequest(0,1,req1,60);
         turnListMeta2Type(meta1,SEGMENT_TYPE_COLD);
         test_assert(metaListSelect(main,meta1,selectElements,selected) == 0);
@@ -2929,7 +2930,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         listMetaFree(meta1);
 
         /* select cold segment */
-        range req2[1] = { {0,1,0} };
+        range req2[1] = { {RANGE_LIST,0,1,0} };
         listMeta *meta2 = listMetaNormalizeFromRequest(0,1,req2,60);
         turnListMeta2Type(meta2,SEGMENT_TYPE_COLD);
         test_assert(metaListSelect(main,meta2,selectElements,selected) == 2);
@@ -2937,7 +2938,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         listMetaFree(meta2);
 
         /* exclude and split */
-        range req3[1] = { {25,26,0} };
+        range req3[1] = { {RANGE_LIST,25,26,0} };
         listMeta *meta3 = listMetaNormalizeFromRequest(0,1,req3,60);
         turnListMeta2Type(meta3,SEGMENT_TYPE_COLD);
         test_assert(metaListSelect(main,meta3,selectElements,selected) == 2);
@@ -2946,7 +2947,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
 
         /* complex */
         decrRefCount(selected), selected = createQuicklistObject();
-        range req4[3] = { {5,14,0}, {15,44,0}, {50,52,0} };
+        range req4[3] = { {RANGE_LIST,5,14,0}, {RANGE_LIST,15,44,0}, {RANGE_LIST,50,52,0} };
         listMeta *meta4 = listMetaNormalizeFromRequest(0,3,req4,60);
         turnListMeta2Type(meta4,SEGMENT_TYPE_COLD);
         test_assert(metaListSelect(main,meta4,selectElements,selected) == 20);
