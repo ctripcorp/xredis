@@ -1747,7 +1747,14 @@ start_server {tags {"bitmap chaos test"} overrides {save ""}} {
                                     set otherbitmap "mybitmap-[randomInt $bitmaps]"
                         set src_direction [randpath {return LEFT} {return RIGHT}]
                         set dst_direction [randpath {return LEFT} {return RIGHT}]
-                                    randpath {
+                        randpath {
+                            set randIdx [randomInt $bitmap_max_length]
+                            set randVal [randomInt 2]
+                            $r1 SETBIT $mybitmap $randIdx $randVal
+                        } {
+                            set randIdx1 [randomInt $bitmap_max_length]
+                            $r1 SETRANGE $mybitmap $randIdx1 "redis"
+                        } {
                             set randIdx1 [randomInt $bitmap_max_length]
                             set randIdx2 [randomInt $bitmap_max_length]
                             $r1 BITCOUNT $mybitmap $randIdx1 $randIdx2
