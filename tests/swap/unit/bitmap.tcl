@@ -401,7 +401,8 @@ proc check_mybitmap1_bitpos  {}  {
     assert_equal {0} [r setbit mybitmap1 335864 1]
     assert_equal {335872} [r bitpos mybitmap1 0 41983]
 }
-proc check_mybitmap1_bitop0  {}  {
+
+proc build_bitmap_args {} {
     r setbit src1 32767 1
     r setbit src2 335871 1
     after 100
@@ -410,32 +411,22 @@ proc check_mybitmap1_bitop0  {}  {
     after 100
     r swap.evict src2
     wait_key_cold r src2
+}
+
+proc check_mybitmap1_bitop_xor_3_bitmap  {}  {
+    build_bitmap_args
     assert_equal {41984} [r bitop XOR mybitmap1 mybitmap1 src1 src2]
     assert_equal {9} [r bitcount mybitmap1]
 }
 
-proc check_mybitmap1_bitop1  {}  {
-    r setbit src1 32767 1
-    r setbit src2 335871 1
-    after 100
-    r swap.evict src1
-    wait_key_cold r src1
-    after 100
-    r swap.evict src2
-    wait_key_cold r src2
+proc check_mybitmap1_bitop_xor_2_bitmap  {}  {
+    build_bitmap_args
     assert_equal {41984} [r bitop XOR mybitmap1 src1 src2]
     assert_equal {2} [r bitcount mybitmap1]
 }
 
-proc check_extend_mybitmap1_bitop  {}  {
-    r setbit src1 32767 1
-    r setbit src2 335871 1
-    after 100
-    r swap.evict src1
-    wait_key_cold r src1
-    after 100
-    r swap.evict src2
-    wait_key_cold r src2
+proc check_extend_mybitmap1_xor_3_bitmap  {}  {
+    build_bitmap_args
     assert_equal {46080} [r bitop XOR mybitmap1 mybitmap1 src1 src2]
     assert_equal {10} [r bitcount mybitmap1]
 }
@@ -754,22 +745,20 @@ start_server {
         }
     }
 
-    test {small_bitmap pure hot bitfield 0} {
-        foreach {key value} [array get small_bitmap1_bitfield] {
-            build_pure_hot_small_bitmap small_bitmap1
-            eval $value
-            assert_equal {2} [r bitcount small_bitmap1]
-            r flushdb
-        }
+    test {small_bitmap pure hot bitfield} {
+        build_pure_hot_small_bitmap small_bitmap1
+        eval $value
+        assert_equal {2} [r bitcount small_bitmap1]
+        r flushdb
     }
 
-    test {small_bitmap pure hot bitop 0} {
+    test {small_bitmap pure hot bitop} {
         build_pure_hot_small_bitmap small_bitmap1
         check_small_bitmap1_bitop
         r flushdb
     }
 
-    test {small_bitmap pure hot bitop 1} {
+    test {extend small_bitmap pure hot bitop} {
         build_pure_hot_small_bitmap small_bitmap1
         check_extend_small_bitmap1_bitop
         r flushdb
@@ -802,23 +791,21 @@ start_server {
         }
     }
 
-    test {small_bitmap hot bitfield 0} {
-        foreach {key value} [array get small_bitmap1_bitfield] {
-            build_hot_small_bitmap small_bitmap1
-            eval $value
-            assert_equal {3}  [r BITFIELD small_bitmap1 INCRBY u2 0 1]
-            assert_equal {2} [r bitcount small_bitmap1]
-            r flushdb
-        }
+    test {small_bitmap hot bitfield} {
+        build_hot_small_bitmap small_bitmap1
+        eval $value
+        assert_equal {3}  [r BITFIELD small_bitmap1 INCRBY u2 0 1]
+        assert_equal {2} [r bitcount small_bitmap1]
+        r flushdb
     }
 
-    test {small_bitmap hot bitop 0} {
+    test {small_bitmap hot bitop} {
         build_hot_small_bitmap small_bitmap1
         check_small_bitmap1_bitop
         r flushdb
     }
 
-    test {small_bitmap hot bitop 1} {
+    test {extend small_bitmap hot bitop} {
         build_hot_small_bitmap small_bitmap1
         check_extend_small_bitmap1_bitop
         r flushdb
@@ -846,17 +833,15 @@ start_server {
 
     }
 
-    test {small_bitmap extend hot bitfield 0} {
-        foreach {key value} [array get small_bitmap1_bitfield] {
-            build_extend_hot_small_bitmap small_bitmap1
-            eval $value
-            assert_equal {3}  [r BITFIELD small_bitmap1 INCRBY u2 0 1]
-            assert_equal {3} [r bitcount small_bitmap1]
-            r flushdb
-        }
+    test {small_bitmap extend hot bitfield} {
+        build_extend_hot_small_bitmap small_bitmap1
+        eval $value
+        assert_equal {3}  [r BITFIELD small_bitmap1 INCRBY u2 0 1]
+        assert_equal {3} [r bitcount small_bitmap1]
+        r flushdb
     }
 
-    test {small_bitmap extend hot bitop 0} {
+    test {small_bitmap extend hot bitop xor 3 keys} {
         build_extend_hot_small_bitmap small_bitmap1
         r setbit src1 0 1
         r setbit src2 2 1
@@ -871,7 +856,7 @@ start_server {
         r flushdb
     }
 
-    test {small_bitmap extend hot bitop 1} {
+    test {small_bitmap extend hot bitop xor 2 keys} {
         build_extend_hot_small_bitmap small_bitmap1
         r setbit src1 0 1
         r setbit src2 2 1
@@ -913,17 +898,15 @@ start_server {
         }
     }
 
-    test {small_bitmap cold bitfield 0} {
-        foreach {key value} [array get small_bitmap1_bitfield] {
-            build_cold_small_bitmap small_bitmap1
-            eval $value
-            assert_equal {3}  [r BITFIELD small_bitmap1 INCRBY u2 0 1]
-            assert_equal {2} [r bitcount small_bitmap1]
-            r flushdb
-        }
+    test {small_bitmap cold bitfield} {
+        build_cold_small_bitmap small_bitmap1
+        eval $value
+        assert_equal {3}  [r BITFIELD small_bitmap1 INCRBY u2 0 1]
+        assert_equal {2} [r bitcount small_bitmap1]
+        r flushdb
     }
 
-    test {small_bitmap cold bitop 0} {
+    test {small_bitmap cold bitop} {
         foreach {key value} [array get small_bitmap1_bitop] {
             build_cold_small_bitmap small_bitmap1
             eval $value
@@ -932,7 +915,7 @@ start_server {
         }
     }
 
-    test {small_bitmap cold bitop 1} {
+    test {extend small_bitmap cold bitop} {
         build_cold_small_bitmap small_bitmap1
         check_extend_small_bitmap1_bitop
         r flushdb
@@ -1216,29 +1199,26 @@ start_server {
         r flushdb
     }
 
-    test {pure hot bitfield 0} {
+    test {pure hot bitfield modify} {
         build_pure_hot_data mybitmap1
         assert_equal {-15}  [r BITFIELD mybitmap1 INCRBY i5 335871 1]
         assert_equal {12} [r bitcount mybitmap1]
         r flushdb
     }
 
-    test {pure hot bitfield 1} {
+    test {pure hot bitfield raw} {
         build_pure_hot_data mybitmap1
         assert_equal {8}  [r bitfield_ro mybitmap1 get u4 65535]
         check_mybitmap_is_right mybitmap1
         r flushdb
     }
 
-    test {pure hot bitop 0} {
+    test {pure hot bitop} {
         build_pure_hot_data mybitmap1
-        check_mybitmap1_bitop0
+        check_mybitmap1_bitop_xor_3_bitmap
         r flushdb
-    }
-
-    test {pure hot bitop 1} {
         build_pure_hot_data mybitmap1
-        check_mybitmap1_bitop1
+        check_mybitmap1_bitop_xor_2_bitmap
         r flushdb
     }
 
@@ -1282,29 +1262,23 @@ start_server {
         r flushdb
     }
 
-    test {hot bitfield 0} {
+    test {hot bitfield} {
         build_hot_data mybitmap1
         assert_equal {-15}  [r BITFIELD mybitmap1 INCRBY i5 335871 1]
         assert_equal {12} [r bitcount mybitmap1]
         r flushdb
-    }
-
-    test {hot bitfield 1} {
         build_hot_data mybitmap1
         assert_equal {8}  [r bitfield_ro mybitmap1 get u4 65535]
         check_mybitmap_is_right mybitmap1
         r flushdb
     }
 
-    test {hot bitop 0} {
+    test {hot bitop} {
         build_hot_data mybitmap1
-        check_mybitmap1_bitop0
+        check_mybitmap1_bitop_xor_3_bitmap
         r flushdb
-    }
-
-    test {hot bitop 1} {
         build_hot_data mybitmap1
-        check_mybitmap1_bitop1
+        check_mybitmap1_bitop_xor_2_bitmap
         r flushdb
     }
 
@@ -1330,29 +1304,23 @@ start_server {
 
     }
 
-    test {extend hot bitfield 0} {
+    test {extend hot bitfield} {
         build_extend_hot_data mybitmap1
         assert_equal {-15}  [r BITFIELD mybitmap1 INCRBY i5 335871 1]
         assert_equal {13} [r bitcount mybitmap1]
         r flushdb
-    }
-
-    test {extend hot bitfield 1} {
         build_extend_hot_data mybitmap1
         assert_equal {8}  [r bitfield_ro mybitmap1 get u4 65535]
         check_extend_mybitmap1_is_right
         r flushdb
     }
 
-    test {extend hot bitop 0} {
+    test {extend hot bitop} {
         build_extend_hot_data mybitmap1
-        check_extend_mybitmap1_bitop
+        check_extend_mybitmap1_xor_3_bitmap
         r flushdb
-    }
-
-    test {extend hot bitop 1} {
         build_extend_hot_data mybitmap1
-        check_mybitmap1_bitop1
+        check_mybitmap1_bitop_xor_2_bitmap
         r flushdb
     }
 
@@ -1405,20 +1373,13 @@ start_server {
         }
     }
 
-    test {warm bitfield 0} {
+    test {warm bitfield} {
         foreach {key value} [array get build_warm_with_hole] {
             eval $value
             append data_str $i
             eval $data_str
             assert_equal {-15}  [r BITFIELD mybitmap1 INCRBY i5 335871 1]
             r flushdb
-        }
-    }
-
-    test {warm bitfield 1} {
-        foreach {key value} [array get build_warm_with_hole] {
-            eval $value
-            append data_str $i
             eval $data_str
             assert_equal {8}  [r bitfield_ro mybitmap1 get u4 65535]
             check_mybitmap_is_right mybitmap1
@@ -1426,22 +1387,15 @@ start_server {
         }
     }
 
-    test {warm bitop 0} {
+    test {warm bitop} {
         foreach {key value} [array get build_warm_with_hole] {
             eval $value
             append data_str $i
             eval $data_str
-            check_mybitmap1_bitop0
+            check_mybitmap1_bitop_xor_3_bitmap
             r flushdb
-        }
-    }
-
-    test {warm bitop 1} {
-        foreach {key value} [array get build_warm_with_hole] {
-            eval $value
-            append data_str $i
             eval $data_str
-            check_mybitmap1_bitop1
+            check_mybitmap1_bitop_xor_2_bitmap
             r flushdb
         }
     }
@@ -1484,29 +1438,23 @@ start_server {
         r flushdb
     }
 
-    test {cold bitfield 0} {
+    test {cold bitfield} {
         build_cold_data mybitmap1
         assert_equal {-15}  [r BITFIELD mybitmap1 INCRBY i5 335871 1]
         assert_equal {12} [r bitcount mybitmap1]
         r flushdb
-    }
-
-    test {cold bitfield 1} {
         build_cold_data mybitmap1
         assert_equal {8}  [r bitfield_ro mybitmap1 get u4 65535]
         check_mybitmap_is_right mybitmap1
         r flushdb
     }
 
-    test {cold bitop 0} {
+    test {cold bitop} {
         build_cold_data mybitmap1
-        check_mybitmap1_bitop0
+        check_mybitmap1_bitop_xor_3_bitmap
         r flushdb
-    }
-
-    test {cold bitop 1} {
         build_cold_data mybitmap1
-        check_mybitmap1_bitop1
+        check_mybitmap1_bitop_xor_2_bitmap
         r flushdb
     }
 
