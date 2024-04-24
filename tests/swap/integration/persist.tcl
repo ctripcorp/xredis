@@ -315,7 +315,7 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
             r hmset myhash6 $i $i
         }
         assert_equal [r hlen myhash6] [expr 2*$num_subkeys]
-        assert_equal [r bitcount mybitmap6] [11]
+        assert_equal [r bitcount mybitmap6] {11}
 
         assert_equal [status r rdb_bgsave_in_progress] 1
         waitForBgsave r
