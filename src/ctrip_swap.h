@@ -1735,7 +1735,9 @@ struct swapForkRocksdbCtx;
 
 typedef struct swapForkRocksdbType {
   void (*init)(struct swapForkRocksdbCtx *sfrctx);
+  /* exec by redis process*/
   int (*beforeFork)(struct swapForkRocksdbCtx *sfrctx);
+  /* exec by child process*/
   int (*afterForkChild)(struct swapForkRocksdbCtx *sfrctx);
   int (*afterForkParent)(struct swapForkRocksdbCtx *sfrctx, int childpid);
   void (*deinit)(struct swapForkRocksdbCtx *sfrctx);
@@ -2005,6 +2007,7 @@ typedef struct bufferedIterCompleteQueue {
     int64_t buffered_count;
     int64_t processed_count;
     pthread_mutex_t buffer_lock;
+    /* 同步 rdb 子进程 和 他的rocksdb IO 线程 */
     pthread_cond_t ready_cond;
     pthread_cond_t vacant_cond;
 } bufferedIterCompleteQueue;
@@ -2012,6 +2015,7 @@ typedef struct bufferedIterCompleteQueue {
 typedef struct rocksIter{
     redisDb *db;
     struct rocks *rocks;
+    /* rocksDB io 线程 */
     pthread_t io_thread;
     bufferedIterCompleteQueue *buffered_cq;
     rocksdb_column_family_handle_t *cf_handles[CF_COUNT];

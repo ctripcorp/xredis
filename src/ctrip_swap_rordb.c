@@ -519,6 +519,7 @@ int rordbSaveDbRio(rio *rdb, redisDb *db) {
     if (db->cold_filter->filter) {
         if (rordbSaveCuckooFilter(rdb,db->cold_filter->filter) == -1) goto err;
     }
+    /* rordb save meta */
     if (rordbSaveDbObjectMeta(rdb,db) == -1) goto err;
     return C_OK;
 err:

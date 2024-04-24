@@ -254,6 +254,11 @@ static int rdbKeySaveDataInitCold(rdbKeySaveData *save, redisDb *db,
     return retval;
 }
 
+/**
+ * @brief only save META_CF
+ * hot data: do nothing
+ * warm, cold data: init save->{type, omtype, object_meta} 
+*/
 int rdbKeySaveDataInit(rdbKeySaveData *save, redisDb *db, decodedResult *dr) {
     robj *value, *key;
     objectMeta *object_meta;
@@ -303,6 +308,7 @@ int rdbSaveRocks(rio *rdb, int *error, redisDb *db, int rdbflags) {
     int iter_valid; /* true if current iter value is valid. */
 
     rocks *rocks = serverRocksGetReadLock();
+    /* it->buffered_cq 存放 rocksdb 读取的 {meta, data} 数据 */
     if (!(it = rocksCreateIter(rocks,db))) {
         serverLog(LL_WARNING, "Create rocks iterator failed.");
         serverRocksUnlock(rocks);
@@ -316,9 +322,13 @@ int rdbSaveRocks(rio *rdb, int *error, redisDb *db, int rdbflags) {
         rdbKeySaveData _save, *save = &_save;
         serverAssert(next->key == NULL);
 
+        /* loop over rocksdb data */
         if (cur->key == NULL) {
             if (!iter_valid) break;
 
+            /* ana it rocksdb data
+             * data from it->buffered_cq to cur
+             */
             decode_result = rocksIterDecode(it,cur,iter_stats);
             iter_valid = rocksIterNext(it);
 
@@ -327,6 +337,7 @@ int rdbSaveRocks(rio *rdb, int *error, redisDb *db, int rdbflags) {
             serverAssert(cur->key != NULL);
         }
 
+        /* rocksdb data save init, rdbKeySaveDataInit only consumes META_CF, mem from cur to save */
         init_result = rdbKeySaveDataInit(save,db,cur);
         if (init_result == INIT_SAVE_SKIP) {
             stats->init_save_skip++;
@@ -344,6 +355,7 @@ int rdbSaveRocks(rio *rdb, int *error, redisDb *db, int rdbflags) {
             stats->init_save_ok++;
         }
 
+        /* rocksdb data save start */
         if (rdbKeySaveStart(save,rdb) == -1) {
             errstr = sdscatfmt(sdsempty(),"Save key(%S) start failed: %s",
                     cur->key, strerror(errno));

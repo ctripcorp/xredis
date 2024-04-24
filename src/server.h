@@ -763,7 +763,7 @@ typedef struct redisDb {
     dict *meta;                 /* meta for rocksdb subkeys of big object. */
     dict *dirty_subkeys;        /* dirty subkeys. */
     list *evict_asap;           /* keys to be evicted asap. */
-    long long cold_keys;        /* # of cold keys. */
+    long long cold_keys;        /* # of cold keys. 没有coldkey时不对冷数据expire检查 */
     sds randomkey_nextseek;     /* nextseek for randomkey command */
     struct scanExpire *scan_expire; /* scan expire related */
     struct coldFilter *cold_filter; /* cold keys filter: absent cache & cuckoo filter. */

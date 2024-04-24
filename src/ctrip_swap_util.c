@@ -115,9 +115,13 @@ sds rocksEncodeMetaVal(int object_type, long long expire, uint64_t version,
 }
 
 /* extend: pointer to rawkey, not allocated. */
-int rocksDecodeMetaVal(const char *raw, size_t rawlen, int *pobject_type,
-        long long *pexpire, uint64_t *pversion, const char **pextend,
-        size_t *pextend_len) {
+int rocksDecodeMetaVal(const char *raw, size_t rawlen, MOVE int *pobject_type,
+        MOVE long long *pexpire, MOVE uint64_t *pversion, MOVE const char **pextend,
+        MOVE size_t *pextend_len) {
+    /*
+     * 如果 扣除 如下长度后, ptr 还有内存, 则赋给 pextend
+     * rawval: object_type/expire/encoded_version/pextend
+     */
     const char *ptr = raw;
     size_t len = rawlen;
     long long expire;
@@ -194,9 +198,10 @@ sds rocksEncodeDbRangeEndKey(int dbid) {
     return rocksEncodeDbRangeStartKey(dbid+1);
 }
 
-int rocksDecodeDataKey(const char *raw, size_t rawlen, int *dbid,
-        const char **key, size_t *keylen, uint64_t *version,
-        const char **subkey, size_t *subkeylen) {
+int rocksDecodeDataKey(const char *raw, size_t rawlen, MOVE int *dbid,
+        MOVE const char **key, MOVE size_t *keylen, MOVE uint64_t *version,
+        MOVE const char **subkey, MOVE size_t *subkeylen) {
+    /* datakey: dbid/keylen/key/version/subkeylen/subkey */
     keylen_t keylen_;
     uint64_t encoded_version;
     if (raw == NULL || rawlen < sizeof(int)+sizeof(keylen_t)+sizeof(encoded_version)+1) return -1;
@@ -237,8 +242,9 @@ sds rocksEncodeMetaKey(redisDb *db, sds key) {
     return encodeMetaKey(db->id, key, key ? sdslen(key) : 0);
 }
 
-int rocksDecodeMetaKey(const char *raw, size_t rawlen, int *dbid,
-        const char **key, size_t *keylen) {
+int rocksDecodeMetaKey(const char *raw, size_t rawlen, MOVE int *dbid,
+        MOVE const char **key, MOVE size_t *keylen) {
+    /* rawkey: dbid/keylen/key*/
     keylen_t keylen_;
     if (raw == NULL || rawlen < sizeof(int)+sizeof(keylen_t)) return -1;
     if (dbid) *dbid = *(int*)raw;

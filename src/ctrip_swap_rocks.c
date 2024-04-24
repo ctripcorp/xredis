@@ -1398,6 +1398,7 @@ int swapForkRocksdbSnapshotBeforeFork(struct swapForkRocksdbCtx *sfrctx) {
     return C_OK;
 }
 
+/* 创建rdb时,子进程执行,记录 chkpt dir */
 int swapForkRocksdbSnapshotAfterForkChild(struct swapForkRocksdbCtx *sfrctx) {
     swapForkRocksdbSnapshotCtx *snapshot_ctx = sfrctx->extend;
     close(snapshot_ctx->checkpoint_dir_pipe_writing);
@@ -1532,6 +1533,7 @@ int swapForkRocksdbCheckpointBeforeFork(struct swapForkRocksdbCtx *sfrctx) {
     return ret;
 }
 
+/* checkpoint afterForkChild 空函数 */
 int swapForkRocksdbCheckpointAfterForkChild(struct swapForkRocksdbCtx *sfrctx) {
     UNUSED(sfrctx);
     return C_OK;

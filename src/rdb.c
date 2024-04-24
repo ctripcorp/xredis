@@ -1289,6 +1289,7 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi, int rordb) 
         /* Pause rehash to reduce cow */
         dbPauseRehash(db);
 
+        /* save hot data 保存hot数据 */
         dict *d = db->dict;
         di = dictGetSafeIterator(d);
         /* Iterate this DB.dict writing every entry */
@@ -1322,8 +1323,10 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi, int rordb) 
         di = NULL;
 
         if (rordb) {
+            /* rordb checkpoint */
             if (rordbSaveDbRio(rdb,db) == -1) goto werr;
         } else {
+            /* snapshot 保存cold和warm数据 */
             /* Iterate DB.rocks writing every entry */
             if (rdbSaveRocks(rdb,error,db,rdbflags)) goto werr;
         }
@@ -1447,6 +1450,7 @@ int rdbSave(char *filename, rdbSaveInfo *rsi,int rordb) {
         return C_ERR;
     }
 
+    /* [ToDo] rdb save done */
     serverLog(LL_NOTICE,"DB saved on disk");
     server.dirty = 0;
     server.lastsave = time(NULL);
@@ -1471,6 +1475,10 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi, struct swapForkRocksdbCt
     server.lastbgsave_try = time(NULL);
 
     if (server.swap_mode != SWAP_MODE_MEMORY) {
+        /* 初始化 sfrctx,记录 rocksdb 数据存放的文件夹, exec by redis-thd
+         * snapshot: 创建 snapshot
+         * checkpoint:
+         */
         if (swapForkRocksdbBefore(sfrctx)) {
             swapForkRocksdbCtxRelease(sfrctx);
             return C_ERR;
@@ -1485,6 +1493,10 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi, struct swapForkRocksdbCt
         redisSetCpuAffinity(server.bgsave_cpulist);
 
         if (server.swap_mode != SWAP_MODE_MEMORY) {
+            /* 子进程执行: 初始化 sfrctx,记录 rocksdb 数据存放的文件夹
+            * snapshot: 记录 chkpt dir 到 server.rocksdb_rdb_checkpoint_dir
+            * checkpoint: afterForkChild 空函数
+            */
             if (swapForkRocksdbAfterChild(sfrctx)) {
                 exit(1);
             } else {
@@ -2890,6 +2902,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
         }
     }
 
+    /* [ToDo] rdb load done */
     if (empty_keys_skipped) {
         serverLog(LL_WARNING,
             "Done loading RDB, keys loaded: %lld, keys expired: %lld, empty keys skipped: %lld.",

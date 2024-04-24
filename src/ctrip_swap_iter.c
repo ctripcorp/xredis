@@ -119,8 +119,12 @@ static inline int rocksdbIterValid(rocksdb_iterator_t *iter, sds endkey) {
     return memcmp(endkey,rawkey,len) > 0;
 }
 
-void *rocksIterIOThreadMain(void *arg) {
+/**
+ * @brief 子进程创建线程执行
+*/
+void *rocksIterIOThreadMain(IN void *arg) {
     rocksIter *it = arg;
+    /* accumulated_memory: rawkey+rawval 栈变量,没有保存 */
     size_t meta_itered = 0, data_itered = 0, accumulated_memory = 0;
     mstime_t last_ratelimit_time = mstime();
     int signal;
@@ -129,6 +133,7 @@ void *rocksIterIOThreadMain(void *arg) {
     redis_set_thread_title("rocks_iter");
 
     while (!cq->iter_finished) {
+        /* it->buffered_cq 有效数据的长度 */
         int64_t slots = rocksIterWaitVacant(it);
 
         /* there are only one producer, slots will decrease only by current
@@ -152,6 +157,7 @@ void *rocksIterIOThreadMain(void *arg) {
                 break;
             }
 
+            /* rocksdb iter 解析 {meta, data} 后,数据放到 cq->buffered, 通过 slots 防越界 */
             curidx = cq->buffered_count % cq->buffer_capacity;
             cur = cq->buffered + curidx;
 
@@ -170,6 +176,7 @@ void *rocksIterIOThreadMain(void *arg) {
             } else if (!meta_valid && data_valid) {
                 cf = DATA_CF;
             } else {
+                /* [ToDo]: why? */
                 int ret = memcmp(meta_rawkey,data_rawkey,MIN(meta_rklen,data_rklen));
                 if (ret < 0) {
                     cf = META_CF;
@@ -274,6 +281,10 @@ void bufferedIterCompleteQueueFree(bufferedIterCompleteQueue *buffered_cq) {
     zfree(buffered_cq);
 }
 
+/*
+ * @brief 子进程执行
+ * @return rocksIter,堆内存,存放 rocksdb 读取的 {meta, data} 数据
+*/
 rocksIter *rocksCreateIter(rocks *rocks, redisDb *db) {
     int error, i;
     rocksdb_iterator_t *data_iter = NULL, *meta_iter = NULL;
@@ -284,6 +295,9 @@ rocksIter *rocksCreateIter(rocks *rocks, redisDb *db) {
     it->db = db;
     it->checkpoint_db = NULL;
 
+    /* 只有 snapshot,server.rocksdb_rdb_checkpoint_dir才有值
+     * rocksdb snapshot: data,meta,score
+    */
     if (server.rocksdb_rdb_checkpoint_dir != NULL) {
         serverLog(LL_WARNING, "[rocks] create iter from checkpoint %s.", server.rocksdb_rdb_checkpoint_dir);
         if (rocks->snapshot) rocksdb_readoptions_set_snapshot(rocks->ropts, rocks->snapshot);
@@ -298,6 +312,7 @@ rocksIter *rocksCreateIter(rocks *rocks, redisDb *db) {
         }
 
         char *errs[CF_COUNT] = {NULL};
+        /* 打开rocksdb数据库 列族:data,meta,score */
         rocksdb_t* checkpoint_db = rocksdb_open_column_families(rocks->db_opts,
                 server.rocksdb_rdb_checkpoint_dir, CF_COUNT, swap_cf_names,
                 (const rocksdb_options_t *const *)cf_opts,
@@ -315,7 +330,12 @@ rocksIter *rocksCreateIter(rocks *rocks, redisDb *db) {
                 it->cf_handles[DATA_CF]);
         meta_iter = rocksdb_create_iterator_cf(it->checkpoint_db, rocks->ropts,
                 it->cf_handles[META_CF]);
-    } else {
+    } else 
+    /*
+     * rocksdb checkpoint: data, meta
+     * [ToDo] checkpoint SCORE_CF?
+     */
+    {
         data_iter = rocksdb_create_iterator_cf(rocks->db, rocks->ropts,
                 rocks->cf_handles[DATA_CF]);
         meta_iter = rocksdb_create_iterator_cf(rocks->db, rocks->ropts,
@@ -346,6 +366,7 @@ rocksIter *rocksCreateIter(rocks *rocks, redisDb *db) {
         goto err;
     }
 
+    /* io 线程结束后, it 里面是 rocksdb iter 得到的 {rawkey, rawval} */
     return it;
 
 err:
@@ -358,7 +379,7 @@ int rocksIterSeekToFirst(rocksIter *it) {
 }
 
 /* rocks iter rawkey, rawval moved. */
-void rocksIterCfKeyTypeValue(rocksIter *it, int *cf, sds *rawkey, unsigned char *rdbtype, sds *rawval) {
+void rocksIterCfKeyTypeValue(rocksIter *it, int *cf, MOVE sds *rawkey, unsigned char *rdbtype, MOVE sds *rawval) {
     int idx;
     iterResult *cur;
     bufferedIterCompleteQueue *cq = it->buffered_cq;
@@ -465,6 +486,7 @@ int rocksDecodeDataCF(sds rawkey, unsigned char rdbtype, sds rdbraw,
     size_t keylen, subkeylen;
     uint64_t version;
 
+    /* datakey: dbid/keylen/key/version/subkeylen/subkey */
     retval = rocksDecodeDataKey(rawkey,sdslen(rawkey),&dbid,&key,&keylen,
             &version,&subkey,&subkeylen);
     if (retval) return retval;
@@ -488,9 +510,11 @@ int rocksDecodeMetaCF(sds rawkey, sds rawval, decodedMeta *decoded) {
     long long expire;
     uint64_t version;
 
+    /* rawkey: dbid/keylen/key*/
     retval = rocksDecodeMetaKey(rawkey,sdslen(rawkey),&dbid,&key,&keylen);
     if (retval) return retval;
 
+    /* rawval: object_type/expire/encoded_version/pextend */
     retval = rocksDecodeMetaVal(rawval,sdslen(rawval),&object_type,&expire,
             &version,&extend,&extlen);
     if (retval) return retval;
@@ -508,12 +532,16 @@ int rocksDecodeMetaCF(sds rawkey, sds rawval, decodedMeta *decoded) {
     return 0;
 }
 
-int rocksIterDecode(rocksIter *it, decodedResult *decoded,
+int rocksIterDecode(rocksIter *it, MOVE decodedResult *decoded,
         rocksIterDecodeStats *stats) {
     sds rawkey, rawval;
     int cf, retval;
     unsigned char rdbtype;
 
+    /* 
+     * data from it->buffered_cq to {rawkey, rawval} 
+     * init rdbtype
+     */
     rocksIterCfKeyTypeValue(it,&cf,&rawkey,&rdbtype,&rawval);
 
 #ifdef ROCKS_DEBUG
@@ -529,9 +557,22 @@ int rocksIterDecode(rocksIter *it, decodedResult *decoded,
     /* rawkey,rawval moved from rocksIter to decoded if decode ok. */
     switch (cf) {
     case META_CF:
+        /*
+         * rawkey: dbid/keylen/key
+         * rawval: object_type/expire/encoded_version/pextend
+         * decoded: memcpy from {rawkey, rawval}
+         * {rawkey, rawval}: free after use
+         */
         retval = rocksDecodeMetaCF(rawkey,rawval,(decodedMeta*)decoded);
         break;
     case DATA_CF:
+        /* 
+         * rawkey: dbid/keylen/key
+         * rdbtype: 栈变量, inited
+         * datakey: dbid/keylen/key/version/subkeylen/subkey
+         * decoded: memcpy from rawkey
+         * rawkey: free after use
+         */
         retval = rocksDecodeDataCF(rawkey,rdbtype,rawval,(decodedData*)decoded);
         break;
     default:
