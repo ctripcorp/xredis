@@ -298,39 +298,39 @@ set check_mybitmap1_setbit {
     }
 }
 
-array set check_mybitmap1_getbit {
-    {1} {assert_equal {1} [r getbit mybitmap1 32767]}
-    {2} {assert_equal {1} [r getbit mybitmap1 65535]}
-    {3} {assert_equal {1} [r getbit mybitmap1 98303]}
-    {4} {assert_equal {1} [r getbit mybitmap1 131071]}
-    {5} {assert_equal {1} [r getbit mybitmap1 163839]}
-    {6} {assert_equal {1} [r getbit mybitmap1 196607]}
-    {7} {assert_equal {1} [r getbit mybitmap1 229375]}
-    {8} {assert_equal {1} [r getbit mybitmap1 262143]}
-    {9} {assert_equal {1} [r getbit mybitmap1 294911]}
-    {10} {assert_equal {1} [r getbit mybitmap1 327679]}
-    {11} {assert_equal {1} [r getbit mybitmap1 335871]}
-    {12} {assert_equal {0} [r getbit mybitmap1 335872]}
-    {13} {assert_error "ERR*" {r getbit mybitmap1 -1}}
-    {14} {assert_equal {0} [r getbit mybitmap1 2147483647]}
+set check_mybitmap_getbit {
+    {1} {assert_equal {1} [r getbit % 32767]}
+    {2} {assert_equal {1} [r getbit % 65535]}
+    {3} {assert_equal {1} [r getbit % 98303]}
+    {4} {assert_equal {1} [r getbit % 131071]}
+    {5} {assert_equal {1} [r getbit % 163839]}
+    {6} {assert_equal {1} [r getbit % 196607]}
+    {7} {assert_equal {1} [r getbit % 229375]}
+    {8} {assert_equal {1} [r getbit % 262143]}
+    {9} {assert_equal {1} [r getbit % 294911]}
+    {10} {assert_equal {1} [r getbit % 327679]}
+    {11} {assert_equal {1} [r getbit % 335871]}
+    {12} {assert_equal {0} [r getbit % 335872]}
+    {13} {assert_error "ERR*" {r getbit % -1}}
+    {14} {assert_equal {0} [r getbit % 2147483647]}
 }
 
-array set check_mybitmap1_bitcount {
-    {1} {assert_equal {11} [r bitcount mybitmap1]}
-    {2} {assert_equal {2} [r bitcount mybitmap1 0 9216]}
-    {3} {assert_equal {2} [r bitcount mybitmap1 5000 15000]}
-    {4} {assert_equal {3} [r bitcount mybitmap1 9216 20480]}
-    {5} {assert_equal {3} [r bitcount mybitmap1 15000 25000]}
-    {6} {assert_equal {6} [r bitcount mybitmap1 20480 43008]}
-    {7} {assert_equal {9} [r bitcount mybitmap1 10000 2000000]}
-    {8} {assert_equal {9} [r bitcount mybitmap1 10000 2147483647]}
-    {9} {assert_equal {11} [r bitcount mybitmap1 -2147483648 2147483647]}
-    {10} {assert_equal {0} [r bitcount mybitmap1 2000000 10000]}
-    {11} {assert_equal {5} [r bitcount mybitmap1 10000 -10000]}
-    {12} {assert_equal {0} [r bitcount mybitmap1 -10000 10000]}
-    {13} {assert_equal {7} [r bitcount mybitmap1 -41984 -11984]}
-    {14} {assert_equal {0} [r bitcount mybitmap1 -11984 -41984]}
-    {15} {assert_equal {3} [r bitcount mybitmap1 -21984 -11984]}
+set check_mybitmap_bitcount {
+    {1} {assert_equal {11} [r bitcount %]}
+    {2} {assert_equal {2} [r bitcount % 0 9216]}
+    {3} {assert_equal {2} [r bitcount % 5000 15000]}
+    {4} {assert_equal {3} [r bitcount % 9216 20480]}
+    {5} {assert_equal {3} [r bitcount % 15000 25000]}
+    {6} {assert_equal {6} [r bitcount % 20480 43008]}
+    {7} {assert_equal {9} [r bitcount % 10000 2000000]}
+    {8} {assert_equal {9} [r bitcount % 10000 2147483647]}
+    {9} {assert_equal {11} [r bitcount % -2147483648 2147483647]}
+    {10} {assert_equal {0} [r bitcount % 2000000 10000]}
+    {11} {assert_equal {5} [r bitcount % 10000 -10000]}
+    {12} {assert_equal {0} [r bitcount % -10000 10000]}
+    {13} {assert_equal {7} [r bitcount % -41984 -11984]}
+    {14} {assert_equal {0} [r bitcount % -11984 -41984]}
+    {15} {assert_equal {3} [r bitcount % -21984 -11984]}
 }
 
 set check_mybitmap_bitpos {
@@ -1213,19 +1213,27 @@ start_server {
     }
 
     test {pure hot getbit} {
-        foreach {key value} [array get check_mybitmap1_getbit] {
-            build_pure_hot_data mybitmap1
-            eval $value
-            check_mybitmap_is_right mybitmap1
+        foreach {key value} $check_mybitmap_getbit {
+            set delimiter "%"
+            set mybitmap "mybitmap1"
+            set result [split $value $delimiter]
+            set joined [join $result $mybitmap]
+            build_pure_hot_data $mybitmap
+            eval $joined
+            check_mybitmap_is_right $mybitmap
             r flushdb
         }
     }
 
     test {pure hot bitcount} {
-        foreach {key value} [array get check_mybitmap1_getbit] {
-            build_pure_hot_data mybitmap1
-            eval $value
-            check_mybitmap_is_right mybitmap1
+        foreach {key value} $check_mybitmap_bitcount {
+            set delimiter "%"
+            set mybitmap "mybitmap1"
+            set result [split $value $delimiter]
+            set joined [join $result $mybitmap]
+            build_pure_hot_data $mybitmap
+            eval $joined
+            check_mybitmap_is_right $mybitmap
             r flushdb
         }
     }
@@ -1280,19 +1288,27 @@ start_server {
     }
 
     test {hot getbit} {
-        foreach {key value} [array get check_mybitmap1_getbit] {
-            build_hot_data mybitmap1
-            eval $value
-            check_mybitmap_is_right mybitmap1
+        foreach {key value} $check_mybitmap_getbit {
+            set delimiter "%"
+            set mybitmap "mybitmap1"
+            set result [split $value $delimiter]
+            set joined [join $result $mybitmap]
+            build_hot_data $mybitmap
+            eval $joined
+            check_mybitmap_is_right $mybitmap
             r flushdb
         }
     }
 
     test {hot bitcount} {
-        foreach {key value} [array get check_mybitmap1_getbit] {
-            build_hot_data mybitmap1
-            eval $value
-            check_mybitmap_is_right mybitmap1
+        foreach {key value} $check_mybitmap_bitcount {
+            set delimiter "%"
+            set mybitmap "mybitmap1"
+            set result [split $value $delimiter]
+            set joined [join $result $mybitmap]
+            build_hot_data $mybitmap
+            eval $joined
+            check_mybitmap_is_right $mybitmap
             r flushdb
         }
     }
@@ -1388,10 +1404,14 @@ start_server {
     test {warm getbit} {
         r flushdb
         foreach {key outvalue} [array get build_warm_with_hole] {
-            foreach {key innvalue} [array get check_mybitmap1_getbit] {
+            foreach {key innvalue} $check_mybitmap_getbit {
                 eval $outvalue
-                eval $innvalue
-                check_mybitmap_is_right mybitmap1
+                set delimiter "%"
+                set mybitmap "mybitmap1"
+                set result [split $innvalue $delimiter]
+                set joined [join $result $mybitmap]
+                eval $joined
+                check_mybitmap_is_right $mybitmap
                 r flushdb
             }
         }
@@ -1468,19 +1488,27 @@ start_server {
     }
 
     test {cold getbit} {
-        foreach {key value} [array get check_mybitmap1_getbit] {
-            build_cold_data mybitmap1
-            eval $value
-            check_mybitmap_is_right mybitmap1
+        foreach {key value} $check_mybitmap_getbit {
+            set delimiter "%"
+            set mybitmap "mybitmap1"
+            set result [split $value $delimiter]
+            set joined [join $result $mybitmap]
+            build_cold_data $mybitmap
+            eval $joined
+            check_mybitmap_is_right $mybitmap
             r flushdb
         }
     }
 
     test {cold bitcount} {
-        foreach {key value} [array get check_mybitmap1_getbit] {
-            build_cold_data mybitmap1
-            eval $value
-            check_mybitmap_is_right mybitmap1
+        foreach {key value} $check_mybitmap_bitcount {
+            set delimiter "%"
+            set mybitmap "mybitmap1"
+            set result [split $value $delimiter]
+            set joined [join $result $mybitmap]
+            build_cold_data $mybitmap
+            eval $joined
+            check_mybitmap_is_right $mybitmap
             r flushdb
         }
     }
