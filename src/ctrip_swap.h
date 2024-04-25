@@ -994,10 +994,10 @@ typedef struct metaBitmap {
 } metaBitmap;
 
 void metaBitmapInit(metaBitmap *meta_bitmap, struct bitmapMeta *bitmap_meta, robj *bitmap);
-long metaBitmapGetSize(metaBitmap *meta_bitmap);
+unsigned long metaBitmapGetSize(metaBitmap *meta_bitmap);
 void metaBitmapGrow(metaBitmap *meta_bitmap, size_t byte);
-long metaBitmapGetColdSubkeysSize(metaBitmap *meta_bitmap, long offset);
-void metaBitmapBitpos(metaBitmap *meta_bitmap, client *c, long bit);
+unsigned long metaBitmapGetColdSubkeysSize(metaBitmap *meta_bitmap, unsigned long offset);
+void metaBitmapBitpos(metaBitmap *meta_bitmap, client *c, unsigned long bit);
 void metaBitmapBitcount(metaBitmap *meta_bitmap, client *c);
 
 /* MetaScan */

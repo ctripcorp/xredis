@@ -491,9 +491,16 @@ robj *lookupStringForBitCommand(client *c, uint64_t maxbit) {
         o = dbUnshareStringValue(c->db,c->argv[1],o);
         objectMeta *om = lookupMeta(c->db,c->argv[1]);
         metaBitmap meta_bitmap;
-        serverAssert(om != NULL && om->swap_type == SWAP_TYPE_BITMAP);
-        metaBitmapInit(&meta_bitmap, om->ptr, o);
+        if (om != NULL) {
+            serverAssert(om->swap_type == SWAP_TYPE_BITMAP);
+            metaBitmapInit(&meta_bitmap, (struct bitmapMeta *)om->ptr, o);
+        } else {
+            /* maybe it is a empty string object. */
+            /* it is never processed as bitmap in ror. */
+            metaBitmapInit(&meta_bitmap, NULL, o);
+        }
         metaBitmapGrow(&meta_bitmap, byte+1);
+        bitmapSetObjectMarkerIfNeeded(c->db, c->argv[1]);
     }
     return o;
 }
@@ -797,7 +804,7 @@ void metaBitmapBitcount(metaBitmap *meta_bitmap, client *c)
     p = getObjectReadOnlyString(o,&strlen,llbuf);
 
     /* maybe it is no hole in object. */
-    size_t bitmap_size = meta_bitmap->meta == NULL? strlen:metaBitmapGetSize(meta_bitmap);
+    long bitmap_size = meta_bitmap->meta == NULL? strlen:(long)metaBitmapGetSize(meta_bitmap);
 
     /* Parse start/end range if any. */
     if (c->argc == 4) {
@@ -853,7 +860,7 @@ void bitcountCommand(client *c) {
     metaBitmap meta_bitmap;
     if (om != NULL) {
         serverAssert(om->swap_type == SWAP_TYPE_BITMAP);
-        metaBitmapInit(&meta_bitmap, om->ptr, o);
+        metaBitmapInit(&meta_bitmap, (struct bitmapMeta *)om->ptr, o);
     } else {
         /* maybe it is a empty string object. */
         /* it is never processed as bitmap in ror. */
@@ -862,7 +869,7 @@ void bitcountCommand(client *c) {
     metaBitmapBitcount(&meta_bitmap, c);
 }
 
-void metaBitmapBitpos(metaBitmap *meta_bitmap, client *c, long bit)
+void metaBitmapBitpos(metaBitmap *meta_bitmap, client *c, unsigned long bit)
 {
     long start, end, strlen;
     unsigned char *p;
@@ -873,7 +880,7 @@ void metaBitmapBitpos(metaBitmap *meta_bitmap, client *c, long bit)
     p = getObjectReadOnlyString(o,&strlen,llbuf);
 
     /* maybe it is no hole in object. */
-    size_t bitmap_size = meta_bitmap->meta == NULL? strlen:metaBitmapGetSize(meta_bitmap);
+    long bitmap_size = meta_bitmap->meta == NULL? strlen:(long)metaBitmapGetSize(meta_bitmap);
     /* Parse start/end range if any. */
     if (c->argc == 4 || c->argc == 5) {
         if (getLongFromObjectOrReply(c,c->argv[3],&start,NULL) != C_OK)
@@ -961,7 +968,7 @@ void bitposCommand(client *c) {
     metaBitmap meta_bitmap;
     if (om != NULL) {
         serverAssert(om->swap_type == SWAP_TYPE_BITMAP);
-        metaBitmapInit(&meta_bitmap, om->ptr, o);
+        metaBitmapInit(&meta_bitmap, (struct bitmapMeta *)om->ptr, o);
     } else {
         /* maybe it is a empty string object. */
         /* it is never processed as bitmap in ror. */
