@@ -333,61 +333,61 @@ array set check_mybitmap1_bitcount {
     {15} {assert_equal {3} [r bitcount mybitmap1 -21984 -11984]}
 }
 
-array set check_mybitmap1_bitpos {
-    {1} {assert_equal {32767} [r bitpos mybitmap1 1]}
-    {2} {assert_equal {32767} [r bitpos mybitmap1 1 0]}
-    {3} {assert_equal {98303} [r bitpos mybitmap1 1 9216]}
-    {4} {assert_equal {196607} [r bitpos mybitmap1 1 20480]}
-    {5} {assert_equal {335871} [r bitpos mybitmap1 1 41983]}
-    {6} {assert_equal {32767} [r bitpos mybitmap1 1 0 9216]}
-    {7} {assert_equal {65535} [r bitpos mybitmap1 1 5000 15000]}
-    {8} {assert_equal {98303} [r bitpos mybitmap1 1 9216 20480]}
-    {9} {assert_equal {131071} [r bitpos mybitmap1 1 15000 25000]}
-    {10} {assert_equal {196607} [r bitpos mybitmap1 1 20480 43008]}
-    {11} {assert_equal {0} [r bitpos mybitmap1 0]}
-    {12} {assert_equal {0} [r bitpos mybitmap1 0 0]}
-    {13} {assert_equal {73728} [r bitpos mybitmap1 0 9216]}
-    {14} {assert_equal {163840} [r bitpos mybitmap1 0 20480]}
-    {15} {assert_equal {335864} [r bitpos mybitmap1 0 41983]}
-    {16} {assert_equal {0} [r bitpos mybitmap1 0 0 9216]}
-    {17} {assert_equal {40000} [r bitpos mybitmap1 0 5000 15000]}
-    {18} {assert_equal {73728} [r bitpos mybitmap1 0 9216 20480]}
-    {19} {assert_equal {120000} [r bitpos mybitmap1 0 15000 25000]}
-    {20} {assert_equal {163840} [r bitpos mybitmap1 0 20480 43008]}
-    {21} {assert_equal {-1} [r bitpos mybitmap1 1 41984]}
-    {22} {assert_equal {-1} [r bitpos mybitmap1 1 2147483647]}
-    {23} {assert_equal {327679} [r bitpos mybitmap1 1 -1984]}
-    {24} {assert_equal {262143} [r bitpos mybitmap1 1 -11984]}
-    {25} {assert_equal {98303} [r bitpos mybitmap1 1 -31984]}
-    {26} {assert_equal {32767} [r bitpos mybitmap1 1 -41984]}
-    {27} {assert_equal {32767} [r bitpos mybitmap1 1 -2147483648]}
-    {28} {assert_equal {98303} [r bitpos mybitmap1 1 10000 2000000]}
-    {29} {assert_equal {98303} [r bitpos mybitmap1 1 10000 2147483647]}
-    {30} {assert_equal {-1} [r bitpos mybitmap1 1 2000000 10000]}
-    {31} {assert_equal {-1} [r bitpos mybitmap1 1 20000 10000]}
-    {32} {assert_equal {163839} [r bitpos mybitmap1 1 -21984 -11984]}
-    {33} {assert_equal {32767} [r bitpos mybitmap1 1 -41984 -11984]}
-    {34} {assert_equal {-1} [r bitpos mybitmap1 1 -11984 -41984]}
-    {35} {assert_equal {98303} [r bitpos mybitmap1 1 10000 -10000]}
-    {36} {assert_equal {32767} [r bitpos mybitmap1 1 -2147483648 2147483647]}
-    {37} {assert_equal {-1} [r bitpos mybitmap1 1 -10000 10000]}
-    {38} {assert_equal {-1} [r bitpos mybitmap1 0 41984]}
-    {39} {assert_equal {-1} [r bitpos mybitmap1 0 2147483647]}
-    {40} {assert_equal {320000} [r bitpos mybitmap1 0 -1984]}
-    {41} {assert_equal {240000} [r bitpos mybitmap1 0 -11984]}
-    {42} {assert_equal {80000} [r bitpos mybitmap1 0 -31984]}
-    {43} {assert_equal {0} [r bitpos mybitmap1 0 -41984]}
-    {44} {assert_equal {0} [r bitpos mybitmap1 0 -2147483648]}
-    {45} {assert_equal {80000} [r bitpos mybitmap1 0 10000 2000000]}
-    {46} {assert_equal {80000} [r bitpos mybitmap1 0 10000 2147483647]}
-    {47} {assert_equal {-1} [r bitpos mybitmap1 0 2000000 10000]}
-    {48} {assert_equal {-1} [r bitpos mybitmap1 0 20000 10000]}
-    {49} {assert_equal {160000} [r bitpos mybitmap1 0 -21984 -11984]}
-    {50} {assert_equal {0} [r bitpos mybitmap1 0 -41984 -11984]}
-    {51} {assert_equal {-1} [r bitpos mybitmap1 0 -11984 -41984]}
-    {52} {assert_equal {80000} [r bitpos mybitmap1 0 10000 -10000]}
-    {53} {assert_equal {0} [r bitpos mybitmap1 0 -2147483648 2147483647]}
-    {54} {assert_equal {-1} [r bitpos mybitmap1 0 -10000 10000]}
+set check_mybitmap_bitpos {
+    {1} {assert_equal {32767} [r bitpos % 1]}
+    {2} {assert_equal {32767} [r bitpos % 1 0]}
+    {3} {assert_equal {98303} [r bitpos % 1 9216]}
+    {4} {assert_equal {196607} [r bitpos % 1 20480]}
+    {5} {assert_equal {335871} [r bitpos % 1 41983]}
+    {6} {assert_equal {32767} [r bitpos % 1 0 9216]}
+    {7} {assert_equal {65535} [r bitpos % 1 5000 15000]}
+    {8} {assert_equal {98303} [r bitpos % 1 9216 20480]}
+    {9} {assert_equal {131071} [r bitpos % 1 15000 25000]}
+    {10} {assert_equal {196607} [r bitpos % 1 20480 43008]}
+    {11} {assert_equal {0} [r bitpos % 0]}
+    {12} {assert_equal {0} [r bitpos % 0 0]}
+    {13} {assert_equal {73728} [r bitpos % 0 9216]}
+    {14} {assert_equal {163840} [r bitpos % 0 20480]}
+    {15} {assert_equal {335864} [r bitpos % 0 41983]}
+    {16} {assert_equal {0} [r bitpos % 0 0 9216]}
+    {17} {assert_equal {40000} [r bitpos % 0 5000 15000]}
+    {18} {assert_equal {73728} [r bitpos % 0 9216 20480]}
+    {19} {assert_equal {120000} [r bitpos % 0 15000 25000]}
+    {20} {assert_equal {163840} [r bitpos % 0 20480 43008]}
+    {21} {assert_equal {-1} [r bitpos % 1 41984]}
+    {22} {assert_equal {-1} [r bitpos % 1 2147483647]}
+    {23} {assert_equal {327679} [r bitpos % 1 -1984]}
+    {24} {assert_equal {262143} [r bitpos % 1 -11984]}
+    {25} {assert_equal {98303} [r bitpos % 1 -31984]}
+    {26} {assert_equal {32767} [r bitpos % 1 -41984]}
+    {27} {assert_equal {32767} [r bitpos % 1 -2147483648]}
+    {28} {assert_equal {98303} [r bitpos % 1 10000 2000000]}
+    {29} {assert_equal {98303} [r bitpos % 1 10000 2147483647]}
+    {30} {assert_equal {-1} [r bitpos % 1 2000000 10000]}
+    {31} {assert_equal {-1} [r bitpos % 1 20000 10000]}
+    {32} {assert_equal {163839} [r bitpos % 1 -21984 -11984]}
+    {33} {assert_equal {32767} [r bitpos % 1 -41984 -11984]}
+    {34} {assert_equal {-1} [r bitpos % 1 -11984 -41984]}
+    {35} {assert_equal {98303} [r bitpos % 1 10000 -10000]}
+    {36} {assert_equal {32767} [r bitpos % 1 -2147483648 2147483647]}
+    {37} {assert_equal {-1} [r bitpos % 1 -10000 10000]}
+    {38} {assert_equal {-1} [r bitpos % 0 41984]}
+    {39} {assert_equal {-1} [r bitpos % 0 2147483647]}
+    {40} {assert_equal {320000} [r bitpos % 0 -1984]}
+    {41} {assert_equal {240000} [r bitpos % 0 -11984]}
+    {42} {assert_equal {80000} [r bitpos % 0 -31984]}
+    {43} {assert_equal {0} [r bitpos % 0 -41984]}
+    {44} {assert_equal {0} [r bitpos % 0 -2147483648]}
+    {45} {assert_equal {80000} [r bitpos % 0 10000 2000000]}
+    {46} {assert_equal {80000} [r bitpos % 0 10000 2147483647]}
+    {47} {assert_equal {-1} [r bitpos % 0 2000000 10000]}
+    {48} {assert_equal {-1} [r bitpos % 0 20000 10000]}
+    {49} {assert_equal {160000} [r bitpos % 0 -21984 -11984]}
+    {50} {assert_equal {0} [r bitpos % 0 -41984 -11984]}
+    {51} {assert_equal {-1} [r bitpos % 0 -11984 -41984]}
+    {52} {assert_equal {80000} [r bitpos % 0 10000 -10000]}
+    {53} {assert_equal {0} [r bitpos % 0 -2147483648 2147483647]}
+    {54} {assert_equal {-1} [r bitpos % 0 -10000 10000]}
 }
 
 proc check_mybitmap1_bitpos  {}  {
@@ -1231,10 +1231,14 @@ start_server {
     }
 
     test {pure hot bitpos} {
-        foreach {key value} [array get check_mybitmap1_bitpos] {
-            build_pure_hot_data mybitmap1
-            eval $value
-            check_mybitmap_is_right mybitmap1
+        foreach {key value} $check_mybitmap_bitpos {
+            set delimiter "%"
+            set mybitmap "mybitmap1"
+            set result [split $value $delimiter]
+            set joined [join $result $mybitmap]
+            build_pure_hot_data $mybitmap
+            eval $joined
+            check_mybitmap_is_right $mybitmap
             r flushdb
         }
     }
@@ -1294,10 +1298,14 @@ start_server {
     }
 
     test {hot bitpos} {
-        foreach {key value} [array get check_mybitmap1_bitpos] {
-            build_hot_data mybitmap1
-            eval $value
-            check_mybitmap_is_right mybitmap1
+        foreach {key value} $check_mybitmap_bitpos {
+            set delimiter "%"
+            set mybitmap "mybitmap1"
+            set result [split $value $delimiter]
+            set joined [join $result $mybitmap]
+            build_hot_data $mybitmap
+            eval $joined
+            check_mybitmap_is_right $mybitmap
             r flushdb
         }
     }
@@ -1403,10 +1411,16 @@ start_server {
 
     test {warm bitpos} {
         foreach {key outvalue} [array get build_warm_with_hole] {
-            foreach {key innvalue} [array get check_mybitmap1_bitpos] {
+            foreach {key innvalue} $check_mybitmap_bitpos {
                 eval $outvalue
                 eval $innvalue
-                check_mybitmap_is_right mybitmap1
+                set delimiter "%"
+                set mybitmap "mybitmap1"
+                set result [split $value $delimiter]
+                set joined [join $result $mybitmap]
+                build_hot_data $mybitmap
+                eval $innvalue
+                check_mybitmap_is_right $mybitmap
                 r flushdb
             }
         }
@@ -1472,10 +1486,14 @@ start_server {
     }
 
     test {cold bitpos} {
-        foreach {key value} [array get check_mybitmap1_bitpos] {
-            build_cold_data mybitmap1
-            eval $value
-            check_mybitmap_is_right mybitmap1
+        foreach {key value} $check_mybitmap_bitpos {
+            set delimiter "%"
+            set mybitmap "mybitmap1"
+            set result [split $value $delimiter]
+            set joined [join $result $mybitmap]
+            build_cold_data $mybitmap
+            eval $joined
+            check_mybitmap_is_right $mybitmap
             r flushdb
         }
     }
