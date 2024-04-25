@@ -561,9 +561,6 @@ void *hashCreateOrMergeObject(swapData *data, void *decoded_, void *datactx) {
         if (decoded) {
             swapDataObjectMetaModifyLen(data,-hashTypeLength(decoded));
         }
-        serverLog(LL_NOTICE, "hashCreateOrMergeObject 571 ==> result %p ref %d str %s",
-            result, result->refcount, (char *)result->ptr
-        );
     } else {
         hashTypeIterator *hi;
         robj *argv[2], subkeyobj, subvalobj;

@@ -555,8 +555,9 @@ static inline void keyLoadFixFeed(struct keyLoadFixData *fix, decodedData *d) {
         rioInitWithBuffer(&sdsrdb,d->rdbraw);
         subval = rdbLoadStringObject(&sdsrdb);
     }
-    
-    if (fix->rebuild_meta && objectMetaRebuildFeed(fix->rebuild_meta,d->version,d->subkey,sdslen(d->subkey),subval)) {
+
+    if (fix->rebuild_meta && objectMetaRebuildFeed(fix->rebuild_meta,
+                d->version,d->subkey,sdslen(d->subkey),subval)) {
         fix->feed_err++;
     } else {
         fix->feed_ok++;

@@ -530,12 +530,10 @@ robj *getDecodedObject(robj *o) {
     robj *dec;
 
     if (sdsEncodedObject(o)) {
-        int bef = o->refcount;
         incrRefCount(o);
         return o;
     }
     if (o->type == OBJ_STRING && o->encoding == OBJ_ENCODING_INT) {
-        int bef = o->refcount;
         char buf[32];
 
         ll2string(buf,32,(long)o->ptr);

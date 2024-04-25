@@ -308,7 +308,7 @@ int swapDataSetupWholeKey(swapData *d, OUT void **pdatactx) {
     d->type = &wholeKeySwapDataType;
     d->omtype = &wholekeyObjectMetaType;
     /* for string type, store ctx_flag in struct swapData's `void *extends[2];` */
-    long *datactx = d->extends;
+    long *datactx = (long*)d->extends;
     *datactx = BIG_DATA_CTX_FLAG_NONE;
     *pdatactx = d->extends;
     return 0;

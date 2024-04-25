@@ -745,7 +745,6 @@ void delGenericCommand(client *c, int lazy) {
 
     for (j = 1; j < c->argc; j++) {
         expireIfNeeded(c->db,c->argv[j]);
-        robj* k = c->argv[j];
         int deleted  = lazy ? dbAsyncDelete(c->db,c->argv[j]) :
                               dbSyncDelete(c->db,c->argv[j]);
         if (deleted) {

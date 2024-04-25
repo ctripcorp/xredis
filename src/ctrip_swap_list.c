@@ -1261,7 +1261,7 @@ int listObjectMetaIsHot(objectMeta *object_meta, robj *value) {
     }
 }
 
-void listObjectMetaFree(objectMeta *object_meta) {
+void listObjectMetaFreeMeta(objectMeta *object_meta) {
     if (object_meta == NULL) return;
     listMetaFree(objectMetaGetPtr(object_meta));
     objectMetaSetPtr(object_meta, NULL);
@@ -1316,7 +1316,7 @@ objectMetaType listObjectMetaType = {
     .encodeObjectMeta = encodeListObjectMeta,
     .decodeObjectMeta = decodeListObjectMeta,
     .objectIsHot = listObjectMetaIsHot,
-    .free = listObjectMetaFree,
+    .free = listObjectMetaFreeMeta,
     .duplicate = listObjectMetaDup,
     .equal = listObjectMetaEqual,
     .rebuildFeed = listObjectMetaRebuildFeed,

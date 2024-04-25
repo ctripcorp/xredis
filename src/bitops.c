@@ -493,8 +493,9 @@ robj *lookupStringForBitCommand(client *c, uint64_t maxbit) {
         metaBitmap meta_bitmap;
         if (om != NULL) {
             serverAssert(om->swap_type == SWAP_TYPE_BITMAP);
-            metaBitmapInit(&meta_bitmap, (struct bitmapMeta *)om->ptr, o);
+            metaBitmapInit(&meta_bitmap, objectMetaGetPtr(om), o);
         } else {
+            //TODO confirm fixed how?
             /* maybe it is a empty string object. */
             /* it is never processed as bitmap in ror. */
             metaBitmapInit(&meta_bitmap, NULL, o);
@@ -837,7 +838,7 @@ void metaBitmapBitcount(metaBitmap *meta_bitmap, client *c)
     if (start > end) {
         addReply(c,shared.czero);
     } else {
-        long cold_subkeys_size = metaBitmapGetColdSubkeysSize(meta_bitmap, start);
+        unsigned long cold_subkeys_size = metaBitmapGetColdSubkeysSize(meta_bitmap, start);
 
         start -= cold_subkeys_size;
         end -= cold_subkeys_size;
@@ -860,7 +861,7 @@ void bitcountCommand(client *c) {
     metaBitmap meta_bitmap;
     if (om != NULL) {
         serverAssert(om->swap_type == SWAP_TYPE_BITMAP);
-        metaBitmapInit(&meta_bitmap, (struct bitmapMeta *)om->ptr, o);
+        metaBitmapInit(&meta_bitmap, objectMetaGetPtr(om), o);
     } else {
         /* maybe it is a empty string object. */
         /* it is never processed as bitmap in ror. */
@@ -914,7 +915,7 @@ void metaBitmapBitpos(metaBitmap *meta_bitmap, client *c, unsigned long bit)
         addReplyLongLong(c, -1);
     } else {
 
-        long cold_subkeys_size = metaBitmapGetColdSubkeysSize(meta_bitmap, start);
+        unsigned long cold_subkeys_size = metaBitmapGetColdSubkeysSize(meta_bitmap, start);
 
         start -= cold_subkeys_size;
         end -= cold_subkeys_size;
@@ -968,7 +969,7 @@ void bitposCommand(client *c) {
     metaBitmap meta_bitmap;
     if (om != NULL) {
         serverAssert(om->swap_type == SWAP_TYPE_BITMAP);
-        metaBitmapInit(&meta_bitmap, (struct bitmapMeta *)om->ptr, o);
+        metaBitmapInit(&meta_bitmap, objectMetaGetPtr(om), o);
     } else {
         /* maybe it is a empty string object. */
         /* it is never processed as bitmap in ror. */

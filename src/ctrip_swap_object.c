@@ -374,7 +374,7 @@ size_t ctrip_objectComputeSize(robj *val, int samples, objectMeta *object_meta) 
         total_size = hot_size * total_len / hot_len;
         break;
     case SWAP_TYPE_BITMAP:
-        total_size = bitmapMetaGetSize((struct bitmapMeta *)object_meta->ptr);
+        total_size = bitmapMetaGetSize(objectMetaGetPtr(object_meta));
         break;
     default:
         total_size = hot_size;
