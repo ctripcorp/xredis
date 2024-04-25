@@ -571,6 +571,7 @@ int bitmapSwapAnaOutSelectSubkeys(swapData *data, bitmapDataCtx *datactx, int *m
 
         if (datactx->subkeys_total_size + subval_size > server.swap_evict_step_max_memory ||
             datactx->subkeys_num + 1 > subkeys_num_may_swapout) {
+            /* if need to swap out, and could`t swap out entirely at once, impossible to keep data. */
             if (!noswap) *may_keep_data = 0;
             break;
         }
@@ -1311,7 +1312,7 @@ void metaBitmapGrow(metaBitmap *meta_bitmap, size_t byte)
 long metaBitmapGetColdSubkeysSize(metaBitmap *meta_bitmap, long offset)
 {
     if (meta_bitmap->meta == NULL) {
-        /* object meta is just marker, bitmap meta is NULL, bitmap is pure hot. */
+        /* bitmap meta is NULL, it is no hole in object. */
         return 0;
     }
 

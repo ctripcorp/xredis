@@ -1174,7 +1174,7 @@ int getKeyRequestsBitcount(int dbid, struct redisCommand *cmd, robj **argv,
                          int argc, struct getKeyRequestsResult *result) {
     long long start, end;
 
-    if (argc <= 2) {
+    if (argc < 4) {
         /* BITCOUNT key [start end], both start and end may not exist. */
         getKeyRequestsSingleKey(result, argv[1], SWAP_IN, 0, cmd->flags, dbid);
     } else {

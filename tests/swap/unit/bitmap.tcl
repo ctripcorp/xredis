@@ -955,6 +955,7 @@ start_server {
         build_cold_small_bitmap small_bitmap1
         check_small_bitmap1_bitop
         r flushdb
+    }
 
     test {small_bitmap cold bitop} {
         build_cold_small_bitmap small_bitmap1

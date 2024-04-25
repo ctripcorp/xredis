@@ -986,6 +986,8 @@ int swapDataSetupBitmap(swapData *d, void **pdatactx);
 sds genSwapBitmapStringSwitchedInfoString(sds info);
 
 /* Meta bitmap */
+/* meta != NULL, bitmap with hole, which means cold subkey, it is not entire bitmap in memory.
+ * meta == NULL,  no hole in bitmap, it is entire bitmap in memory. */
 typedef struct metaBitmap {
     struct bitmapMeta *meta;
     robj *bitmap;
