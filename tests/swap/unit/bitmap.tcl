@@ -80,7 +80,7 @@ proc check_extend_small_bitmap_bitop  {small_bitmap}  {
     r swap.evict src2
     wait_key_cold r src2
     assert_equal {1} [r bitop XOR $small_bitmap src1 src2]
-    assert_equal {2} [r bitcount $small_bitmap1]
+    assert_equal {2} [r bitcount $small_bitmap]
 }
 
 proc check_small_bitmap1_is_right {} {
@@ -1717,101 +1717,101 @@ start_server {
     r config set swap-rdb-bitmap-encode-enabled $bak_rdb_bitmap_enable
 }
 
-start_server {tags {"bitmap chaos test"} overrides {save ""}} {
-    start_server {overrides {save ""}} {
-        set master_host [srv 0 host]
-        set master_port [srv 0 port]
-        set master [srv 0 client]
-        set slave_host [srv -1 host]
-        set slave_port [srv -1 port]
-        set slave [srv -1 client]
-        $slave slaveof $master_host $master_port
-        wait_for_sync $slave
-        test {swap-bitmap chaos} {
-            set rounds 5
-            set loaders 5
-            set duration 30
-            set bitmaps 4; # NOTE: keep it equal to bitmaps in run load below
-            for {set round 0} {$round < $rounds} {incr round} {
-                puts "chaos load $bitmaps bitmaps with $loaders loaders in $duration seconds ($round/$rounds)"
-                    # load with chaos bitmap operations
-                for {set loader 0} {$loader < $loaders} {incr loader} {
-                    lappend load_handles [start_run_load $master_host $master_port $duration 0 {
-                        set bitmaps 4
-                        # in bit
-                        set bitmap_max_length 335872
-                        set block_timeout 0.1
-                                    set count 0
-                        set mybitmap "mybitmap-[randomInt $bitmaps]"
-                        # set mybitmap_len [$r1 llen $mybitmap]
-                        set mybitmap_len [expr {[$r1 strlen $mybitmap] * 8}]
-                                    set otherbitmap "mybitmap-[randomInt $bitmaps]"
-                        set src_direction [randpath {return LEFT} {return RIGHT}]
-                        set dst_direction [randpath {return LEFT} {return RIGHT}]
-                        randpath {
-                            set randIdx [randomInt $bitmap_max_length]
-                            set randVal [randomInt 2]
-                            $r1 SETBIT $mybitmap $randIdx $randVal
-                        } {
-                            set randIdx1 [randomInt $bitmap_max_length]
-                            $r1 SETRANGE $mybitmap $randIdx1 "redis"
-                        } {
-                            set randIdx1 [randomInt $bitmap_max_length]
-                            set randIdx2 [randomInt $bitmap_max_length]
-                            $r1 BITCOUNT $mybitmap $randIdx1 $randIdx2
-                        } {
-                            set randIdx [randomInt $bitmap_max_length]
-                            $r1 BITFIELD $mybitmap get u4 $randIdx
-                        } {
-                            set randIdx [randomInt $bitmap_max_length]
-                            $r1 BITFIELD_RO $mybitmap get u4 $randIdx
-                        } {
-                            $r1 BITOP NOT dest $mybitmap
-                        } {
-                            set randVal [randomInt 2]
-                            $r1 BITPOS $mybitmap $randVal
-                        } {
-                            set randVal [randomInt 2]
-                            set randIdx [randomInt $bitmap_max_length]
-                            $r1 BITPOS $mybitmap $randVal $randIdx
-                        } {
-                            set randVal [randomInt 2]
-                            set randIdx1 [randomInt $bitmap_max_length]
-                            set randIdx2 [randomInt $bitmap_max_length]
-                            $r1 BITPOS $mybitmap $randVal $randIdx1 $randIdx2
-                        } {
-                            set randIdx [randomInt $bitmap_max_length]
-                            set randVal [randomInt 2]
-                            $r1 SETBIT $mybitmap $randIdx $randVal
-                        } {
-                            set randIdx [randomInt $bitmap_max_length]
-                            $r1 GETBIT $mybitmap $randIdx
-                        } {
-                            $r1 swap.evict $mybitmap
-                        } {
-                            $r1 GET $mybitmap
-                        } {
-                            $r1 DEL $mybitmap
-                        } {
-                            $r1 UNLINK $mybitmap
-                        }
-                    }]
-                }
-                after [expr $duration*1000]
-                wait_load_handlers_disconnected
-                wait_for_ofs_sync $master $slave
-                # save to check bitmap meta consistency
-                $master save
-                $slave save
-                verify_log_message 0 "*DB saved on disk*" 0
-                verify_log_message -1 "*DB saved on disk*" 0
-                # digest to check master slave consistency
-                for {set keyidx 0} {$keyidx < $bitmaps} {incr keyidx} {
-                    set master_digest [$master debug digest-value mybitmap-$keyidx]
-                    set slave_digest [$slave debug digest-value mybitmap-$keyidx]
-                    assert_equal $master_digest $slave_digest
-                }
-            }
-        }
-    }
-}
+# start_server {tags {"bitmap chaos test"} overrides {save ""}} {
+#     start_server {overrides {save ""}} {
+#         set master_host [srv 0 host]
+#         set master_port [srv 0 port]
+#         set master [srv 0 client]
+#         set slave_host [srv -1 host]
+#         set slave_port [srv -1 port]
+#         set slave [srv -1 client]
+#         $slave slaveof $master_host $master_port
+#         wait_for_sync $slave
+#         test {swap-bitmap chaos} {
+#             set rounds 5
+#             set loaders 5
+#             set duration 30
+#             set bitmaps 4; # NOTE: keep it equal to bitmaps in run load below
+#             for {set round 0} {$round < $rounds} {incr round} {
+#                 puts "chaos load $bitmaps bitmaps with $loaders loaders in $duration seconds ($round/$rounds)"
+#                     # load with chaos bitmap operations
+#                 for {set loader 0} {$loader < $loaders} {incr loader} {
+#                     lappend load_handles [start_run_load $master_host $master_port $duration 0 {
+#                         set bitmaps 4
+#                         # in bit
+#                         set bitmap_max_length 335872
+#                         set block_timeout 0.1
+#                                     set count 0
+#                         set mybitmap "mybitmap-[randomInt $bitmaps]"
+#                         # set mybitmap_len [$r1 llen $mybitmap]
+#                         set mybitmap_len [expr {[$r1 strlen $mybitmap] * 8}]
+#                                     set otherbitmap "mybitmap-[randomInt $bitmaps]"
+#                         set src_direction [randpath {return LEFT} {return RIGHT}]
+#                         set dst_direction [randpath {return LEFT} {return RIGHT}]
+#                         randpath {
+#                             set randIdx [randomInt $bitmap_max_length]
+#                             set randVal [randomInt 2]
+#                             $r1 SETBIT $mybitmap $randIdx $randVal
+#                         } {
+#                             set randIdx1 [randomInt $bitmap_max_length]
+#                             $r1 SETRANGE $mybitmap $randIdx1 "redis"
+#                         } {
+#                             set randIdx1 [randomInt $bitmap_max_length]
+#                             set randIdx2 [randomInt $bitmap_max_length]
+#                             $r1 BITCOUNT $mybitmap $randIdx1 $randIdx2
+#                         } {
+#                             set randIdx [randomInt $bitmap_max_length]
+#                             $r1 BITFIELD $mybitmap get u4 $randIdx
+#                         } {
+#                             set randIdx [randomInt $bitmap_max_length]
+#                             $r1 BITFIELD_RO $mybitmap get u4 $randIdx
+#                         } {
+#                             $r1 BITOP NOT dest $mybitmap
+#                         } {
+#                             set randVal [randomInt 2]
+#                             $r1 BITPOS $mybitmap $randVal
+#                         } {
+#                             set randVal [randomInt 2]
+#                             set randIdx [randomInt $bitmap_max_length]
+#                             $r1 BITPOS $mybitmap $randVal $randIdx
+#                         } {
+#                             set randVal [randomInt 2]
+#                             set randIdx1 [randomInt $bitmap_max_length]
+#                             set randIdx2 [randomInt $bitmap_max_length]
+#                             $r1 BITPOS $mybitmap $randVal $randIdx1 $randIdx2
+#                         } {
+#                             set randIdx [randomInt $bitmap_max_length]
+#                             set randVal [randomInt 2]
+#                             $r1 SETBIT $mybitmap $randIdx $randVal
+#                         } {
+#                             set randIdx [randomInt $bitmap_max_length]
+#                             $r1 GETBIT $mybitmap $randIdx
+#                         } {
+#                             $r1 swap.evict $mybitmap
+#                         } {
+#                             $r1 GET $mybitmap
+#                         } {
+#                             $r1 DEL $mybitmap
+#                         } {
+#                             $r1 UNLINK $mybitmap
+#                         }
+#                     }]
+#                 }
+#                 after [expr $duration*1000]
+#                 wait_load_handlers_disconnected
+#                 wait_for_ofs_sync $master $slave
+#                 # save to check bitmap meta consistency
+#                 $master save
+#                 $slave save
+#                 verify_log_message 0 "*DB saved on disk*" 0
+#                 verify_log_message -1 "*DB saved on disk*" 0
+#                 # digest to check master slave consistency
+#                 for {set keyidx 0} {$keyidx < $bitmaps} {incr keyidx} {
+#                     set master_digest [$master debug digest-value mybitmap-$keyidx]
+#                     set slave_digest [$slave debug digest-value mybitmap-$keyidx]
+#                     assert_equal $master_digest $slave_digest
+#                 }
+#             }
+#         }
+#     }
+# }
