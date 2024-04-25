@@ -57,7 +57,7 @@ array set small_bitmap1_bitpos {
     {9} {assert_equal {1} [r bitpos small_bitmap1 0 -1 1]}
 }
 
-proc check_small_bitmap1_bitop  {}  {
+proc check_small_bitmap_bitop {small_bitmap}  {
     r setbit src1 0 1
     r setbit src2 2 1
     after 100
@@ -66,8 +66,8 @@ proc check_small_bitmap1_bitop  {}  {
     after 100
     r swap.evict src2
     wait_key_cold r src2
-    assert_equal {1} [r bitop XOR small_bitmap1 small_bitmap1 src1 src2]
-    assert_equal {1} [r bitcount small_bitmap1]
+    assert_equal {1} [r bitop XOR $small_bitmap $small_bitmap src1 src2]
+    assert_equal {1} [r bitcount $small_bitmap]
 }
 
 proc check_extend_small_bitmap1_bitop  {}  {
@@ -773,7 +773,7 @@ start_server {
 
     test {small_bitmap pure hot bitop overwrite} {
         build_pure_hot_small_bitmap small_bitmap1
-        check_small_bitmap1_bitop
+        check_small_bitmap_bitop small_bitmap1
         r flushdb
     }
 
@@ -834,7 +834,7 @@ start_server {
 
     test {small_bitmap hot bitop overwrite} {
         build_hot_small_bitmap small_bitmap1
-        check_small_bitmap1_bitop
+        check_small_bitmap_bitop small_bitmap1
         r flushdb
     }
 
@@ -953,7 +953,7 @@ start_server {
 
     test {small_bitmap cold bitop overwrite} {
         build_cold_small_bitmap small_bitmap1
-        check_small_bitmap1_bitop
+        check_small_bitmap_bitop small_bitmap1
         r flushdb
     }
 
