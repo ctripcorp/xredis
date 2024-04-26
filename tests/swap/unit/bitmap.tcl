@@ -124,10 +124,10 @@ proc check_mybitmap_is_right {mybitmap} {
 }
 
 
-proc check_extend_mybitmap1_is_right {} {
+proc check_extend_mybitmap_is_right {mybitmap} {
     set_data mybitmap0
-    assert_equal {46080} [r bitop XOR dest mybitmap1 mybitmap0]
-    assert_equal {12} [r bitcount mybitmap1]
+    assert_equal {46080} [r bitop XOR dest $mybitmap mybitmap0]
+    assert_equal {12} [r bitcount $mybitmap]
     assert_equal {11} [r bitcount mybitmap0]
     assert_equal {1} [r bitcount dest]
 }
@@ -1163,7 +1163,7 @@ start_server {
         assert [object_is_hot r mybitmap1]
         r swap.evict mybitmap1
         wait_key_cold r mybitmap1
-        check_extend_mybitmap1_is_right
+        check_extend_mybitmap_is_right mybitmap1
         r flushdb
     }
 
@@ -1179,7 +1179,7 @@ start_server {
         after 100
         r swap.evict mybitmap1
         wait_key_cold r mybitmap1
-        check_extend_mybitmap1_is_right
+        check_extend_mybitmap_is_right mybitmap1
         r flushdb
         r config set swap-evict-step-max-subkeys $bak_evict_step
     }
@@ -1362,21 +1362,21 @@ start_server {
     test {extend hot getbit} {
         build_extend_hot_data mybitmap1
         assert_equal {1} [r getbit mybitmap1 368639]
-        check_extend_mybitmap1_is_right
+        check_extend_mybitmap_is_right mybitmap1
         r flushdb
     }
 
     test {extend hot bitcount} {
         build_extend_hot_data mybitmap1
         assert_equal {12} [r bitcount mybitmap1]
-        check_extend_mybitmap1_is_right
+        check_extend_mybitmap_is_right mybitmap1
         r flushdb
     }
 
     test {extend hot bitpos} {
         build_extend_hot_data mybitmap1
         assert_equal {368639} [r bitpos mybitmap1 1 41984]
-        check_extend_mybitmap1_is_right
+        check_extend_mybitmap_is_right mybitmap1
         r flushdb
 
     }
@@ -1388,7 +1388,7 @@ start_server {
         r flushdb
         build_extend_hot_data mybitmap1
         assert_equal {8}  [r bitfield_ro mybitmap1 get u4 65535]
-        check_extend_mybitmap1_is_right
+        check_extend_mybitmap_is_right mybitmap1
         r flushdb
     }
 
@@ -1618,7 +1618,7 @@ start_server {
         build_extend_hot_data mybitmap1
         r debug reload
         # check_data
-        check_extend_mybitmap1_is_right
+        check_extend_mybitmap_is_right mybitmap1
         r flushdb
     }
 
@@ -1718,7 +1718,7 @@ start_server {
         # check it is string
         assert [object_is_cold r mybitmap1]
         assert [object_is_string r mybitmap1]
-        check_extend_mybitmap1_is_right
+        check_extend_mybitmap_is_right mybitmap1
         r flushdb
     }
 
