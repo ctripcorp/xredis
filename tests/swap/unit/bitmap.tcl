@@ -390,16 +390,16 @@ set check_mybitmap_bitpos {
     {54} {assert_equal {-1} [r bitpos % 0 -10000 10000]}
 }
 
-proc check_mybitmap1_bitpos  {}  {
+proc check_mybitmap_bitpos {mybitmap}  {
     # find clear bit from out of range(when all bit 1 in range)
-    assert_equal {0} [r setbit mybitmap1 335870 1]
-    assert_equal {0} [r setbit mybitmap1 335869 1]
-    assert_equal {0} [r setbit mybitmap1 335868 1]
-    assert_equal {0} [r setbit mybitmap1 335867 1]
-    assert_equal {0} [r setbit mybitmap1 335866 1]
-    assert_equal {0} [r setbit mybitmap1 335865 1]
-    assert_equal {0} [r setbit mybitmap1 335864 1]
-    assert_equal {335872} [r bitpos mybitmap1 0 41983]
+    assert_equal {0} [r setbit $mybitmap 335870 1]
+    assert_equal {0} [r setbit $mybitmap 335869 1]
+    assert_equal {0} [r setbit $mybitmap 335868 1]
+    assert_equal {0} [r setbit $mybitmap 335867 1]
+    assert_equal {0} [r setbit $mybitmap 335866 1]
+    assert_equal {0} [r setbit $mybitmap 335865 1]
+    assert_equal {0} [r setbit $mybitmap 335864 1]
+    assert_equal {335872} [r bitpos $mybitmap 0 41983]
 }
 
 proc build_bitmap_args {} {
@@ -1253,7 +1253,7 @@ start_server {
 
     test {pure hot bitpos corner case} {
         build_pure_hot_data mybitmap1
-        check_mybitmap1_bitpos
+        check_mybitmap_bitpos mybitmap1
         set_data mybitmap0
         #press_enter_to_continue
         assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap0]
@@ -1328,7 +1328,7 @@ start_server {
 
     test {hot bitpos corner case} {
         build_hot_data mybitmap1
-        check_mybitmap1_bitpos
+        check_mybitmap_bitpos mybitmap1
         set_data mybitmap0
         #press_enter_to_continue
         assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap0]
@@ -1450,7 +1450,7 @@ start_server {
         r flushdb
         foreach {key value} [array get build_warm_with_hole] {
             eval $value
-            check_mybitmap1_bitpos
+            check_mybitmap_bitpos mybitmap1
             set_data mybitmap0
             assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap0]
             assert_equal {18} [r bitcount mybitmap1 0 41983]
@@ -1528,7 +1528,7 @@ start_server {
 
     test {cold bitpos corner case} {
         build_cold_data mybitmap1
-        check_mybitmap1_bitpos
+        check_mybitmap_bitpos mybitmap1
         set_data mybitmap0
         assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap0]
         assert_equal {18} [r bitcount mybitmap1 0 41983]
