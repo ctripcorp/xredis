@@ -413,22 +413,22 @@ proc build_bitmap_args {} {
     wait_key_cold r src2
 }
 
-proc check_mybitmap1_bitop_xor_3_bitmap  {}  {
+proc check_mybitmap_bitop_xor_3_bitmap {mybitmap}  {
     build_bitmap_args
-    assert_equal {41984} [r bitop XOR mybitmap1 mybitmap1 src1 src2]
-    assert_equal {9} [r bitcount mybitmap1]
+    assert_equal {41984} [r bitop XOR $mybitmap $mybitmap src1 src2]
+    assert_equal {9} [r bitcount $mybitmap]
 }
 
-proc check_mybitmap1_bitop_xor_2_bitmap  {}  {
+proc check_mybitmap_bitop_xor_2_bitmap {mybitmap}  {
     build_bitmap_args
-    assert_equal {41984} [r bitop XOR mybitmap1 src1 src2]
-    assert_equal {2} [r bitcount mybitmap1]
+    assert_equal {41984} [r bitop XOR $mybitmap src1 src2]
+    assert_equal {2} [r bitcount $mybitmap]
 }
 
-proc check_extend_mybitmap1_xor_3_bitmap  {}  {
+proc check_extend_mybitmap_xor_3_bitmap {mybitmap}  {
     build_bitmap_args
-    assert_equal {46080} [r bitop XOR mybitmap1 mybitmap1 src1 src2]
-    assert_equal {10} [r bitcount mybitmap1]
+    assert_equal {46080} [r bitop XOR $mybitmap $mybitmap src1 src2]
+    assert_equal {10} [r bitcount $mybitmap]
 }
 
 start_server  {
@@ -1280,10 +1280,10 @@ start_server {
 
     test {pure hot bitop} {
         build_pure_hot_data mybitmap1
-        check_mybitmap1_bitop_xor_3_bitmap
+        check_mybitmap_bitop_xor_3_bitmap mybitmap1
         r flushdb
         build_pure_hot_data mybitmap1
-        check_mybitmap1_bitop_xor_2_bitmap
+        check_mybitmap_bitop_xor_2_bitmap mybitmap1
         r flushdb
     }
 
@@ -1352,10 +1352,10 @@ start_server {
 
     test {hot bitop} {
         build_hot_data mybitmap1
-        check_mybitmap1_bitop_xor_3_bitmap
+        check_mybitmap_bitop_xor_3_bitmap mybitmap1
         r flushdb
         build_hot_data mybitmap1
-        check_mybitmap1_bitop_xor_2_bitmap
+        check_mybitmap_bitop_xor_2_bitmap mybitmap1
         r flushdb
     }
 
@@ -1394,10 +1394,10 @@ start_server {
 
     test {extend hot bitop} {
         build_extend_hot_data mybitmap1
-        check_extend_mybitmap1_xor_3_bitmap
+        check_extend_mybitmap_xor_3_bitmap mybitmap1
         r flushdb
         build_extend_hot_data mybitmap1
-        check_mybitmap1_bitop_xor_2_bitmap
+        check_mybitmap_bitop_xor_2_bitmap mybitmap1
         r flushdb
     }
 
@@ -1479,10 +1479,10 @@ start_server {
             eval $value
             append data_str $i
             eval $data_str
-            check_mybitmap1_bitop_xor_3_bitmap
+            check_mybitmap_bitop_xor_3_bitmap mybitmap1
             r flushdb
             eval $data_str
-            check_mybitmap1_bitop_xor_2_bitmap
+            check_mybitmap_bitop_xor_2_bitmap mybitmap1
             r flushdb
         }
     }
@@ -1550,10 +1550,10 @@ start_server {
 
     test {cold bitop} {
         build_cold_data mybitmap1
-        check_mybitmap1_bitop_xor_3_bitmap
+        check_mybitmap_bitop_xor_3_bitmap mybitmap1
         r flushdb
         build_cold_data mybitmap1
-        check_mybitmap1_bitop_xor_2_bitmap
+        check_mybitmap_bitop_xor_2_bitmap mybitmap1
         r flushdb
     }
 
