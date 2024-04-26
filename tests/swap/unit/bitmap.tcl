@@ -92,11 +92,11 @@ proc check_small_bitmap1_is_right {} {
 
 }
 
-proc check_extend_small_bitmap1_is_right {} {
-    r setbit small_bitmap0 0 1
-    assert_equal {2} [r bitop XOR dest small_bitmap1 small_bitmap0]
-    assert_equal {2} [r bitcount small_bitmap1]
-    assert_equal {1} [r bitcount small_bitmap0]
+proc check_extend_small_bitmap_is_right {small_bitmap0 small_bitmap1} {
+    r setbit $small_bitmap0 0 1
+    assert_equal {2} [r bitop XOR dest $small_bitmap1 $small_bitmap0]
+    assert_equal {2} [r bitcount $small_bitmap1]
+    assert_equal {1} [r bitcount $small_bitmap0]
     assert_equal {1} [r bitcount dest]
 }
 
@@ -733,7 +733,7 @@ start_server {
         assert [object_is_hot r small_bitmap1]
         r swap.evict small_bitmap1
         wait_key_cold r small_bitmap1
-        check_extend_small_bitmap1_is_right
+        check_extend_small_bitmap_is_right small_bitmap0 small_bitmap1
         r flushdb
     }
 
@@ -861,21 +861,21 @@ start_server {
     test {small_bitmap extend hot getbit} {
         build_extend_hot_small_bitmap small_bitmap1
         assert_equal {1} [r getbit small_bitmap1 15]
-        check_extend_small_bitmap1_is_right
+        check_extend_small_bitmap_is_right small_bitmap0 small_bitmap1
         r flushdb
     }
 
     test {small_bitmap extend hot bitcount} {
         build_extend_hot_small_bitmap small_bitmap1
         assert_equal {2} [r bitcount small_bitmap1]
-        check_extend_small_bitmap1_is_right
+        check_extend_small_bitmap_is_right small_bitmap0 small_bitmap1
         r flushdb
     }
 
     test {small_bitmap extend hot bitpos} {
         build_extend_hot_small_bitmap small_bitmap1
         assert_equal {15} [r bitpos small_bitmap1 1 1]
-        check_extend_small_bitmap1_is_right
+        check_extend_small_bitmap_is_right small_bitmap0 small_bitmap1
         r flushdb
 
     }
@@ -995,7 +995,7 @@ start_server {
         build_extend_hot_small_bitmap small_bitmap1
         r debug reload
         # check_data
-        check_extend_small_bitmap1_is_right
+        check_extend_small_bitmap_is_right small_bitmap0 small_bitmap1
         r flushdb
     }
 
@@ -1070,7 +1070,7 @@ start_server {
         # check it is string
         assert [object_is_string r small_bitmap1]
         assert [object_is_cold r small_bitmap1]
-        check_extend_small_bitmap1_is_right
+        check_extend_small_bitmap_is_right small_bitmap0 small_bitmap1
         r flushdb
     }
 
