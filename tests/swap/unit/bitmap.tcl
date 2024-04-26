@@ -189,6 +189,11 @@ proc build_warm_data {mybitmap}  {
 }
 
 set build_warm_with_hole {
+
+#   condition:
+#  hot  #_#__#_#__#
+#  cold ###########
+
     {1} {
         { build_cold_data mybitmap1 }
         { r getbit mybitmap1 32767 }
@@ -199,12 +204,20 @@ set build_warm_with_hole {
         { assert [object_is_warm r mybitmap1] }
     }
 
+#   condition:
+#   hot  ____##_____
+#   cold ###########
+
     {2}  {
         { build_cold_data mybitmap1 }
         { r getbit mybitmap1 163839 }
         { r getbit mybitmap1 196607 }
         { assert [object_is_warm r mybitmap1] }
     }
+
+#   condition:
+#   hot  ____#___#_#
+#   cold ###########
 
     {3}  {
         { build_cold_data mybitmap1 }
@@ -213,6 +226,10 @@ set build_warm_with_hole {
         { r getbit mybitmap1 335871 }
         { assert [object_is_warm r mybitmap1] }
     }
+
+#   condition:
+#   hot  #_#_##_____
+#   cold ########### 
 
     {4}  {
         { build_cold_data mybitmap1 }
@@ -223,6 +240,10 @@ set build_warm_with_hole {
         { assert [object_is_warm r mybitmap1] }
     }
 
+#   condition:
+#   hot  ________###
+#   cold ########### 
+
     {5}  {
         { build_cold_data mybitmap1 }
         { r getbit mybitmap1 294911 }
@@ -231,12 +252,20 @@ set build_warm_with_hole {
         { assert [object_is_warm r mybitmap1] }
     }
 
+#   condition:
+#   hot  ##_________
+#   cold ########### 
+
     {6}  {
         { build_cold_data mybitmap1 }
         { r getbit mybitmap1 1 }
         { r getbit mybitmap1 65535  }
         { assert [object_is_warm r mybitmap1] }
     }
+
+#   condition:
+#   hot  ##________#
+#   cold ########### 
 
     {7}  {
         { build_cold_data mybitmap1 }
