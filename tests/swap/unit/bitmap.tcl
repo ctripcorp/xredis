@@ -83,11 +83,11 @@ proc check_extend_small_bitmap_bitop  {small_bitmap}  {
     assert_equal {2} [r bitcount $small_bitmap]
 }
 
-proc check_small_bitmap1_is_right {} {
-    r setbit small_bitmap0 0 1
-    assert_equal {1} [r bitop XOR dest small_bitmap1 small_bitmap0]
-    assert_equal {1} [r bitcount small_bitmap1 0 0]
-    assert_equal {1} [r bitcount small_bitmap0]
+proc check_small_bitmap_is_right {small_bitmap0 small_bitmap1} {
+    r setbit $small_bitmap0 0 1
+    assert_equal {1} [r bitop XOR dest $small_bitmap1 $small_bitmap0]
+    assert_equal {1} [r bitcount $small_bitmap1 0 0]
+    assert_equal {1} [r bitcount $small_bitmap0]
     assert_equal {0} [r bitcount dest]
 
 }
@@ -714,7 +714,7 @@ start_server {
         build_pure_hot_small_bitmap small_bitmap1
         r swap.evict small_bitmap1
         wait_key_cold r small_bitmap1
-        check_small_bitmap1_is_right
+        check_small_bitmap_is_right small_bitmap0 small_bitmap1
         r flushdb
     }
 
@@ -723,7 +723,7 @@ start_server {
         build_hot_small_bitmap small_bitmap1
         r swap.evict small_bitmap1
         wait_key_cold r small_bitmap1
-        check_small_bitmap1_is_right
+        check_small_bitmap_is_right small_bitmap0 small_bitmap1
         r flushdb
     }
 
@@ -741,7 +741,7 @@ start_server {
         foreach {key value} [array get small_bitmap1_getbit] {
             build_pure_hot_small_bitmap small_bitmap1
             eval $value
-            check_small_bitmap1_is_right
+            check_small_bitmap_is_right small_bitmap0 small_bitmap1
             r flushdb
         }
     }
@@ -750,7 +750,7 @@ start_server {
         foreach {key value} [array get small_bitmap1_bitcount] {
             build_pure_hot_small_bitmap small_bitmap1
             eval $value
-            check_small_bitmap1_is_right
+            check_small_bitmap_is_right small_bitmap0 small_bitmap1
             r flushdb
         }
     }
@@ -759,7 +759,7 @@ start_server {
         foreach {key value} [array get small_bitmap1_bitpos] {
             build_pure_hot_small_bitmap small_bitmap1
             eval $value
-            check_small_bitmap1_is_right
+            check_small_bitmap_is_right small_bitmap0 small_bitmap1
             r flushdb
         }
     }
@@ -801,7 +801,7 @@ start_server {
         foreach {key value} [array get small_bitmap1_getbit] {
             build_hot_small_bitmap small_bitmap1
             eval $value
-            check_small_bitmap1_is_right
+            check_small_bitmap_is_right small_bitmap0 small_bitmap1
             r flushdb
         }
     }
@@ -810,7 +810,7 @@ start_server {
         foreach {key value} [array get small_bitmap1_bitcount] {
             build_hot_small_bitmap small_bitmap1
             eval $value
-            check_small_bitmap1_is_right
+            check_small_bitmap_is_right small_bitmap0 small_bitmap1
             r flushdb
         }
     }
@@ -819,7 +819,7 @@ start_server {
         foreach {key value} [array get small_bitmap1_bitpos] {
             build_hot_small_bitmap small_bitmap1
             eval $value
-            check_small_bitmap1_is_right
+            check_small_bitmap_is_right small_bitmap0 small_bitmap1
             r flushdb
         }
     }
@@ -921,7 +921,7 @@ start_server {
         foreach {key value} [array get small_bitmap1_getbit] {
             build_cold_small_bitmap small_bitmap1
             eval $value
-            check_small_bitmap1_is_right
+            check_small_bitmap_is_right small_bitmap0 small_bitmap1
             r flushdb
         }
     }
@@ -930,7 +930,7 @@ start_server {
         foreach {key value} [array get small_bitmap1_bitcount] {
             build_cold_small_bitmap small_bitmap1
             eval $value
-            check_small_bitmap1_is_right
+            check_small_bitmap_is_right small_bitmap0 small_bitmap1
             r flushdb
         }
     }
@@ -939,7 +939,7 @@ start_server {
         foreach {key value} [array get small_bitmap1_bitpos] {
             build_cold_small_bitmap small_bitmap1
             eval $value
-            check_small_bitmap1_is_right
+            check_small_bitmap_is_right small_bitmap0 small_bitmap1
             r flushdb
         }
     }
@@ -986,7 +986,7 @@ start_server {
         build_pure_hot_small_bitmap small_bitmap1
         r debug reload
         # check_data
-        check_small_bitmap1_is_right
+        check_small_bitmap_is_right small_bitmap0 small_bitmap1
         r flushdb
     }
 
@@ -1004,7 +1004,7 @@ start_server {
         build_hot_small_bitmap small_bitmap1
         r debug reload
         # check_data
-        check_small_bitmap1_is_right
+        check_small_bitmap_is_right small_bitmap0 small_bitmap1
         r flushdb
     }
 
@@ -1013,7 +1013,7 @@ start_server {
         build_cold_small_bitmap small_bitmap1
         r debug reload
         # check_data
-        check_small_bitmap1_is_right
+        check_small_bitmap_is_right small_bitmap0 small_bitmap1
         r flushdb
     }
 
@@ -1028,7 +1028,7 @@ start_server {
         r CONFIG SET bitmap-subkey-size 4096
         r DEBUG RELOAD NOSAVE
         # check_data
-        check_small_bitmap1_is_right
+        check_small_bitmap_is_right small_bitmap0 small_bitmap1
         r config set bitmap-subkey-size $bak_bitmap_subkey_size
         r flushdb
     }
@@ -1043,7 +1043,7 @@ start_server {
         r CONFIG SET bitmap-subkey-size 2048
         r DEBUG RELOAD NOSAVE
         # check_data
-        check_small_bitmap1_is_right
+        check_small_bitmap_is_right small_bitmap0 small_bitmap1
         r flushdb
         # reset default config
         r config set bitmap-subkey-size $bak_bitmap_subkey_size
@@ -1059,7 +1059,7 @@ start_server {
         # check it is string 
         assert [object_is_string r small_bitmap1]
         assert [object_is_cold r small_bitmap1]
-        check_small_bitmap1_is_right
+        check_small_bitmap_is_right small_bitmap0 small_bitmap1
         r flushdb
     }
 
@@ -1081,7 +1081,7 @@ start_server {
         # check it is string
         assert [object_is_string r small_bitmap1]
         assert [object_is_cold r small_bitmap1]
-        check_small_bitmap1_is_right
+        check_small_bitmap_is_right small_bitmap0 small_bitmap1
         r flushdb
     }
 
@@ -1092,7 +1092,7 @@ start_server {
         # check it is string
         assert [object_is_string r small_bitmap1]
         assert [object_is_cold r small_bitmap1]
-        check_small_bitmap1_is_right
+        check_small_bitmap_is_right small_bitmap0 small_bitmap1
         r flushdb
     }
 
