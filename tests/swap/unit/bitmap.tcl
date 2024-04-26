@@ -54,17 +54,17 @@ set small_bitmap_bitcount {
     {3} {assert_equal {1} [r bitcount % -1 2]}
 }
 
-array set small_bitmap1_bitpos {
-    {0} {assert_equal {0} [r bitpos small_bitmap1 1 0]}
-    {1} {assert_equal {-1} [r bitpos small_bitmap1 1 1]}
-    {2} {assert_equal {0} [r bitpos small_bitmap1 1 -1]}
-    {3} {assert_equal {1} [r bitpos small_bitmap1 0 0]}
-    {4} {assert_equal {-1} [r bitpos small_bitmap1 0 1]}
-    {5} {assert_equal {1} [r bitpos small_bitmap1 0 -1]}
-    {6} {assert_equal {0} [r bitpos small_bitmap1 1 0 2]}
-    {7} {assert_equal {0} [r bitpos small_bitmap1 1 -1 1]}
-    {8} {assert_equal {1} [r bitpos small_bitmap1 0 0 2]}
-    {9} {assert_equal {1} [r bitpos small_bitmap1 0 -1 1]}
+set small_bitmap_bitpos {
+    {0} {assert_equal {0} [r bitpos % 1 0]}
+    {1} {assert_equal {-1} [r bitpos % 1 1]}
+    {2} {assert_equal {0} [r bitpos % 1 -1]}
+    {3} {assert_equal {1} [r bitpos % 0 0]}
+    {4} {assert_equal {-1} [r bitpos % 0 1]}
+    {5} {assert_equal {1} [r bitpos % 0 -1]}
+    {6} {assert_equal {0} [r bitpos % 1 0 2]}
+    {7} {assert_equal {0} [r bitpos % 1 -1 1]}
+    {8} {assert_equal {1} [r bitpos % 0 0 2]}
+    {9} {assert_equal {1} [r bitpos % 0 -1 1]}
 }
 
 proc check_small_bitmap_bitop {small_bitmap}  {
@@ -768,10 +768,11 @@ start_server {
     }
 
     test {small_bitmap pure hot bitpos} {
-        foreach {key value} [array get small_bitmap1_bitpos] {
-            build_pure_hot_small_bitmap small_bitmap1
-            eval $value
-            check_small_bitmap_is_right small_bitmap0 small_bitmap1
+        foreach {key value} $small_bitmap_bitpos {
+            set mybitmap "small_bitmap1"
+            build_pure_hot_small_bitmap $mybitmap
+            eval [replace_delimiter $value $mybitmap]
+            check_small_bitmap_is_right small_bitmap0 $mybitmap
             r flushdb
         }
     }
@@ -830,17 +831,17 @@ start_server {
     }
 
     test {small_bitmap hot bitpos} {
-        foreach {key value} [array get small_bitmap1_bitpos] {
-            build_hot_small_bitmap small_bitmap1
-            eval $value
-            check_small_bitmap_is_right small_bitmap0 small_bitmap1
+        foreach {key value} $small_bitmap_bitpos {
+            set mybitmap "small_bitmap1"
+            build_hot_small_bitmap $mybitmap
+            eval [replace_delimiter $value $mybitmap]
+            check_small_bitmap_is_right small_bitmap0 $mybitmap
             r flushdb
         }
     }
 
     test {small_bitmap hot bitfield} {
         build_hot_small_bitmap small_bitmap1
-        eval $value
         assert_equal {3}  [r BITFIELD small_bitmap1 INCRBY u2 0 1]
         assert_equal {2} [r bitcount small_bitmap1]
         r flushdb
@@ -952,10 +953,11 @@ start_server {
     }
 
     test {small_bitmap cold bitpos} {
-        foreach {key value} [array get small_bitmap1_bitpos] {
-            build_cold_small_bitmap small_bitmap1
-            eval $value
-            check_small_bitmap_is_right small_bitmap0 small_bitmap1
+        foreach {key value} $small_bitmap_bitpos {
+            set mybitmap "small_bitmap1"
+            build_cold_small_bitmap $mybitmap
+            eval [replace_delimiter $value $mybitmap]
+            check_small_bitmap_is_right small_bitmap0 $mybitmap
             r flushdb
         }
     }
