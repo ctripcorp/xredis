@@ -1,3 +1,12 @@
+# util
+proc replace_delimiter {str target} {
+    set delimiter "%"
+    set target $target
+    set splitted [split $str $delimiter]
+    set joined [join $splitted $target]
+    return $joined
+}
+
 proc build_pure_hot_small_bitmap {small_bitmap}  {
     # each fragment need to set 1 bit, for bitcount test 
     r setbit $small_bitmap 0 1
@@ -740,12 +749,9 @@ start_server {
 
     test {small_bitmap pure hot getbit} {
         foreach {key value} $small_bitmap_getbit {
-            set delimiter "%"
             set mybitmap "small_bitmap1"
-            set result [split $value $delimiter]
-            set joined [join $result $mybitmap]
             build_pure_hot_small_bitmap $mybitmap
-            eval $joined
+            eval [replace_delimiter $value $mybitmap]
             check_small_bitmap_is_right small_bitmap0 $mybitmap
             r flushdb
         }
@@ -753,12 +759,9 @@ start_server {
 
     test {small_bitmap pure hot bitcount} {
         foreach {key value} $small_bitmap_bitcount {
-            set delimiter "%"
             set mybitmap "small_bitmap1"
-            set result [split $value $delimiter]
-            set joined [join $result $mybitmap]
             build_pure_hot_small_bitmap $mybitmap
-            eval $joined
+            eval [replace_delimiter $value $mybitmap]
             check_small_bitmap_is_right small_bitmap0 $mybitmap
             r flushdb
         }
@@ -808,12 +811,9 @@ start_server {
 
     test {small_bitmap hot getbit} {
         foreach {key value} $small_bitmap_getbit {
-            set delimiter "%"
             set mybitmap "small_bitmap1"
-            set result [split $value $delimiter]
-            set joined [join $result $mybitmap]
             build_hot_small_bitmap $mybitmap
-            eval $joined
+            eval [replace_delimiter $value $mybitmap]
             check_small_bitmap_is_right small_bitmap0 $mybitmap
             r flushdb
         }
@@ -821,12 +821,9 @@ start_server {
 
     test {small_bitmap hot bitcount} {
         foreach {key value} $small_bitmap_bitcount {
-            set delimiter "%"
             set mybitmap "small_bitmap1"
-            set result [split $value $delimiter]
-            set joined [join $result $mybitmap]
             build_hot_small_bitmap $mybitmap
-            eval $joined
+            eval [replace_delimiter $value $mybitmap]
             check_small_bitmap_is_right small_bitmap0 $mybitmap
             r flushdb
         }
@@ -936,12 +933,9 @@ start_server {
 
     test {small_bitmap cold getbit} {
         foreach {key value} $small_bitmap_getbit {
-            set delimiter "%"
             set mybitmap "small_bitmap1"
-            set result [split $value $delimiter]
-            set joined [join $result $mybitmap]
             build_cold_small_bitmap $mybitmap
-            eval $joined
+            eval [replace_delimiter $value $mybitmap]
             check_small_bitmap_is_right small_bitmap0 $mybitmap
             r flushdb
         }
@@ -949,12 +943,9 @@ start_server {
 
     test {small_bitmap cold bitcount} {
         foreach {key value} $small_bitmap_bitcount {
-            set delimiter "%"
             set mybitmap "small_bitmap1"
-            set result [split $value $delimiter]
-            set joined [join $result $mybitmap]
             build_cold_small_bitmap $mybitmap
-            eval $joined
+            eval [replace_delimiter $value $mybitmap]
             check_small_bitmap_is_right small_bitmap0 $mybitmap
             r flushdb
         }
@@ -1239,12 +1230,9 @@ start_server {
 
     test {pure hot getbit} {
         foreach {key value} $check_mybitmap_getbit {
-            set delimiter "%"
-            set mybitmap "mybitmap1"
-            set result [split $value $delimiter]
-            set joined [join $result $mybitmap]
+            set mybitmap "bitmap1"
             build_pure_hot_data $mybitmap
-            eval $joined
+            eval [replace_delimiter $value $mybitmap]
             check_mybitmap_is_right $mybitmap
             r flushdb
         }
@@ -1252,12 +1240,9 @@ start_server {
 
     test {pure hot bitcount} {
         foreach {key value} $check_mybitmap_bitcount {
-            set delimiter "%"
-            set mybitmap "mybitmap1"
-            set result [split $value $delimiter]
-            set joined [join $result $mybitmap]
+            set mybitmap "bitmap1"
             build_pure_hot_data $mybitmap
-            eval $joined
+            eval [replace_delimiter $value $mybitmap]
             check_mybitmap_is_right $mybitmap
             r flushdb
         }
@@ -1265,12 +1250,9 @@ start_server {
 
     test {pure hot bitpos} {
         foreach {key value} $check_mybitmap_bitpos {
-            set delimiter "%"
-            set mybitmap "mybitmap1"
-            set result [split $value $delimiter]
-            set joined [join $result $mybitmap]
+            set mybitmap "bitmap1"
             build_pure_hot_data $mybitmap
-            eval $joined
+            eval [replace_delimiter $value $mybitmap]
             check_mybitmap_is_right $mybitmap
             r flushdb
         }
@@ -1314,12 +1296,9 @@ start_server {
 
     test {hot getbit} {
         foreach {key value} $check_mybitmap_getbit {
-            set delimiter "%"
-            set mybitmap "mybitmap1"
-            set result [split $value $delimiter]
-            set joined [join $result $mybitmap]
+            set mybitmap "bitmap1"
             build_hot_data $mybitmap
-            eval $joined
+            eval [replace_delimiter $value $mybitmap]
             check_mybitmap_is_right $mybitmap
             r flushdb
         }
@@ -1327,12 +1306,9 @@ start_server {
 
     test {hot bitcount} {
         foreach {key value} $check_mybitmap_bitcount {
-            set delimiter "%"
-            set mybitmap "mybitmap1"
-            set result [split $value $delimiter]
-            set joined [join $result $mybitmap]
+            set mybitmap "bitmap1"
             build_hot_data $mybitmap
-            eval $joined
+            eval [replace_delimiter $value $mybitmap]
             check_mybitmap_is_right $mybitmap
             r flushdb
         }
@@ -1340,12 +1316,9 @@ start_server {
 
     test {hot bitpos} {
         foreach {key value} $check_mybitmap_bitpos {
-            set delimiter "%"
-            set mybitmap "mybitmap1"
-            set result [split $value $delimiter]
-            set joined [join $result $mybitmap]
+            set mybitmap "bitmap1"
             build_hot_data $mybitmap
-            eval $joined
+            eval [replace_delimiter $value $mybitmap]
             check_mybitmap_is_right $mybitmap
             r flushdb
         }
@@ -1431,11 +1404,9 @@ start_server {
         foreach {key outvalue} [array get build_warm_with_hole] {
             foreach {key innvalue} $check_mybitmap_getbit {
                 eval $outvalue
-                set delimiter "%"
-                set mybitmap "mybitmap1"
-                set result [split $innvalue $delimiter]
-                set joined [join $result $mybitmap]
-                eval $joined
+                set mybitmap "bitmap1"
+                build_hot_data $mybitmap
+                eval [replace_delimiter $innvalue $mybitmap]
                 check_mybitmap_is_right $mybitmap
                 r flushdb
             }
@@ -1458,13 +1429,9 @@ start_server {
         foreach {key outvalue} [array get build_warm_with_hole] {
             foreach {key innvalue} $check_mybitmap_bitpos {
                 eval $outvalue
-                eval $innvalue
-                set delimiter "%"
-                set mybitmap "mybitmap1"
-                set result [split $value $delimiter]
-                set joined [join $result $mybitmap]
+                set mybitmap "bitmap1"
                 build_hot_data $mybitmap
-                eval $innvalue
+                eval [replace_delimiter $innvalue $mybitmap]
                 check_mybitmap_is_right $mybitmap
                 r flushdb
             }
@@ -1514,12 +1481,9 @@ start_server {
 
     test {cold getbit} {
         foreach {key value} $check_mybitmap_getbit {
-            set delimiter "%"
-            set mybitmap "mybitmap1"
-            set result [split $value $delimiter]
-            set joined [join $result $mybitmap]
+            set mybitmap "bitmap1"
             build_cold_data $mybitmap
-            eval $joined
+            eval [replace_delimiter $value $mybitmap]
             check_mybitmap_is_right $mybitmap
             r flushdb
         }
@@ -1527,12 +1491,9 @@ start_server {
 
     test {cold bitcount} {
         foreach {key value} $check_mybitmap_bitcount {
-            set delimiter "%"
-            set mybitmap "mybitmap1"
-            set result [split $value $delimiter]
-            set joined [join $result $mybitmap]
+            set mybitmap "bitmap1"
             build_cold_data $mybitmap
-            eval $joined
+            eval [replace_delimiter $value $mybitmap]
             check_mybitmap_is_right $mybitmap
             r flushdb
         }
@@ -1540,12 +1501,9 @@ start_server {
 
     test {cold bitpos} {
         foreach {key value} $check_mybitmap_bitpos {
-            set delimiter "%"
-            set mybitmap "mybitmap1"
-            set result [split $value $delimiter]
-            set joined [join $result $mybitmap]
+            set mybitmap "bitmap1"
             build_cold_data $mybitmap
-            eval $joined
+            eval [replace_delimiter $value $mybitmap]
             check_mybitmap_is_right $mybitmap
             r flushdb
         }
