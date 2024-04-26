@@ -31,17 +31,18 @@ proc build_cold_small_bitmap {small_bitmap}  {
     assert [object_is_cold r $small_bitmap]
 }
 
-array set small_bitmap1_getbit {
-    {0} {assert_equal {1} [r getbit small_bitmap1 0]}
-    {1} {assert_equal {0} [r getbit small_bitmap1 10]}
-    {2} {assert_error "ERR*" {r getbit small_bitmap1 -1}}
+# small_bitmap1
+set small_bitmap_getbit {
+    {0} {assert_equal {1} [r getbit % 0]}
+    {1} {assert_equal {0} [r getbit % 10]}
+    {2} {assert_error "ERR*" {r getbit % -1}}
 }
 
-array set small_bitmap1_bitcount {
-    {0} {assert_equal {1} [r bitcount small_bitmap1 0 0]}
-    {1} {assert_equal {1} [r bitcount small_bitmap1]}
-    {2} {assert_equal {1} [r bitcount small_bitmap1 0 -2]}
-    {3} {assert_equal {1} [r bitcount small_bitmap1 -1 2]}
+set small_bitmap_bitcount {
+    {0} {assert_equal {1} [r bitcount % 0 0]}
+    {1} {assert_equal {1} [r bitcount %]}
+    {2} {assert_equal {1} [r bitcount % 0 -2]}
+    {3} {assert_equal {1} [r bitcount % -1 2]}
 }
 
 array set small_bitmap1_bitpos {
@@ -738,19 +739,27 @@ start_server {
     }
 
     test {small_bitmap pure hot getbit} {
-        foreach {key value} [array get small_bitmap1_getbit] {
-            build_pure_hot_small_bitmap small_bitmap1
-            eval $value
-            check_small_bitmap_is_right small_bitmap0 small_bitmap1
+        foreach {key value} $small_bitmap_getbit {
+            set delimiter "%"
+            set mybitmap "small_bitmap1"
+            set result [split $value $delimiter]
+            set joined [join $result $mybitmap]
+            build_pure_hot_small_bitmap $mybitmap
+            eval $joined
+            check_small_bitmap_is_right small_bitmap0 $mybitmap
             r flushdb
         }
     }
 
     test {small_bitmap pure hot bitcount} {
-        foreach {key value} [array get small_bitmap1_bitcount] {
-            build_pure_hot_small_bitmap small_bitmap1
-            eval $value
-            check_small_bitmap_is_right small_bitmap0 small_bitmap1
+        foreach {key value} $small_bitmap_bitcount {
+            set delimiter "%"
+            set mybitmap "small_bitmap1"
+            set result [split $value $delimiter]
+            set joined [join $result $mybitmap]
+            build_pure_hot_small_bitmap $mybitmap
+            eval $joined
+            check_small_bitmap_is_right small_bitmap0 $mybitmap
             r flushdb
         }
     }
@@ -798,19 +807,27 @@ start_server {
     }
 
     test {small_bitmap hot getbit} {
-        foreach {key value} [array get small_bitmap1_getbit] {
-            build_hot_small_bitmap small_bitmap1
-            eval $value
-            check_small_bitmap_is_right small_bitmap0 small_bitmap1
+        foreach {key value} $small_bitmap_getbit {
+            set delimiter "%"
+            set mybitmap "small_bitmap1"
+            set result [split $value $delimiter]
+            set joined [join $result $mybitmap]
+            build_hot_small_bitmap $mybitmap
+            eval $joined
+            check_small_bitmap_is_right small_bitmap0 $mybitmap
             r flushdb
         }
     }
 
     test {small_bitmap hot bitcount} {
-        foreach {key value} [array get small_bitmap1_bitcount] {
-            build_hot_small_bitmap small_bitmap1
-            eval $value
-            check_small_bitmap_is_right small_bitmap0 small_bitmap1
+        foreach {key value} $small_bitmap_bitcount {
+            set delimiter "%"
+            set mybitmap "small_bitmap1"
+            set result [split $value $delimiter]
+            set joined [join $result $mybitmap]
+            build_hot_small_bitmap $mybitmap
+            eval $joined
+            check_small_bitmap_is_right small_bitmap0 $mybitmap
             r flushdb
         }
     }
@@ -918,19 +935,27 @@ start_server {
     }
 
     test {small_bitmap cold getbit} {
-        foreach {key value} [array get small_bitmap1_getbit] {
-            build_cold_small_bitmap small_bitmap1
-            eval $value
-            check_small_bitmap_is_right small_bitmap0 small_bitmap1
+        foreach {key value} $small_bitmap_getbit {
+            set delimiter "%"
+            set mybitmap "small_bitmap1"
+            set result [split $value $delimiter]
+            set joined [join $result $mybitmap]
+            build_cold_small_bitmap $mybitmap
+            eval $joined
+            check_small_bitmap_is_right small_bitmap0 $mybitmap
             r flushdb
         }
     }
 
     test {small_bitmap cold bitcount} {
-        foreach {key value} [array get small_bitmap1_bitcount] {
-            build_cold_small_bitmap small_bitmap1
-            eval $value
-            check_small_bitmap_is_right small_bitmap0 small_bitmap1
+        foreach {key value} $small_bitmap_bitcount {
+            set delimiter "%"
+            set mybitmap "small_bitmap1"
+            set result [split $value $delimiter]
+            set joined [join $result $mybitmap]
+            build_cold_small_bitmap $mybitmap
+            eval $joined
+            check_small_bitmap_is_right small_bitmap0 $mybitmap
             r flushdb
         }
     }
