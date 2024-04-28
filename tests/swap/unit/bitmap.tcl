@@ -188,11 +188,35 @@ proc build_warm_data {mybitmap}  {
     assert [object_is_warm r $mybitmap]
 }
 
-set build_warm_with_hole {
-
 #   condition:
 #  hot  #_#__#_#__#
 #  cold ###########
+
+#   condition:
+#   hot  ____##_____
+#   cold ###########
+
+#   condition:
+#   hot  ____#___#_#
+#   cold ###########
+
+#   condition:
+#   hot  #_#_##_____
+#   cold ########### 
+
+#   condition:
+#   hot  ________###
+#   cold ########### 
+
+#   condition:
+#   hot  ##_________
+#   cold ########### 
+
+#   condition:
+#   hot  ##________#
+#   cold ########### 
+
+set build_warm_with_hole {
 
     {1} {
         { build_cold_data mybitmap1 }
@@ -204,20 +228,12 @@ set build_warm_with_hole {
         { assert [object_is_warm r mybitmap1] }
     }
 
-#   condition:
-#   hot  ____##_____
-#   cold ###########
-
     {2}  {
         { build_cold_data mybitmap1 }
         { r getbit mybitmap1 163839 }
         { r getbit mybitmap1 196607 }
         { assert [object_is_warm r mybitmap1] }
     }
-
-#   condition:
-#   hot  ____#___#_#
-#   cold ###########
 
     {3}  {
         { build_cold_data mybitmap1 }
@@ -226,10 +242,6 @@ set build_warm_with_hole {
         { r getbit mybitmap1 335871 }
         { assert [object_is_warm r mybitmap1] }
     }
-
-#   condition:
-#   hot  #_#_##_____
-#   cold ########### 
 
     {4}  {
         { build_cold_data mybitmap1 }
@@ -240,10 +252,6 @@ set build_warm_with_hole {
         { assert [object_is_warm r mybitmap1] }
     }
 
-#   condition:
-#   hot  ________###
-#   cold ########### 
-
     {5}  {
         { build_cold_data mybitmap1 }
         { r getbit mybitmap1 294911 }
@@ -252,20 +260,12 @@ set build_warm_with_hole {
         { assert [object_is_warm r mybitmap1] }
     }
 
-#   condition:
-#   hot  ##_________
-#   cold ########### 
-
     {6}  {
         { build_cold_data mybitmap1 }
         { r getbit mybitmap1 1 }
         { r getbit mybitmap1 65535  }
         { assert [object_is_warm r mybitmap1] }
     }
-
-#   condition:
-#   hot  ##________#
-#   cold ########### 
 
     {7}  {
         { build_cold_data mybitmap1 }
@@ -280,42 +280,71 @@ set check_mybitmap1_setbit {
     {0} {
         { assert_equal {1} [r setbit mybitmap1 98303 0] }
         { set_data mybitmap0 }
+        {r setbit mybitmap0 98303 0}
         { assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap0] }
         { assert_equal {10} [r bitcount mybitmap1] }
-        { assert_equal {11} [r bitcount mybitmap0] }
-        { assert_equal {1} [r bitcount dest] }
+        { assert_equal {10} [r bitcount mybitmap0] }
+        { assert_equal {0} [r bitcount dest] }
     }
 
     {1} {
         { assert_equal {0} [r setbit mybitmap1 344063 1] }
         { set_data mybitmap0 }
+        {r setbit mybitmap0 344063 1}
         { assert_equal {43008} [r bitop XOR dest mybitmap1 mybitmap0] }
         { assert_equal {12} [r bitcount mybitmap1] }
-        { assert_equal {11} [r bitcount mybitmap0] }
-        { assert_equal {1} [r bitcount dest] }
+        { assert_equal {12} [r bitcount mybitmap0] }
+        { assert_equal {0} [r bitcount dest] }
     }
 
     {2} { 
         { assert_equal {0} [r setbit mybitmap1 368639 1] }
         { set_data mybitmap0 }
+        {r setbit mybitmap0 368639 1}
         { assert_equal {46080} [r bitop XOR dest mybitmap1 mybitmap0] }
         { assert_equal {12} [r bitcount mybitmap1] }
-        { assert_equal {11} [r bitcount mybitmap0] }
-        { assert_equal {1} [r bitcount dest] }
+        { assert_equal {12} [r bitcount mybitmap0] }
+        { assert_equal {0} [r bitcount dest] }
     }
 
     {3} {
         { assert_equal {1} [r setbit mybitmap1 335871 0] }
         { set_data mybitmap0 }
+        {r setbit mybitmap0 335871 0}
         { assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap0] }
         { assert_equal {10} [r bitcount mybitmap1] }
-        { assert_equal {11} [r bitcount mybitmap0] }
-        { assert_equal {1} [r bitcount dest] }
+        { assert_equal {10} [r bitcount mybitmap0] }
+        { assert_equal {0} [r bitcount dest] }
     }
 
-    {4} {
+    {4}  {
+        { assert_equal {0} [r setbit mybitmap1 468639 1]}
+        { set_data mybitmap0 }
+        {r setbit mybitmap0 468639 1}
+        { assert_equal {58580} [r bitop XOR dest mybitmap1 mybitmap0] }
+        { assert_equal {12} [r bitcount mybitmap1] }
+        { assert_equal {12} [r bitcount mybitmap0] }
+        { assert_equal {0} [r bitcount dest] }
+    }
+
+    {5}  {
         { assert_error "ERR*" {r setbit mybitmap1 -1 1} }
         { check_mybitmap_is_right mybitmap1 $notextend }
+    }
+
+    {6}  {
+        { assert_error "ERR*" {r setbit mybitmap1 4294967296 1} }
+        { check_mybitmap_is_right mybitmap1 $notextend }
+    }
+
+    {7}  {
+        { assert_equal {0} [r setbit mybitmap1 4294967295 1]}
+        { set_data mybitmap0 }
+        { assert_equal {536870912} [r bitop XOR dest mybitmap1 mybitmap0] }
+        { assert_equal {12} [r bitcount mybitmap1] }
+        { assert_equal {11} [r bitcount mybitmap0] }
+        { assert_equal {1} [r bitcount dest] }
+        { assert_equal {1} [r getbit dest 4294967295] }
     }
 }
 
@@ -334,6 +363,8 @@ set check_mybitmap_getbit {
     {assert_equal {0} [r getbit % 335872]}
     {assert_error "ERR*" {r getbit % -1}}
     {assert_equal {0} [r getbit % 2147483647]}
+    {assert_equal {0} [r getbit % 4294967295]}
+    {assert_error "ERR*" {r getbit % 4294967296}}
 }
 
 set check_mybitmap_bitcount {
@@ -1266,6 +1297,21 @@ start_server {
         r flushdb
         build_extend_hot_data mybitmap1
         check_mybitmap_bitop_xor_2_bitmap mybitmap1
+        r flushdb
+    }
+
+    test {extend hot setbit} {
+        r flushdb
+        build_extend_hot_data mybitmap1
+
+        assert_equal {0} [r setbit mybitmap1 4294967295 1]
+        set_data mybitmap0 
+        assert_equal {536870912} [r bitop XOR dest mybitmap1 mybitmap0]
+        assert_equal {13} [r bitcount mybitmap1] 
+        assert_equal {11} [r bitcount mybitmap0]
+        assert_equal {2} [r bitcount dest] 
+        assert_equal {4294967295} [r bitpos dest 1 -1] 
+
         r flushdb
     }
 

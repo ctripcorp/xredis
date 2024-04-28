@@ -466,8 +466,8 @@ void bitmapSwapAnaInSelectSubKeys(swapData *data, bitmapDataCtx *datactx,
 
     if (range->type == RANGE_BIT_BITMAP) {
         serverAssert(range->start == range->end);
-        if (range->start < 0) {
-            /* setbit, getbit command, argument offset is non-negative,
+        if (range->start < 0 || (range->start >> 3) >= server.proto_max_bulk_len) {
+            /* setbit, getbit command, argument offset is non-negative and less than 512MB,
              * which will be check firstly in setbitCommand/getbitCommand,
              * so no need to swap in. */
             return;
@@ -1194,7 +1194,7 @@ int bitmapBeforeCall(swapData *data, keyRequest *key_request, client *c,
 
         serverAssert(ret == C_OK);
 
-        if (offset < 0) {
+        if (offset < 0 || (offset >> 3) >= server.proto_max_bulk_len) {
             /* setbit, getbit command, argument offset is non-negative.
              * command must be syntax error, just return. */
             return 0;
@@ -1206,15 +1206,23 @@ int bitmapBeforeCall(swapData *data, keyRequest *key_request, client *c,
             /* no hole in front of idx = 0 of bitmap, no need to rewrite. */
             continue;
         }
-        int subkeys_num_ahead = bitmapMetaGetHotSubkeysNum(bitmap_meta, 0, subkey_idx - 1);
 
-        int cold_subkeys_num_ahead = subkey_idx - subkeys_num_ahead;
+        int subkeys_num_ahead = bitmapMetaGetHotSubkeysNum(bitmap_meta, 0, subkey_idx - 1);
         if (subkeys_num_ahead == subkey_idx) {
             /* no need to modify offset */
             continue;
         } else {
             /* setbit, getbit */
-            long long newOffset = offset - cold_subkeys_num_ahead * BITMAP_SUBKEY_BITS;
+
+            int subkeys_num = BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE);
+            int cold_subkeys_num_ahead = 0;
+            if (subkey_idx > subkeys_num - 1) {
+                /* subkey_idx may exceed the right boundry, the extending part should not be treated as pure cold subkeys. */
+                cold_subkeys_num_ahead = subkeys_num - subkeys_num_ahead;
+            } else {
+                cold_subkeys_num_ahead = subkey_idx - subkeys_num_ahead;
+            }
+            unsigned long newOffset = offset - cold_subkeys_num_ahead * BITMAP_SUBKEY_BITS;
 
             robj *new_arg = createObject(OBJ_STRING,sdsfromlonglong(newOffset));
             clientArgRewrite(c, arg_req, new_arg);
