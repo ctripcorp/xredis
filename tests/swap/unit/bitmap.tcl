@@ -7,6 +7,9 @@ proc replace_delimiter {str target} {
     return $joined
 }
 
+set extend 1
+set notextend 0
+
 proc build_pure_hot_small_bitmap {small_bitmap}  {
     # each fragment need to set 1 bit, for bitcount test 
     r setbit $small_bitmap 0 1
@@ -40,31 +43,30 @@ proc build_cold_small_bitmap {small_bitmap}  {
     assert [object_is_cold r $small_bitmap]
 }
 
-# small_bitmap1
 set small_bitmap_getbit {
-    {0} {assert_equal {1} [r getbit % 0]}
-    {1} {assert_equal {0} [r getbit % 10]}
-    {2} {assert_error "ERR*" {r getbit % -1}}
+    {assert_equal {1} [r getbit % 0]}
+    {assert_equal {0} [r getbit % 10]}
+    {assert_error "ERR*" {r getbit % -1}}
 }
 
 set small_bitmap_bitcount {
-    {0} {assert_equal {1} [r bitcount % 0 0]}
-    {1} {assert_equal {1} [r bitcount %]}
-    {2} {assert_equal {1} [r bitcount % 0 -2]}
-    {3} {assert_equal {1} [r bitcount % -1 2]}
+    {assert_equal {1} [r bitcount % 0 0]}
+    {assert_equal {1} [r bitcount %]}
+    {assert_equal {1} [r bitcount % 0 -2]}
+    {assert_equal {1} [r bitcount % -1 2]}
 }
 
 set small_bitmap_bitpos {
-    {0} {assert_equal {0} [r bitpos % 1 0]}
-    {1} {assert_equal {-1} [r bitpos % 1 1]}
-    {2} {assert_equal {0} [r bitpos % 1 -1]}
-    {3} {assert_equal {1} [r bitpos % 0 0]}
-    {4} {assert_equal {-1} [r bitpos % 0 1]}
-    {5} {assert_equal {1} [r bitpos % 0 -1]}
-    {6} {assert_equal {0} [r bitpos % 1 0 2]}
-    {7} {assert_equal {0} [r bitpos % 1 -1 1]}
-    {8} {assert_equal {1} [r bitpos % 0 0 2]}
-    {9} {assert_equal {1} [r bitpos % 0 -1 1]}
+    {assert_equal {0} [r bitpos % 1 0]}
+    {assert_equal {-1} [r bitpos % 1 1]}
+    {assert_equal {0} [r bitpos % 1 -1]}
+    {assert_equal {1} [r bitpos % 0 0]}
+    {assert_equal {-1} [r bitpos % 0 1]}
+    {assert_equal {1} [r bitpos % 0 -1]}
+    {assert_equal {0} [r bitpos % 1 0 2]}
+    {assert_equal {0} [r bitpos % 1 -1 1]}
+    {assert_equal {1} [r bitpos % 0 0 2]}
+    {assert_equal {1} [r bitpos % 0 -1 1]}
 }
 
 proc check_small_bitmap_bitop {small_bitmap}  {
@@ -93,12 +95,19 @@ proc check_extend_small_bitmap_bitop  {small_bitmap}  {
     assert_equal {2} [r bitcount $small_bitmap]
 }
 
-proc check_small_bitmap_is_right {small_bitmap0 small_bitmap1} {
+proc check_small_bitmap_is_right {small_bitmap0 small_bitmap1 is_extend} {
     r setbit $small_bitmap0 0 1
-    assert_equal {1} [r bitop XOR dest $small_bitmap1 $small_bitmap0]
-    assert_equal {1} [r bitcount $small_bitmap1 0 0]
-    assert_equal {1} [r bitcount $small_bitmap0]
-    assert_equal {0} [r bitcount dest]
+    if {$is_extend == 0} {
+        assert_equal {1} [r bitop XOR dest $small_bitmap1 $small_bitmap0]
+        assert_equal {1} [r bitcount $small_bitmap1 0 0]
+        assert_equal {1} [r bitcount $small_bitmap0]
+        assert_equal {0} [r bitcount dest]
+    } else {
+        assert_equal {2} [r bitop XOR dest $small_bitmap1 $small_bitmap0]
+        assert_equal {2} [r bitcount $small_bitmap1]
+        assert_equal {1} [r bitcount $small_bitmap0]
+        assert_equal {1} [r bitcount dest]
+    }
 
 }
 
@@ -125,21 +134,19 @@ proc set_data {bitmap} {
     r setbit $bitmap 335871 1
 }
 
-proc check_mybitmap_is_right {mybitmap} {
+proc check_mybitmap_is_right {mybitmap is_extend} {
     set_data mybitmap0
-    assert_equal {41984} [r bitop XOR dest $mybitmap mybitmap0]
-    assert_equal {11} [r bitcount $mybitmap 0 41983]
-    assert_equal {11} [r bitcount mybitmap0]
-    assert_equal {0} [r bitcount dest]
-}
-
-
-proc check_extend_mybitmap_is_right {mybitmap} {
-    set_data mybitmap0
-    assert_equal {46080} [r bitop XOR dest $mybitmap mybitmap0]
-    assert_equal {12} [r bitcount $mybitmap]
-    assert_equal {11} [r bitcount mybitmap0]
-    assert_equal {1} [r bitcount dest]
+    if {$is_extend == 0} {
+        assert_equal {41984} [r bitop XOR dest $mybitmap mybitmap0]
+        assert_equal {11} [r bitcount $mybitmap 0 41983]
+        assert_equal {11} [r bitcount mybitmap0]
+        assert_equal {0} [r bitcount dest]
+    } else {
+        assert_equal {46080} [r bitop XOR dest $mybitmap mybitmap0]
+        assert_equal {12} [r bitcount $mybitmap]
+        assert_equal {11} [r bitcount mybitmap0]
+        assert_equal {1} [r bitcount dest]
+    }
 }
 
 proc build_pure_hot_data {bitmap}  {
@@ -304,7 +311,7 @@ set check_mybitmap1_setbit {
     {4}  {
         # Abnormal setbit
         assert_error "ERR*" {r setbit mybitmap1 -1 1}
-        check_mybitmap_is_right mybitmap1
+        check_mybitmap_is_right mybitmap1 $notextend
     }
 }
 
@@ -400,7 +407,7 @@ set check_mybitmap_bitpos {
     {54} {assert_equal {-1} [r bitpos % 0 -10000 10000]}
 }
 
-proc check_mybitmap_bitpos {mybitmap}  {
+proc check_bitpos_mybitmap {mybitmap}  {
     # find clear bit from out of range(when all bit 1 in range)
     assert_equal {0} [r setbit $mybitmap 335870 1]
     assert_equal {0} [r setbit $mybitmap 335869 1]
@@ -724,7 +731,7 @@ start_server {
         build_pure_hot_small_bitmap small_bitmap1
         r swap.evict small_bitmap1
         wait_key_cold r small_bitmap1
-        check_small_bitmap_is_right small_bitmap0 small_bitmap1
+        check_small_bitmap_is_right small_bitmap0 small_bitmap1 $notextend
         r flushdb
     }
 
@@ -733,7 +740,7 @@ start_server {
         build_hot_small_bitmap small_bitmap1
         r swap.evict small_bitmap1
         wait_key_cold r small_bitmap1
-        check_small_bitmap_is_right small_bitmap0 small_bitmap1
+        check_small_bitmap_is_right small_bitmap0 small_bitmap1 $notextend
         r flushdb
     }
 
@@ -743,37 +750,31 @@ start_server {
         assert [object_is_hot r small_bitmap1]
         r swap.evict small_bitmap1
         wait_key_cold r small_bitmap1
-        check_extend_small_bitmap_is_right small_bitmap0 small_bitmap1
+        check_small_bitmap_is_right small_bitmap0 small_bitmap1 $extend
         r flushdb
     }
 
-    test {small_bitmap pure hot getbit} {
-        foreach {key value} $small_bitmap_getbit {
-            set mybitmap "small_bitmap1"
-            build_pure_hot_small_bitmap $mybitmap
-            eval [replace_delimiter $value $mybitmap]
-            check_small_bitmap_is_right small_bitmap0 $mybitmap
-            r flushdb
+    test {small_bitmap swaps} {
+        set types {
+            {build_pure_hot_small_bitmap}
+            {build_hot_small_bitmap}
+            {build_cold_small_bitmap}
         }
-    }
-
-    test {small_bitmap pure hot bitcount} {
-        foreach {key value} $small_bitmap_bitcount {
-            set mybitmap "small_bitmap1"
-            build_pure_hot_small_bitmap $mybitmap
-            eval [replace_delimiter $value $mybitmap]
-            check_small_bitmap_is_right small_bitmap0 $mybitmap
-            r flushdb
+        set tests {
+            {small_bitmap_getbit}
+            {small_bitmap_bitcount}
+            {small_bitmap_bitpos}
         }
-    }
-
-    test {small_bitmap pure hot bitpos} {
-        foreach {key value} $small_bitmap_bitpos {
-            set mybitmap "small_bitmap1"
-            build_pure_hot_small_bitmap $mybitmap
-            eval [replace_delimiter $value $mybitmap]
-            check_small_bitmap_is_right small_bitmap0 $mybitmap
-            r flushdb
+        foreach type $types {
+            foreach test $tests {
+                foreach case [lrange $test 1 end] {
+                    set mybitmap "small_bitmap1"
+                    $type $mybitmap
+                    eval [replace_delimiter $case $mybitmap]
+                    check_small_bitmap_is_right small_bitmap0 $mybitmap $notextend
+                    r flushdb
+                }
+            }
         }
     }
 
@@ -808,36 +809,6 @@ start_server {
         assert_equal {2} [r bitcount small_bitmap1]
 
         r flushdb
-    }
-
-    test {small_bitmap hot getbit} {
-        foreach {key value} $small_bitmap_getbit {
-            set mybitmap "small_bitmap1"
-            build_hot_small_bitmap $mybitmap
-            eval [replace_delimiter $value $mybitmap]
-            check_small_bitmap_is_right small_bitmap0 $mybitmap
-            r flushdb
-        }
-    }
-
-    test {small_bitmap hot bitcount} {
-        foreach {key value} $small_bitmap_bitcount {
-            set mybitmap "small_bitmap1"
-            build_hot_small_bitmap $mybitmap
-            eval [replace_delimiter $value $mybitmap]
-            check_small_bitmap_is_right small_bitmap0 $mybitmap
-            r flushdb
-        }
-    }
-
-    test {small_bitmap hot bitpos} {
-        foreach {key value} $small_bitmap_bitpos {
-            set mybitmap "small_bitmap1"
-            build_hot_small_bitmap $mybitmap
-            eval [replace_delimiter $value $mybitmap]
-            check_small_bitmap_is_right small_bitmap0 $mybitmap
-            r flushdb
-        }
     }
 
     test {small_bitmap hot bitfield} {
@@ -876,21 +847,21 @@ start_server {
     test {small_bitmap extend hot getbit} {
         build_extend_hot_small_bitmap small_bitmap1
         assert_equal {1} [r getbit small_bitmap1 15]
-        check_extend_small_bitmap_is_right small_bitmap0 small_bitmap1
+        check_small_bitmap_is_right small_bitmap0 small_bitmap1 $extend
         r flushdb
     }
 
     test {small_bitmap extend hot bitcount} {
         build_extend_hot_small_bitmap small_bitmap1
         assert_equal {2} [r bitcount small_bitmap1]
-        check_extend_small_bitmap_is_right small_bitmap0 small_bitmap1
+        check_small_bitmap_is_right small_bitmap0 small_bitmap1 $extend
         r flushdb
     }
 
     test {small_bitmap extend hot bitpos} {
         build_extend_hot_small_bitmap small_bitmap1
         assert_equal {15} [r bitpos small_bitmap1 1 1]
-        check_extend_small_bitmap_is_right small_bitmap0 small_bitmap1
+        check_small_bitmap_is_right small_bitmap0 small_bitmap1 $extend
         r flushdb
 
     }
@@ -932,35 +903,6 @@ start_server {
         r flushdb
     }
 
-    test {small_bitmap cold getbit} {
-        foreach {key value} $small_bitmap_getbit {
-            set mybitmap "small_bitmap1"
-            build_cold_small_bitmap $mybitmap
-            eval [replace_delimiter $value $mybitmap]
-            check_small_bitmap_is_right small_bitmap0 $mybitmap
-            r flushdb
-        }
-    }
-
-    test {small_bitmap cold bitcount} {
-        foreach {key value} $small_bitmap_bitcount {
-            set mybitmap "small_bitmap1"
-            build_cold_small_bitmap $mybitmap
-            eval [replace_delimiter $value $mybitmap]
-            check_small_bitmap_is_right small_bitmap0 $mybitmap
-            r flushdb
-        }
-    }
-
-    test {small_bitmap cold bitpos} {
-        foreach {key value} $small_bitmap_bitpos {
-            set mybitmap "small_bitmap1"
-            build_cold_small_bitmap $mybitmap
-            eval [replace_delimiter $value $mybitmap]
-            check_small_bitmap_is_right small_bitmap0 $mybitmap
-            r flushdb
-        }
-    }
 
     test {small_bitmap cold bitfield} {
         build_cold_small_bitmap small_bitmap1
@@ -1004,7 +946,7 @@ start_server {
         build_pure_hot_small_bitmap small_bitmap1
         r debug reload
         # check_data
-        check_small_bitmap_is_right small_bitmap0 small_bitmap1
+        check_small_bitmap_is_right small_bitmap0 small_bitmap1 $notextend
         r flushdb
     }
 
@@ -1013,7 +955,7 @@ start_server {
         build_extend_hot_small_bitmap small_bitmap1
         r debug reload
         # check_data
-        check_extend_small_bitmap_is_right small_bitmap0 small_bitmap1
+        check_small_bitmap_is_right small_bitmap0 small_bitmap1 $extend
         r flushdb
     }
 
@@ -1022,7 +964,7 @@ start_server {
         build_hot_small_bitmap small_bitmap1
         r debug reload
         # check_data
-        check_small_bitmap_is_right small_bitmap0 small_bitmap1
+        check_small_bitmap_is_right small_bitmap0 small_bitmap1 $notextend
         r flushdb
     }
 
@@ -1031,7 +973,7 @@ start_server {
         build_cold_small_bitmap small_bitmap1
         r debug reload
         # check_data
-        check_small_bitmap_is_right small_bitmap0 small_bitmap1
+        check_small_bitmap_is_right small_bitmap0 small_bitmap1 $notextend
         r flushdb
     }
 
@@ -1046,7 +988,7 @@ start_server {
         r CONFIG SET bitmap-subkey-size 4096
         r DEBUG RELOAD NOSAVE
         # check_data
-        check_small_bitmap_is_right small_bitmap0 small_bitmap1
+        check_small_bitmap_is_right small_bitmap0 small_bitmap1 $notextend
         r config set bitmap-subkey-size $bak_bitmap_subkey_size
         r flushdb
     }
@@ -1061,7 +1003,7 @@ start_server {
         r CONFIG SET bitmap-subkey-size 2048
         r DEBUG RELOAD NOSAVE
         # check_data
-        check_small_bitmap_is_right small_bitmap0 small_bitmap1
+        check_small_bitmap_is_right small_bitmap0 small_bitmap1 $notextend
         r flushdb
         # reset default config
         r config set bitmap-subkey-size $bak_bitmap_subkey_size
@@ -1070,15 +1012,21 @@ start_server {
     set bak_rdb_bitmap_enable [lindex [r config get swap-rdb-bitmap-encode-enabled] 1]
     r CONFIG SET swap-rdb-bitmap-encode-enabled no
 
-    test {small_bitmap pure hot rdbsave and rdbload for RDB_TYPE_STRING} {
-        r flushdb
-        build_pure_hot_small_bitmap small_bitmap1
-        r debug reload
-        # check it is string 
-        assert [object_is_string r small_bitmap1]
-        assert [object_is_cold r small_bitmap1]
-        check_small_bitmap_is_right small_bitmap0 small_bitmap1
-        r flushdb
+    test {small_bitmap pur_hot/hot/cold rdbsave and rdbload for RDB_TYPE_STRING} {
+        set builds {
+            build_pure_hot_small_bitmap
+            build_hot_small_bitmap
+            build_cold_small_bitmap
+        }
+        foreach build $builds {
+            $build small_bitmap1
+            r debug reload
+            # check it is string
+            assert [object_is_string r small_bitmap1]
+            assert [object_is_cold r small_bitmap1]
+            check_small_bitmap_is_right small_bitmap0 small_bitmap1 $notextend
+            r flushdb
+        }
     }
 
     test {small_bitmap extend hot rdbsave and rdbload for RDB_TYPE_STRING} {
@@ -1088,29 +1036,7 @@ start_server {
         # check it is string
         assert [object_is_string r small_bitmap1]
         assert [object_is_cold r small_bitmap1]
-        check_extend_small_bitmap_is_right small_bitmap0 small_bitmap1
-        r flushdb
-    }
-
-    test {small_bitmap hot rdbsave and rdbload for RDB_TYPE_STRING} {
-        r flushdb
-        build_hot_small_bitmap small_bitmap1
-        r debug reload
-        # check it is string
-        assert [object_is_string r small_bitmap1]
-        assert [object_is_cold r small_bitmap1]
-        check_small_bitmap_is_right small_bitmap0 small_bitmap1
-        r flushdb
-    }
-
-    test {small_bitmap cold rdbsave and rdbload for RDB_TYPE_STRING} {
-        r flushdb
-        build_cold_small_bitmap small_bitmap1
-        r debug reload
-        # check it is string
-        assert [object_is_string r small_bitmap1]
-        assert [object_is_cold r small_bitmap1]
-        check_small_bitmap_is_right small_bitmap0 small_bitmap1
+        check_small_bitmap_is_right small_bitmap0 small_bitmap1 $extend
         r flushdb
     }
 
@@ -1128,7 +1054,7 @@ start_server {
         build_pure_hot_data mybitmap1
         r swap.evict mybitmap1
         wait_key_cold r mybitmap1
-        check_mybitmap_is_right mybitmap1
+        check_mybitmap_is_right mybitmap1 $notextend
         r flushdb
     }
 
@@ -1144,7 +1070,7 @@ start_server {
         after 100
         r swap.evict mybitmap1
         wait_key_cold r mybitmap1
-        check_mybitmap_is_right mybitmap1
+        check_mybitmap_is_right mybitmap1 $notextend
         r flushdb
         r config set swap-evict-step-max-subkeys $bak_evict_step
     }
@@ -1154,7 +1080,7 @@ start_server {
         build_hot_data mybitmap1
         r swap.evict mybitmap1
         wait_key_cold r mybitmap1
-        check_mybitmap_is_right mybitmap1
+        check_mybitmap_is_right mybitmap1 $notextend
         r flushdb
     }
 
@@ -1170,7 +1096,7 @@ start_server {
         after 100
         r swap.evict mybitmap1
         wait_key_cold r mybitmap1
-        check_mybitmap_is_right mybitmap1
+        check_mybitmap_is_right mybitmap1 $notextend
         r flushdb
         r config set swap-evict-step-max-subkeys $bak_evict_step
     }
@@ -1181,7 +1107,7 @@ start_server {
         assert [object_is_hot r mybitmap1]
         r swap.evict mybitmap1
         wait_key_cold r mybitmap1
-        check_extend_mybitmap_is_right mybitmap1
+        check_mybitmap_is_right mybitmap1 $extend
         r flushdb
     }
 
@@ -1197,7 +1123,7 @@ start_server {
         after 100
         r swap.evict mybitmap1
         wait_key_cold r mybitmap1
-        check_extend_mybitmap_is_right mybitmap1
+        check_mybitmap_is_right mybitmap1 $extend
         r flushdb
         r config set swap-evict-step-max-subkeys $bak_evict_step
     }
@@ -1208,7 +1134,7 @@ start_server {
             eval $value
             r swap.evict mybitmap1
             wait_key_cold r mybitmap1
-            check_mybitmap_is_right mybitmap1
+            check_mybitmap_is_right mybitmap1 $notextend
             r flushdb
         }
     }
@@ -1224,45 +1150,40 @@ start_server {
             after 100
             r swap.evict mybitmap1
             wait_key_cold r mybitmap1
-            check_mybitmap_is_right mybitmap1
+            check_mybitmap_is_right mybitmap1 $notextend
             r config set swap-evict-step-max-subkeys $bak_evict_step
             r flushdb
         }
     }
 
-    test {pure hot getbit} {
-        foreach {key value} $check_mybitmap_getbit {
-            set mybitmap "bitmap1"
-            build_pure_hot_data $mybitmap
-            eval [replace_delimiter $value $mybitmap]
-            check_mybitmap_is_right $mybitmap
-            r flushdb
+    test {bitmap swaps} {
+        set scenes {
+            build_pure_hot_data
+            build_hot_data
+            build_cold_data
         }
-    }
-
-    test {pure hot bitcount} {
-        foreach {key value} $check_mybitmap_bitcount {
-            set mybitmap "bitmap1"
-            build_pure_hot_data $mybitmap
-            eval [replace_delimiter $value $mybitmap]
-            check_mybitmap_is_right $mybitmap
-            r flushdb
+        set cmds {
+            check_mybitmap_setbit
+            check_mybitmap_getbit
+            check_mybitmap_bitcount
+            check_mybitmap_bitpos
         }
-    }
-
-    test {pure hot bitpos} {
-        foreach {key value} $check_mybitmap_bitpos {
-            set mybitmap "bitmap1"
-            build_pure_hot_data $mybitmap
-            eval [replace_delimiter $value $mybitmap]
-            check_mybitmap_is_right $mybitmap
-            r flushdb
+        foreach scene $scenes {
+            foreach cmd $cmds {
+                foreach {key value} $cmd {
+                    set mybitmap "bitmap1"
+                    $scene $mybitmap
+                    eval [replace_delimiter $value $mybitmap]
+                    check_mybitmap_is_right $mybitmap $notextend
+                    r flushdb
+                }
+            }
         }
     }
 
     test {pure hot bitpos corner case} {
         build_pure_hot_data mybitmap1
-        check_mybitmap_bitpos mybitmap1
+        check_bitpos_mybitmap mybitmap1
         set_data mybitmap0
         #press_enter_to_continue
         assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap0]
@@ -1283,7 +1204,7 @@ start_server {
     test {pure hot bitfield raw} {
         build_pure_hot_data mybitmap1
         assert_equal {8}  [r bitfield_ro mybitmap1 get u4 65535]
-        check_mybitmap_is_right mybitmap1
+        check_mybitmap_is_right mybitmap1 $notextend
         r flushdb
     }
 
@@ -1296,39 +1217,9 @@ start_server {
         r flushdb
     }
 
-    test {hot getbit} {
-        foreach {key value} $check_mybitmap_getbit {
-            set mybitmap "bitmap1"
-            build_hot_data $mybitmap
-            eval [replace_delimiter $value $mybitmap]
-            check_mybitmap_is_right $mybitmap
-            r flushdb
-        }
-    }
-
-    test {hot bitcount} {
-        foreach {key value} $check_mybitmap_bitcount {
-            set mybitmap "bitmap1"
-            build_hot_data $mybitmap
-            eval [replace_delimiter $value $mybitmap]
-            check_mybitmap_is_right $mybitmap
-            r flushdb
-        }
-    }
-
-    test {hot bitpos} {
-        foreach {key value} $check_mybitmap_bitpos {
-            set mybitmap "bitmap1"
-            build_hot_data $mybitmap
-            eval [replace_delimiter $value $mybitmap]
-            check_mybitmap_is_right $mybitmap
-            r flushdb
-        }
-    }
-
     test {hot bitpos corner case} {
         build_hot_data mybitmap1
-        check_mybitmap_bitpos mybitmap1
+        check_bitpos_mybitmap mybitmap1
         set_data mybitmap0
         #press_enter_to_continue
         assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap0]
@@ -1346,7 +1237,7 @@ start_server {
         r flushdb
         build_hot_data mybitmap1
         assert_equal {8}  [r bitfield_ro mybitmap1 get u4 65535]
-        check_mybitmap_is_right mybitmap1
+        check_mybitmap_is_right mybitmap1 $notextend
         r flushdb
     }
 
@@ -1362,21 +1253,21 @@ start_server {
     test {extend hot getbit} {
         build_extend_hot_data mybitmap1
         assert_equal {1} [r getbit mybitmap1 368639]
-        check_extend_mybitmap_is_right mybitmap1
+        check_mybitmap_is_right mybitmap1 $extend
         r flushdb
     }
 
     test {extend hot bitcount} {
         build_extend_hot_data mybitmap1
         assert_equal {12} [r bitcount mybitmap1]
-        check_extend_mybitmap_is_right mybitmap1
+        check_mybitmap_is_right mybitmap1 $extend
         r flushdb
     }
 
     test {extend hot bitpos} {
         build_extend_hot_data mybitmap1
         assert_equal {368639} [r bitpos mybitmap1 1 41984]
-        check_extend_mybitmap_is_right mybitmap1
+        check_mybitmap_is_right mybitmap1 $extend
         r flushdb
 
     }
@@ -1388,7 +1279,7 @@ start_server {
         r flushdb
         build_extend_hot_data mybitmap1
         assert_equal {8}  [r bitfield_ro mybitmap1 get u4 65535]
-        check_extend_mybitmap_is_right mybitmap1
+        check_mybitmap_is_right mybitmap1 $extend
         r flushdb
     }
 
@@ -1409,7 +1300,7 @@ start_server {
                 set mybitmap "bitmap1"
                 build_hot_data $mybitmap
                 eval [replace_delimiter $innvalue $mybitmap]
-                check_mybitmap_is_right $mybitmap
+                check_mybitmap_is_right $mybitmap $notextend
                 r flushdb
             }
         }
@@ -1418,10 +1309,10 @@ start_server {
     test {warm bitcount} {
         r flushdb
         foreach {key outvalue} [array get build_warm_with_hole] {
-            foreach {key innvalue} [array get check_mybitmap1_bitcount] {
+            foreach {key innvalue} [array get check_mybitmap_bitcount] {
                 eval $outvalue
                 eval $innvalue
-                check_mybitmap_is_right mybitmap1
+                check_mybitmap_is_right mybitmap1 $notextend
                 r flushdb
             }
         }
@@ -1434,7 +1325,7 @@ start_server {
                 set mybitmap "bitmap1"
                 build_hot_data $mybitmap
                 eval [replace_delimiter $innvalue $mybitmap]
-                check_mybitmap_is_right $mybitmap
+                check_mybitmap_is_right $mybitmap $notextend
                 r flushdb
             }
         }
@@ -1444,7 +1335,7 @@ start_server {
         r flushdb
         foreach {key value} [array get build_warm_with_hole] {
             eval $value
-            check_mybitmap_bitpos mybitmap1
+            check_bitpos_mybitmap mybitmap1
             set_data mybitmap0
             assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap0]
             assert_equal {18} [r bitcount mybitmap1 0 41983]
@@ -1463,7 +1354,7 @@ start_server {
             r flushdb
             eval $data_str
             assert_equal {8}  [r bitfield_ro mybitmap1 get u4 65535]
-            check_mybitmap_is_right mybitmap1
+            check_mybitmap_is_right mybitmap1 $notextend
             r flushdb
         }
     }
@@ -1481,39 +1372,9 @@ start_server {
         }
     }
 
-    test {cold getbit} {
-        foreach {key value} $check_mybitmap_getbit {
-            set mybitmap "bitmap1"
-            build_cold_data $mybitmap
-            eval [replace_delimiter $value $mybitmap]
-            check_mybitmap_is_right $mybitmap
-            r flushdb
-        }
-    }
-
-    test {cold bitcount} {
-        foreach {key value} $check_mybitmap_bitcount {
-            set mybitmap "bitmap1"
-            build_cold_data $mybitmap
-            eval [replace_delimiter $value $mybitmap]
-            check_mybitmap_is_right $mybitmap
-            r flushdb
-        }
-    }
-
-    test {cold bitpos} {
-        foreach {key value} $check_mybitmap_bitpos {
-            set mybitmap "bitmap1"
-            build_cold_data $mybitmap
-            eval [replace_delimiter $value $mybitmap]
-            check_mybitmap_is_right $mybitmap
-            r flushdb
-        }
-    }
-
     test {cold bitpos corner case} {
         build_cold_data mybitmap1
-        check_mybitmap_bitpos mybitmap1
+        check_bitpos_mybitmap mybitmap1
         set_data mybitmap0
         assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap0]
         assert_equal {18} [r bitcount mybitmap1 0 41983]
@@ -1529,7 +1390,7 @@ start_server {
         r flushdb
         build_cold_data mybitmap1
         assert_equal {8}  [r bitfield_ro mybitmap1 get u4 65535]
-        check_mybitmap_is_right mybitmap1
+        check_mybitmap_is_right mybitmap1 $notextend
         r flushdb
     }
 
@@ -1542,24 +1403,6 @@ start_server {
         r flushdb
     }
 
-    test {pure hot setbit} {
-        foreach {key value} [array get check_mybitmap1_setbit] {
-            r flushdb
-            build_pure_hot_data mybitmap1
-            eval $value
-            r flushdb
-        }
-    }
-
-    test {hot setbit} {
-        foreach {key value} [array get check_mybitmap1_setbit] {
-            r flushdb
-            build_hot_data mybitmap1
-            eval $value
-            r flushdb
-        }
-    }
-
     test {warm setbit} {
         r flushdb
         foreach {key outvalue} [array get build_warm_with_hole] {
@@ -1568,14 +1411,6 @@ start_server {
                 eval $outvalue
                 eval $innvalue
             }
-        }
-    }
-
-    test {cold setbit} {
-        foreach {key value} [array get check_mybitmap1_setbit] {
-            r flushdb
-            build_cold_data mybitmap1
-            eval $value
         }
     }
 }
@@ -1592,8 +1427,8 @@ start_server {
         build_pure_hot_data mybitmap2
         r debug reload
         # check_data
-        check_mybitmap_is_right mybitmap1
-        check_mybitmap_is_right mybitmap2
+        check_mybitmap_is_right mybitmap1 $notextend
+        check_mybitmap_is_right mybitmap2 $notextend
         r flushdb
     }
 
@@ -1603,7 +1438,7 @@ start_server {
         build_extend_hot_data mybitmap1
         r debug reload
         # check_data
-        check_extend_mybitmap_is_right mybitmap1
+        check_mybitmap_is_right mybitmap1 $extend
         r flushdb
     }
 
@@ -1613,7 +1448,7 @@ start_server {
         build_hot_data mybitmap1
         r debug reload
         # check_data
-        check_mybitmap_is_right mybitmap1
+        check_mybitmap_is_right mybitmap1 $notextend
         r flushdb
     }
 
@@ -1626,8 +1461,8 @@ start_server {
         wait_key_cold r mybitmap2
         r debug reload
         # check_data
-        check_mybitmap_is_right mybitmap1
-        check_mybitmap_is_right mybitmap2
+        check_mybitmap_is_right mybitmap1 $notextend
+        check_mybitmap_is_right mybitmap2 $notextend
         r flushdb
     }
 
@@ -1637,7 +1472,7 @@ start_server {
             r flushdb
             build_cold_data mybitmap1
             eval $value
-            check_mybitmap_is_right mybitmap1
+            check_mybitmap_is_right mybitmap1 $notextend
             r flushdb
         }
     }
@@ -1655,7 +1490,7 @@ start_server {
         r CONFIG SET bitmap-subkey-size 4096
         r DEBUG RELOAD NOSAVE
         # check_data
-        check_mybitmap_is_right mybitmap1
+        check_mybitmap_is_right mybitmap1 $notextend
         r config set bitmap-subkey-size $bak_bitmap_subkey_size
         r flushdb
     }
@@ -1671,7 +1506,7 @@ start_server {
         r CONFIG SET bitmap-subkey-size 2048
         r DEBUG RELOAD NOSAVE
         # check_data
-        check_mybitmap_is_right mybitmap1
+        check_mybitmap_is_right mybitmap1 $notextend
         r flushdb
         # reset default config
         r config set bitmap-subkey-size $bak_bitmap_subkey_size
@@ -1691,7 +1526,7 @@ start_server {
         assert [object_is_string r mybitmap2]
         assert [object_is_cold r mybitmap1]
         assert [object_is_cold r mybitmap2]
-        check_mybitmap_is_right mybitmap1
+        check_mybitmap_is_right mybitmap1 $notextend
         r flushdb
     }
 
@@ -1703,7 +1538,7 @@ start_server {
         # check it is string
         assert [object_is_cold r mybitmap1]
         assert [object_is_string r mybitmap1]
-        check_extend_mybitmap_is_right mybitmap1
+        check_mybitmap_is_right mybitmap1 $extend
         r flushdb
     }
 
@@ -1715,7 +1550,7 @@ start_server {
         # check it is string
         assert [object_is_cold r mybitmap1]
         assert [object_is_string r mybitmap1]
-        check_mybitmap_is_right mybitmap1
+        check_mybitmap_is_right mybitmap1 $notextend
         r flushdb
     }
 
@@ -1727,7 +1562,7 @@ start_server {
         # check it is string
         assert [object_is_cold r mybitmap1]
         assert [object_is_string r mybitmap1]
-        check_mybitmap_is_right mybitmap1
+        check_mybitmap_is_right mybitmap1 $notextend
         r flushdb
     }
 
@@ -1740,7 +1575,7 @@ start_server {
             # check it is string 
             assert [object_is_cold r mybitmap1]
             assert [object_is_string r mybitmap1]
-            check_mybitmap_is_right mybitmap1
+            check_mybitmap_is_right mybitmap1 $notextend
             r flushdb
         }
     }
