@@ -726,22 +726,18 @@ start_server {
 }   {
     r config set swap-debug-evict-keys 0
 
-    test {small_bitmap pure hot full swap out} {
-        r flushdb
-        build_pure_hot_small_bitmap small_bitmap1
-        r swap.evict small_bitmap1
-        wait_key_cold r small_bitmap1
-        check_small_bitmap_is_right small_bitmap0 small_bitmap1 $notextend
-        r flushdb
-    }
-
-    test {small_bitmap hot full swap out} {
-        r flushdb
-        build_hot_small_bitmap small_bitmap1
-        r swap.evict small_bitmap1
-        wait_key_cold r small_bitmap1
-        check_small_bitmap_is_right small_bitmap0 small_bitmap1 $notextend
-        r flushdb
+    test {small_bitmap full swap out} {
+        set builds {
+            build_pure_hot_small_bitmap
+            build_hot_small_bitmap
+        }
+        foreach build $builds {
+            $build small_bitmap1
+            r swap.evict small_bitmap1
+            wait_key_cold r small_bitmap1
+            check_small_bitmap_is_right small_bitmap0 small_bitmap1 $notextend
+            r flushdb
+        }
     }
 
     test {small_bitmap extend hot full swap out} {
@@ -755,22 +751,22 @@ start_server {
     }
 
     test {small_bitmap swaps} {
-        set types {
-            {build_pure_hot_small_bitmap}
-            {build_hot_small_bitmap}
-            {build_cold_small_bitmap}
+        set builds {
+            build_pure_hot_small_bitmap
+            build_hot_small_bitmap
+            build_cold_small_bitmap
         }
-        set tests {
-            {small_bitmap_getbit}
-            {small_bitmap_bitcount}
-            {small_bitmap_bitpos}
+        set cmds {
+            small_bitmap_getbit
+            small_bitmap_bitcount
+            small_bitmap_bitpos
         }
-        foreach type $types {
-            foreach test $tests {
-                foreach case [lrange $test 1 end] {
+        foreach build $builds {
+            foreach cmd $cmds {
+                foreach {key value} $cmd {
                     set mybitmap "small_bitmap1"
-                    $type $mybitmap
-                    eval [replace_delimiter $case $mybitmap]
+                    $build $mybitmap
+                    eval [replace_delimiter $value $mybitmap]
                     check_small_bitmap_is_right small_bitmap0 $mybitmap $notextend
                     r flushdb
                 }
@@ -778,17 +774,21 @@ start_server {
         }
     }
 
-    test {small_bitmap pure hot bitfield} {
-        build_pure_hot_small_bitmap small_bitmap1
-        assert_equal {3}  [r BITFIELD small_bitmap1 INCRBY u2 0 1]
-        assert_equal {2} [r bitcount small_bitmap1]
-        r flushdb
-    }
-
-    test {small_bitmap pure hot bitop overwrite} {
-        build_pure_hot_small_bitmap small_bitmap1
-        check_small_bitmap_bitop small_bitmap1
-        r flushdb
+    test {small_bitmap bitfield/bitop overwrite} {
+        set builds {
+            build_pure_hot_small_bitmap
+            build_hot_small_bitmap
+            build_cold_small_bitmap
+        }
+        foreach build $builds {
+            $build small_bitmap1
+            assert_equal {3}  [r BITFIELD small_bitmap1 INCRBY u2 0 1]
+            assert_equal {2} [r bitcount small_bitmap1]
+            r flushdb
+            $build small_bitmap1
+            check_small_bitmap_bitop small_bitmap1
+            r flushdb
+        }
     }
 
     test {small_bitmap pure hot bitop} {
@@ -808,19 +808,6 @@ start_server {
         assert_equal {1} [r bitop XOR small_bitmap1 src1 src2]
         assert_equal {2} [r bitcount small_bitmap1]
 
-        r flushdb
-    }
-
-    test {small_bitmap hot bitfield} {
-        build_hot_small_bitmap small_bitmap1
-        assert_equal {3}  [r BITFIELD small_bitmap1 INCRBY u2 0 1]
-        assert_equal {2} [r bitcount small_bitmap1]
-        r flushdb
-    }
-
-    test {small_bitmap hot bitop overwrite} {
-        build_hot_small_bitmap small_bitmap1
-        check_small_bitmap_bitop small_bitmap1
         r flushdb
     }
 
@@ -900,20 +887,6 @@ start_server {
         wait_key_cold r src2
         assert_equal {1} [r bitop XOR small_bitmap1 src1 src2]
         assert_equal {2} [r bitcount small_bitmap1]
-        r flushdb
-    }
-
-
-    test {small_bitmap cold bitfield} {
-        build_cold_small_bitmap small_bitmap1
-        assert_equal {3}  [r BITFIELD small_bitmap1 INCRBY u2 0 1]
-        assert_equal {2} [r bitcount small_bitmap1]
-        r flushdb
-    }
-
-    test {small_bitmap cold bitop overwrite} {
-        build_cold_small_bitmap small_bitmap1
-        check_small_bitmap_bitop small_bitmap1
         r flushdb
     }
 
@@ -1157,7 +1130,7 @@ start_server {
     }
 
     test {bitmap swaps} {
-        set scenes {
+        set builds {
             build_pure_hot_data
             build_hot_data
             build_cold_data
@@ -1168,11 +1141,11 @@ start_server {
             check_mybitmap_bitcount
             check_mybitmap_bitpos
         }
-        foreach scene $scenes {
+        foreach build $builds {
             foreach cmd $cmds {
                 foreach {key value} $cmd {
                     set mybitmap "bitmap1"
-                    $scene $mybitmap
+                    $build $mybitmap
                     eval [replace_delimiter $value $mybitmap]
                     check_mybitmap_is_right $mybitmap $notextend
                     r flushdb
@@ -1542,28 +1515,20 @@ start_server {
         r flushdb
     }
 
-    test {hot rdbsave and rdbload for RDB_TYPE_STRING} {
-        r flushdb
-        # mybitmap 41kb
-        build_hot_data mybitmap1
-        r debug reload
-        # check it is string
-        assert [object_is_cold r mybitmap1]
-        assert [object_is_string r mybitmap1]
-        check_mybitmap_is_right mybitmap1 $notextend
-        r flushdb
-    }
-
-    test {cold rdbsave and rdbload for RDB_TYPE_STRING} {
-        r flushdb
-        # mybitmap 41kb
-        build_cold_data mybitmap1
-        r debug reload
-        # check it is string
-        assert [object_is_cold r mybitmap1]
-        assert [object_is_string r mybitmap1]
-        check_mybitmap_is_right mybitmap1 $notextend
-        r flushdb
+    test {rdbsave and rdbload for RDB_TYPE_STRING} {
+        set builds {
+            build_hot_data
+            build_cold_data
+        }
+        foreach build $builds {
+            $build mybitmap1
+            r debug reload
+            # check it is string
+            assert [object_is_cold r mybitmap1]
+            assert [object_is_string r mybitmap1]
+            check_mybitmap_is_right mybitmap1 $notextend
+            r flushdb
+        }
     }
 
     test {warm rdbsave and rdbload for RDB_TYPE_STRING} {
