@@ -135,13 +135,14 @@ proc set_data {bitmap} {
 }
 
 proc check_mybitmap_is_right {mybitmap is_extend} {
-    set_data mybitmap0
     if {$is_extend == 0} {
+        set_data mybitmap0
         assert_equal {41984} [r bitop XOR dest $mybitmap mybitmap0]
         assert_equal {11} [r bitcount $mybitmap 0 41983]
         assert_equal {11} [r bitcount mybitmap0]
         assert_equal {0} [r bitcount dest]
     } else {
+        set_data mybitmap0
         assert_equal {46080} [r bitop XOR dest $mybitmap mybitmap0]
         assert_equal {12} [r bitcount $mybitmap]
         assert_equal {11} [r bitcount mybitmap0]
@@ -188,223 +189,197 @@ proc build_warm_data {mybitmap}  {
 }
 
 set build_warm_with_hole {
-    #   condition:
-    #  hot  #_#__#_#__#
-    #  cold ###########
     {1} {
-        build_cold_data mybitmap1
-        r getbit mybitmap1 32767
-        r getbit mybitmap1 98303
-        r getbit mybitmap1 196607
-        r getbit mybitmap1 262143
-        r getbit mybitmap1 335871
-        assert [object_is_warm r mybitmap1]
+        { build_cold_data mybitmap1 }
+        { r getbit mybitmap1 32767 }
+        { r getbit mybitmap1 98303 }
+        { r getbit mybitmap1 196607 }
+        { r getbit mybitmap1 262143 }
+        { r getbit mybitmap1 335871 }
+        { assert [object_is_warm r mybitmap1] }
     }
 
-    #   condition:
-    #   hot  ____##_____
-    #   cold ###########
     {2}  {
-        build_cold_data mybitmap1
-        r getbit mybitmap1 163839
-        r getbit mybitmap1 196607
-        assert [object_is_warm r mybitmap1]
+        { build_cold_data mybitmap1 }
+        { r getbit mybitmap1 163839 }
+        { r getbit mybitmap1 196607 }
+        { assert [object_is_warm r mybitmap1] }
     }
 
-    #   condition:
-    #   hot  ____#___#_#
-    #   cold ###########
     {3}  {
-        build_cold_data mybitmap1
-        r getbit mybitmap1 163839
-        r getbit mybitmap1 294911
-        r getbit mybitmap1 335871
-        assert [object_is_warm r mybitmap1]
+        { build_cold_data mybitmap1 }
+        { r getbit mybitmap1 163839 }
+        { r getbit mybitmap1 294911 }
+        { r getbit mybitmap1 335871 }
+        { assert [object_is_warm r mybitmap1] }
     }
 
-    #   condition:
-    #   hot  #_#_##_____
-    #   cold ########### 
     {4}  {
-        build_cold_data mybitmap1
-        r getbit mybitmap1 32767
-        r getbit mybitmap1 98303 
-        r getbit mybitmap1 163839
-        r getbit mybitmap1 196607 
-        assert [object_is_warm r mybitmap1]
+        { build_cold_data mybitmap1 }
+        { r getbit mybitmap1 32767 }
+        { r getbit mybitmap1 98303  }
+        { r getbit mybitmap1 163839 }
+        { r getbit mybitmap1 196607  }
+        { assert [object_is_warm r mybitmap1] }
     }
 
-    #   condition:
-    #   hot  ________###
-    #   cold ########### 
     {5}  {
-        build_cold_data mybitmap1
-        r getbit mybitmap1 294911
-        r getbit mybitmap1 327679
-        r getbit mybitmap1 335871
-        assert [object_is_warm r mybitmap1]
+        { build_cold_data mybitmap1 }
+        { r getbit mybitmap1 294911 }
+        { r getbit mybitmap1 327679 }
+        { r getbit mybitmap1 335871 }
+        { assert [object_is_warm r mybitmap1] }
     }
 
-    #   condition:
-    #   hot  ##_________
-    #   cold ########### 
     {6}  {
-        build_cold_data mybitmap1
-        r getbit mybitmap1 1
-        r getbit mybitmap1 65535 
-        assert [object_is_warm r mybitmap1]
+        { build_cold_data mybitmap1 }
+        { r getbit mybitmap1 1 }
+        { r getbit mybitmap1 65535  }
+        { assert [object_is_warm r mybitmap1] }
     }
 
-    #   condition:
-    #   hot  ##________#
-    #   cold ########### 
     {7}  {
-        build_cold_data mybitmap1
-        r getbit mybitmap1 1
-        r getbit mybitmap1 65535
-        r getbit mybitmap1 335871
-        assert [object_is_warm r mybitmap1]
+        { build_cold_data mybitmap1 }
+        { r getbit mybitmap1 1 }
+        { r getbit mybitmap1 65535 }
+        { r getbit mybitmap1 335871 }
+        { assert [object_is_warm r mybitmap1] }
     }
 }
 
 set check_mybitmap1_setbit {
-    {0}  {
-        # normal setbit 
-        assert_equal {1} [r setbit mybitmap1 98303 0]
-        set_data mybitmap0
-        assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap0]
-        assert_equal {10} [r bitcount mybitmap1]
-        assert_equal {11} [r bitcount mybitmap0]
-        assert_equal {1} [r bitcount dest]
+    {0} {
+        { assert_equal {1} [r setbit mybitmap1 98303 0] }
+        { set_data mybitmap0 }
+        { assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap0] }
+        { assert_equal {10} [r bitcount mybitmap1] }
+        { assert_equal {11} [r bitcount mybitmap0] }
+        { assert_equal {1} [r bitcount dest] }
     }
 
-    {1}  {
-        # normal setbit 
-        assert_equal {0} [r setbit mybitmap1 344063 1]
-        set_data mybitmap0
-        assert_equal {43008} [r bitop XOR dest mybitmap1 mybitmap0]
-        assert_equal {12} [r bitcount mybitmap1]
-        assert_equal {11} [r bitcount mybitmap0]
-        assert_equal {1} [r bitcount dest]
+    {1} {
+        { assert_equal {0} [r setbit mybitmap1 344063 1] }
+        { set_data mybitmap0 }
+        { assert_equal {43008} [r bitop XOR dest mybitmap1 mybitmap0] }
+        { assert_equal {12} [r bitcount mybitmap1] }
+        { assert_equal {11} [r bitcount mybitmap0] }
+        { assert_equal {1} [r bitcount dest] }
     }
 
-    {2}  {
-        # normal setbit 
-        assert_equal {0} [r setbit mybitmap1 368639 1]
-        set_data mybitmap0
-        assert_equal {46080} [r bitop XOR dest mybitmap1 mybitmap0]
-        assert_equal {12} [r bitcount mybitmap1]
-        assert_equal {11} [r bitcount mybitmap0]
-        assert_equal {1} [r bitcount dest]
+    {2} { 
+        { assert_equal {0} [r setbit mybitmap1 368639 1] }
+        { set_data mybitmap0 }
+        { assert_equal {46080} [r bitop XOR dest mybitmap1 mybitmap0] }
+        { assert_equal {12} [r bitcount mybitmap1] }
+        { assert_equal {11} [r bitcount mybitmap0] }
+        { assert_equal {1} [r bitcount dest] }
     }
 
-    {3}  {
-        # normal setbit 
-        assert_equal {1} [r setbit mybitmap1 335871 0]
-        set_data mybitmap0
-        assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap0]
-        assert_equal {10} [r bitcount mybitmap1]
-        assert_equal {11} [r bitcount mybitmap0]
-        assert_equal {1} [r bitcount dest]
+    {3} {
+        { assert_equal {1} [r setbit mybitmap1 335871 0] }
+        { set_data mybitmap0 }
+        { assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap0] }
+        { assert_equal {10} [r bitcount mybitmap1] }
+        { assert_equal {11} [r bitcount mybitmap0] }
+        { assert_equal {1} [r bitcount dest] }
     }
 
-    {4}  {
-        # Abnormal setbit
-        assert_error "ERR*" {r setbit mybitmap1 -1 1}
-        check_mybitmap_is_right mybitmap1 $notextend
+    {4} {
+        { assert_error "ERR*" {r setbit mybitmap1 -1 1} }
+        { check_mybitmap_is_right mybitmap1 $notextend }
     }
 }
 
 set check_mybitmap_getbit {
-    {1} {assert_equal {1} [r getbit % 32767]}
-    {2} {assert_equal {1} [r getbit % 65535]}
-    {3} {assert_equal {1} [r getbit % 98303]}
-    {4} {assert_equal {1} [r getbit % 131071]}
-    {5} {assert_equal {1} [r getbit % 163839]}
-    {6} {assert_equal {1} [r getbit % 196607]}
-    {7} {assert_equal {1} [r getbit % 229375]}
-    {8} {assert_equal {1} [r getbit % 262143]}
-    {9} {assert_equal {1} [r getbit % 294911]}
-    {10} {assert_equal {1} [r getbit % 327679]}
-    {11} {assert_equal {1} [r getbit % 335871]}
-    {12} {assert_equal {0} [r getbit % 335872]}
-    {13} {assert_error "ERR*" {r getbit % -1}}
-    {14} {assert_equal {0} [r getbit % 2147483647]}
+    {assert_equal {1} [r getbit % 32767]}
+    {assert_equal {1} [r getbit % 65535]}
+    {assert_equal {1} [r getbit % 98303]}
+    {assert_equal {1} [r getbit % 131071]}
+    {assert_equal {1} [r getbit % 163839]}
+    {assert_equal {1} [r getbit % 196607]}
+    {assert_equal {1} [r getbit % 229375]}
+    {assert_equal {1} [r getbit % 262143]}
+    {assert_equal {1} [r getbit % 294911]}
+    {assert_equal {1} [r getbit % 327679]}
+    {assert_equal {1} [r getbit % 335871]}
+    {assert_equal {0} [r getbit % 335872]}
+    {assert_error "ERR*" {r getbit % -1}}
+    {assert_equal {0} [r getbit % 2147483647]}
 }
 
 set check_mybitmap_bitcount {
-    {1} {assert_equal {11} [r bitcount %]}
-    {2} {assert_equal {2} [r bitcount % 0 9216]}
-    {3} {assert_equal {2} [r bitcount % 5000 15000]}
-    {4} {assert_equal {3} [r bitcount % 9216 20480]}
-    {5} {assert_equal {3} [r bitcount % 15000 25000]}
-    {6} {assert_equal {6} [r bitcount % 20480 43008]}
-    {7} {assert_equal {9} [r bitcount % 10000 2000000]}
-    {8} {assert_equal {9} [r bitcount % 10000 2147483647]}
-    {9} {assert_equal {11} [r bitcount % -2147483648 2147483647]}
-    {10} {assert_equal {0} [r bitcount % 2000000 10000]}
-    {11} {assert_equal {5} [r bitcount % 10000 -10000]}
-    {12} {assert_equal {0} [r bitcount % -10000 10000]}
-    {13} {assert_equal {7} [r bitcount % -41984 -11984]}
-    {14} {assert_equal {0} [r bitcount % -11984 -41984]}
-    {15} {assert_equal {3} [r bitcount % -21984 -11984]}
+    {assert_equal {11} [r bitcount %]}
+    {assert_equal {2} [r bitcount % 0 9216]}
+    {assert_equal {2} [r bitcount % 5000 15000]}
+    {assert_equal {3} [r bitcount % 9216 20480]}
+    {assert_equal {3} [r bitcount % 15000 25000]}
+    {assert_equal {6} [r bitcount % 20480 43008]}
+    {assert_equal {9} [r bitcount % 10000 2000000]}
+    {assert_equal {9} [r bitcount % 10000 2147483647]}
+    {assert_equal {11} [r bitcount % -2147483648 2147483647]}
+    {assert_equal {0} [r bitcount % 2000000 10000]}
+    {assert_equal {5} [r bitcount % 10000 -10000]}
+    {assert_equal {0} [r bitcount % -10000 10000]}
+    {assert_equal {7} [r bitcount % -41984 -11984]}
+    {assert_equal {0} [r bitcount % -11984 -41984]}
+    {assert_equal {3} [r bitcount % -21984 -11984]}
 }
 
 set check_mybitmap_bitpos {
-    {1} {assert_equal {32767} [r bitpos % 1]}
-    {2} {assert_equal {32767} [r bitpos % 1 0]}
-    {3} {assert_equal {98303} [r bitpos % 1 9216]}
-    {4} {assert_equal {196607} [r bitpos % 1 20480]}
-    {5} {assert_equal {335871} [r bitpos % 1 41983]}
-    {6} {assert_equal {32767} [r bitpos % 1 0 9216]}
-    {7} {assert_equal {65535} [r bitpos % 1 5000 15000]}
-    {8} {assert_equal {98303} [r bitpos % 1 9216 20480]}
-    {9} {assert_equal {131071} [r bitpos % 1 15000 25000]}
-    {10} {assert_equal {196607} [r bitpos % 1 20480 43008]}
-    {11} {assert_equal {0} [r bitpos % 0]}
-    {12} {assert_equal {0} [r bitpos % 0 0]}
-    {13} {assert_equal {73728} [r bitpos % 0 9216]}
-    {14} {assert_equal {163840} [r bitpos % 0 20480]}
-    {15} {assert_equal {335864} [r bitpos % 0 41983]}
-    {16} {assert_equal {0} [r bitpos % 0 0 9216]}
-    {17} {assert_equal {40000} [r bitpos % 0 5000 15000]}
-    {18} {assert_equal {73728} [r bitpos % 0 9216 20480]}
-    {19} {assert_equal {120000} [r bitpos % 0 15000 25000]}
-    {20} {assert_equal {163840} [r bitpos % 0 20480 43008]}
-    {21} {assert_equal {-1} [r bitpos % 1 41984]}
-    {22} {assert_equal {-1} [r bitpos % 1 2147483647]}
-    {23} {assert_equal {327679} [r bitpos % 1 -1984]}
-    {24} {assert_equal {262143} [r bitpos % 1 -11984]}
-    {25} {assert_equal {98303} [r bitpos % 1 -31984]}
-    {26} {assert_equal {32767} [r bitpos % 1 -41984]}
-    {27} {assert_equal {32767} [r bitpos % 1 -2147483648]}
-    {28} {assert_equal {98303} [r bitpos % 1 10000 2000000]}
-    {29} {assert_equal {98303} [r bitpos % 1 10000 2147483647]}
-    {30} {assert_equal {-1} [r bitpos % 1 2000000 10000]}
-    {31} {assert_equal {-1} [r bitpos % 1 20000 10000]}
-    {32} {assert_equal {163839} [r bitpos % 1 -21984 -11984]}
-    {33} {assert_equal {32767} [r bitpos % 1 -41984 -11984]}
-    {34} {assert_equal {-1} [r bitpos % 1 -11984 -41984]}
-    {35} {assert_equal {98303} [r bitpos % 1 10000 -10000]}
-    {36} {assert_equal {32767} [r bitpos % 1 -2147483648 2147483647]}
-    {37} {assert_equal {-1} [r bitpos % 1 -10000 10000]}
-    {38} {assert_equal {-1} [r bitpos % 0 41984]}
-    {39} {assert_equal {-1} [r bitpos % 0 2147483647]}
-    {40} {assert_equal {320000} [r bitpos % 0 -1984]}
-    {41} {assert_equal {240000} [r bitpos % 0 -11984]}
-    {42} {assert_equal {80000} [r bitpos % 0 -31984]}
-    {43} {assert_equal {0} [r bitpos % 0 -41984]}
-    {44} {assert_equal {0} [r bitpos % 0 -2147483648]}
-    {45} {assert_equal {80000} [r bitpos % 0 10000 2000000]}
-    {46} {assert_equal {80000} [r bitpos % 0 10000 2147483647]}
-    {47} {assert_equal {-1} [r bitpos % 0 2000000 10000]}
-    {48} {assert_equal {-1} [r bitpos % 0 20000 10000]}
-    {49} {assert_equal {160000} [r bitpos % 0 -21984 -11984]}
-    {50} {assert_equal {0} [r bitpos % 0 -41984 -11984]}
-    {51} {assert_equal {-1} [r bitpos % 0 -11984 -41984]}
-    {52} {assert_equal {80000} [r bitpos % 0 10000 -10000]}
-    {53} {assert_equal {0} [r bitpos % 0 -2147483648 2147483647]}
-    {54} {assert_equal {-1} [r bitpos % 0 -10000 10000]}
+    {assert_equal {32767} [r bitpos % 1]}
+    {assert_equal {32767} [r bitpos % 1 0]}
+    {assert_equal {98303} [r bitpos % 1 9216]}
+    {assert_equal {196607} [r bitpos % 1 20480]}
+    {assert_equal {335871} [r bitpos % 1 41983]}
+    {assert_equal {32767} [r bitpos % 1 0 9216]}
+    {assert_equal {65535} [r bitpos % 1 5000 15000]}
+    {assert_equal {98303} [r bitpos % 1 9216 20480]}
+    {assert_equal {131071} [r bitpos % 1 15000 25000]}
+    {assert_equal {196607} [r bitpos % 1 20480 43008]}
+    {assert_equal {0} [r bitpos % 0]}
+    {assert_equal {0} [r bitpos % 0 0]}
+    {assert_equal {73728} [r bitpos % 0 9216]}
+    {assert_equal {163840} [r bitpos % 0 20480]}
+    {assert_equal {335864} [r bitpos % 0 41983]}
+    {assert_equal {0} [r bitpos % 0 0 9216]}
+    {assert_equal {40000} [r bitpos % 0 5000 15000]}
+    {assert_equal {73728} [r bitpos % 0 9216 20480]}
+    {assert_equal {120000} [r bitpos % 0 15000 25000]}
+    {assert_equal {163840} [r bitpos % 0 20480 43008]}
+    {assert_equal {-1} [r bitpos % 1 41984]}
+    {assert_equal {-1} [r bitpos % 1 2147483647]}
+    {assert_equal {327679} [r bitpos % 1 -1984]}
+    {assert_equal {262143} [r bitpos % 1 -11984]}
+    {assert_equal {98303} [r bitpos % 1 -31984]}
+    {assert_equal {32767} [r bitpos % 1 -41984]}
+    {assert_equal {32767} [r bitpos % 1 -2147483648]}
+    {assert_equal {98303} [r bitpos % 1 10000 2000000]}
+    {assert_equal {98303} [r bitpos % 1 10000 2147483647]}
+    {assert_equal {-1} [r bitpos % 1 2000000 10000]}
+    {assert_equal {-1} [r bitpos % 1 20000 10000]}
+    {assert_equal {163839} [r bitpos % 1 -21984 -11984]}
+    {assert_equal {32767} [r bitpos % 1 -41984 -11984]}
+    {assert_equal {-1} [r bitpos % 1 -11984 -41984]}
+    {assert_equal {98303} [r bitpos % 1 10000 -10000]}
+    {assert_equal {32767} [r bitpos % 1 -2147483648 2147483647]}
+    {assert_equal {-1} [r bitpos % 1 -10000 10000]}
+    {assert_equal {-1} [r bitpos % 0 41984]}
+    {assert_equal {-1} [r bitpos % 0 2147483647]}
+    {assert_equal {320000} [r bitpos % 0 -1984]}
+    {assert_equal {240000} [r bitpos % 0 -11984]}
+    {assert_equal {80000} [r bitpos % 0 -31984]}
+    {assert_equal {0} [r bitpos % 0 -41984]}
+    {assert_equal {0} [r bitpos % 0 -2147483648]}
+    {assert_equal {80000} [r bitpos % 0 10000 2000000]}
+    {assert_equal {80000} [r bitpos % 0 10000 2147483647]}
+    {assert_equal {-1} [r bitpos % 0 2000000 10000]}
+    {assert_equal {-1} [r bitpos % 0 20000 10000]}
+    {assert_equal {160000} [r bitpos % 0 -21984 -11984]}
+    {assert_equal {0} [r bitpos % 0 -41984 -11984]}
+    {assert_equal {-1} [r bitpos % 0 -11984 -41984]}
+    {assert_equal {80000} [r bitpos % 0 10000 -10000]}
+    {assert_equal {0} [r bitpos % 0 -2147483648 2147483647]}
+    {assert_equal {-1} [r bitpos % 0 -10000 10000]}
 }
 
 proc check_bitpos_mybitmap {mybitmap}  {
@@ -1103,8 +1078,10 @@ start_server {
 
     test {warm full swap out} {
         r flushdb
-        foreach {key value} [array get build_warm_with_hole] {
-            eval $value
+        foreach {key value} $build_warm_with_hole {
+            foreach cmd $value {
+                eval $cmd
+            }
             r swap.evict mybitmap1
             wait_key_cold r mybitmap1
             check_mybitmap_is_right mybitmap1 $notextend
@@ -1115,8 +1092,10 @@ start_server {
     test {warm non full swap out} {
         r flushdb
         set bak_evict_step [lindex [r config get swap-evict-step-max-subkeys] 1]
-        foreach {key value} [array get build_warm_with_hole] {
-            eval $value
+        foreach {key value} $build_warm_with_hole {
+            foreach cmd $value {
+                eval $cmd
+            }
             r config set swap-evict-step-max-subkeys 5
             after 100
             r swap.evict mybitmap1
@@ -1144,7 +1123,7 @@ start_server {
         foreach build $builds {
             foreach cmd $cmds {
                 foreach {key value} $cmd {
-                    set mybitmap "bitmap1"
+                    set mybitmap "mybitmap1"
                     $build $mybitmap
                     eval [replace_delimiter $value $mybitmap]
                     check_mybitmap_is_right $mybitmap $notextend
@@ -1267,36 +1246,51 @@ start_server {
 
     test {warm getbit} {
         r flushdb
-        foreach {key outvalue} [array get build_warm_with_hole] {
-            foreach {key innvalue} $check_mybitmap_getbit {
-                eval $outvalue
-                set mybitmap "bitmap1"
-                build_hot_data $mybitmap
+        # puts "r flushdb"
+        foreach {outkey outvalue} $build_warm_with_hole {
+            foreach {innkey innvalue} $check_mybitmap_getbit {
+                foreach cmd $outvalue {
+                    eval $cmd
+                    # puts $cmd
+                }
+                set mybitmap "mybitmap1"
+                # puts [replace_delimiter $innvalue $mybitmap]
                 eval [replace_delimiter $innvalue $mybitmap]
                 check_mybitmap_is_right $mybitmap $notextend
                 r flushdb
+                # puts "r flushdb"
             }
         }
     }
 
     test {warm bitcount} {
         r flushdb
-        foreach {key outvalue} [array get build_warm_with_hole] {
-            foreach {key innvalue} [array get check_mybitmap_bitcount] {
-                eval $outvalue
-                eval $innvalue
-                check_mybitmap_is_right mybitmap1 $notextend
+        # puts "r flushdb"
+        foreach {outkey outvalue} $build_warm_with_hole {
+            foreach {innkey innvalue} $check_mybitmap_bitcount {
+                foreach cmd $outvalue {
+                    eval $cmd
+                    # puts $cmd
+                }
+                set mybitmap "mybitmap1"
+                # puts [replace_delimiter $innvalue $mybitmap]
+                eval [replace_delimiter $innvalue $mybitmap]
+                check_mybitmap_is_right mybitmap $notextend
                 r flushdb
+                # puts "r flushdb"
             }
         }
     }
 
     test {warm bitpos} {
-        foreach {key outvalue} [array get build_warm_with_hole] {
+        foreach {key value} $build_warm_with_hole {
             foreach {key innvalue} $check_mybitmap_bitpos {
-                eval $outvalue
-                set mybitmap "bitmap1"
-                build_hot_data $mybitmap
+                r flushdb
+                foreach cmd $value {
+                    eval $cmd
+                }
+                set mybitmap "mybitmap1"
+                # puts [replace_delimiter $innvalue $mybitmap]
                 eval [replace_delimiter $innvalue $mybitmap]
                 check_mybitmap_is_right $mybitmap $notextend
                 r flushdb
@@ -1306,8 +1300,10 @@ start_server {
 
     test {warm bitpos corner case} {
         r flushdb
-        foreach {key value} [array get build_warm_with_hole] {
-            eval $value
+        foreach {key value} $build_warm_with_hole {
+            foreach cmd $value {
+                eval $cmd
+            }
             check_bitpos_mybitmap mybitmap1
             set_data mybitmap0
             assert_equal {41984} [r bitop XOR dest mybitmap1 mybitmap0]
@@ -1319,13 +1315,15 @@ start_server {
     }
 
     test {warm bitfield} {
-        foreach {key value} [array get build_warm_with_hole] {
-            eval $value
-            append data_str $i
-            eval $data_str
+        foreach {key value} $build_warm_with_hole {
+            foreach cmd $value {
+                eval $cmd
+            }
             assert_equal {-15}  [r BITFIELD mybitmap1 INCRBY i5 335871 1]
             r flushdb
-            eval $data_str
+            foreach cmd $value {
+                eval $cmd
+            }
             assert_equal {8}  [r bitfield_ro mybitmap1 get u4 65535]
             check_mybitmap_is_right mybitmap1 $notextend
             r flushdb
@@ -1333,13 +1331,15 @@ start_server {
     }
 
     test {warm bitop} {
-        foreach {key value} [array get build_warm_with_hole] {
-            eval $value
-            append data_str $i
-            eval $data_str
+        foreach {key value} $build_warm_with_hole {
+            foreach cmd $value {
+                eval $cmd
+            }
             check_mybitmap_bitop_xor_3_bitmap mybitmap1
             r flushdb
-            eval $data_str
+            foreach cmd $value {
+                eval $cmd
+            }
             check_mybitmap_bitop_xor_2_bitmap mybitmap1
             r flushdb
         }
@@ -1378,11 +1378,16 @@ start_server {
 
     test {warm setbit} {
         r flushdb
-        foreach {key outvalue} [array get build_warm_with_hole] {
-            foreach {key innvalue} [array get check_mybitmap1_setbit] {
+        foreach {key outvalue} $build_warm_with_hole {
+            foreach {key innvalue} $check_mybitmap1_setbit {
                 r flushdb
-                eval $outvalue
-                eval $innvalue
+                foreach cmd $outvalue {
+                    eval $cmd
+                }
+                foreach cmd $innvalue {
+                    eval $cmd
+                }
+                r flushdb
             }
         }
     }
@@ -1441,10 +1446,11 @@ start_server {
 
     test {warm rdbsave and rdbload for RDB_TYPE_BITMAP} {
         # mybitmap 41kb
-        foreach {key value} [array get build_warm_with_hole] {
-            r flushdb
-            build_cold_data mybitmap1
-            eval $value
+        foreach {key outvalue} $build_warm_with_hole {
+            foreach cmd $outvalue {
+                eval $cmd
+            }
+            r debug reload
             check_mybitmap_is_right mybitmap1 $notextend
             r flushdb
         }
@@ -1533,9 +1539,10 @@ start_server {
 
     test {warm rdbsave and rdbload for RDB_TYPE_STRING} {
         # mybitmap 41kb
-        foreach {key value} [array get build_warm_with_hole] {
-            r flushdb
-            eval $value
+        foreach {key outvalue} $build_warm_with_hole {
+            foreach cmd $outvalue {
+                eval $cmd
+            }
             r debug reload
             # check it is string 
             assert [object_is_cold r mybitmap1]
