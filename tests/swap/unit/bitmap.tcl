@@ -423,18 +423,23 @@ proc check_extend_mybitmap_xor_3_bitmap {mybitmap}  {
     assert_equal {10} [r bitcount $mybitmap]
 }
 
+proc init_bitmap_string_data {mykey} {
+    r setbit $mykey 81919 1
+    r setbit $mykey 1 1
+    r setbit $mykey 3 1
+    r setbit $mykey 5 1
+    r setbit $mykey 9 1
+    r setbit $mykey 11 1
+}
+
 start_server  {
     tags {"bitmap string switch"}
 }  {
     r config set swap-debug-evict-keys 0
 
     test "cold bitmap to string checking character" { 
-        r setbit mykey 81919 1
-        r setbit mykey 1 1
-        r setbit mykey 3 1
-        r setbit mykey 5 1
-        r setbit mykey 9 1
-        r setbit mykey 11 1
+        init_bitmap_string_data mykey
+
         r swap.evict mykey
         wait_key_cold r mykey
         assert_equal "TP" [r getrange mykey 0 1]
@@ -450,12 +455,7 @@ start_server  {
     }
 
     test "warm bitmap to string checking character" {
-        r setbit mykey 81919 1
-        r setbit mykey 1 1
-        r setbit mykey 3 1
-        r setbit mykey 5 1
-        r setbit mykey 9 1
-        r setbit mykey 11 1
+        init_bitmap_string_data mykey
 
         r swap.evict mykey
         wait_key_cold r mykey
@@ -470,12 +470,8 @@ start_server  {
     }
 
     test "hot bitmap to string checking character" {
-        r setbit mykey 81919 1
-        r setbit mykey 1 1
-        r setbit mykey 3 1
-        r setbit mykey 5 1
-        r setbit mykey 9 1
-        r setbit mykey 11 1
+        init_bitmap_string_data mykey
+        
         assert_equal "TP" [r getrange mykey 0 1]
         assert [object_is_string r mykey] 
         assert_equal "\x01" [r getrange mykey 10239 10239]
@@ -1275,7 +1271,7 @@ start_server {
                 set mybitmap "mybitmap1"
                 # puts [replace_delimiter $innvalue $mybitmap]
                 eval [replace_delimiter $innvalue $mybitmap]
-                check_mybitmap_is_right mybitmap $notextend
+                check_mybitmap_is_right $mybitmap $notextend
                 r flushdb
                 # puts "r flushdb"
             }
