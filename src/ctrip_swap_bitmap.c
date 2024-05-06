@@ -1363,8 +1363,7 @@ int bitmapSaveToRdbBitmap(rdbKeySaveData *save, rio *rdb) {
     size_t bitmap_size = 0;
 
     bitmapMeta *bitmap_meta = objectMetaGetPtr(save->object_meta);
-    if (bitmap_meta == NULL) {
-        /* just a marker */
+    if (bitmapMetaIsMarker(bitmap_meta)) {
         bitmap_size = stringObjectLen(save->value);
     } else {
         bitmap_size = bitmap_meta->size;
@@ -1393,6 +1392,7 @@ int bitmapSaveToRdbBitmap(rdbKeySaveData *save, rio *rdb) {
         robj subvalobj;
         initStaticStringObject(subvalobj, subval);
 
+        //TODO opt use rdbSaveRawString to skip alloc/dealloc subval
         if (rdbSaveStringObject(rdb, &subvalobj) == -1) {
             sdsfree(subval);
             decrRefCount(decoded_bitmap);
@@ -1818,7 +1818,7 @@ void bitmapLoadInit(rdbKeyLoadData *load) {
 
 sds genSwapBitmapStringSwitchedInfoString(sds info) {
     info = sdscatprintf(info,
-            "bitmap_string_switched_count:string_to_bitmap_count=%llu, bitmap_to_string_count=%llu\r\n",
+            "swap_type_switch_count:string_to_bitmap=%llu, bitmap_to_string=%llu\r\n",
             server.swap_string_switched_to_bitmap_count,server.swap_bitmap_switched_to_string_count);
     return info;
 }
