@@ -1,0 +1,117 @@
+name: feat_save_rdb_size_and_rocksdb_dbused
+
+on: 
+  push:
+    branches: [ wip/feat_save_rdb_size_and_rocksdb_dbused ]
+  pull_request:
+    branches: [ xredis_2_ror ]
+
+jobs:
+   unit:
+    strategy:
+      matrix:
+        platform: [ubuntu-22.04]
+    runs-on: ${{ matrix.platform }}
+    steps:
+    - uses: actions/checkout@v2
+      with:
+          submodules: true
+    - name: get rocksdb sha
+      id: rocksdb-sha
+      run: |
+        echo "::set-output name=sha::$(cd deps/rocksdb && git rev-parse HEAD)"
+      shell: bash
+    - name: cache rocksdb
+      id: cache-rocksdb
+      uses: actions/cache@v3
+      with:
+        path: deps/rocksdb
+        key: ${{ runner.os }}-rocksdb-${{ steps.rocksdb-sha.outputs.sha }}
+    - name: unit-test
+      run: |
+          sudo apt-get update
+          sudo apt-get -y install libsnappy-dev zlib1g-dev libstdc++6
+          make unit-test -j8
+   mem:
+    strategy:
+      matrix:
+        platform: [ubuntu-22.04]
+    runs-on: ${{ matrix.platform }}
+    steps:
+    - uses: actions/checkout@v2
+      with:
+          submodules: true
+    - name: get rocksdb sha
+      id: rocksdb-sha
+      run: |
+        echo "::set-output name=sha::$(cd deps/rocksdb && git rev-parse HEAD)"
+      shell: bash
+    - name: cache rocksdb
+      id: cache-rocksdb
+      uses: actions/cache@v3
+      with:
+        path: deps/rocksdb
+        key: ${{ runner.os }}-rocksdb-${{ steps.rocksdb-sha.outputs.sha }}
+    - name: make
+      run: |
+          sudo apt-get update
+          sudo apt-get -y install libsnappy-dev zlib1g-dev libstdc++6
+          make -j8
+    - name: make test
+      run: make test
+   swap:
+    strategy:
+      matrix:
+        platform: [ubuntu-22.04]
+    runs-on: ${{ matrix.platform }}
+    steps:
+    - uses: actions/checkout@v2
+      with:
+          submodules: true
+    - name: get rocksdb sha
+      id: rocksdb-sha
+      run: |
+        echo "::set-output name=sha::$(cd deps/rocksdb && git rev-parse HEAD)"
+      shell: bash
+    - name: cache rocksdb
+      id: cache-rocksdb
+      uses: actions/cache@v3
+      with:
+        path: deps/rocksdb
+        key: ${{ runner.os }}-rocksdb-${{ steps.rocksdb-sha.outputs.sha }}
+    - name: make
+      run: |
+          sudo apt-get update
+          sudo apt-get -y install libsnappy-dev zlib1g-dev libstdc++6
+          make -j8
+    - name: make test
+      run: make test-disk
+   swap-asan:
+    strategy:
+      matrix:
+        platform: [ubuntu-22.04]
+    runs-on: ${{ matrix.platform }}
+    steps:
+    - uses: actions/checkout@v2
+      with:
+          submodules: true
+    - name: get rocksdb sha
+      id: rocksdb-sha
+      run: |
+        echo "::set-output name=sha::$(cd deps/rocksdb && git rev-parse HEAD)"
+      shell: bash
+    - name: cache rocksdb
+      id: cache-rocksdb
+      uses: actions/cache@v3
+      with:
+        path: deps/rocksdb
+        key: ${{ runner.os }}-rocksdb-${{ steps.rocksdb-sha.outputs.sha }}
+    - name: make
+      run: |
+          sudo apt-get update
+          sudo apt-get -y install libsnappy-dev zlib1g-dev libstdc++6
+          make SANTIZER=address -j8
+    - name: make test
+      run: make test-disk
+
+
