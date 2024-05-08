@@ -1487,6 +1487,9 @@ struct redisServer {
     int rdb_del_sync_files;         /* Remove RDB files used only for SYNC if
                                        the instance does not use persistence. */
     time_t lastsave;                /* Unix time of last successful save */
+    time_t lastsavesocket;          /* Unix time of last successful save in socket format */
+    size_t rdb_disk_last_save_size;  /* Size of RDB in disk format last successful save */
+    size_t rdb_socket_last_save_size;  /* Size of RDB in socket format last successful save */
     time_t lastbgsave_try;          /* Unix time of last attempted bgsave */
     time_t rdb_save_time_last;      /* Time used by last RDB save run. */
     time_t rdb_save_time_start;     /* Current RDB save start time. */
@@ -2433,10 +2436,15 @@ void killAppendOnlyChild(void);
 void restartAOFAfterSYNC();
 
 /* Child info */
+typedef struct {
+    size_t rdb_size_disk;
+    size_t rdb_size_socket;
+} extends;
+#define EMPTY_EXTENDS (extends){0}
 void openChildInfoPipe(void);
 void closeChildInfoPipe(void);
-void sendChildInfoGeneric(childInfoType info_type, size_t keys, double progress, char *pname);
-void sendChildCowInfo(childInfoType info_type, char *pname);
+void sendChildInfoGeneric(childInfoType info_type, size_t keys, double progress, char *pname, extends* rdb_size);
+void sendChildCowInfo(childInfoType info_type, char *pname, extends* rdb_size);
 void sendChildInfo(childInfoType info_type, size_t keys, char *pname);
 void receiveChildInfo(void);
 
@@ -2871,6 +2879,7 @@ void keysCommand(client *c);
 void scanCommand(client *c);
 void dbsizeCommand(client *c);
 void lastsaveCommand(client *c);
+void lastsavesocketCommand(client *c);
 void saveCommand(client *c);
 void bgsaveCommand(client *c);
 void bgrewriteaofCommand(client *c);

@@ -744,6 +744,10 @@ struct redisCommand redisCommandTable[] = {
      "random fast ok-loading ok-stale @admin @dangerous",
      0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
 
+    {"lastsavesocket",lastsavesocketCommand,1,
+     "random fast ok-loading ok-stale @admin @dangerous",
+     0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
+
     {"type",typeCommand,2,
      "read-only fast @keyspace @swap_keyspace",
      0,NULL,NULL,SWAP_IN,SWAP_IN_META,1,1,1,0,0,0},
@@ -3562,6 +3566,9 @@ void initServer(void) {
     aofRewriteBufferReset();
     server.aof_buf = sdsempty();
     server.lastsave = time(NULL); /* At startup we consider the DB saved. */
+    server.lastsavesocket = 0;
+    server.rdb_disk_last_save_size = 0;
+    server.rdb_socket_last_save_size = 0;
     server.lastbgsave_try = 0;    /* At startup we never tried to BGSAVE. */
     server.rdb_save_time_last = -1;
     server.rdb_save_time_start = -1;
@@ -5256,6 +5263,11 @@ sds genRedisInfoString(const char *section) {
 
     /* Persistence */
     if (allsections || defsections || !strcasecmp(section,"persistence")) {
+        char rdb_disk_last_save_size_hmem[64];
+        char rdb_socket_last_save_size_hmem[64];
+        bytesToHuman(rdb_disk_last_save_size_hmem,server.rdb_disk_last_save_size);
+        bytesToHuman(rdb_socket_last_save_size_hmem,server.rdb_socket_last_save_size);
+
         if (sections++) info = sdscat(info,"\r\n");
         double fork_perc = 0;
         if (server.stat_module_progress) {
@@ -5277,6 +5289,11 @@ sds genRedisInfoString(const char *section) {
             "rdb_changes_since_last_save:%lld\r\n"
             "rdb_bgsave_in_progress:%d\r\n"
             "rdb_last_save_time:%jd\r\n"
+            "rdb_last_socket_save_time:%jd\r\n"
+            "rdb_disk_last_save_size:%jd\r\n"
+            "rdb_disk_last_save_size_human:%s\r\n"
+            "rdb_socket_last_save_size:%jd\r\n"
+            "rdb_socket_last_save_size_human:%s\r\n"
             "rdb_last_bgsave_status:%s\r\n"
             "rdb_last_bgsave_time_sec:%jd\r\n"
             "rdb_current_bgsave_time_sec:%jd\r\n"
@@ -5300,6 +5317,11 @@ sds genRedisInfoString(const char *section) {
             server.dirty,
             server.child_type == CHILD_TYPE_RDB,
             (intmax_t)server.lastsave,
+            (intmax_t)server.lastsavesocket,
+            (intmax_t)server.rdb_disk_last_save_size,
+            rdb_disk_last_save_size_hmem,
+            (intmax_t)server.rdb_socket_last_save_size,
+            rdb_socket_last_save_size_hmem,
             (server.lastbgsave_status == C_OK) ? "ok" : "err",
             (intmax_t)server.rdb_save_time_last,
             (intmax_t)((server.child_type != CHILD_TYPE_RDB) ?
@@ -6352,12 +6374,12 @@ int redisFork(int purpose) {
     return childpid;
 }
 
-void sendChildCowInfo(childInfoType info_type, char *pname) {
-    sendChildInfoGeneric(info_type, 0, -1, pname);
+void sendChildCowInfo(childInfoType info_type, char *pname, extends* rdb_size) {
+    sendChildInfoGeneric(info_type, 0, -1, pname, rdb_size);
 }
 
 void sendChildInfo(childInfoType info_type, size_t keys, char *pname) {
-    sendChildInfoGeneric(info_type, keys, -1, pname);
+    sendChildInfoGeneric(info_type, keys, -1, pname, &EMPTY_EXTENDS);
 }
 
 void memtest(size_t megabytes, int passes);

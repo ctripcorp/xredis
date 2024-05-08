@@ -1180,6 +1180,10 @@ void lastsaveCommand(client *c) {
     addReplyLongLong(c,server.lastsave);
 }
 
+void lastsavesocketCommand(client *c) {
+    addReplyLongLong(c,server.lastsavesocket);
+}
+
 char* getObjectTypeName(robj *o) {
     char* type;
     if (o == NULL) {

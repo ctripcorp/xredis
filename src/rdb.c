@@ -1450,11 +1450,14 @@ int rdbSave(char *filename, rdbSaveInfo *rsi,int rordb) {
         return C_ERR;
     }
 
-    /* [ToDo] rdb save done */
     serverLog(LL_NOTICE,"DB saved on disk");
     server.dirty = 0;
     server.lastsave = time(NULL);
     server.lastbgsave_status = C_OK;
+    if(!rordb)
+        server.rdb_disk_last_save_size = rdb.processed_bytes;
+    else
+        server.rdb_disk_last_save_size = 0;
     stopSaving(1);
     return C_OK;
 
@@ -1506,7 +1509,8 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi, struct swapForkRocksdbCt
 
         retval = rdbSave(filename,rsi,rordb);
         if (retval == C_OK) {
-            sendChildCowInfo(CHILD_INFO_TYPE_RDB_COW_SIZE, "RDB");
+            extends rdb_size={server.rdb_disk_last_save_size, 0};
+            sendChildCowInfo(CHILD_INFO_TYPE_RDB_COW_SIZE, "RDB", &rdb_size);
         }
         exitFromChild((retval == C_OK) ? 0 : 1);
     } else {
@@ -2983,6 +2987,7 @@ static void backgroundSaveDoneHandlerDisk(int exitcode, int bysignal) {
  * diskless replication. */
 static void backgroundSaveDoneHandlerSocket(int exitcode, int bysignal) {
     if (!bysignal && exitcode == 0) {
+        server.lastsavesocket = time(NULL);
         serverLog(LL_NOTICE,
             "Background RDB transfer terminated with success");
     } else if (!bysignal && exitcode != 0) {
@@ -3123,8 +3128,12 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi, swapForkRocksdbCtx *sfrctx, int ror
         if (retval == C_OK && rioFlush(&rdb) == 0)
             retval = C_ERR;
 
+        size_t rdb_socket_last_save_size = 0;
+        if(!rordb)
+            rdb_socket_last_save_size = rdb.processed_bytes;
         if (retval == C_OK) {
-            sendChildCowInfo(CHILD_INFO_TYPE_RDB_COW_SIZE, "RDB");
+            extends rdb_size = {0, rdb_socket_last_save_size};
+            sendChildCowInfo(CHILD_INFO_TYPE_RDB_COW_SIZE, "RDB", &rdb_size);
         }
 
         rioFreeFd(&rdb);

@@ -35,6 +35,7 @@ typedef struct {
     size_t cow;
     monotime cow_updated;
     double progress;
+    extends rdb_size;
     childInfoType information_type; /* Type of information */
 } child_info_data;
 
@@ -67,7 +68,7 @@ void closeChildInfoPipe(void) {
 }
 
 /* Send save data to parent. */
-void sendChildInfoGeneric(childInfoType info_type, size_t keys, double progress, char *pname) {
+void sendChildInfoGeneric(childInfoType info_type, size_t keys, double progress, char *pname, extends *rdb_size) {
     if (server.child_info_pipe[1] == -1) return;
 
     static monotime cow_updated = 0;
@@ -102,6 +103,7 @@ void sendChildInfoGeneric(childInfoType info_type, size_t keys, double progress,
     data.cow = cow;
     data.cow_updated = cow_updated;
     data.progress = progress;
+    data.rdb_size = *rdb_size;
 
     ssize_t wlen = sizeof(data);
 
@@ -111,7 +113,7 @@ void sendChildInfoGeneric(childInfoType info_type, size_t keys, double progress,
 }
 
 /* Update Child info. */
-void updateChildInfo(childInfoType information_type, size_t cow, monotime cow_updated, size_t keys, double progress) {
+void updateChildInfo(childInfoType information_type, size_t cow, monotime cow_updated, size_t keys, double progress, extends rdb_size) {
     if (information_type == CHILD_INFO_TYPE_CURRENT_INFO) {
         server.stat_current_cow_bytes = cow;
         server.stat_current_cow_updated = cow_updated;
@@ -124,13 +126,19 @@ void updateChildInfo(childInfoType information_type, size_t cow, monotime cow_up
     } else if (information_type == CHILD_INFO_TYPE_MODULE_COW_SIZE) {
         server.stat_module_cow_bytes = cow;
     }
+    if(rdb_size.rdb_size_disk) {
+        server.rdb_disk_last_save_size = rdb_size.rdb_size_disk;
+    }
+    if(rdb_size.rdb_size_socket) {
+        server.rdb_socket_last_save_size = rdb_size.rdb_size_socket;
+    }
 }
 
 /* Read child info data from the pipe.
  * if complete data read into the buffer, 
  * data is stored into *buffer, and returns 1.
  * otherwise, the partial data is left in the buffer, waiting for the next read, and returns 0. */
-int readChildInfo(childInfoType *information_type, size_t *cow, monotime *cow_updated, size_t *keys, double* progress) {
+int readChildInfo(childInfoType *information_type, size_t *cow, monotime *cow_updated, size_t *keys, double* progress, extends* rdb_size) {
     /* We are using here a static buffer in combination with the server.child_info_nread to handle short reads */
     static child_info_data buffer;
     ssize_t wlen = sizeof(buffer);
@@ -150,6 +158,7 @@ int readChildInfo(childInfoType *information_type, size_t *cow, monotime *cow_up
         *cow_updated = buffer.cow_updated;
         *keys = buffer.keys;
         *progress = buffer.progress;
+        *rdb_size = buffer.rdb_size;
         return 1;
     } else {
         return 0;
@@ -165,9 +174,10 @@ void receiveChildInfo(void) {
     size_t keys;
     double progress;
     childInfoType information_type;
+    extends rdb_size;
 
     /* Drain the pipe and update child info so that we get the final message. */
-    while (readChildInfo(&information_type, &cow, &cow_updated, &keys, &progress)) {
-        updateChildInfo(information_type, cow, cow_updated, keys, progress);
+    while (readChildInfo(&information_type, &cow, &cow_updated, &keys, &progress, &rdb_size)) {
+        updateChildInfo(information_type, cow, cow_updated, keys, progress, rdb_size);
     }
 }
