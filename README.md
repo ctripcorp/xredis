@@ -82,7 +82,7 @@ Redis can be the slave of ror by directly executing the slaveof command. ROR rep
 ### Performance
 1. Two scenarios of performance testing
     1. 100thd: 100 concurrency, no speed limit
-    2. 1wqps: 1000 concurrency, speed limit 10000 QPS
+    2. 10Kqps: 1000 concurrency, speed limit to 10000 QPS
 
 2. Public cloud performance
    1. Cold refers to conf mammemory's size. Hot refers to data size exceeds maxmemory conf size. 
@@ -101,7 +101,7 @@ Redis can be the slave of ror by directly executing the slaveof command. ROR rep
             <th style="font-weight: normal">QPS=85566<br/>Latency(mean,p99):1131 2135(us)</th>
         </tr>
         <tr>
-            <th style="font-weight: normal">1wqps</th>
+            <th style="font-weight: normal">10Kqps</th>
             <th style="font-weight: normal">QPS=9962<br/>Latency(mean,p99): 92 249(us)</th>
             <th style="font-weight: normal">QPS=9960<br/>Latency(mean,p99):111 320(us)</th>
         </tr>
@@ -112,7 +112,7 @@ Redis can be the slave of ror by directly executing the slaveof command. ROR rep
             <th style="font-weight: normal">QPS=70468<br/>Latency(mean,p99):1366 2592(us)</th>
         </tr>
         <tr>
-            <th style="font-weight: normal">1wqps</th>
+            <th style="font-weight: normal">10Kqps</th>
             <th style="font-weight: normal">QPS=9967<br/>Latency(mean,p99): 119 404(us)</th>
             <th style="font-weight: normal">QPS=9965<br/>Latency(mean,p99):125 362(us)</th>
         </tr>
@@ -123,7 +123,7 @@ Redis can be the slave of ror by directly executing the slaveof command. ROR rep
             <th style="font-weight: normal">QPS=80700<br/>Latency(mean,p99):1186 2272(us)</th>
         </tr>
         <tr>
-            <th style="font-weight: normal">1wqps</th>
+            <th style="font-weight: normal">10Kqps</th>
             <th style="font-weight: normal">QPS=9965<br/>Latency(mean,p99):95 191(us)</th>
             <th style="font-weight: normal">QPS=9967<br/>Latency(mean,p99):97 228(us)</th>
         </tr>
@@ -135,7 +135,7 @@ Redis can be the slave of ror by directly executing the slaveof command. ROR rep
             <th style="font-weight: normal">QPS=54457<br/>Latency(mean,p99):1760 6814(us)</th>
         </tr>
         <tr>
-            <th style="font-weight: normal">1wqps</th>
+            <th style="font-weight: normal">10Kqps</th>
             <th style="font-weight: normal">-</th>
             <th style="font-weight: normal">QPS=9959<br/>Latency(mean,p99):111 356(us)</th>
         </tr>
@@ -146,7 +146,7 @@ Redis can be the slave of ror by directly executing the slaveof command. ROR rep
             <th style="font-weight: normal">QPS=32565 Latency(mean,p99):2968 5732(us)</th>
         </tr>
         <tr>
-            <th style="font-weight: normal">1wqps</th>
+            <th style="font-weight: normal">10Kqps</th>
             <th style="font-weight: normal">-</th>
             <th style="font-weight: normal">QPS=9965<br/>Latency(mean,p99):163 524(us)</th>
         </tr><tr>
@@ -156,7 +156,7 @@ Redis can be the slave of ror by directly executing the slaveof command. ROR rep
             <th style="font-weight: normal">QPS=43512<br/>Latency(mean,p99):2263 12751(us)</th>
         </tr>
         <tr>
-            <th style="font-weight: normal">1wqps</th>
+            <th style="font-weight: normal">10Kqps</th>
             <th style="font-weight: normal">-</th>
             <th style="font-weight: normal">QPS=9966 Latency(mean,p99):118 472(us)</th>
         </tr>
@@ -177,7 +177,7 @@ Redis can be the slave of ror by directly executing the slaveof command. ROR rep
         </th>
         </tr>
         <tr>
-            <th style="font-weight: normal">1wqps</th>
+            <th style="font-weight: normal">10Kqps</th>
             <th style="font-weight: normal">QPS=9983<br/>Latency(mean,p99):92 204(us)</th>
             <th style="font-weight: normal">QPS=9983<br/>Latency(mean,p99):112 250(us)</th>
         </tr>
@@ -188,7 +188,7 @@ Redis can be the slave of ror by directly executing the slaveof command. ROR rep
             <th style="font-weight: normal">QPS=66645<br/>Latency(mean,p99):1468 2146(us)</th>
         </tr>
         <tr>
-            <th style="font-weight: normal">1wqps</th>
+            <th style="font-weight: normal">10Kqps</th>
             <th style="font-weight: normal">QPS=9988<br/>Latency(mean,p99):122 279(us)</th>
             <th style="font-weight: normal">QPS=9988<br/>Latency(mean,p99):139 294(us)</th>
         </tr>
@@ -199,7 +199,7 @@ Redis can be the slave of ror by directly executing the slaveof command. ROR rep
             <th style="font-weight: normal">QPS=77459<br/>Latency(mean,p99):1249 1716(us)</th>
         </tr>
         <tr>
-            <th style="font-weight: normal">1wqps</th>
+            <th style="font-weight: normal">10Kqps</th>
             <th style="font-weight: normal">QPS=9995<br/>Latency(mean,p99):114 269(us)</th>
             <th style="font-weight: normal">QPS=9988<br/>Latency(mean,p99):126 259(us)</th>
         </tr>
@@ -211,7 +211,7 @@ Redis can be the slave of ror by directly executing the slaveof command. ROR rep
             <th style="font-weight: normal">QPS=56408<br/>Latency(mean,p99):1743 2710(us)</th>
         </tr>
         <tr>
-            <th style="font-weight: normal">1wqps</th>
+            <th style="font-weight: normal">10Kqps</th>
             <th style="font-weight: normal">-</th>
             <th style="font-weight: normal">QPS=9983<br/>Latency(mean,p99):200 706(us)</th>
         </tr>
@@ -222,7 +222,7 @@ Redis can be the slave of ror by directly executing the slaveof command. ROR rep
             <th style="font-weight: normal">QPS=38082<br/>Latency(mean,p99):2599 3791(us)</th>
         </tr>
         <tr>
-            <th style="font-weight: normal">1wqps</th>
+            <th style="font-weight: normal">10Kqps</th>
             <th style="font-weight: normal">-</th>
             <th style="font-weight: normal">QPS=9991<br/>Latency(mean,p99):148 442(us)</th>
         </tr><tr>
@@ -232,7 +232,7 @@ Redis can be the slave of ror by directly executing the slaveof command. ROR rep
             <th style="font-weight: normal">QPS=47821<br/>Latency(mean,p99):2045 3202(us)</th>
         </tr>
         <tr>
-            <th style="font-weight: normal">1wqps</th>
+            <th style="font-weight: normal">10Kqps</th>
             <th style="font-weight: normal">-</th>
             <th style="font-weight: normal">QPS=9996<br/>Latency(mean,p99):177 891(us)</th>
         </tr>
@@ -247,7 +247,7 @@ Redis can be the slave of ror by directly executing the slaveof command. ROR rep
    * swap-mode controls how ror do swap, could be: disk or memory. disk: store cold keys on disk, hot keys in memory and do SWAP hot cold if needed. memory: disable swap feature, act as vanilla redis (not ready yet).
 
 3. swap-max-db-size
-   * Maximun size of disk usage allowed. if disk usage execeeds the limit redis will reject DENYOOM commands. default is 0 (unlimited). 
+   * maximum size of disk usage allowed. if disk usage execeeds the limit redis will reject DENYOOM commands. default is 0 (unlimited). 
 
 ### Detail Confs
 1. [Detailed Confs](docs/ror.conf.md)
