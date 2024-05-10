@@ -1453,6 +1453,7 @@ int rdbSave(char *filename, rdbSaveInfo *rsi,int rordb) {
     serverLog(LL_NOTICE,"DB saved on disk");
     server.dirty = 0;
     server.lastsave = time(NULL);
+    server.swap_lastsave = time(NULL);
     server.lastbgsave_status = C_OK;
     if(!rordb)
         server.swap_rdb_size = rdb.processed_bytes;
@@ -1507,7 +1508,8 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi, struct swapForkRocksdbCt
 
         retval = rdbSave(filename,rsi,rordb);
         if (retval == C_OK) {
-            sendChildInfo(CHILD_INFO_TYPE_SWAP_RDB_SIZE, 0, server.swap_rdb_size, "RDB");
+            if(!rordb)
+                sendChildInfo(CHILD_INFO_TYPE_SWAP_RDB_SIZE, 0, server.swap_rdb_size, "RDB");
             sendChildCowInfo(CHILD_INFO_TYPE_RDB_COW_SIZE, "RDB");
         }
         exitFromChild((retval == C_OK) ? 0 : 1);
@@ -3128,7 +3130,8 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi, swapForkRocksdbCtx *sfrctx, int ror
             retval = C_ERR;
 
         if (retval == C_OK) {
-            sendChildInfo(CHILD_INFO_TYPE_SWAP_RDB_SIZE, 0, rdb.processed_bytes, "RDB");
+            if(!rordb)
+                sendChildInfo(CHILD_INFO_TYPE_SWAP_RDB_SIZE, 0, rdb.processed_bytes, "RDB");
             sendChildCowInfo(CHILD_INFO_TYPE_RDB_COW_SIZE, "RDB");
         }
 
