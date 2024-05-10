@@ -8021,14 +8021,14 @@ int RM_Fork(RedisModuleForkDoneHandler cb, void *user_data) {
  * reported in INFO.
  * The `progress` argument should between 0 and 1, or -1 when not available. */
 void RM_SendChildHeartbeat(double progress) {
-    sendChildInfoGeneric(CHILD_INFO_TYPE_CURRENT_INFO, 0, progress, "Module fork", &EMPTY_EXTENDS);
+    sendChildInfoGeneric(CHILD_INFO_TYPE_CURRENT_INFO, 0, progress, 0, "Module fork");
 }
 
 /* Call from the child process when you want to terminate it.
  * retcode will be provided to the done handler executed on the parent process.
  */
 int RM_ExitFromChild(int retcode) {
-    sendChildCowInfo(CHILD_INFO_TYPE_MODULE_COW_SIZE, "Module fork", &EMPTY_EXTENDS);
+    sendChildCowInfo(CHILD_INFO_TYPE_MODULE_COW_SIZE, "Module fork");
     exitFromChild(retcode);
     return REDISMODULE_OK;
 }
