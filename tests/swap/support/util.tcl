@@ -67,6 +67,18 @@ proc object_is_cold {r key} {
     }
 }
 
+proc rdb_bgsave_is_done {r} {
+    set persistence [r info persistence]
+    # puts $persistence
+    set rdb_bgsave_in_progress [getInfoProperty $persistence rdb_bgsave_in_progress]
+    # puts $rdb_bgsave_in_progress
+    if { $rdb_bgsave_in_progress == "0" } {
+        set _ 1
+    } else {
+        set _ 0
+    }
+}
+
 proc object_is_warm {r key} {
     set str [$r swap object $key]
     if { [swap_object_property $str value at] != "" && [swap_object_property $str hot_meta object_type] != ""} {
@@ -156,6 +168,14 @@ proc wait_key_warm {r key} {
         [object_is_warm $r $key]
     } else {
         fail "wait $key warm failed."
+    }
+}
+
+proc wait_rdb_bgsave {r} {
+    wait_for_condition 500 40 {
+        [rdb_bgsave_is_done r]
+    } else {
+        fail "wait rdb bgsave failed."
     }
 }
 
