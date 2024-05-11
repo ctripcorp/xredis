@@ -508,9 +508,9 @@ start_server  {
         r swap.evict mykey
         wait_key_cold r mykey
         assert_equal {6} [r bitcount mykey]
-        set bitmap_to_string_count0 [get_info_property r Swap bitmap_string_switched_count bitmap_to_string_count]
+        set bitmap_to_string_count0 [get_info_property r Swap swap_type_switch_count bitmap_to_string]
         assert_equal {1} $bitmap_to_string_count0
-        assert_equal $bitmap_to_string_count0 [get_info_property r Swap bitmap_string_switched_count string_to_bitmap_count]
+        assert_equal $bitmap_to_string_count0 [get_info_property r Swap swap_type_switch_count string_to_bitmap]
         r flushdb
     }
 
