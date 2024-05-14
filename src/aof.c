@@ -1527,7 +1527,7 @@ int rewriteAppendOnlyFileRio(rio *aof) {
             if ((key_count++ & 1023) == 0) {
                 long long now = mstime();
                 if (now - updated_time >= 1000) {
-                    sendChildInfo(CHILD_INFO_TYPE_CURRENT_INFO, key_count, "AOF rewrite");
+                    sendChildInfo(CHILD_INFO_TYPE_CURRENT_INFO, key_count, 0, "AOF rewrite");
                     updated_time = now;
                 }
             }
@@ -1645,7 +1645,7 @@ int rewriteAppendOnlyFile(char *filename) {
         /* Update COW info */
         long long now = mstime();
         if (now - cow_updated_time >= 1000) {
-            sendChildInfo(CHILD_INFO_TYPE_CURRENT_INFO, key_count, "AOF rewrite");
+            sendChildInfo(CHILD_INFO_TYPE_CURRENT_INFO, key_count, 0, "AOF rewrite");
             cow_updated_time = now;
         }
     }
