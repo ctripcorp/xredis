@@ -14,6 +14,7 @@ source tests/support/ctrip_util.tcl
 source tests/swap/support/util.tcl
 
 set ::disk_tests {
+    swap/integration/rordb
     swap/integration/client_rate_limit_bug
     swap/integration/type_error
     swap/integration/zset
