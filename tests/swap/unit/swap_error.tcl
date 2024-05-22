@@ -11,6 +11,15 @@ start_server {tags {"swap error"}} {
         wait_for_sync $slave
 
         test {swap error if rio failed} {
+            $master hmset myhash a a b b c c
+            assert_error "WRONGTYPE Operation against a key holding the wrong kind of value" {$master strlen myhash}
+            assert {[get_info $master swap swap_error_count] eq 0}
+
+            $master multi
+            $master scan 0
+            assert_error "EXECABORT Transaction discarded because of: Swap failed: scan not supported in multi." {$master exec}
+            assert {[get_info $master swap swap_error_count] eq 0}
+
             $master set key value
 
             $master swap rio-error 1
