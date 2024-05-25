@@ -362,19 +362,33 @@ robj *deltaBitmapMakeBitmapObject(bitmapMeta *meta, deltaBitmap *delta_bm) {
     return new_bitmap;
 }
 
-robj *bitmapObjectMerge(robj *bitmap_object, bitmapMeta *meta,
+metaBitmap *bitmapObjectMerge(robj *src_obj_, bitmapMeta *src_meta_,
         deltaBitmap *delta_bm) {
-    robj *new_bitmap = NULL;
-    size_t old_obj_len = stringObjectLen(bitmap_object);
+
+    serverAssert(src_meta_ && delta_bm);
+
+    bitmapMeta *new_meta;
+    robj *new_bitmap;
+
+    robj *src_obj = NULL;
+    if (src_obj_ == NULL) { /* pure cold data */
+        /* just update in place, because it does not exist in db.meta */
+        new_meta = src_meta_;
+        src_obj = createRawStringObject(NULL,0);
+    } else {
+        new_meta = bitmapMetaDup(src_meta_);
+        src_obj = src_obj_;
+    }
+
+    size_t old_obj_len = stringObjectLen(src_obj);
     long needed_merge_in_len = 0;
 
-    serverAssert(bitmap_object && meta);
-    serverAssert(sdsEncodedObject(bitmap_object));
+    serverAssert(sdsEncodedObject(src_obj));
 
     for (int i = 0; i < delta_bm->subkeys_num; i++) {
         serverAssert(i == 0 || delta_bm->subkeys_logic_idx[i-1] <
                 delta_bm->subkeys_logic_idx[i]);
-        if (bitmapMetaGetSubkeyStatus(meta, delta_bm->subkeys_logic_idx[i],
+        if (bitmapMetaGetSubkeyStatus(new_meta, delta_bm->subkeys_logic_idx[i],
                     delta_bm->subkeys_logic_idx[i]) == BITMAP_SUBKEY_STATUS_COLD) {
             needed_merge_in_len += sdslen(delta_bm->subvals[i]);
         }
@@ -391,20 +405,20 @@ robj *bitmapObjectMerge(robj *bitmap_object, bitmapMeta *meta,
         int subkeys_num_ahead = 0;
         if (delta_bm->subkeys_logic_idx[i] > 0 &&
                 subkeys_idx_cursor <= delta_bm->subkeys_logic_idx[i] - 1) {
-            subkeys_num_ahead = bitmapMetaGetHotSubkeysNum(meta,
+            subkeys_num_ahead = bitmapMetaGetHotSubkeysNum(new_meta,
                     subkeys_idx_cursor, delta_bm->subkeys_logic_idx[i] - 1);
         }
         if (subkeys_num_ahead > 0) {
             long copy_old_size = BITMAP_SUBKEY_SIZE * subkeys_num_ahead;
             memcpy((char*)new_bitmap->ptr + offset_in_new_bitmap,
-                    (char*)bitmap_object->ptr + offset_in_old_bitmap,
+                    (char*)src_obj->ptr + offset_in_old_bitmap,
                     copy_old_size);
             offset_in_new_bitmap += copy_old_size;
             offset_in_old_bitmap += copy_old_size;
             actual_new_bitmap_len += copy_old_size;
         }
 
-        if (bitmapMetaGetSubkeyStatus(meta, delta_bm->subkeys_logic_idx[i],
+        if (bitmapMetaGetSubkeyStatus(new_meta, delta_bm->subkeys_logic_idx[i],
                     delta_bm->subkeys_logic_idx[i]) == BITMAP_SUBKEY_STATUS_HOT) {
             /* subkey both exist in redis and rocksDb.
              * copy from old bitmap in the next round. */
@@ -417,8 +431,8 @@ robj *bitmapObjectMerge(robj *bitmap_object, bitmapMeta *meta,
             subkeys_idx_cursor = delta_bm->subkeys_logic_idx[i] + 1;
 
             /* update meta */
-            meta->pure_cold_subkeys_num -= 1;
-            bitmapMetaSetSubkeyStatus(meta, delta_bm->subkeys_logic_idx[i],
+            new_meta->pure_cold_subkeys_num -= 1;
+            bitmapMetaSetSubkeyStatus(new_meta, delta_bm->subkeys_logic_idx[i],
                     delta_bm->subkeys_logic_idx[i], BITMAP_SUBKEY_STATUS_HOT);
         }
     }
@@ -426,13 +440,19 @@ robj *bitmapObjectMerge(robj *bitmap_object, bitmapMeta *meta,
     if (offset_in_old_bitmap < old_obj_len) {
         /* copy buffer behind subkeys in delta_bm. */
         memcpy((char*)new_bitmap->ptr + offset_in_new_bitmap,
-                (char*)bitmap_object->ptr + offset_in_old_bitmap,
+                (char*)src_obj->ptr + offset_in_old_bitmap,
                 old_obj_len - offset_in_old_bitmap);
         actual_new_bitmap_len += (old_obj_len - offset_in_old_bitmap);
     }
 
     serverAssert(old_obj_len + needed_merge_in_len == actual_new_bitmap_len);
-    return new_bitmap;
+
+    if (src_obj_ == NULL) decrRefCount(src_obj);
+
+    metaBitmap *result = zmalloc(sizeof(metaBitmap));
+    result->bitmap = new_bitmap;
+    result->meta = new_meta;
+    return result;
 }
 
 typedef struct bitmapDataCtx {
@@ -846,10 +866,13 @@ int bitmapEncodeData(swapData *data, int intention, void *datactx_,
 /* decoded object move to exec module */
 int bitmapDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
                      sds *rawvals, void **pdecoded) {
+    
+    if (num == 0) return 0;
+
     deltaBitmap *delta_bm = deltaBitmapCreate(num);
     uint64_t version = swapDataObjectVersion(data);
 
-    serverAssert(num >= 0);
+    serverAssert(num > 0);
     UNUSED(cfs);
 
     int subkeys_cursor = 0;
@@ -905,29 +928,20 @@ static inline void bitmapObjectDuplicateSwapAttribute(robj *dst, robj *src) {
 
 void *bitmapCreateOrMergeObject(swapData *data, void *decoded_, void *datactx) {
     UNUSED(datactx);
-    robj *o = NULL, *result = NULL;
     deltaBitmap *delta_bm = (deltaBitmap *)decoded_;
-
-
-    bitmapMeta *meta = swapDataGetBitmapMeta(data);
-    if (swapDataIsCold(data)) {
-        o = createRawStringObject(NULL,0);
-        result = bitmapObjectMerge(o,meta,delta_bm);
-        decrRefCount(o);
-    } else {
-        robj *decoded_bitmap = getDecodedObject(data->value);
-        robj *merged_obj = bitmapObjectMerge(decoded_bitmap, meta, delta_bm);
-        decrRefCount(decoded_bitmap);
-        bitmapObjectDuplicateSwapAttribute(merged_obj, data->value);
-        /* replace the old object */
-        dbOverwrite(data->db,data->key,merged_obj);
-
-        decrRefCount(data->value);
-        incrRefCount(merged_obj);
-        data->value = merged_obj;
-        result = NULL;
+    if (delta_bm == NULL) {
+        return NULL;
     }
 
+    metaBitmap *result = NULL;
+    bitmapMeta *meta = swapDataGetBitmapMeta(data);
+    if (swapDataIsCold(data)) {
+        result = bitmapObjectMerge(NULL,meta,delta_bm);
+    } else {
+        robj *decoded_bitmap = getDecodedObject(data->value);
+        result = bitmapObjectMerge(decoded_bitmap, meta, delta_bm); // todo 
+        decrRefCount(decoded_bitmap);
+    }
     /* bitmap only swap in the subkeys that don't exist in redis, so no need
      * to judge like hash, set. */
     deltaBitmapFree(delta_bm);
@@ -942,27 +956,57 @@ static inline robj *createSwapInBitmapObject(robj *newval) {
     return swapin;
 }
 
-int bitmapSwapIn(swapData *data, MOVE void *result, void *datactx) {
+int bitmapSwapIn(swapData *data, MOVE void *result_, void *datactx) {
     UNUSED(datactx);
     /* hot key no need to swap in, this must be a warm or cold key. */
     serverAssert(swapDataPersisted(data));
-    if (swapDataIsCold(data) && result != NULL /* may be empty */) {
+
+    metaBitmap *result = result_;
+
+    if (swapDataIsCold(data) && result != NULL) {
         /* cold key swapped in result. */
-        robj *swapin = createSwapInBitmapObject(result);
+        robj *swapin = createSwapInBitmapObject(result->bitmap);
         /* mark persistent after data swap in without
          * persistence deleted, or mark non-persistent else */
         overwriteObjectPersistent(swapin,!data->persistence_deleted);
         dbAdd(data->db,data->key,swapin);
         /* expire will be swapped in later by swap framework. */
         if (data->cold_meta) {
+            serverAssert(result->meta == data->cold_meta->ptr);
             dbAddMeta(data->db, data->key, data->cold_meta);
             data->cold_meta = NULL; /* moved */
         }
+        /* no need to replace the cold_meta->ptr with result->meta,
+           because it has been update in place in createOrMerge func. */
+
+        result->bitmap = NULL;
+        result->meta = NULL;
     } else {
-        if (result) decrRefCount(result);
+        if (result) {
+            /* replace old object with new merged one. */
+            bitmapObjectDuplicateSwapAttribute(result->bitmap, data->value);
+            dbOverwrite(data->db,data->key,result->bitmap);
+
+            decrRefCount(data->value);
+            incrRefCount(result->bitmap);
+            data->value = result->bitmap;
+
+            /* replace the bitmap meta in swapIn to keep consistency. */
+            objectMeta *object_meta = swapDataObjectMeta(data);
+            bitmapMetaFree(object_meta->ptr);
+            objectMetaSetPtr(object_meta, result->meta);
+
+            result->bitmap = NULL;
+            result->meta = NULL;
+        }
+
         if (data->value) overwriteObjectPersistent(data->value,!data->persistence_deleted);
     }
 
+    if (result) {
+        serverAssert(result->bitmap == NULL && result->meta == NULL);
+        zfree(result);
+    }
     return 0;
 }
 
@@ -1232,11 +1276,20 @@ int bitmapBeforeCall(swapData *data, keyRequest *key_request, client *c,
     return 0;
 }
 
-int bitmapMergedIsHot(swapData *d, void *result, void *datactx) {
-    UNUSED(result);
+int bitmapMergedIsHot(swapData *d, void *result_, void *datactx) {
     UNUSED(datactx);
-    objectMeta *meta = swapDataObjectMeta(d);
-    return bitmapObjectMetaIsHot(meta, NULL);
+    metaBitmap *result = result_;
+
+    objectMeta *old_meta = swapDataObjectMeta(d);
+
+    /* maybe object meta has not been updated in place in createOrMerge func. 
+       so here we mock the final object meta to serve for the judgement. */
+    objectMeta meta;
+    meta.version = old_meta->version;
+    meta.swap_type = old_meta->swap_type;
+    objectMetaSetPtr(&meta, result->meta);
+
+    return bitmapObjectMetaIsHot(&meta, NULL);
 }
 
 swapDataType bitmapSwapDataType = {
@@ -2559,14 +2612,16 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
         deltaBm->subvals_total_len = BITMAP_SUBKEY_SIZE * 4 + BITMAP_SUBKEY_SIZE / 2;
 
-        robj *result = bitmapCreateOrMergeObject(cold_data2, deltaBm, cold_ctx2);
+        metaBitmap *result = bitmapCreateOrMergeObject(cold_data2, deltaBm, cold_ctx2);
 
         bitmapMeta *bitmap_meta = swapDataGetBitmapMeta(cold_data2);
 
         test_assert(bitmap_meta->pure_cold_subkeys_num == 3);
         test_assert(bitmap_meta->size == BITMAP_SUBKEY_SIZE * 7 + BITMAP_SUBKEY_SIZE / 2);
         test_assert(rbmGetBitRange(bitmap_meta->subkeys_status, 0, BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE) - 1) == 5);
-        test_assert(stringObjectLen(result) == BITMAP_SUBKEY_SIZE * 4 + BITMAP_SUBKEY_SIZE / 2);
+        
+        test_assert(stringObjectLen(result->bitmap) == BITMAP_SUBKEY_SIZE * 4 + BITMAP_SUBKEY_SIZE / 2);
+        test_assert(bitmap_meta == result->meta); /* update meta in place */
 
         test_assert(bitmapMergedIsHot(cold_data2, result, cold_ctx2) == 0);
 
@@ -2642,18 +2697,22 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
         deltaBm->subvals_total_len = BITMAP_SUBKEY_SIZE * 2 + BITMAP_SUBKEY_SIZE / 2;
 
-        robj *result = bitmapCreateOrMergeObject(warm_data2, deltaBm, warm_ctx2);
+        metaBitmap *result = bitmapCreateOrMergeObject(warm_data2, deltaBm, warm_ctx2);
 
-        bitmapMeta *bitmap_meta = swapDataGetBitmapMeta(warm_data2);
+        test_assert(result->meta->pure_cold_subkeys_num == 0);
+        test_assert(result->meta->size == BITMAP_SUBKEY_SIZE * 7 + BITMAP_SUBKEY_SIZE / 2);
+        test_assert(rbmGetBitRange(result->meta->subkeys_status, 0, BITMAP_GET_SUBKEYS_NUM(result->meta->size, BITMAP_SUBKEY_SIZE) - 1) == 8);
+        test_assert(stringObjectLen(result->bitmap) == BITMAP_SUBKEY_SIZE * 7 + BITMAP_SUBKEY_SIZE / 2);
 
-        test_assert(bitmap_meta->pure_cold_subkeys_num == 0);
-        test_assert(bitmap_meta->size == BITMAP_SUBKEY_SIZE * 7 + BITMAP_SUBKEY_SIZE / 2);
-        test_assert(rbmGetBitRange(bitmap_meta->subkeys_status, 0, BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE) - 1) == 8);
-        test_assert(stringObjectLen(warm_data2->value) == BITMAP_SUBKEY_SIZE * 7 + BITMAP_SUBKEY_SIZE / 2);
+        test_assert(warm_bitmap_meta2->pure_cold_subkeys_num == 3); /* old bitmap meta not changed, because non-in-place in warm swap in. */
 
         test_assert(bitmapMergedIsHot(warm_data2, result, warm_ctx2) == 1);
 
         bitmapSwapIn(warm_data2, result, warm_ctx2);
+
+        bitmapMeta *bitmap_meta = swapDataGetBitmapMeta(warm_data2);
+        test_assert(bitmap_meta != warm_bitmap_meta2);
+
         robj *bm;
         test_assert((bm = lookupKey(db,warm_key2,LOOKUP_NOTOUCH)) != NULL);
         test_assert(stringObjectLen(bm) == BITMAP_SUBKEY_SIZE * 7 + BITMAP_SUBKEY_SIZE / 2);
