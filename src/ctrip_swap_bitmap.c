@@ -1205,6 +1205,10 @@ void bitmapMarkerTransToMetaIfNeeded(objectMeta *object_meta, robj *value) {
 
 int bitmapBeforeCall(swapData *data, keyRequest *key_request, client *c,
         void *datactx_) {
+    if(data && data->value) {
+        decrRefCount(data->value);
+        data->value=NULL;
+    }
 
     /* Clear bitmap marker if non-bitmap command touching bitmap.
      * note: all string command: set,get,etc
