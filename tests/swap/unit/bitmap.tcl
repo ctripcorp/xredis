@@ -1637,8 +1637,8 @@ start_server {
         r set mykey ""
 
         assert_equal {0} [r bitcount mykey]
-        #assert [object_is_bitmap r mykey]
-        #assert [bitmap_object_is_pure_hot r mykey]
+        assert [object_is_bitmap r mykey]
+        assert [bitmap_object_is_pure_hot r mykey]
     }
 
     test "empty cold string to bitmap" {
@@ -1648,8 +1648,8 @@ start_server {
         wait_key_cold r mykey
 
         assert_equal {0} [r bitcount mykey]
-        #assert [object_is_bitmap r mykey]
-        #assert [bitmap_object_is_pure_hot r mykey]
+        assert [object_is_bitmap r mykey]
+        assert [bitmap_object_is_pure_hot r mykey]
     }
 
     test "empty hot string to bitmap" {
@@ -1660,8 +1660,8 @@ start_server {
         r get mykey
 
         assert_equal {0} [r bitcount mykey]
-        #assert [object_is_bitmap r mykey]
-        #assert [bitmap_object_is_pure_hot r mykey]
+        assert [object_is_bitmap r mykey]
+        assert [bitmap_object_is_pure_hot r mykey]
     }
 
     test "empty pure hot bitmap to string" {
