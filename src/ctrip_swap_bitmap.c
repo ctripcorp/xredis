@@ -49,16 +49,6 @@
 
 /* utils */
 
-static inline sds encodeBitmapSize(uint64_t size) {
-    size = htonu64(size);
-    return sdsnewlen(&size, sizeof(uint64_t));
-}
-
-static inline uint64_t decodeBitmapSize(const char *str) {
-    uint64_t size_be = *(uint64_t*)str;
-    return ntohu64(size_be);
-}
-
 static inline sds bitmapEncodeSubkeyIdx(unsigned long long idx) {
     idx = htonu64(idx);
     return sdsnewlen(&idx,BITMAP_SUBKEY_IDX_ENCODE_LEN);
@@ -108,13 +98,20 @@ static inline void bitmapMetaInit(bitmapMeta *bitmap_meta, robj *value) {
 
 static inline sds bitmapMetaEncode(bitmapMeta *bm) {
     serverAssert(bm);
-    return encodeBitmapSize(bm->size);
+    sds buffer = sdsnewlen(NULL,BITMAP_META_ENCODED_INITAL_LEN);
+    /* bitmap size is no more than 512MB, 7 bytes is absolutely enough. */
+    for (int i = 0; i < 7; i++) {
+        buffer[i + 1] = (bm->size >> (i * 8)) & 0xFF;
+    }
+    return buffer;
 }
 
 static inline bitmapMeta *bitmapMetaDecode(const char *extend,
         size_t extend_len) {
-    serverAssert(extend_len == sizeof(uint64_t));
-    uint64_t size = decodeBitmapSize(extend);
+    unsigned long size = 0;
+    for (int i = 0; i < 7; i++) {
+        size |= ((unsigned long)extend[i + 1] << (i * 8));
+    }
 
     bitmapMeta *bitmap_meta = bitmapMetaCreate();
     bitmap_meta->size = size;
@@ -197,14 +194,12 @@ static inline int bitmapMetaIsMarker(void *meta) {
 /* used in rordb to save and load bitmap marker, so that slave will alse treat
  * key with marker as pure hot bitmap just like master. */
 static inline sds bitmapMarkerEncode() {
-    return encodeBitmapSize(0);
+    sds buffer = sdsnewlen(NULL,BITMAP_META_ENCODED_INITAL_LEN);
+    buffer[0] = buffer[0] | 0x01;
+    return buffer;
 }
 
-static inline bitmapMeta *bitmapMarkerDecode(const char *extend,
-        size_t extend_len) {
-    uint64_t size = decodeBitmapSize(extend);
-    serverAssert(extend_len == sizeof(uint64_t));
-    serverAssert(size == 0);
+static inline bitmapMeta *bitmapMarkerDecode() {
     return NULL;
 }
 
@@ -240,10 +235,12 @@ int bitmapObjectMetaDecode(struct objectMeta *object_meta, const char *extend,
 
     serverAssert(extlen == BITMAP_META_ENCODED_INITAL_LEN);
 
-    uint64_t size = decodeBitmapSize(extend);
+    bool isMarker = false;
+    unsigned char byte = 0x01;
+    if (extend[0] & byte == 0x01) isMarker = true;
 
-    if (size == 0) /* marker is encoded as 0 */
-        objectMetaSetPtr(object_meta, bitmapMarkerDecode(extend, extlen));
+    if (isMarker)
+        objectMetaSetPtr(object_meta, bitmapMarkerDecode());
     else
         objectMetaSetPtr(object_meta, bitmapMetaDecode(extend, extlen));
     return 0;
