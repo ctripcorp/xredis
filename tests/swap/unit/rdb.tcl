@@ -135,3 +135,68 @@ start_server {overrides {save ""} tags {"swap" "rdb"}} {
         assert_equal [r mget a aa aaa] {a aa aaa}
     }
 }
+
+proc check_master_slave_rdb_size {master slave master_host master_port rordb} {
+    set swap_last_rdb_size_before [getInfoProperty [$master info persistence] swap_last_rdb_size]
+    $slave slaveof $master_host $master_port
+    wait_for_sync $slave
+    after 500
+    set swap_last_rdb_size_after [getInfoProperty [$master info persistence] swap_last_rdb_size]
+    if {$rordb == 1} {
+        assert_equal $swap_last_rdb_size_after $swap_last_rdb_size_before
+    } else {
+        assert_morethan $swap_last_rdb_size_after $swap_last_rdb_size_before
+    }
+    $slave slaveof no one
+}
+
+start_server {overrides {save ""} tags {"single node rdb-size"}} {
+    test {single node} {
+        r mset k1 v1 k2 v2 k3 v3 k4 v4
+        set swap_last_rdb_size_init [getInfoProperty [r info persistence] swap_last_rdb_size]
+        assert_equal $swap_last_rdb_size_init 0
+        r swap.debug RORDB BGSAVE
+        waitForBgsave r
+        set swap_last_rdb_size_rordb [getInfoProperty [r info persistence] swap_last_rdb_size]
+        assert_equal $swap_last_rdb_size_rordb 0
+        r save
+        set swap_last_rdb_size_rdb [getInfoProperty [r info persistence] swap_last_rdb_size]
+        assert_morethan $swap_last_rdb_size_rdb $swap_last_rdb_size_rordb
+    }
+}
+
+start_server {tags {"master-slave rdb-size"}} {
+    start_server {} {
+        set master [srv -1 client]
+        set master_host [srv -1 host]
+        set master_port [srv -1 port]
+        set slave [srv 0 client]
+        set rordb 1
+        set rdb 0
+        set rdb_size_empty 0
+
+        $master config set swap-debug-evict-keys 0; # evict manually
+        $slave  config set swap-debug-evict-keys 0; # evict manually
+
+        $master mset k1 v1 k2 v2 k3 v3 k4 v4
+
+        set swap_last_rdb_size_before [getInfoProperty [$master info persistence] swap_last_rdb_size]
+
+        $master config set repl-diskless-sync no
+        $master config set swap-repl-rordb-sync yes
+        check_master_slave_rdb_size $master $slave $master_host $master_port $rordb
+
+        $master config set repl-diskless-sync yes
+        $master config set swap-repl-rordb-sync yes
+        check_master_slave_rdb_size $master $slave $master_host $master_port $rordb
+
+        $master config set repl-diskless-sync no
+        $master config set swap-repl-rordb-sync no
+        check_master_slave_rdb_size $master $slave $master_host $master_port $rdb
+
+        $master set key4 val4
+        $master config set repl-diskless-sync yes
+        $master config set swap-repl-rordb-sync no
+        check_master_slave_rdb_size $master $slave $master_host $master_port $rdb
+    }
+}

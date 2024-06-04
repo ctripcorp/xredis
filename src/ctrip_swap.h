@@ -2456,7 +2456,10 @@ uint64_t SwapCommandDataTypeFlagByName(const char *name);
 
 static inline void clientSwapError(client *c, int swap_errcode) {
   if (c && swap_errcode) {
-    atomicIncr(server.swap_error_count,1);
+    if (swap_errcode != SWAP_ERR_DATA_WRONG_TYPE_ERROR &&
+        swap_errcode != SWAP_ERR_METASCAN_UNSUPPORTED_IN_MULTI) {
+      atomicIncr(server.swap_error_count,1);
+    }
     c->swap_errcode = swap_errcode;
   }
 }

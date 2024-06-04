@@ -1235,7 +1235,7 @@ void rdbSaveProgress(rio *rdb, int rdbflags) {
     if ((rdb_load_key_count++ & 1023) == 0) {
         long long now = mstime();
         if (now - info_updated_time >= 1000) {
-            sendChildInfo(CHILD_INFO_TYPE_CURRENT_INFO, rdb_load_key_count, pname);
+            sendChildInfo(CHILD_INFO_TYPE_CURRENT_INFO, rdb_load_key_count, 0, pname);
             info_updated_time = now;
         }
     }
@@ -1476,6 +1476,10 @@ int rdbSave(char *filename, rdbSaveInfo *rsi,int rordb) {
     server.dirty = 0;
     server.lastsave = time(NULL);
     server.lastbgsave_status = C_OK;
+    if(!rordb) {
+        server.swap_lastsave = time(NULL);
+        server.swap_rdb_size = rdb.processed_bytes;
+    }
     stopSaving(1);
     return C_OK;
 
@@ -1519,6 +1523,8 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi, struct swapForkRocksdbCt
 
         retval = rdbSave(filename,rsi,rordb);
         if (retval == C_OK) {
+            if(!rordb)
+                sendChildInfo(CHILD_INFO_TYPE_SWAP_RDB_SIZE, 0, server.swap_rdb_size, "RDB");
             sendChildCowInfo(CHILD_INFO_TYPE_RDB_COW_SIZE, "RDB");
         }
         exitFromChild((retval == C_OK) ? 0 : 1);
@@ -2970,6 +2976,7 @@ static void backgroundSaveDoneHandlerDisk(int exitcode, int bysignal) {
             "Background saving terminated with success");
         server.dirty = server.dirty - server.dirty_before_bgsave;
         server.lastsave = time(NULL);
+        server.swap_lastsave = time(NULL);
         server.lastbgsave_status = C_OK;
     } else if (!bysignal && exitcode != 0) {
         serverLog(LL_WARNING, "Background saving error");
@@ -2997,6 +3004,7 @@ static void backgroundSaveDoneHandlerSocket(int exitcode, int bysignal) {
     if (!bysignal && exitcode == 0) {
         serverLog(LL_NOTICE,
             "Background RDB transfer terminated with success");
+        server.swap_lastsave = time(NULL);
     } else if (!bysignal && exitcode != 0) {
         serverLog(LL_WARNING, "Background transfer error");
     } else {
@@ -3136,6 +3144,8 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi, swapForkRocksdbCtx *sfrctx, int ror
             retval = C_ERR;
 
         if (retval == C_OK) {
+            if(!rordb)
+                sendChildInfo(CHILD_INFO_TYPE_SWAP_RDB_SIZE, 0, rdb.processed_bytes, "RDB");
             sendChildCowInfo(CHILD_INFO_TYPE_RDB_COW_SIZE, "RDB");
         }
 

@@ -1255,7 +1255,8 @@ typedef enum childInfoType {
     CHILD_INFO_TYPE_CURRENT_INFO,
     CHILD_INFO_TYPE_AOF_COW_SIZE,
     CHILD_INFO_TYPE_RDB_COW_SIZE,
-    CHILD_INFO_TYPE_MODULE_COW_SIZE
+    CHILD_INFO_TYPE_MODULE_COW_SIZE,
+    CHILD_INFO_TYPE_SWAP_RDB_SIZE
 } childInfoType;
 
 struct redisServer {
@@ -1488,6 +1489,8 @@ struct redisServer {
     int rdb_del_sync_files;         /* Remove RDB files used only for SYNC if
                                        the instance does not use persistence. */
     time_t lastsave;                /* Unix time of last successful save */
+    time_t swap_lastsave;           /* Unix time of last successful save for ror */
+    size_t swap_rdb_size;           /* Size of last successful save */
     time_t lastbgsave_try;          /* Unix time of last attempted bgsave */
     time_t rdb_save_time_last;      /* Time used by last RDB save run. */
     time_t rdb_save_time_start;     /* Current RDB save start time. */
@@ -2440,9 +2443,9 @@ void restartAOFAfterSYNC();
 /* Child info */
 void openChildInfoPipe(void);
 void closeChildInfoPipe(void);
-void sendChildInfoGeneric(childInfoType info_type, size_t keys, double progress, char *pname);
+void sendChildInfoGeneric(childInfoType info_type, size_t keys, double progress, size_t swap_rdb_size, char *pname);
 void sendChildCowInfo(childInfoType info_type, char *pname);
-void sendChildInfo(childInfoType info_type, size_t keys, char *pname);
+void sendChildInfo(childInfoType info_type, size_t keys, size_t swap_rdb_size, char *pname);
 void receiveChildInfo(void);
 
 /* Fork helpers */

@@ -312,8 +312,8 @@ inline void swapDataFree(swapData *d, void *datactx) {
     /* free base */
     if (d->cold_meta) freeObjectMeta(d->cold_meta);
     if (d->new_meta) freeObjectMeta(d->new_meta);
+    if (d->value) freeObjAsync(d->key, d->value);
     if (d->key) decrRefCount(d->key);
-    if (d->value) decrRefCount(d->value);
     if (d->dirty_subkeys) decrRefCount(d->dirty_subkeys);
     if (d->absent) swapDataAbsentSubkeyFree(d->absent);
     zfree(d);
