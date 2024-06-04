@@ -1436,30 +1436,33 @@ int bitmapSaveToRdbBitmap(rdbKeySaveData *save, rio *rdb) {
     unsigned long subkey_size = BITMAP_SUBKEY_SIZE;
     unsigned long offset = 0;
     robj *decoded_bitmap = getDecodedObject(save->value);
+    
+    unsigned int waiting_save_subkey_num = BITMAP_GET_SUBKEYS_NUM(bitmap_size, subkey_size);
 
-    while (waiting_save_size > 0)
+    unsigned int saving_subkey_idx = 0;
+    while (waiting_save_subkey_num > 0)
     {
-        unsigned long hot_subkey_size = waiting_save_size < subkey_size ? waiting_save_size : subkey_size;
+        unsigned long hot_subkey_size = BITMAP_GET_SPECIFIED_SUBKEY_SIZE(bitmap_size, subkey_size, saving_subkey_idx);
         sds subval = sdsnewlen((char*)decoded_bitmap->ptr + offset, hot_subkey_size);
 
         robj subvalobj;
         initStaticStringObject(subvalobj, subval);
-
         //TODO opt use rdbSaveRawString to skip alloc/dealloc subval
         if (rdbSaveStringObject(rdb, &subvalobj) == -1) {
             sdsfree(subval);
             decrRefCount(decoded_bitmap);
             return -1;
         }
-
         sdsfree(subval);
 
         offset += hot_subkey_size;
+        waiting_save_subkey_num--;
         waiting_save_size -= hot_subkey_size;
+        saving_subkey_idx++;
     }
 
     decrRefCount(decoded_bitmap);
-    serverAssert(waiting_save_size == 0);
+    serverAssert(waiting_save_size == 0 && waiting_save_subkey_num == 0);
 
     return 0;
 }
