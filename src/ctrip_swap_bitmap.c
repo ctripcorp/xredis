@@ -106,11 +106,12 @@ static inline sds bitmapMetaEncode(bitmapMeta *bm) {
     return buffer;
 }
 
-static inline bitmapMeta *bitmapMetaDecode(const char *extend,
+static inline bitmapMeta *bitmapMetaDecode(char *extend,
         size_t extend_len) {
+    unsigned char *buffer = (unsigned char *)extend;
     unsigned long size = 0;
     for (int i = 0; i < 7; i++) {
-        size |= ((unsigned long)extend[i + 1] << (i * 8));
+        size |= (((uint64_t)buffer[i + 1]) << (i * 8));
     }
 
     bitmapMeta *bitmap_meta = bitmapMetaCreate();
