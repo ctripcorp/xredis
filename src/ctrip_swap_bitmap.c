@@ -844,7 +844,7 @@ int bitmapEncodeData(swapData *data, int intention, void *datactx_,
     for (int i = 0; i < datactx->subkeys_num; i++) {
         cfs[i] = DATA_CF;
 
-        int logicIdx = datactx->subkeys_logic_idx[i];
+        unsigned int logicIdx = datactx->subkeys_logic_idx[i];
         sds keyStr = bitmapEncodeSubkeyIdx(logicIdx);
 
         robj *subval = bitmapGetSubVal(data->value, i);
@@ -1100,7 +1100,7 @@ int bitmapSwapOut(swapData *data, void *datactx_, int keep_data, int *totally_ou
 
 static inline void mockBitmapForDeleteIfCold(swapData *data) {
     if (swapDataIsCold(data)) {
-        dbAdd(data->db, data->key, createStringObject("",0));
+        dbAdd(data->db, data->key, createStringObject(NULL,0));
     }
 }
 
@@ -1358,7 +1358,14 @@ unsigned long metaBitmapGetColdSubkeysSize(metaBitmap *meta_bitmap, unsigned lon
     if (subkey_idx == 0) return 0;
 
     int subkeys_num_ahead = bitmapMetaGetHotSubkeysNum(meta_bitmap->meta, 0, subkey_idx - 1);
-    int cold_subkeys_num_ahead = subkey_idx - subkeys_num_ahead;
+    int subkeys_num = BITMAP_GET_SUBKEYS_NUM(meta_bitmap->meta->size, BITMAP_SUBKEY_SIZE);
+    int cold_subkeys_num_ahead = 0;
+    if (subkey_idx > subkeys_num - 1) {
+        /* subkey_idx may exceed the right boundry, the extending part should not be treated as pure cold subkeys. */
+        cold_subkeys_num_ahead = subkeys_num - subkeys_num_ahead;
+    } else {
+        cold_subkeys_num_ahead = subkey_idx - subkeys_num_ahead;
+    }
     return cold_subkeys_num_ahead * BITMAP_SUBKEY_SIZE;
 }
 
@@ -1768,6 +1775,8 @@ int bitmapLoad(struct rdbKeyLoadData *load, rio *rdb, int *cf,
             return 0;
         }
 
+        old_subval_obj = unshareStringValue(old_subval_obj);
+
         load_info->consuming_old_subval = old_subval_obj->ptr;
         load_info->num_old_subvals_waiting_load--;
 
@@ -1784,6 +1793,7 @@ int bitmapLoad(struct rdbKeyLoadData *load, rio *rdb, int *cf,
         if((old_subval_obj = rdbLoadStringObject(rdb)) == NULL) {
             return 0;
         }
+        old_subval_obj = unshareStringValue(old_subval_obj);
 
         unsigned long old_subval_len = stringObjectLen(old_subval_obj);
 
