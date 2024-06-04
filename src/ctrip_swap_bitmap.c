@@ -547,18 +547,11 @@ void bitmapSwapAnaInSelectSubKeys(swapData *data, bitmapDataCtx *datactx,
     }
     serverAssert(hot_subkeys_num + subkey_num_need_swapin <= subkeys_num);
 
-    /* subkeys required are all in redis */
-    if (subkey_num_need_swapin == 0) {
-        /* subkeys required have been in redis.*/
-        datactx->subkeys_num = 0;
-        return;
-    }
-
     /* subkeys required are not all in redis */
 
     if (subkey_num_need_swapin == subkeys_num) {
         /* all subKey of bitmap need to swap in */
-        datactx->subkeys_num = -1;
+        datactx->subkeys_num = subkeys_num;
         return;
     }
 
@@ -666,6 +659,7 @@ int bitmapSwapAna(swapData *data, int thd, struct keyRequest *req,
                         *intention = SWAP_DEL;
                         *intention_flags = SWAP_FIN_DEL_SKIP;
                     } else {
+                        datactx->subkeys_num = 0; /* all subKey of bitmap need to swap in */
                         *intention = SWAP_IN;
                         *intention_flags = SWAP_EXEC_IN_DEL;
                     }
@@ -687,7 +681,7 @@ int bitmapSwapAna(swapData *data, int thd, struct keyRequest *req,
                 } else {
                     /* string, keyspace ... operation */
                     /* swap in all subkeys, and keep them in rocks. */
-                    datactx->subkeys_num = -1; /* all subKey of bitmap need to swap in */
+                    datactx->subkeys_num = 0; /* all subKey of bitmap need to swap in */
                     *intention = SWAP_IN;
                     *intention_flags = 0;
                 }
@@ -696,6 +690,10 @@ int bitmapSwapAna(swapData *data, int thd, struct keyRequest *req,
                 bitmapSwapAnaInSelectSubKeys(data, datactx, req);
 
                 *intention = datactx->subkeys_num == 0 ? SWAP_NOP : SWAP_IN;
+
+                unsigned int subkeys_num = BITMAP_GET_SUBKEYS_NUM(meta->size, BITMAP_SUBKEY_SIZE);
+                if (datactx->subkeys_num == subkeys_num) 
+                    datactx->subkeys_num = 0; /* all subKey of bitmap need to swap in */
                 if (cmd_intention_flags == SWAP_IN_DEL)
                     *intention_flags = SWAP_EXEC_IN_DEL;
                 else
@@ -759,7 +757,7 @@ int bitmapSwapAnaAction(swapData *data, int intention, void *datactx_, int *acti
     switch (intention) {
         case SWAP_IN:
             if (datactx->subkeys_num > 0) *action = ROCKS_GET; /* Swap in specific fields */
-            else *action = ROCKS_ITERATE; /* Swap in entire bitmap */
+            else *action = ROCKS_ITERATE; /* SWAP_IN: datactx->subkeys_num == 0, swap in entire bitmap */
             break;
         case SWAP_DEL:
             /* No need to del data (meta will be deleted by exec) */
