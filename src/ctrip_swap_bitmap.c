@@ -468,7 +468,7 @@ typedef struct bitmapDataCtx {
     unsigned long subkeys_total_size;  /* only used in swap out */
     int subkeys_num;
     uint32_t *subkeys_logic_idx;
-    robj *newbitmap; /* ref, only used in swap out  */
+    metaBitmap new_meta_bitmap; /* own, only used in swap out */
     argRewriteRequest arg_reqs[2];
 } bitmapDataCtx;
 
@@ -731,7 +731,7 @@ int bitmapSwapAna(swapData *data, int thd, struct keyRequest *req,
                 if (noswap) {
                     /* directly evict value from db.dict if not dirty. */
                     swapDataCleanObject(data,datactx,keep_data);
-                    if (datactx->newbitmap != NULL && stringObjectLen(datactx->newbitmap) == 0) {
+                    if (datactx->new_meta_bitmap.bitmap != NULL && stringObjectLen(datactx->new_meta_bitmap.bitmap) == 0) {
                         swapDataTurnCold(data);
                     }
                     swapDataSwapOut(data,datactx,keep_data,NULL);
@@ -1036,18 +1036,20 @@ int bitmapCleanObject(swapData *data, void *datactx_, int keep_data) {
 
     size_t bitmap_size = stringObjectLen(decoded_bitmap);
     size_t left_size = bitmap_size - datactx->subkeys_total_size;
-    datactx->newbitmap = createRawStringObject(
+    datactx->new_meta_bitmap.bitmap = createRawStringObject(
             (char*)decoded_bitmap->ptr + datactx->subkeys_total_size, left_size);
 
     decrRefCount(decoded_bitmap);
 
+    datactx->new_meta_bitmap.meta = bitmapMetaDup(meta);
+
     /* update the subkey status in meta*/
     for (int i = 0; i < datactx->subkeys_num; i++) {
         serverAssert(datactx->subkeys_logic_idx[i] <= evicted_max_idx);
-        bitmapMetaSetSubkeyStatus(meta, datactx->subkeys_logic_idx[i],
+        bitmapMetaSetSubkeyStatus(datactx->new_meta_bitmap.meta, datactx->subkeys_logic_idx[i],
                 datactx->subkeys_logic_idx[i], BITMAP_SUBKEY_STATUS_COLD);
     }
-    meta->pure_cold_subkeys_num += datactx->subkeys_num;
+    datactx->new_meta_bitmap.meta->pure_cold_subkeys_num += datactx->subkeys_num;
     return 0;
 }
 
@@ -1065,36 +1067,50 @@ int bitmapSwapOut(swapData *data, void *datactx_, int keep_data, int *totally_ou
 
     bitmapDataCtx *datactx = datactx_;
 
-    if (datactx->newbitmap == NULL) {
+    if (datactx->new_meta_bitmap.bitmap == NULL) {
         /* keep data */
         if (totally_out) *totally_out = 0;
         return 0;
     } else {
         unsigned long bitmap_old_size = stringObjectLen(data->value);
-        unsigned long bitmap_new_size = stringObjectLen(datactx->newbitmap);
+        unsigned long bitmap_new_size = stringObjectLen(datactx->new_meta_bitmap.bitmap);
 
         if (bitmap_new_size == 0) {
             /* all subkeys swapped out, key turnning into cold:
                 * - rocks-meta should have already persisted.
                 * - object_meta and value will be deleted by dbDelete, expire already
                 *   deleted by swap framework. */
+            
+            /* empty bitmap object swap out, new_meta_bitmap.bitmap still exist, size = 0. */
             dbDelete(data->db,data->key);
-            decrRefCount(datactx->newbitmap);  /* newbitmap is useless ever, free it! */
-            datactx->newbitmap = NULL;
+
+            decrRefCount(datactx->new_meta_bitmap.bitmap);  /* new_meta_bitmap is useless ever, free it! */
+            datactx->new_meta_bitmap.bitmap = NULL;
+
+            bitmapMetaFree(datactx->new_meta_bitmap.meta);
+            datactx->new_meta_bitmap.meta = NULL;
+
             if (totally_out) *totally_out = 1;
         } else if (bitmap_new_size < bitmap_old_size) {
             /* replace value with new bitmap. */
-            bitmapObjectDuplicateSwapAttribute(datactx->newbitmap, data->value);
+            bitmapObjectDuplicateSwapAttribute(datactx->new_meta_bitmap.bitmap, data->value);
 
             decrRefCount(data->value);
-            dbOverwrite(data->db,data->key,datactx->newbitmap);
+            dbOverwrite(data->db,data->key,datactx->new_meta_bitmap.bitmap);
 
-            data->value = datactx->newbitmap;
+            data->value = datactx->new_meta_bitmap.bitmap;
             incrRefCount(data->value);
 
-            datactx->newbitmap = NULL;
+            datactx->new_meta_bitmap.bitmap = NULL;
 
             setObjectPersistent(data->value); /* persistent data exist. */
+
+            /* replace the bitmap meta in swapOut to keep consistency. */
+            objectMeta *object_meta = swapDataObjectMeta(data);
+            bitmapMetaFree(object_meta->ptr);
+            objectMetaSetPtr(object_meta, datactx->new_meta_bitmap.meta);
+            datactx->new_meta_bitmap.meta = NULL;
+
             if (totally_out) *totally_out = 0;
         } else {
             /* no keep data, bitmap_new_size != bitmap_old_size */
@@ -1137,7 +1153,14 @@ void bitmapSwapDataFree(swapData *data_, void *datactx_) {
     UNUSED(data_);
     bitmapDataCtx *datactx = datactx_;
     zfree(datactx->subkeys_logic_idx);
-    datactx->newbitmap = NULL;
+    if (datactx->new_meta_bitmap.bitmap != NULL) {
+        decrRefCount(datactx->new_meta_bitmap.bitmap);
+        datactx->new_meta_bitmap.bitmap = NULL;
+    }
+    if (datactx->new_meta_bitmap.meta != NULL) {
+        bitmapMetaFree(datactx->new_meta_bitmap.meta);
+        datactx->new_meta_bitmap.meta = NULL;
+    }
     zfree(datactx);
 }
 
@@ -1903,7 +1926,15 @@ void initServerConfig(void);
 
 void bitmapDataCtxReset(bitmapDataCtx *datactx) {
     zfree(datactx->subkeys_logic_idx);
-    datactx->newbitmap = NULL;
+    if (datactx->new_meta_bitmap.bitmap != NULL) {
+        decrRefCount(datactx->new_meta_bitmap.bitmap);
+        datactx->new_meta_bitmap.bitmap = NULL;
+    }
+    if (datactx->new_meta_bitmap.meta != NULL) {
+        bitmapMetaFree(datactx->new_meta_bitmap.meta);
+        datactx->new_meta_bitmap.meta = NULL;
+    }
+    
     memset(datactx, 0, sizeof(bitmapDataCtx));
 }
 
