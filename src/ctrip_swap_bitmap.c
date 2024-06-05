@@ -1481,17 +1481,11 @@ int bitmapSaveToRdbBitmap(rdbKeySaveData *save, rio *rdb) {
     while (waiting_save_subkey_num > 0)
     {
         unsigned long hot_subkey_size = BITMAP_GET_SPECIFIED_SUBKEY_SIZE(bitmap_size, subkey_size, saving_subkey_idx);
-        sds subval = sdsnewlen((char*)decoded_bitmap->ptr + offset, hot_subkey_size);
-
-        robj subvalobj;
-        initStaticStringObject(subvalobj, subval);
-        //TODO opt use rdbSaveRawString to skip alloc/dealloc subval
-        if (rdbSaveStringObject(rdb, &subvalobj) == -1) {
-            sdsfree(subval);
+        
+        if (rdbSaveRawString(rdb, (char*)decoded_bitmap->ptr + offset, hot_subkey_size) == -1) {
             decrRefCount(decoded_bitmap);
             return -1;
         }
-        sdsfree(subval);
 
         offset += hot_subkey_size;
         waiting_save_subkey_num--;
@@ -1575,17 +1569,11 @@ int bitmapSaveHotSubkeysUntill(rdbKeySaveData *save, rio *rdb, int idx, int rdbt
             hot_subkey_size = BITMAP_SUBKEY_SIZE;
         }
 
-        sds subval = sdsnewlen((char*)decoded_bitmap->ptr + iter->offset, hot_subkey_size);
-        robj subvalobj;
-        initStaticStringObject(subvalobj, subval);
-
-        if (rdbSaveStringObject(rdb, &subvalobj) == -1) {
-            sdsfree(subval);
+        
+        if (rdbSaveRawString(rdb, (char*)decoded_bitmap->ptr + iter->offset, hot_subkey_size) == -1) {
             decrRefCount(decoded_bitmap);
             return -1;
         }
-
-        sdsfree(subval);
 
         iter->subkey_idx = i + 1;
         iter->offset += hot_subkey_size;
