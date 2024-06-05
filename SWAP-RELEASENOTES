@@ -1,4 +1,11 @@
 ================================================================================
+ror-1.4.0 Released Fri June 7 00:00:00 CST 2024
+================================================================================
+* [new] support bitmap.
+* [opt] reduce latency spike when UNLINK/DEL large value by free big object async.
+* [new] expose rdb size and last rdb save time in info.
+
+================================================================================
 ror-1.3.2 Released Thu Apr 11 00:00:00 CST 2024
 ================================================================================
 * [fix] crash when assigning scan session if all scan session binded.
