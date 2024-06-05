@@ -274,7 +274,6 @@ int wholeKeyBeforeCall(swapData *data, keyRequest *key_request,
     UNUSED(data), UNUSED(c), UNUSED(datactx);
     /* Setup bitmap marker if bitmap command touching string */
     if (key_request->cmd_flags & CMD_SWAP_DATATYPE_BITMAP) {
-        robj *value = lookupKey(data->db,data->key,LOOKUP_NOTOUCH);
         bitmapSetObjectMarkerIfNeeded(data->db,data->key);
         atomicIncr(server.swap_string_switched_to_bitmap_count, 1);
     }
