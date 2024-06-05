@@ -501,7 +501,6 @@ robj *lookupStringForBitCommand(client *c, uint64_t maxbit) {
             metaBitmapInit(&meta_bitmap, NULL, o);
         }
         metaBitmapGrow(&meta_bitmap, byte+1);
-        bitmapSetObjectMarkerIfNeeded(c->db, c->argv[1]);
     }
     return o;
 }
