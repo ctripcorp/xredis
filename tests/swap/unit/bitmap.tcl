@@ -1639,6 +1639,8 @@ start_server {
         assert_equal {0} [r bitcount mykey]
         assert [object_is_bitmap r mykey]
         assert [bitmap_object_is_pure_hot r mykey]
+
+        assert_equal [r dbsize] 1 
     }
 
     test "empty cold string to bitmap" {
@@ -1650,6 +1652,8 @@ start_server {
         assert_equal {0} [r bitcount mykey]
         assert [object_is_bitmap r mykey]
         assert [bitmap_object_is_pure_hot r mykey]
+
+        assert_equal [r dbsize] 1 
     }
 
     test "empty hot string to bitmap" {
@@ -1662,6 +1666,8 @@ start_server {
         assert_equal {0} [r bitcount mykey]
         assert [object_is_bitmap r mykey]
         assert [bitmap_object_is_pure_hot r mykey]
+    
+        assert_equal [r dbsize] 1 
     }
 
     test "empty pure hot bitmap to string" {
@@ -1671,6 +1677,8 @@ start_server {
 
         assert_equal {} [r get mykey]
         assert [object_is_string r mykey]
+
+        assert_equal [r dbsize] 1 
     }
 
     test "empty cold bitmap to string" {
@@ -1682,6 +1690,8 @@ start_server {
 
         assert_equal {} [r get mykey]
         assert [object_is_string r mykey]
+
+        assert_equal [r dbsize] 1 
     }
 
     test "empty hot bitmap to string" {
@@ -1694,6 +1704,8 @@ start_server {
 
         assert_equal {} [r get mykey]
         assert [object_is_string r mykey]
+
+        assert_equal [r dbsize] 1 
     }
 
     # check empty bitmap swap out swap in
@@ -1704,6 +1716,8 @@ start_server {
 
         r swap.evict mybitmap
         wait_key_cold r mybitmap
+
+        assert_equal [r dbsize] 1 
     }
 
     test "hot full swap out" {
@@ -1717,6 +1731,8 @@ start_server {
 
         r swap.evict mybitmap
         wait_key_cold r mybitmap
+
+        assert_equal [r dbsize] 1 
     }
 
     test "extend hot" {
@@ -1735,6 +1751,8 @@ start_server {
         wait_key_cold r mybitmap
 
         assert_equal {1} [r bitcount mybitmap]
+
+        assert_equal [r dbsize] 1 
     }
 
     test "extend cold" {
@@ -1752,6 +1770,8 @@ start_server {
         wait_key_cold r mybitmap
 
         assert_equal {1} [r bitcount mybitmap]
+
+        assert_equal [r dbsize] 1 
     }
 
     test "pure hot bitcount" {
@@ -1760,6 +1780,8 @@ start_server {
         assert_equal {0} [r bitcount mybitmap]
 
         assert_equal {0} [r bitcount mybitmap 0 1]
+
+        assert_equal [r dbsize] 1 
     }
 
     test "cold bitcount" {
@@ -1770,6 +1792,8 @@ start_server {
         wait_key_cold r mybitmap
 
         assert_equal {0} [r bitcount mybitmap 0 1]
+
+        assert_equal [r dbsize] 1 
     }
 
     test "hot bitcount" {
@@ -1781,6 +1805,8 @@ start_server {
         assert_equal {0} [r bitcount mybitmap]
 
         assert_equal {0} [r bitcount mybitmap 0 1]
+        
+        assert_equal [r dbsize] 1 
     }
 
     test {pure hot rdbsave and rdbload for RDB_TYPE_BITMAP} {
@@ -1791,6 +1817,8 @@ start_server {
         r debug reload
         # check_data
         assert_equal {0} [r bitcount mybitmap]
+
+        assert_equal [r dbsize] 1 
         r flushdb
     }
 
@@ -1804,6 +1832,8 @@ start_server {
         r debug reload
         # check_data
         assert_equal {0} [r bitcount mybitmap]
+
+        assert_equal [r dbsize] 1 
         r flushdb
     }
 
@@ -1819,6 +1849,8 @@ start_server {
         r debug reload
         # check_data
         assert_equal {0} [r bitcount mybitmap]
+
+        assert_equal [r dbsize] 1 
         r flushdb
     }
 
@@ -1840,7 +1872,10 @@ start_server {
         r DEBUG RELOAD NOSAVE
         # check_data
         assert_equal {0} [r bitcount mybitmap]
+
+        assert_equal [r dbsize] 1 
         r config set bitmap-subkey-size $bak_bitmap_subkey_size
+
         r flushdb
     }
 
@@ -1861,6 +1896,8 @@ start_server {
         r DEBUG RELOAD NOSAVE
         # check_data
         assert_equal {0} [r bitcount mybitmap]
+        assert_equal [r dbsize] 1 
+
         r flushdb
         # reset default config
         r config set bitmap-subkey-size $bak_bitmap_subkey_size
@@ -1878,6 +1915,8 @@ start_server {
         assert [object_is_string r mybitmap]
         assert [object_is_cold r mybitmap]
         assert_equal {0} [r bitcount mybitmap]
+
+        assert_equal [r dbsize] 1 
         r flushdb
     }
 
@@ -1893,6 +1932,8 @@ start_server {
         assert [object_is_string r mybitmap]
         assert [object_is_cold r mybitmap]
         assert_equal {0} [r bitcount mybitmap]
+    
+        assert_equal [r dbsize] 1 
         r flushdb
     }
 

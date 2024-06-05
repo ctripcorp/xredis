@@ -944,7 +944,7 @@ void *bitmapCreateOrMergeObject(swapData *data, void *decoded_, void *datactx) {
         result = bitmapObjectMerge(NULL,meta,delta_bm);
     } else {
         robj *decoded_bitmap = getDecodedObject(data->value);
-        result = bitmapObjectMerge(decoded_bitmap, meta, delta_bm); // todo 
+        result = bitmapObjectMerge(decoded_bitmap, meta, delta_bm);
         decrRefCount(decoded_bitmap);
     }
     /* bitmap only swap in the subkeys that don't exist in redis, so no need
@@ -2091,7 +2091,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
     TEST("bitmap - meta api test create free dup encode decode equal ishot") {
 
-        /* bitmap meta */
+        /* bitmap object meta */
         objectMeta *object_meta1;
         bitmapMeta *bitmap_meta1;
         bitmap_meta1 = bitmapMetaCreate();
@@ -2126,7 +2126,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         sdsfree(meta_buf1);
         meta_buf1 = NULL;
 
-        /* bitmap marker */
+        /* bitmap object marker */
         objectMeta *object_meta4 = createBitmapObjectMarker();
         sds meta_buf4 = bitmapObjectMetaEncode(object_meta4, NULL);
 
@@ -2147,12 +2147,42 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         freeObjectMeta(object_meta6);
 
         sdsfree(meta_buf4);
+
+        /* bitmap meta */
+        bitmapMeta bm0;
+        bm0.size = 1;
+        sds bm_buf1 = bitmapMetaEncode(&bm0);
+
+        bitmapMeta *bm1 = bitmapMetaDecode(bm_buf1, sdslen(bm_buf1));
+        test_assert(bm0.size == bm1->size);
+
+        bm0.size = 155;
+        sds bm_buf2 = bitmapMetaEncode(&bm0);
+
+        bitmapMeta *bm2 = bitmapMetaDecode(bm_buf2, sdslen(bm_buf2));
+        test_assert(bm0.size == bm2->size);
+
+        bm0.size = 2147483647;
+        sds bm_buf3 = bitmapMetaEncode(&bm0);
+
+        bitmapMeta *bm3 = bitmapMetaDecode(bm_buf3, sdslen(bm_buf3));
+        test_assert(bm0.size == bm3->size);
+
+        sdsfree(bm_buf1);
+        sdsfree(bm_buf2);
+        sdsfree(bm_buf3);
+
+        bitmapMetaFree(bm1);
+        bitmapMetaFree(bm2);
+        bitmapMetaFree(bm3);
     }
 
     TEST("bitmap - meta api test rebuildFeed metaBitmapGrow marker") {
 
         bitmapMeta *bitmap_meta1;
         bitmap_meta1 = bitmapMetaCreate();
+
+        /* rebuildFeed */
 
         objectMeta *object_meta1;
         object_meta1 = createBitmapObjectMeta(0, bitmap_meta1);
@@ -2164,7 +2194,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         sds subkey = sdsnewlen(NULL, sizeof(unsigned long));
 
         for (int i = 0; i < 4; i++) {
-            bitmapObjectMetaRebuildFeed(object_meta1,0,subkey,sdslen(subkey),&subval_obj);
+            test_assert(0 == bitmapObjectMetaRebuildFeed(object_meta1,0,subkey,sdslen(subkey),&subval_obj));
         }
 
         sdsfree(subval);
@@ -2180,6 +2210,8 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
             bitmapMetaSetSubkeyStatus(bitmap_meta1, i, i, BITMAP_SUBKEY_STATUS_HOT);
         }
 
+        /* metaBitmapGrow */
+
         metaBitmap meta_bitmap;
         metaBitmapInit(&meta_bitmap, bitmap_meta1, bitmap1);
         metaBitmapGrow(&meta_bitmap, BITMAP_SUBKEY_SIZE*6);
@@ -2189,9 +2221,18 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(bitmap_meta1->size == BITMAP_SUBKEY_SIZE*6);
         test_assert(6 == bitmapMetaGetHotSubkeysNum(bitmap_meta1, 0, BITMAP_GET_SUBKEYS_NUM(bitmap_meta1->size, BITMAP_SUBKEY_SIZE) - 1));
 
+        test_assert(0 == metaBitmapGetColdSubkeysSize(&meta_bitmap, BITMAP_SUBKEY_SIZE*7));
+
+        metaBitmap meta_bitmap1;
+        metaBitmapInit(&meta_bitmap1, NULL, bitmap1);
+        test_assert(0 == metaBitmapGetColdSubkeysSize(&meta_bitmap1, BITMAP_SUBKEY_SIZE*0));
+        test_assert(0 == metaBitmapGetColdSubkeysSize(&meta_bitmap1, BITMAP_SUBKEY_SIZE*6));
+
         sdsfree(str);
         decrRefCount(bitmap1);
         freeObjectMeta(object_meta1);
+
+        /* set clear marker */
 
         robj *tmp_key = createStringObject("tmp_key", 7);
         robj *tmp_value = createStringObject("tmp_value", 9);
@@ -2208,6 +2249,25 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
         dbDelete(db, tmp_key);
         decrRefCount(tmp_key);
+
+        /* metaBitmapGetColdSubkeysSize */
+        bitmapMeta *bitmap_meta2;
+        bitmap_meta2 = bitmapMetaCreate();
+
+        bitmap_meta2->size = BITMAP_SUBKEY_SIZE * 4;
+        bitmap_meta2->pure_cold_subkeys_num = 2;
+        bitmapMetaSetSubkeyStatus(bitmap_meta2, 1, 1, BITMAP_SUBKEY_STATUS_HOT);
+        bitmapMetaSetSubkeyStatus(bitmap_meta2, 3, 3, BITMAP_SUBKEY_STATUS_HOT);
+
+        metaBitmap meta_bitmap2;
+        robj obj; 
+        metaBitmapInit(&meta_bitmap2, bitmap_meta2, &obj);
+        test_assert(0 == metaBitmapGetColdSubkeysSize(&meta_bitmap2, BITMAP_SUBKEY_SIZE - 1));
+        test_assert(1 * BITMAP_SUBKEY_SIZE == metaBitmapGetColdSubkeysSize(&meta_bitmap2, BITMAP_SUBKEY_SIZE));
+        test_assert(2 * BITMAP_SUBKEY_SIZE == metaBitmapGetColdSubkeysSize(&meta_bitmap2, BITMAP_SUBKEY_SIZE * 4 - 1));
+        test_assert(2 * BITMAP_SUBKEY_SIZE == metaBitmapGetColdSubkeysSize(&meta_bitmap2, BITMAP_SUBKEY_SIZE * 8));
+    
+        bitmapMetaFree(bitmap_meta2);
     }
 
     TEST("bitmap - swapAna") {
@@ -2674,7 +2734,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
         cold_data2 = createSwapData(db, cold_key2, NULL, NULL);
         swapDataSetupMeta(cold_data2, SWAP_TYPE_BITMAP, -1, (void**)&cold_ctx2);
-        swapDataSetObjectMeta(cold_data2, cold_meta2);
+        swapDataSetColdObjectMeta(cold_data2, cold_meta2);
 
         deltaBitmap *deltaBm = deltaBitmapCreate(5);
         deltaBm->subkeys_num = 5;
@@ -2852,6 +2912,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         purehot_data2 = createSwapData(db, purehot_key2, purehot_bitmap2, NULL);
         swapDataSetupMeta(purehot_data2,SWAP_TYPE_BITMAP, -1,(void**)&purehot_ctx2);
         swapDataSetObjectMeta(purehot_data2, purehot_meta2);
+        dbAddMeta(db,purehot_key2,purehot_meta2);
 
         setObjectDirty(purehot_bitmap2);
         purehot_keyReq2->cmd_intention = SWAP_OUT, purehot_keyReq2->cmd_intention_flags = 0;
@@ -2866,17 +2927,29 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         bitmapCleanObject(purehot_data2, purehot_ctx2, 0);
 
         robj *bm;
-        test_assert((bm = lookupKey(db, purehot_key2, LOOKUP_NOTOUCH)) != NULL);
-        test_assert(stringObjectLen(purehot_ctx2->newbitmap) == 0);
+        test_assert((bm = lookupKey(db, purehot_key2, LOOKUP_NOTOUCH)) != NULL); /* old obj still exist. */
+        test_assert(stringObjectLen(bm) == BITMAP_SUBKEY_SIZE + BITMAP_SUBKEY_SIZE / 2);
 
-        bitmapMeta *bitmap_meta = swapDataGetBitmapMeta(purehot_data2);
-        test_assert(rbmGetBitRange(bitmap_meta->subkeys_status, 0, BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE) - 1) == 0);
-        test_assert(bitmap_meta->pure_cold_subkeys_num == 2);
+        test_assert(stringObjectLen(purehot_ctx2->new_meta_bitmap.bitmap) == 0); /* it means obj totally out. */
+
+        objectMeta *meta = lookupMeta(purehot_data2->db,purehot_data2->key); /* meta has not updated. */
+        bitmapMeta *bitmap_meta = objectMetaGetPtr(meta);
+        test_assert(bitmap_meta->pure_cold_subkeys_num == 0);
 
         int totally_out;
         bitmapSwapOut(purehot_data2, purehot_ctx2, 0, &totally_out);
 
+        /* meta has been deleted as value. */
+        meta = lookupMeta(purehot_data2->db,purehot_data2->key);
+        test_assert(meta == NULL);
+
+        bitmap_meta = purehot_ctx2->new_meta_bitmap.meta;
+        test_assert(bitmap_meta == NULL);
+
+        /* value deleted. */
         test_assert((bm = lookupKey(db, purehot_key2, LOOKUP_NOTOUCH)) == NULL);
+        test_assert(purehot_ctx2->new_meta_bitmap.bitmap == NULL);
+
         test_assert(totally_out == 1);
 
         sdsfree(str);
@@ -2920,7 +2993,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(purehot_ctx3->subkeys_logic_idx[0] == 0);
         test_assert(purehot_ctx3->subkeys_logic_idx[9] == 9);
 
-        bitmapCleanObject(purehot_data3, purehot_ctx3, 1);
+        bitmapCleanObject(purehot_data3, purehot_ctx3, 1); /* keep_data = 1 */
 
         robj *bm;
         test_assert((bm = lookupKey(db, purehot_key3, LOOKUP_NOTOUCH)) != NULL);
@@ -2989,14 +3062,23 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(stringObjectLen(bm) == BITMAP_SUBKEY_SIZE * 12 + BITMAP_SUBKEY_SIZE / 2);
 
         bitmapMeta *bitmap_meta = swapDataGetBitmapMeta(purehot_data4);
-        test_assert(rbmGetBitRange(bitmap_meta->subkeys_status, 0, BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE) - 1) == 3);
-        test_assert(bitmap_meta->pure_cold_subkeys_num == 10);
+        test_assert(rbmGetBitRange(bitmap_meta->subkeys_status, 0, BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE) - 1) == 13);
+        test_assert(bitmap_meta->pure_cold_subkeys_num == 0);
 
         int totally_out;
         bitmapSwapOut(purehot_data4, purehot_ctx4, 0, &totally_out);
 
+        /* meta has been updated. */
+        bitmap_meta = swapDataGetBitmapMeta(purehot_data4);
+        test_assert(rbmGetBitRange(bitmap_meta->subkeys_status, 0, BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE) - 1) == 3);
+        test_assert(bitmap_meta->pure_cold_subkeys_num == 10);
+
+        /* value updated. */
         test_assert((bm = lookupKey(db, purehot_key4, LOOKUP_NOTOUCH)) != NULL);
         test_assert(stringObjectLen(bm) == BITMAP_SUBKEY_SIZE * 2 + BITMAP_SUBKEY_SIZE / 2);
+
+        test_assert(purehot_ctx4->new_meta_bitmap.meta == NULL);
+        test_assert(purehot_ctx4->new_meta_bitmap.bitmap == NULL);
         test_assert(totally_out == 0);
 
         sds str2 = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE * 2 + BITMAP_SUBKEY_SIZE / 2);

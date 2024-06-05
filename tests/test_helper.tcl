@@ -56,6 +56,7 @@ set ::disk_tests {
     swap/unit/swap_out+in
     swap/unit/hash
     swap/unit/zset
+    swap/unit/bitmap
     swap/unit/geo
     swap/unit/big_hash
     swap/unit/big_set
@@ -114,7 +115,6 @@ set ::disk_tests {
     integration/convert-zipmap-hash-on-load
     integration/redis-benchmark
     integration/psync2
-    swap/unit/bitmap
 }
 
 # ctrip/aof-gtid
