@@ -491,7 +491,7 @@ robj *lookupStringForBitCommand(client *c, uint64_t maxbit) {
         o = dbUnshareStringValue(c->db,c->argv[1],o);
         objectMeta *om = lookupMeta(c->db,c->argv[1]);
         metaBitmap meta_bitmap;
-        if (om != NULL) {
+        if (server.swap_mode == SWAP_MODE_DISK) {
             serverAssert(om->swap_type == SWAP_TYPE_BITMAP);
             metaBitmapInit(&meta_bitmap, objectMetaGetPtr(om), o);
         } else {
@@ -858,7 +858,7 @@ void bitcountCommand(client *c) {
 
     objectMeta *om = lookupMeta(c->db,c->argv[1]);
     metaBitmap meta_bitmap;
-    if (om != NULL) {
+    if (server.swap_mode == SWAP_MODE_DISK) {
         serverAssert(om->swap_type == SWAP_TYPE_BITMAP);
         metaBitmapInit(&meta_bitmap, objectMetaGetPtr(om), o);
     } else {
@@ -965,7 +965,7 @@ void bitposCommand(client *c) {
 
     objectMeta *om = lookupMeta(c->db,c->argv[1]);
     metaBitmap meta_bitmap;
-    if (om != NULL) {
+    if (server.swap_mode == SWAP_MODE_DISK) {
         serverAssert(om->swap_type == SWAP_TYPE_BITMAP);
         metaBitmapInit(&meta_bitmap, objectMetaGetPtr(om), o);
     } else {
