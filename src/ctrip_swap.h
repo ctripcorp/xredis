@@ -56,7 +56,7 @@ extern const char *swap_cf_names[CF_COUNT];
 /* --- cmd intention flags --- */
 /* Delete key in rocksdb when swap in. */
 #define SWAP_IN_DEL (1U<<0)
-/* Only need to swap meta for hash/set/zset/list  */
+/* Only need to swap meta for hash/set/zset/list/bitmap  */
 #define SWAP_IN_META (1U<<1)
 /* Delete key in rocksdb and mock value needed to be swapped in. */
 #define SWAP_IN_DEL_MOCK_VALUE (1U<<2)
@@ -102,6 +102,17 @@ extern const char *swap_cf_names[CF_COUNT];
 #define SWAP_DEL    3
 #define SWAP_UTILS  4
 #define SWAP_TYPES  5
+
+/* next of OBJ_STREAM */
+#define OBJ_BITMAP  7
+
+#define SWAP_TYPE_STRING    OBJ_STRING
+#define SWAP_TYPE_LIST      OBJ_LIST
+#define SWAP_TYPE_SET       OBJ_SET
+#define SWAP_TYPE_ZSET      OBJ_ZSET
+#define SWAP_TYPE_HASH      OBJ_HASH
+#define SWAP_TYPE_STREAM    OBJ_STREAM
+#define SWAP_TYPE_BITMAP    OBJ_BITMAP
 
 static inline const char *swapIntentionName(int intention) {
   const char *name = "?";
@@ -151,10 +162,15 @@ static inline const char *requestLevelName(int level) {
 #define SEGMENT_TYPE_COLD 1
 #define SEGMENT_TYPE_BOTH 2
 
+#define RANGE_LIST 0
+#define RANGE_BIT_BITMAP 1
+#define RANGE_BYTE_BITMAP 2
+
 /* Both start and end are inclusive, see addListRangeReply for details. */
 typedef struct range {
-  long start;
-  long end;
+  int type; /* RANGE_LIST, RANGE_BIT_BITMAP, RANGE_BYTE_BITMAP*/
+  long long start;
+  long long end;
   int reverse; /* LTRIM command specifies range to keep, so swap in the reverse range */
 } range;
 
@@ -166,12 +182,14 @@ typedef struct range {
 
 typedef struct argRewriteRequest {
   int mstate_idx; /* >=0 if current command is a exec, means index in mstate; -1 means req not in multi/exec */
-  int arg_idx; /* index of argument to rewrite */
+  int arg_idx; /* index of argument to use for rewrite func */
+  int arg_type; /* RANGE_LIST, RANGE_BIT_BITMAP, RANGE_BYTE_BITMAP */
 } argRewriteRequest;
 
 static inline void argRewriteRequestInit(argRewriteRequest *arg_req) {
   arg_req->mstate_idx = -1;
   arg_req->arg_idx = -1;
+  arg_req->arg_type = -1;
 }
 
 typedef struct keyRequest{
@@ -180,7 +198,7 @@ typedef struct keyRequest{
   int cmd_intention;
   int cmd_intention_flags;
   uint64_t cmd_flags;
-  int type;
+  int type; /* request type */
   int deferred;
   robj *key;
   union {
@@ -191,7 +209,7 @@ typedef struct keyRequest{
     struct {
       int num_ranges;
       range *ranges;
-    } l; /* range: list */
+    } l; /* range: list, bitmap */
     struct {
       zrangespec* rangespec;
       int reverse;
@@ -201,7 +219,7 @@ typedef struct keyRequest{
       int count;
     } sp; /* sample */
   };
-  argRewriteRequest list_arg_rewrite[2];
+  argRewriteRequest arg_rewrite[2];
   swapCmdTrace *swap_cmd;
   swapTrace *trace;
 } keyRequest;
@@ -215,7 +233,6 @@ int getKeyRequestsNone(int dbid, struct redisCommand *cmd, robj **argv, int argc
 int getKeyRequestsGlobal(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 int getKeyRequestsMetaScan(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 
-int getKeyRequestsBitop(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 int getKeyRequestsSort(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 
 #define getKeyRequestsHsetnx getKeyRequestsHset
@@ -287,6 +304,14 @@ int getKeyRequestsGtid(int dbid, struct redisCommand *cmd, robj **argv, int argc
 int getKeyRequestsGtidAuto(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 
 int getKeyRequestsDebug(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsSetbit(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsGetbit(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsBitcount(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsBitpos(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsBitop(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsBitField(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+
+int getKeyRequestsMemory(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 
 int getKeyRequestsMemory(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 
@@ -483,12 +508,12 @@ typedef struct objectMetaType {
   void (*free)(struct objectMeta *object_meta);
   void (*duplicate)(struct objectMeta *dup_meta, struct objectMeta *object_meta);
   int (*equal)(struct objectMeta *oma, struct objectMeta *omb);
-  int (*rebuildFeed)(struct objectMeta *rebuild_meta, uint64_t version, const char *subkey, size_t sublen);
+  int (*rebuildFeed)(struct objectMeta *rebuild_meta, uint64_t version, const char *subkey, size_t sublen, robj *subval);
 } objectMetaType;
 
 typedef struct objectMeta {
   uint64_t version;
-  unsigned object_type:4;
+  unsigned swap_type:4;
   union {
     long long len:60;
     unsigned long long ptr:60;
@@ -497,12 +522,13 @@ typedef struct objectMeta {
 
 extern objectMetaType lenObjectMetaType;
 extern objectMetaType listObjectMetaType;
+extern objectMetaType bitmapObjectMetaType;
 
 static inline void swapInitVersion(void) { server.swap_key_version = 1; }
 static inline void swapSetVersion(uint64_t version) { server.swap_key_version = version; }
 static inline uint64_t swapGetAndIncrVersion(void) { return server.swap_key_version++; }
 
-int buildObjectMeta(int object_type, uint64_t version, const char *extend, size_t extlen, OUT objectMeta **pobject_meta);
+int buildObjectMeta(int swap_type, uint64_t version, const char *extend, size_t extlen, OUT objectMeta **pobject_meta);
 objectMeta *dupObjectMeta(objectMeta *object_meta);
 void freeObjectMeta(objectMeta *object_meta);
 sds objectMetaEncode(struct objectMeta *object_meta);
@@ -510,7 +536,7 @@ int objectMetaDecode(struct objectMeta *object_meta, const char *extend, size_t 
 int keyIsHot(objectMeta *object_meta, robj *value);
 sds dumpObjectMeta(objectMeta *object_meta);
 int objectMetaEqual(struct objectMeta *oma, struct objectMeta *omb);
-int objectMetaRebuildFeed(struct objectMeta *object_meta, uint64_t version, const char *subkey, size_t sublen);
+int objectMetaRebuildFeed(struct objectMeta *object_meta, uint64_t version, const char *subkey, size_t sublen, robj *subval);
 
 static inline void *objectMetaGetPtr(objectMeta *object_meta) {
   return (void*)(long)object_meta->ptr;
@@ -519,9 +545,9 @@ static inline void objectMetaSetPtr(objectMeta *object_meta, void *ptr) {
   object_meta->ptr = (unsigned long long)ptr;
 }
 
-objectMeta *createObjectMeta(int object_type, uint64_t version);
+objectMeta *createObjectMeta(int swap_type, uint64_t version);
 
-objectMeta *createLenObjectMeta(int object_type, uint64_t version, size_t len);
+objectMeta *createLenObjectMeta(int swap_type, uint64_t version, size_t len);
 sds encodeLenObjectMeta(struct objectMeta *object_meta, void *aux);
 int decodeLenObjectMeta(struct objectMeta *object_meta, const char *extend, size_t extlen);
 int lenObjectMetaIsHot(struct objectMeta *object_meta, robj *value);
@@ -545,14 +571,21 @@ typedef struct swapObjectMeta {
 
 static inline int swapObjectMetaIsHot(swapObjectMeta *som) {
     if (som->value == NULL) return 0;
-    if (som->object_meta == NULL) return 1;
-    serverAssert(som->object_meta->object_type == som->value->type);
+    serverAssert((som->object_meta->swap_type == SWAP_TYPE_BITMAP && som->value->type == OBJ_STRING) || som->object_meta->swap_type == som->value->type);
     if (som->omtype->objectIsHot) {
       return som->omtype->objectIsHot(som->object_meta,som->value);
     } else {
       return 0;
     }
 }
+
+/* bitmap marker */
+objectMeta *createBitmapObjectMarker();
+int bitmapObjectMetaIsMarker(objectMeta *object_meta);
+void bitmapSetObjectMarkerIfNeeded(redisDb *db, robj *key);
+void bitmapClearObjectMarkerIfNeeded(redisDb *db, robj *key);
+void bitmapMetaTransToMarkerIfNeeded(objectMeta *object_meta);
+void bitmapMarkerTransToMetaIfNeeded(objectMeta *object_meta, robj *value);
 
 /* Data */
 #define SWAP_DATA_ABSENT_SUBKEYS_INIT 4
@@ -567,6 +600,12 @@ typedef struct swapDataAbsentSubkey {
 #define SWAP_ANA_THD_MAIN 0
 #define SWAP_ANA_THD_SWAP 1
 
+static inline int swapDataAnaSwapType(robj *value, objectMeta *object_meta) {
+    if (object_meta) return object_meta->swap_type;
+    if (value) return value->type;
+    return -1;
+}
+
 /* SwapData represents key state when swap start. It is stable during
  * key swapping, misc dynamic data are save in dataCtx. */
 typedef struct swapData {
@@ -579,7 +618,7 @@ typedef struct swapData {
   objectMeta *object_meta; /* ref */
   objectMeta *cold_meta; /* own, moved from exec */
   objectMeta *new_meta; /* own */
-  int object_type;
+  int swap_type;
   unsigned propagate_expire:1;
   unsigned set_dirty:1;
   unsigned set_dirty_meta:1;
@@ -609,7 +648,7 @@ typedef struct swapDataType {
   int (*swapDel)(struct swapData *data, void *datactx, int async);
   void *(*createOrMergeObject)(struct swapData *data, MOVE void *decoded, void *datactx);
   int (*cleanObject)(struct swapData *data, void *datactx, int keep_data);
-  int (*beforeCall)(struct swapData *data, client *c, void *datactx);
+  int (*beforeCall)(struct swapData *data, keyRequest *key_request, client *c, void *datactx);
   void (*free)(struct swapData *data, void *datactx);
   int (*rocksDel)(struct swapData *data_,  void *datactx_, int inaction, int num, int* cfs, sds *rawkeys, sds *rawvals, OUT int *outaction, OUT int *outnum, OUT int** outcfs,OUT sds **outrawkeys);
   int (*mergedIsHot)(struct swapData *data, MOVE void *result, void *datactx);
@@ -617,7 +656,7 @@ typedef struct swapDataType {
 } swapDataType;
 
 swapData *createSwapData(redisDb *db, robj *key, robj *value, robj *dirty_subkeys);
-int swapDataSetupMeta(swapData *d, int object_type, long long expire, OUT void **datactx);
+int swapDataSetupMeta(swapData *d, int swap_type, long long expire, OUT void **datactx);
 int swapDataAlreadySetup(swapData *d);
 void swapDataMarkPropagateExpire(swapData *data);
 int swapDataAna(swapData *d, int thd, struct keyRequest *key_request, int *intention, uint32_t *intention_flag, void *datactx);
@@ -634,7 +673,7 @@ int swapDataSwapOut(swapData *d, void *datactx, int keep_data, OUT int *totally_
 int swapDataSwapDel(swapData *d, void *datactx, int async);
 void *swapDataCreateOrMergeObject(swapData *d, MOVE void *decoded, void *datactx);
 int swapDataCleanObject(swapData *d, void *datactx, int keep_data);
-int swapDataBeforeCall(swapData *d, client *c, void *datactx);
+int swapDataBeforeCall(swapData *d, keyRequest *key_request, client *c, void *datactx);
 int swapDataKeyRequestFinished(swapData *data);
 char swapDataGetObjectAbbrev(robj *value);
 void swapDataFree(swapData *data, void *datactx);
@@ -678,6 +717,9 @@ static inline uint64_t swapDataObjectVersion(swapData *d) {
 }
 
 static inline int swapDataPersisted(swapData *d) {
+    if (d->swap_type == SWAP_TYPE_BITMAP && d->object_meta) {
+        return !bitmapObjectMetaIsMarker(d->object_meta);
+    }
     return d->object_meta || d->cold_meta;
 }
 static inline void swapDataObjectMetaModifyLen(swapData *d, int delta) {
@@ -713,7 +755,6 @@ int swapDataObjectMergedIsHot(swapData *data, void *result, void *datactx);
 #define hashMergedIsHot swapDataObjectMergedIsHot
 #define zsetMergedIsHot swapDataObjectMergedIsHot
 #define wholeKeyMergedIsHot swapDataObjectMergedIsHot
-
 
 /* Debug msgs */
 #ifdef SWAP_DEBUG
@@ -752,7 +793,8 @@ void swapDebugMsgsDump(swapDebugMsgs *msgs);
 
 /* Swap */
 #define SWAP_ERR_SETUP_FAIL -100
-#define SWAP_ERR_SETUP_UNSUPPORTED -101
+#define SWAP_ERR_SETUP_UNEXPECTED_SWAP_TYPE -101
+#define SWAP_ERR_SETUP_UNSUPPORTED -102
 #define SWAP_ERR_DATA_FAIL -200
 #define SWAP_ERR_DATA_ANA_FAIL -201
 #define SWAP_ERR_DATA_DECODE_FAIL -202
@@ -897,8 +939,11 @@ argRewrites *argRewritesCreate(void);
 void argRewritesAdd(argRewrites *arg_rewrites, argRewriteRequest arg_req, MOVE robj *orig_arg);
 void argRewritesReset(argRewrites *arg_rewrites);
 void argRewritesFree(argRewrites *arg_rewrites);
+void argRewritesAdd(argRewrites *arg_rewrites, argRewriteRequest arg_req, MOVE robj *orig_arg);
 
 void clientArgRewritesRestore(client *c);
+void clientArgRewrite(client *c, argRewriteRequest arg_req, MOVE robj *new_arg);
+
 
 long ctripListTypeLength(robj *list, objectMeta *object_meta);
 void ctripListTypePush(robj *subject, robj *value, int where, redisDb *db, robj *key);
@@ -929,13 +974,41 @@ int swapDataSetupZSet(swapData *d, OUT void **datactx);
 #define zsetObjectMetaType lenObjectMetaType
 
 
+/* bitmap */
+struct bitmapMeta;
+
+void bitmapMetaFree(struct bitmapMeta *bitmap_meta);
+
+size_t bitmapMetaGetSize(struct bitmapMeta *bitmap_meta);
+
+objectMeta *createBitmapObjectMeta(uint64_t version, MOVE struct bitmapMeta *bitmap_meta);
+
+int swapDataSetupBitmap(swapData *d, void **pdatactx);
+
+sds genSwapBitmapStringSwitchedInfoString(sds info);
+
+/* Meta bitmap */
+/* meta != NULL, bitmap with hole, which means cold subkey, it is not entire bitmap in memory.
+ * meta == NULL,  no hole in bitmap, it is entire bitmap in memory. */
+typedef struct metaBitmap {
+    struct bitmapMeta *meta;
+    robj *bitmap;
+} metaBitmap;
+
+void metaBitmapInit(metaBitmap *meta_bitmap, struct bitmapMeta *bitmap_meta, robj *bitmap);
+unsigned long metaBitmapGetSize(metaBitmap *meta_bitmap);
+void metaBitmapGrow(metaBitmap *meta_bitmap, size_t byte);
+unsigned long metaBitmapGetColdSubkeysSize(metaBitmap *meta_bitmap, unsigned long offset);
+void metaBitmapBitpos(metaBitmap *meta_bitmap, client *c, unsigned long bit);
+void metaBitmapBitcount(metaBitmap *meta_bitmap, client *c);
+
 /* MetaScan */
 #define DEFAULT_SCANMETA_BUFFER 16
 
 typedef struct scanMeta {
   sds key;
   long long expire;
-  int object_type;
+  int swap_type;
 } scanMeta;
 
 int scanMetaExpireIfNeeded(redisDb *db, scanMeta *meta);
@@ -949,7 +1022,7 @@ typedef struct metaScanResult {
 } metaScanResult;
 
 metaScanResult *metaScanResultCreate(void);
-void metaScanResultAppend(metaScanResult *result, int object_type, MOVE sds key, long long expire);
+void metaScanResultAppend(metaScanResult *result, int swap_type, MOVE sds key, long long expire);
 void metaScanResultSetNextSeek(metaScanResult *result, MOVE sds nextseek);
 void freeScanMetaResult(metaScanResult *result);
 
@@ -1109,6 +1182,7 @@ typedef struct swapRequest {
 swapRequest *swapRequestNew(keyRequest *key_request, int intention,
     uint32_t intention_flags, swapCtx *ctx, swapData *data, void *datactx,
     swapTrace *trace, swapRequestFinishedCallback cb, void *pd, void *msgs);
+
 static inline swapRequest *swapDataRequestNew(
     int intention, uint32_t intention_flags, swapCtx *ctx, swapData *data,
     void *datactx, swapTrace *trace, swapRequestFinishedCallback cb, void *pd,
@@ -2067,7 +2141,7 @@ typedef struct decodedMeta {
   int dbid;
   sds key;
   uint64_t version;
-  int object_type;
+  int swap_type;
   long long expire;
   sds extend;
 } decodedMeta;
@@ -2079,7 +2153,7 @@ typedef struct decodedData {
   uint64_t version;
   sds subkey;
   int rdbtype;
-  sds rdbraw;
+  sds rdbraw;  /* not include type in first byte. */
 } decodedData;
 
 typedef struct rocksIterDecodeStats {
@@ -2096,6 +2170,7 @@ sds rocksIterDecodeStatsDump(rocksIterDecodeStats *stats);
 struct rdbKeySaveData;
 typedef struct rdbKeySaveType {
   int (*save_start)(struct rdbKeySaveData *keydata, rio *rdb);
+  int (*save_hot_ext)(struct rdbKeySaveData *keydata, rio *rdb);
   int (*save)(struct rdbKeySaveData *keydata, rio *rdb, decodedData *decoded);
   int (*save_end)(struct rdbKeySaveData *keydata, rio *rdb, int save_result);
   void (*save_deinit)(struct rdbKeySaveData *keydata);
@@ -2108,8 +2183,9 @@ typedef struct rdbKeySaveData {
   robj *value; /* ref: incrRefcount will cause cow */
   objectMeta *object_meta; /* own */
   long long expire;
+  int rdbtype; /* target rdb format, only used in bitmap saving. */
   int saved;
-  void *iter; /* used by list (metaListIterator) */
+  void *iter; /* used by list (metaListIterator), bitmap (bitmapSaveIterator) */
 } rdbKeySaveData;
 
 typedef struct rdbSaveRocksStats {
@@ -2120,10 +2196,13 @@ typedef struct rdbSaveRocksStats {
 } rdbSaveRocksStats;
 
 /* rdb save */
+int rdbSaveHotExtension(rio *rdb, int *error, redisDb *db, list *hot_keys_extension, int rdbflags);
 int rdbSaveRocks(rio *rdb, int *error, redisDb *db, int rdbflags);
 int rdbSaveKeyHeader(rio *rdb, robj *key, robj *evict, unsigned char rdbtype, long long expiretime);
-int rdbKeySaveDataInit(rdbKeySaveData *keydata, redisDb *db, decodedResult *dr);
+int rdbKeySaveHotExtensionInit(rdbKeySaveData *keydata, redisDb *db, sds keystr);
+int rdbKeySaveWarmColdInit(rdbKeySaveData *keydata, redisDb *db, decodedResult *dr);
 void rdbKeySaveDataDeinit(rdbKeySaveData *keydata);
+int rdbKeySaveHotExtension(struct rdbKeySaveData *keydata, rio *rdb);
 int rdbKeySaveStart(struct rdbKeySaveData *keydata, rio *rdb);
 int rdbKeySave(struct rdbKeySaveData *keydata, rio *rdb, decodedData *d);
 int rdbKeySaveEnd(struct rdbKeySaveData *keydata, rio *rdb, int save_result);
@@ -2132,6 +2211,7 @@ int hashSaveInit(rdbKeySaveData *save, uint64_t version, const char *extend, siz
 int setSaveInit(rdbKeySaveData *save, uint64_t version, const char *extend, size_t extlen);
 int listSaveInit(rdbKeySaveData *save, uint64_t version, const char *extend, size_t extlen);
 int zsetSaveInit(rdbKeySaveData *save, uint64_t version, const char *extend, size_t extlen);
+int bitmapSaveInit(rdbKeySaveData *save, uint64_t version, const char *extend, size_t extlen);
 
 /* Rdb load */
 /* RDB_LOAD_ERR_*: [1 +inf), SWAP_ERR_RDB_LOAD_*: (-inf -500] */
@@ -2175,12 +2255,13 @@ typedef struct rdbKeyLoadData {
     long long now;
     uint64_t version;
     int rdbtype;
-    int object_type;
+    int swap_type;
     int nfeeds;
     int total_fields;
     int loaded_fields;
     robj *value;
     void *iter;
+    void *load_info; /* only used in RDB_TYPE_BITMAP load process. */
 } rdbKeyLoadData;
 
 static inline sds rdbVerbatimNew(unsigned char rdbtype) {
@@ -2210,12 +2291,13 @@ void setLoadInit(rdbKeyLoadData *load);
 void listLoadInit(rdbKeyLoadData *load);
 
 void zsetLoadInit(rdbKeyLoadData *load);
+void bitmapLoadInit(rdbKeyLoadData *load);
 int rdbLoadLenVerbatim(rio *rdb, sds *verbatim, int *isencoded, unsigned long long *lenptr);
 
 /* persist load fix */
 typedef struct keyLoadFixData {
   redisDb *db;
-  int object_type;
+  int swap_type;
   robj *key;
   long long expire;
   uint64_t version;
@@ -2314,8 +2396,8 @@ sds rocksEncodeDataRangeStartKey(redisDb *db, sds key, uint64_t version);
 sds rocksEncodeDataRangeEndKey(redisDb *db, sds key, uint64_t version);
 #define rocksEncodeDataScanPrefix(db,key,version) rocksEncodeDataRangeStartKey(db,key,version)
 int rocksDecodeDataKey(const char *raw, size_t rawlen, int *dbid, const char **key, size_t *keylen, uint64_t *version, const char **subkey, size_t *subkeylen);
-sds rocksEncodeMetaVal(int object_type, long long expire, uint64_t version, sds extend);
-int rocksDecodeMetaVal(const char* raw, size_t rawlen, int *object_type, long long *expire, uint64_t *version, const char **extend, size_t *extend_len);
+sds rocksEncodeMetaVal(int swap_type, long long expire, uint64_t version, sds extend);
+int rocksDecodeMetaVal(const char* raw, size_t rawlen, int *swap_type, long long *expire, uint64_t *version, const char **extend, size_t *extend_len);
 sds rocksEncodeValRdb(robj *value);
 robj *rocksDecodeValRdb(sds raw);
 sds rocksEncodeObjectMetaLen(unsigned long len);
@@ -2461,7 +2543,9 @@ int getKeyRequestsSwapBlockedLmove(int dbid, int intention, int intention_flags,
             robj *key, struct getKeyRequestsResult *result, int arg_rewrite0,
             int arg_rewrite1, int num_ranges, ...);
 int serveClientBlockedOnList(client *receiver, robj *key, robj *dstkey, redisDb *db, robj *value, int wherefrom, int whereto,list* swap_wrong_type_error_keys);
+void incrSwapUnBlockCtxVersion();
 void incrSwapUnBlockCtxVersion(void);
+
 #ifndef __APPLE__
 typedef struct swapThreadCpuUsage{
     /* CPU usage Cacluation */
@@ -2535,6 +2619,8 @@ int swapBatchTest(int argc, char *argv[], int accurate);
 int cuckooFilterTest(int argc, char *argv[], int accurate);
 int swapPersistTest(int argc, char *argv[], int accurate);
 int swapRordbTest(int argc, char *argv[], int accurate);
+int roaringBitmapTest(int argc, char *argv[], int accurate);
+int swapDataBitmapTest(int argc, char **argv, int accurate);
 
 int swapTest(int argc, char **argv, int accurate);
 

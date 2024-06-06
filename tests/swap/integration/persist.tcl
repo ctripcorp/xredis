@@ -94,6 +94,42 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         assert_equal [r zcard myzset0] 3
         r config set swap-evict-step-max-subkeys $bak_evict_step
     }
+
+    test {persist keep data (bitmap)} {
+
+        r setbit mybitmap0 335871 1
+
+        after 100
+        assert [object_is_hot r mybitmap0]
+
+        assert_equal {1} [r bitcount mybitmap0]
+
+        r swap.evict mybitmap0
+        wait_key_cold r mybitmap0
+
+        # bitcount turn hot, mark data dirty, persist keep all subkeys & clear dirty
+        assert_equal {1} [r bitcount mybitmap0]
+        assert_equal {1} [r setbit mybitmap0 335871 0]
+
+        after 100
+        assert [object_is_hot r mybitmap0]
+        assert_equal {0} [r bitcount mybitmap0]
+
+        r swap.evict mybitmap0
+        wait_key_cold r mybitmap0
+        set bak_evict_step [lindex [r config get swap-evict-step-max-subkeys] 1]
+        r config set swap-evict-step-max-subkeys 2
+
+        # bitcount turn hot, mark data dirty, delete partial subkeys & clear dirty
+        assert_equal {0} [r bitcount mybitmap0]
+
+        assert_equal {0} [r setbit mybitmap0 368639 1]
+
+        wait_key_clean r mybitmap0
+        assert [object_is_warm r mybitmap0]
+        assert_equal {1} [r bitcount mybitmap0]
+        r config set swap-evict-step-max-subkeys $bak_evict_step
+    }
 }
 
 start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subkeys-enabled yes}} {
@@ -107,6 +143,7 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         r sadd myset1 a b c
         r rpush mylist1 a b c
         r zadd myzset1 10 a 20 b 30 c
+        r setbit mybitmap1 335871 1
 
         after 100
 
@@ -115,20 +152,23 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         r sadd myset1 b 1 2
         r rpush mylist1 1 2
         r zadd myzset1 21 b 40 1 50 2
+        r setbit mybitmap1 0 1
 
-        assert_equal [r dbsize] 5
+        assert_equal [r dbsize] 6
         assert_equal [r get mystring1] v1
         assert_equal [r hmget myhash1 a b c 1 2] {a0 b1 c0 10 20}
         assert_equal [r lrange mylist1 0 -1] {a b c 1 2}
         assert_equal [r ZRANGEBYSCORE myzset1 -inf +inf WITHSCORES] {a 10 b 21 c 30 1 40 2 50}
+        assert_equal [r bitcount mybitmap1] {2}
 
         restart_server 0 true false
 
-        assert_equal [r dbsize] 5
+        assert_equal [r dbsize] 6
         assert_equal [r get mystring1] v1
         assert_equal [r hmget myhash1 a b c 1 2] {a0 b1 c0 10 20}
         assert_equal [r lrange mylist1 0 -1] {a b c 1 2}
         assert_equal [r ZRANGEBYSCORE myzset1 -inf +inf WITHSCORES] {a 10 b 21 c 30 1 40 2 50}
+        assert_equal [r bitcount mybitmap1] {2}
     }
 
     test {persist dirty keys triggered by swap} {
@@ -138,9 +178,18 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         r hdel myhash2 a
         wait_key_clean r myhash2
 
+        r setbit mybitmap2 0 1
+        r setbit mybitmap2 335871 1
+        wait_key_clean r mybitmap2
+        assert_equal [r getbit mybitmap2 0] {1}
+        assert_equal [r getbit mybitmap2 335871] {1}
+        r setbit mybitmap2 0 0
+        wait_key_clean r mybitmap2
+
         restart_server 0 true false
 
         assert_equal [r hmget myhash2 a b c 1 2] {{} b0 c0 10 20}
+        assert_equal [r bitcount mybitmap2] {1}
     }
 
     test {clean keys stays in memory} {
@@ -149,17 +198,20 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         r sadd myset3 a b c
         r rpush mylist3 a b c
         r zadd myzset3 10 a 20 b 30 c
+        r setbit mybitmap3 335871 1
 
         wait_key_clean r mystring3
         wait_key_clean r myhash3
         wait_key_clean r myset3
         wait_key_clean r myzset3
+        wait_key_clean r mybitmap3
 
         r get mystring3
         r hgetall myhash3
         r smembers myset3
         r lrange mylist3 0 -1
         r ZRANGEBYSCORE myzset3 -inf +inf
+        r getbit mybitmap3 335871
 
         assert [object_is_hot r mystring3]
         assert [object_is_hot r myhash3]
@@ -168,6 +220,7 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         # in either rocksdb or redis.
         assert [object_is_cold r mylist3]
         assert [object_is_hot r myzset3]
+        assert [object_is_hot r mybitmap3]
     }
 
     test {persist multiple times untill clean for big keys} {
@@ -175,9 +228,23 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         r hmset myhash4 a a0 b b0 c c0 1 10 2 20
         wait_key_clean r myhash4
 
+        r setbit mybitmap4 32767 1
+        r setbit mybitmap4 65535 1
+        r setbit mybitmap4 98303 1
+        r setbit mybitmap4 131071 1
+        r setbit mybitmap4 163839 1
+        r setbit mybitmap4 196607 1
+        r setbit mybitmap4 229375 1
+        r setbit mybitmap4 262143 1
+        r setbit mybitmap4 294911 1
+        r setbit mybitmap4 327679 1
+        r setbit mybitmap4 335871 1
+        wait_key_clean r mybitmap4
+
         restart_server 0 true false
 
         assert_equal [r hmget myhash4 a b c 1 2] {a0 b0 c0 10 20}
+        assert_equal [r bitcount mybitmap4] {11}
         r config set swap-evict-step-max-subkeys $bak_subkeys
     }
 
@@ -224,6 +291,19 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         }
         wait_key_clean r myhash6
 
+        r setbit mybitmap6 32767 1
+        r setbit mybitmap6 65535 1
+        r setbit mybitmap6 98303 1
+        r setbit mybitmap6 131071 1
+        r setbit mybitmap6 163839 1
+        r setbit mybitmap6 196607 1
+        r setbit mybitmap6 229375 1
+        r setbit mybitmap6 262143 1
+        r setbit mybitmap6 294911 1
+        r setbit mybitmap6 327679 1
+        r setbit mybitmap6 335871 1
+        wait_key_clean r mybitmap6
+
         r bgsave
 
         r config set swap-debug-rdb-key-save-delay-micro $bak_delay
@@ -235,6 +315,7 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
             r hmset myhash6 $i $i
         }
         assert_equal [r hlen myhash6] [expr 2*$num_subkeys]
+        assert_equal [r bitcount mybitmap6] {11}
 
         assert_equal [status r rdb_bgsave_in_progress] 1
         waitForBgsave r
@@ -281,6 +362,12 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         r swap.evict myhash0
         wait_key_cold r myhash0
         r del myhash0
+ 
+        r setbit mybitmap0 32767 1
+        r setbit mybitmap0 65535 1
+        r swap.evict mybitmap0
+        wait_key_cold r mybitmap0
+        r del mybitmap0
 
         restart_server 0 true false
 
@@ -288,6 +375,11 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         r swap.evict myhash0
         wait_key_cold r myhash0
         r hgetall myhash0
+
+        r setbit mybitmap0 32767 1
+        r swap.evict mybitmap0
+        wait_key_cold r mybitmap0
+        r bitcount mybitmap0
     }
 }
 
@@ -298,10 +390,12 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         r hmset myhash a a b b c c
         r sadd myset a b c
         r zadd myzset 1 a 2 b 3 c
+        r setbit mybitmap 32767 1
         r expire mystring 1
         r expire myhash 1
         r expire myset 1
         r expire myzset 1
+        r expire mybitmap 1
         after 1500
         assert_equal [llength [r swap rio-scan meta {}]] 0
     }

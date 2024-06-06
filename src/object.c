@@ -386,7 +386,7 @@ void decrRefCount(robj *o) {
     if (o->refcount == 1) {
         o->refcount--;
         switch(o->type) {
-        case OBJ_STRING: if (o->ptr) freeStringObject(o); break;
+        case OBJ_STRING: if (o->ptr) freeStringObject(o);break;
         case OBJ_LIST: if (o->ptr) freeListObject(o); break;
         case OBJ_SET: if (o->ptr) freeSetObject(o); break;
         case OBJ_ZSET: if (o->ptr) freeZsetObject(o); break;

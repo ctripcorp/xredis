@@ -99,6 +99,14 @@ int rdbSaveKeyHeader(rio *rdb, robj *key, robj *x, unsigned char rdbtype,
     return 1;
 }
 
+/* return -1 if save hot extension failed. */
+int rdbKeySaveHotExtension(struct rdbKeySaveData *save, rio *rdb) {
+    if (save->type->save_hot_ext)
+        return save->type->save_hot_ext(save,rdb);
+    else
+        return 0;
+}
+
 /* return -1 if save start failed. */
 int rdbKeySaveStart(struct rdbKeySaveData *save, rio *rdb) {
     if (save->type->save_start)
@@ -144,12 +152,10 @@ void rdbKeySaveDataDeinit(rdbKeySaveData *save) {
         decrRefCount(save->key);
         save->key = NULL;
     }
-    if (save->object_meta) {
-        freeObjectMeta(save->object_meta);
-        save->object_meta = NULL;
-    }
 
-    if (save->object_meta){
+    save->value = NULL;
+
+    if (save->object_meta) {
         freeObjectMeta(save->object_meta);
         save->object_meta = NULL;
     }
@@ -184,6 +190,19 @@ static void rdbKeySaveDataInitCommon(rdbKeySaveData *save,
     save->iter = NULL;
 }
 
+static int rdbKeySaveDataInitHot(rdbKeySaveData *save, redisDb *db, robj *key, robj *value) {
+    
+    objectMeta *object_meta = lookupMeta(db,key);
+    serverAssert(object_meta->swap_type == SWAP_TYPE_BITMAP);
+
+    long long expire = getExpire(db,key);
+
+    rdbKeySaveDataInitCommon(save,key,value,expire,object_meta);
+
+    serverAssert(bitmapSaveInit(save,SWAP_VERSION_ZERO,NULL,0) == 0);
+    return INIT_SAVE_OK;
+}
+
 static int rdbKeySaveDataInitWarm(rdbKeySaveData *save, redisDb *db,
         MOVE robj *key, robj *value) {
     int retval = INIT_SAVE_OK;
@@ -194,21 +213,24 @@ static int rdbKeySaveDataInitWarm(rdbKeySaveData *save, redisDb *db,
 
     rdbKeySaveDataInitCommon(save,key,value,expire,object_meta);
 
-    switch (value->type) {
-    case OBJ_STRING:
+    switch (object_meta->swap_type) {
+    case SWAP_TYPE_STRING:
         wholeKeySaveInit(save);
         break;
-    case OBJ_HASH:
+    case SWAP_TYPE_HASH:
         hashSaveInit(save,SWAP_VERSION_ZERO,NULL,0);
         break;
-    case OBJ_SET:
+    case SWAP_TYPE_SET:
         setSaveInit(save,SWAP_VERSION_ZERO,NULL,0);
         break;
-    case OBJ_LIST:
+    case SWAP_TYPE_LIST:
         listSaveInit(save,SWAP_VERSION_ZERO,NULL,0);
         break;
-    case OBJ_ZSET:
+    case SWAP_TYPE_ZSET:
         zsetSaveInit(save,SWAP_VERSION_ZERO,NULL,0);
+        break;
+    case SWAP_TYPE_BITMAP:
+        bitmapSaveInit(save,SWAP_VERSION_ZERO,NULL,0);
         break;
     default:
         retval = INIT_SAVE_ERR;
@@ -225,26 +247,30 @@ static int rdbKeySaveDataInitCold(rdbKeySaveData *save, redisDb *db,
 
     rdbKeySaveDataInitCommon(save,key,NULL,dm->expire,NULL);
 
-    switch (dm->object_type) {
-    case OBJ_STRING:
+    switch (dm->swap_type) {
+    case SWAP_TYPE_STRING:
         serverAssert(dm->extend == NULL);
         wholeKeySaveInit(save);
         break;
-    case OBJ_HASH:
+    case SWAP_TYPE_HASH:
         serverAssert(dm->extend != NULL);
         retval = hashSaveInit(save,dm->version,dm->extend,sdslen(dm->extend));
         break;
-    case OBJ_SET:
+    case SWAP_TYPE_SET:
         serverAssert(dm->extend != NULL);
         retval = setSaveInit(save,dm->version,dm->extend,sdslen(dm->extend));
         break;
-    case OBJ_LIST:
+    case SWAP_TYPE_LIST:
         serverAssert(dm->extend != NULL);
         retval = listSaveInit(save,dm->version,dm->extend,sdslen(dm->extend));
         break;
-    case OBJ_ZSET:
+    case SWAP_TYPE_ZSET:
         serverAssert(dm->extend != NULL);
         retval = zsetSaveInit(save,dm->version,dm->extend,sdslen(dm->extend));
+        break;
+    case SWAP_TYPE_BITMAP:
+        serverAssert(dm->extend != NULL);
+        retval = bitmapSaveInit(save,dm->version,dm->extend,sdslen(dm->extend));
         break;
     default:
         retval = INIT_SAVE_ERR;
@@ -254,7 +280,20 @@ static int rdbKeySaveDataInitCold(rdbKeySaveData *save, redisDb *db,
     return retval;
 }
 
-int rdbKeySaveDataInit(rdbKeySaveData *save, redisDb *db, decodedResult *dr) {
+int rdbKeySaveHotExtensionInit(rdbKeySaveData *save, redisDb *db, sds keystr) {
+
+    robj *value, *key;
+    key = createStringObject(keystr, sdslen(keystr));
+    value = lookupKey(db,key,LOOKUP_NOTOUCH);
+
+    objectMeta *object_meta = lookupMeta(db,key);
+
+    serverAssert(keyIsHot(object_meta,value));
+
+    return rdbKeySaveDataInitHot(save,db,key,value);
+}
+
+int rdbKeySaveWarmColdInit(rdbKeySaveData *save, redisDb *db, decodedResult *dr) {
     robj *value, *key;
     objectMeta *object_meta;
     serverAssert(db->id == dr->dbid);
@@ -264,7 +303,7 @@ int rdbKeySaveDataInit(rdbKeySaveData *save, redisDb *db, decodedResult *dr) {
          * subkey, so rocksIter always start init with meta key, except for
          * orphan (sub)data key. */
 #ifdef ROCKS_DEBUG
-        serverLog(LL_WARNING,"rdbKeySaveDataInit: key(%s) not meta, skipped",dr->key);
+        serverLog(LL_WARNING,"rdbKeySaveWarmColdInit: key(%s) not meta, skipped",dr->key);
 #endif
         return INIT_SAVE_SKIP;
     }
@@ -275,7 +314,7 @@ int rdbKeySaveDataInit(rdbKeySaveData *save, redisDb *db, decodedResult *dr) {
 
     if (keyIsHot(object_meta,value)) { /* hot */
 #ifdef ROCKS_DEBUG
-        serverLog(LL_WARNING,"rdbKeySaveDataInit: key(%s) is hot, skipped",dr->key);
+        serverLog(LL_WARNING,"rdbKeySaveWarmColdInit: key(%s) is hot, skipped",dr->key);
 #endif
         decrRefCount(key);
         return INIT_SAVE_SKIP;
@@ -287,7 +326,53 @@ int rdbKeySaveDataInit(rdbKeySaveData *save, redisDb *db, decodedResult *dr) {
     }
 }
 
-/* Bighash/set/zset... fields are located adjacent, and will be iterated
+int rdbSaveHotExtension(rio *rdb, int *error, redisDb *db, list *hot_keys_extension, int rdbflags)
+{
+    long long save_ok = 0;
+    sds errstr = NULL;
+
+    listIter li;
+    listNode *ln;
+    listRewind(hot_keys_extension, &li);
+    while ((ln = listNext(&li))) {
+        rdbKeySaveData _save, *save = &_save;
+
+        sds keystr = listNodeValue(ln);
+
+        int init_result = rdbKeySaveHotExtensionInit(save,db,keystr);
+        serverAssert(init_result == INIT_SAVE_OK);
+
+        int save_res = rdbKeySaveHotExtension(save,rdb);
+        if (save_res == -1) {
+            errstr = sdscatfmt(sdsempty(),"Save key(%S) failed: %s",
+                    keystr, strerror(errno));
+            rdbKeySaveDataDeinit(save);
+            goto err; /* IO error. */
+        }
+
+        if (server.swap_debug_rdb_key_save_delay_micro)
+            debugDelay(server.swap_debug_rdb_key_save_delay_micro);
+        
+        save_ok++;
+
+        rdbKeySaveDataDeinit(save);
+        rdbSaveProgress(rdb,rdbflags);
+    }
+
+    serverLog(LL_NOTICE,
+            "Save hot key extension to rdb finished: save.ok=%lld",save_ok);
+    return C_OK;
+
+err:
+    if (error && *error == 0) *error = errno;
+    serverLog(LL_WARNING, "Save hot key extension to rdb failed: %s", errstr);
+
+    if (errstr) sdsfree(errstr);
+    return C_ERR;
+}
+
+/* warm or cold key, which are saved here.
+ * Bighash/set/zset... fields are located adjacent, and will be iterated
  * next to each.
  * Note that only IO error aborts rdbSaveRocks, keys with decode/init_save
  * errors are skipped. */
@@ -327,7 +412,7 @@ int rdbSaveRocks(rio *rdb, int *error, redisDb *db, int rdbflags) {
             serverAssert(cur->key != NULL);
         }
 
-        init_result = rdbKeySaveDataInit(save,db,cur);
+        init_result = rdbKeySaveWarmColdInit(save,db,cur);
         if (init_result == INIT_SAVE_SKIP) {
             stats->init_save_skip++;
             decodedResultDeinit(cur);
@@ -353,7 +438,7 @@ int rdbSaveRocks(rio *rdb, int *error, redisDb *db, int rdbflags) {
         }
 
         /* There may be no rocks-meta for warm/hot hash(set/zset...), in
-         * which case cur is decodedData. note that rdbKeySaveDataInit only
+         * which case cur is decodedData. note that rdbKeySaveWarmColdInit only
          * consumes decodedMeta. */
         if (cur->cf == DATA_CF) {
             if ((save_result = rdbKeySave(save,rdb,(decodedData*)cur)) == -1) {
@@ -668,7 +753,7 @@ void rdbLoadStartLenMeta(struct rdbKeyLoadData *load, rio *rdb, int *cf,
 
     *cf = META_CF;
     *rawkey = rocksEncodeMetaKey(load->db,load->key);
-    *rawval = rocksEncodeMetaVal(load->object_type,load->expire,load->version,extend);
+    *rawval = rocksEncodeMetaVal(load->swap_type,load->expire,load->version,extend);
     *error = 0;
 
     sdsfree(extend);
@@ -835,6 +920,7 @@ int rdbKeyLoadDataInit(rdbKeyLoadData *load, int rdbtype,
     load->value = NULL;
     load->iter = NULL;
     load->version = swapGetAndIncrVersion();
+    load->load_info = NULL;
 
     switch(rdbtype) {
     case RDB_TYPE_STRING:
@@ -858,6 +944,9 @@ int rdbKeyLoadDataInit(rdbKeyLoadData *load, int rdbtype,
     case RDB_TYPE_ZSET_2:
     case RDB_TYPE_ZSET_ZIPLIST:
         zsetLoadInit(load);
+        break;
+    case RDB_TYPE_BITMAP:
+        bitmapLoadInit(load);
         break;
     default:
         retval = SWAP_ERR_RDB_LOAD_UNSUPPORTED;
@@ -961,7 +1050,7 @@ int swapRdbTest(int argc, char *argv[], int accurate) {
         retval = ctripRdbLoadObject(rdbtype,&sdsrdb,db,mystring_key,-1,NOW,load);
         test_assert(!retval);
         test_assert(load->rdbtype == RDB_TYPE_STRING);
-        test_assert(load->object_type == OBJ_STRING);
+        test_assert(load->swap_type == SWAP_TYPE_STRING);
         test_assert(load->nfeeds == 2);
     }
 
@@ -977,7 +1066,7 @@ int swapRdbTest(int argc, char *argv[], int accurate) {
         retval = ctripRdbLoadObject(rdbtype,&sdsrdb,db,myhash_key,-1,NOW,load);
         test_assert(!retval);
         test_assert(load->rdbtype == RDB_TYPE_HASH);
-        test_assert(load->object_type == OBJ_HASH);
+        test_assert(load->swap_type == SWAP_TYPE_HASH);
         test_assert(load->nfeeds == 4);
     }
 

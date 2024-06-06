@@ -620,7 +620,7 @@ int zsetDecodeScoreData(swapData *data, int num, sds *rawkeys,
 /* decoded object move to exec module */
 int zsetDecodeData(swapData *data, int num, int *cfs, sds *rawkeys,
         sds *rawvals, void **pdecoded_) {
-   robj **pdecoded = (robj**)pdecoded_;
+    robj **pdecoded = (robj**)pdecoded_;
 
     serverAssert(num >= 0);
     if (num == 0) {
@@ -1078,6 +1078,7 @@ int zsetSaveEnd(rdbKeySaveData *save, rio *rdb, int save_result) {
 
 rdbKeySaveType zsetSaveType = {
     .save_start = zsetSaveStart,
+    .save_hot_ext = NULL,
     .save = zsetSave,
     .save_end = zsetSaveEnd,
     .save_deinit = NULL,
@@ -1198,7 +1199,7 @@ void zsetLoadStartZip(struct rdbKeyLoadData *load, rio *rdb, int *cf,
     extend = rocksEncodeObjectMetaLen(load->total_fields);
     *cf = META_CF;
     *rawkey = rocksEncodeMetaKey(load->db,load->key);
-    *rawval = rocksEncodeMetaVal(load->object_type,load->expire,
+    *rawval = rocksEncodeMetaVal(load->swap_type,load->expire,
             load->version,extend);
     sdsfree(extend);
 }
@@ -1231,7 +1232,7 @@ void zsetLoadStartHT(struct rdbKeyLoadData *load, rio *rdb, int *cf,
 
     *cf = META_CF;
     *rawkey = rocksEncodeMetaKey(load->db,load->key);
-    *rawval = rocksEncodeMetaVal(load->object_type,load->expire,
+    *rawval = rocksEncodeMetaVal(load->swap_type,load->expire,
             load->version,extend);
     *error = 0;
 
@@ -1374,7 +1375,7 @@ rdbKeyLoadType zsetLoadType = {
 void zsetLoadInit(rdbKeyLoadData *load) {
     load->type = &zsetLoadType;
     load->omtype = &zsetObjectMetaType;
-    load->object_type = OBJ_ZSET;
+    load->swap_type = SWAP_TYPE_ZSET;
 }
 
 
@@ -1734,7 +1735,7 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
 
         rocksDecodeMetaVal(subraw, sdslen(subraw), &t, &e, &v, &extend, &extlen);
         buildObjectMeta(t,v,extend,extlen,&cold_meta);
-        test_assert(cold_meta->object_type == OBJ_ZSET && cold_meta->len == 4 && e == -1);
+        test_assert(cold_meta->swap_type == SWAP_TYPE_ZSET && cold_meta->len == 4 && e == -1);
 
         cont = zsetLoad(loadData,&sdsrdb,&cf,&subkey,&subraw,&err);
         test_assert(cont == 1 && err == 0 && cf == DATA_CF);
@@ -1752,7 +1753,7 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
         test_assert(cont == 1 && err == 0 && cf == DATA_CF);
         cont = zsetLoad(loadData,&sdsrdb,&cf,&subkey,&subraw,&err);
         test_assert(cont == 0 && err == 0 && cf == SCORE_CF);
-        test_assert(loadData->object_type == OBJ_ZSET);
+        test_assert(loadData->swap_type == SWAP_TYPE_ZSET);
         test_assert(loadData->total_fields == 4 && loadData->loaded_fields == 4);
         zsetLoadDeinit(loadData);
 
@@ -1772,7 +1773,7 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
 
         rocksDecodeMetaVal(subraw, sdslen(subraw), &t, &e, &v, &extend, &extlen);
         buildObjectMeta(t,v,extend,extlen,&cold_meta);
-        test_assert(cold_meta->object_type == OBJ_ZSET && cold_meta->len == 4 && e == -1);
+        test_assert(cold_meta->swap_type == SWAP_TYPE_ZSET && cold_meta->len == 4 && e == -1);
 
         cont = zsetLoad(loadData,&sdsrdb,&cf,&subkey,&subraw,&err);
         test_assert(cont == 1 && err == 0 && cf == DATA_CF);
@@ -1790,7 +1791,7 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
         test_assert(cont == 1 && err == 0 && cf == DATA_CF);
         cont = zsetLoad(loadData,&sdsrdb,&cf,&subkey,&subraw,&err);
         test_assert(cont == 0 && err == 0 && cf == SCORE_CF);
-        test_assert(loadData->object_type == OBJ_ZSET);
+        test_assert(loadData->swap_type == SWAP_TYPE_ZSET);
         test_assert(loadData->total_fields == 4 && loadData->loaded_fields == 4);
         zsetLoadDeinit(loadData);
 
@@ -1804,14 +1805,14 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
         decoded_meta->dbid = decoded_data->dbid = db->id;
         decoded_meta->key = decoded_data->key = key1->ptr;
         decoded_meta->cf = META_CF, decoded_data->cf = DATA_CF;
-        decoded_meta->object_type = OBJ_ZSET, decoded_meta->expire = -1;
+        decoded_meta->swap_type = SWAP_TYPE_ZSET, decoded_meta->expire = -1;
         decoded_data->rdbtype = 0;
 
         /* rdbSave - save cold */
         dbDelete(db, key1);
         decoded_meta->extend = rocksEncodeObjectMetaLen(2);
         rioInitWithBuffer(&rdbcold,sdsempty());
-        test_assert(rdbKeySaveDataInit(saveData, db, (decodedResult*)decoded_meta) == 0);
+        test_assert(rdbKeySaveWarmColdInit(saveData, db, (decodedResult*)decoded_meta) == 0);
         test_assert(saveData->object_meta != NULL);
 
         test_assert(zsetSaveStart(saveData, &rdbcold) == 0);
@@ -1829,7 +1830,7 @@ int swapDataZsetTest(int argc, char **argv, int accurate) {
         zsetAdd(value,2.0,f2,ZADD_IN_NONE,&out_flags,NULL);
         dbAdd(db, key1, value);
         dbAddMeta(db, key1, createZsetObjectMeta(0,1));
-        test_assert(rdbKeySaveDataInit(saveData, db, (decodedResult*)decoded_meta) == 0);
+        test_assert(rdbKeySaveWarmColdInit(saveData, db, (decodedResult*)decoded_meta) == 0);
         test_assert(rdbKeySaveStart(saveData,&rdbwarm) == 0);
         decoded_data->version = saveData->object_meta->version;
         test_assert(rdbKeySave(saveData,&rdbwarm,decoded_data) == 0);

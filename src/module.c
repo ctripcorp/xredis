@@ -2358,7 +2358,8 @@ int RM_KeyType(RedisModuleKey *key) {
     /* We map between defines so that we are free to change the internal
      * defines as desired. */
     switch(key->value->type) {
-    case OBJ_STRING: return REDISMODULE_KEYTYPE_STRING;
+    case OBJ_STRING:
+        return REDISMODULE_KEYTYPE_STRING;
     case OBJ_LIST: return REDISMODULE_KEYTYPE_LIST;
     case OBJ_SET: return REDISMODULE_KEYTYPE_SET;
     case OBJ_ZSET: return REDISMODULE_KEYTYPE_ZSET;

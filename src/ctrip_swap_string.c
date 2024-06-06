@@ -269,6 +269,17 @@ void *wholeKeyCreateOrMergeObject(swapData *data, void *decoded, void *datactx) 
     return decoded;
 }
 
+int wholeKeyBeforeCall(swapData *data, keyRequest *key_request,
+        client *c, void *datactx)  {
+    UNUSED(data), UNUSED(c), UNUSED(datactx);
+    /* Setup bitmap marker if bitmap command touching string */
+    if (key_request->cmd_flags & CMD_SWAP_DATATYPE_BITMAP) {
+        bitmapSetObjectMarkerIfNeeded(data->db,data->key);
+        atomicIncr(server.swap_string_switched_to_bitmap_count, 1);
+    }
+    return 0;
+}
+
 swapDataType wholeKeySwapDataType = {
     .name = "wholekey",
     .cmd_swap_flags = CMD_SWAP_DATATYPE_STRING,
@@ -283,7 +294,7 @@ swapDataType wholeKeySwapDataType = {
     .swapDel = wholeKeySwapDel,
     .createOrMergeObject = wholeKeyCreateOrMergeObject,
     .cleanObject = NULL,
-    .beforeCall = NULL,
+    .beforeCall = wholeKeyBeforeCall,
     .free = NULL,
     .rocksDel = NULL,
     .mergedIsHot = wholeKeyMergedIsHot,
@@ -293,7 +304,7 @@ int swapDataSetupWholeKey(swapData *d, OUT void **pdatactx) {
     d->type = &wholeKeySwapDataType;
     d->omtype = &wholekeyObjectMetaType;
     /* for string type, store ctx_flag in struct swapData's `void *extends[2];` */
-    long *datactx = d->extends;
+    long *datactx = (long*)d->extends;
     *datactx = BIG_DATA_CTX_FLAG_NONE;
     *pdatactx = d->extends;
     return 0;
@@ -323,6 +334,7 @@ int wholekeySave(rdbKeySaveData *keydata, rio *rdb, decodedData *decoded) {
 
 rdbKeySaveType wholekeyRdbSaveType = {
     .save_start = NULL,
+    .save_hot_ext = NULL,
     .save = wholekeySave,
     .save_end = NULL,
     .save_deinit = NULL,
@@ -339,7 +351,7 @@ void wholekeyLoadStart(struct rdbKeyLoadData *keydata, rio *rdb, int *cf,
     UNUSED(rdb);
     *cf = META_CF;
     *rawkey = rocksEncodeMetaKey(keydata->db,keydata->key);
-    *rawval = rocksEncodeMetaVal(keydata->object_type,keydata->expire,SWAP_VERSION_ZERO,NULL);
+    *rawval = rocksEncodeMetaVal(keydata->swap_type,keydata->expire,SWAP_VERSION_ZERO,NULL);
     *error = 0;
 }
 
@@ -374,7 +386,7 @@ rdbKeyLoadType wholekeyLoadType = {
 void wholeKeyLoadInit(rdbKeyLoadData *keydata) {
     keydata->type = &wholekeyLoadType;
     keydata->omtype = &wholekeyObjectMetaType;
-    keydata->object_type = OBJ_STRING;
+    keydata->swap_type = SWAP_TYPE_STRING;
 }
 
 
@@ -700,7 +712,7 @@ int swapDataWholeKeyTest(int argc, char **argv, int accurate) {
         test_assert(!memcmp(dd->rdbraw,data_rawval+1,sdslen(dd->rdbraw)));
 
         rioInitWithBuffer(&sdsrdb, sdsempty());
-        test_assert(!rdbKeySaveDataInit(savedata,db,(decodedResult*)dm));
+        test_assert(!rdbKeySaveWarmColdInit(savedata,db,(decodedResult*)dm));
         test_assert(!wholekeySave(savedata,&sdsrdb,dd));
 
         rioInitWithBuffer(&sdsrdb,sdsrdb.io.buffer.ptr);

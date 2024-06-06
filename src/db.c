@@ -237,7 +237,7 @@ void dbOverwrite(redisDb *db, robj *key, robj *val) {
     if (server.swap_mode != SWAP_MODE_MEMORY) {
         /* new val inherit flag_persistent from old val,
          * since rocksdb persist data for the same key */
-        val->persistent = old->persistent;
+        val->persistent = old->persistent; // todo, dirty_meta,  dirty_data ... ...
     }
     /* Although the key is not really deleted from the database, we regard 
     overwrite as two steps of unlink+add, so we still need to call the unlink 
@@ -1090,7 +1090,7 @@ void scanGenericCommand(client *c, robj *o, unsigned long cursor) {
         if (!filter && o == NULL && typename){
             char* type;
             if (metascan) {
-                type = (char*)strObjectType(curmeta->object_type);
+                type = (char*)strObjectType(curmeta->swap_type);
             } else {
                 robj* typecheck = lookupKeyReadWithFlags(c->db, kobj, LOOKUP_NOTOUCH);
                 type = getObjectTypeName(typecheck);
@@ -1412,7 +1412,9 @@ void copyCommand(client *c) {
     /* Duplicate object according to object's type. */
     robj *newobj;
     switch(o->type) {
-        case OBJ_STRING: newobj = dupStringObject(o); break;
+        case OBJ_STRING:
+            newobj = dupStringObject(o);
+            break;
         case OBJ_LIST: newobj = listTypeDup(o); break;
         case OBJ_SET: newobj = setTypeDup(o); break;
         case OBJ_ZSET: newobj = zsetDup(o); break;

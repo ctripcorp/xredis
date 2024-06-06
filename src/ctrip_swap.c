@@ -265,7 +265,7 @@ void keyRequestBeforeCall(client *c, swapCtx *ctx) {
     void *datactx = ctx->datactx;
     if (data == NULL) return;
     if (!swapDataAlreadySetup(data)) return;
-    swapDataBeforeCall(data,c,datactx);
+    swapDataBeforeCall(data,ctx->key_request,c,datactx);
 }
 
 void normalClientKeyRequestFinished(client *c, swapCtx *ctx) {
@@ -321,10 +321,9 @@ int keyExpiredAndShouldDelete(redisDb *db, robj *key) {
 #define NOSWAP_REASON_ALREAY_SWAPPED_OUT 7
 #define NOSWAP_REASON_UNEXPECTED 100
 
-void cuckooFilterDump(cuckooFilter *filter);
 void keyRequestProceed(void *lock, int flush, redisDb *db, robj *key,
         client *c, void *pd) {
-    int reason_num = 0, retval = 0, swap_intention, errcode;
+    int reason_num = 0, retval = 0, swap_intention, errcode, swap_type;
     void *datactx = NULL;
     swapData *data = NULL;
     swapCtx *ctx = pd;
@@ -410,7 +409,16 @@ void keyRequestProceed(void *lock, int flush, redisDb *db, robj *key,
 
     expire = getExpire(db,key);
 
-    retval = swapDataSetupMeta(data,value->type,expire,&datactx);
+    object_meta = lookupMeta(db,key);
+    swap_type = swapDataAnaSwapType(value,object_meta);
+    if (swap_type < 0) {
+        reason = "data not support swap";
+        reason_num = NOSWAP_REASON_KEYNOTSUPPORT;
+        ctx->errcode = SWAP_ERR_SETUP_UNEXPECTED_SWAP_TYPE;
+        goto noswap;
+    }
+
+    retval = swapDataSetupMeta(data,swap_type,expire,&datactx);
     swapCtxSetSwapData(ctx,data,datactx);
     if (retval) {
         if (retval == SWAP_ERR_SETUP_UNSUPPORTED) {
@@ -424,7 +432,6 @@ void keyRequestProceed(void *lock, int flush, redisDb *db, robj *key,
         goto noswap;
     }
 
-    object_meta = lookupMeta(db,key);
     swapDataSetObjectMeta(data,object_meta);
 
 allset:
@@ -455,6 +462,7 @@ allset:
 
     req = swapDataRequestNew(swap_intention,swap_intention_flags,ctx,data,
             datactx,ctx->key_request->trace,keyRequestSwapFinished,ctx,msgs);
+
     swapBatchCtxFeed(server.swap_batch_ctx,flush,req,thread_idx);
 
     return;
@@ -774,8 +782,9 @@ int swapTest(int argc, char **argv, int accurate) {
   result += swapBatchTest(argc, argv, accurate);
   result += cuckooFilterTest(argc, argv, accurate);
   result += swapPersistTest(argc, argv, accurate);
+  result += roaringBitmapTest(argc, argv, accurate);
   result += swapRordbTest(argc, argv, accurate);
-
+  result += swapDataBitmapTest(argc, argv, accurate);
   return result;
 }
 #endif

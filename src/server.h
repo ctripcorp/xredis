@@ -228,6 +228,7 @@ extern int configOOMScoreAdjValuesDefaults[CONFIG_OOM_COUNT];
 #define CMD_SWAP_DATATYPE_SET (1ULL<<43)
 #define CMD_SWAP_DATATYPE_ZSET (1ULL<<44)
 #define CMD_SWAP_DATATYPE_LIST (1ULL<<45)
+#define CMD_SWAP_DATATYPE_BITMAP (1ULL<<46)
 
 
 /* AOF states */
@@ -1815,6 +1816,10 @@ struct redisServer {
     list *swap_torewind_clients;
     list *swap_rewinding_clients;
     uint64_t swap_key_version;
+    size_t swap_bitmap_subkey_size;
+    redisAtomic unsigned long long swap_bitmap_switched_to_string_count;
+    redisAtomic unsigned long long swap_string_switched_to_bitmap_count;
+    int swap_rdb_bitmap_encode_enabled;
 
     /* swap eviction */
     int swap_evict_inprogress_limit;
