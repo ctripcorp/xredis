@@ -1368,6 +1368,7 @@ int testAssertDecode(roaringBitmap* rbm, int* _error) {
     rbmDestory(decoded);
     roaring_free(encoded);
     *_error = error;
+    return 0;
 }
 
 int roaringBitmapTest(int argc, char *argv[], int accurate) {
@@ -2737,7 +2738,6 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
 
         TEST("roaring bitmap: serialize and deserialize") {
             roaringBitmap* rbm = rbmCreate();
-            uint32_t bitNum = 0;
             size_t len = 0;
             char* encoded = NULL;
             roaringBitmap* decoded = NULL;

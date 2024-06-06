@@ -712,7 +712,7 @@ start_server {
         wait_key_warm r mybitmap1
         assert [object_is_dirty r mybitmap1]
         assert_equal [object_meta_pure_cold_subkeys_num r mybitmap1] 6
-        # dirty bighash all evict
+        # dirty bitmap all evict
         after 100
         r swap.evict mybitmap1
         wait_key_cold r mybitmap1
@@ -722,12 +722,12 @@ start_server {
         assert_equal {2} [r bitcount mybitmap1 0 9216]
         assert ![object_is_dirty r mybitmap1]
         assert_equal [object_meta_pure_cold_subkeys_num r mybitmap1] 8
-        # clean bighash all swapin remains clean
+        # clean bitmap all swapin remains clean
         assert_equal {11} [r bitcount mybitmap1]
         assert ![object_is_dirty r mybitmap1]
         # all-swapin meta remains
         assert_equal [object_meta_pure_cold_subkeys_num r mybitmap1] 0
-        # clean bighash swapout does not triggers swap
+        # clean bitmap swapout does not triggers swap
         set orig_swap_out_count [get_info_property r Swap swap_OUT count]
         after 100
         r swap.evict mybitmap1

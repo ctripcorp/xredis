@@ -2204,16 +2204,31 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         bitmapMeta *bm5 = bitmapMetaDecode(bm_buf4, sdslen(bm_buf4));
         test_assert(1 == bitmapMetaEqual(bm4, bm5));
 
+        bitmapMeta *bm6 = bitmapMetaCreate();
+        bm6->size = BITMAP_SUBKEY_SIZE * (4096 * 2 + 100);
+        bm6->pure_cold_subkeys_num = 4696;
+        bitmapMetaSetSubkeyStatus(bm6, 0, 4095, BITMAP_SUBKEY_STATUS_HOT);
+        bitmapMetaSetSubkeyStatus(bm6, 4096, 4096 + 499, BITMAP_SUBKEY_STATUS_HOT);
+        bitmapMetaSetSubkeyStatus(bm6, 4096 * 2, 4096 * 2 + 99, BITMAP_SUBKEY_STATUS_HOT);
+
+        sds bm_buf6 = bitmapMetaEncode(bm6, RORDB_MODE);
+
+        bitmapMeta *bm7 = bitmapMetaDecode(bm_buf6, sdslen(bm_buf6));
+        test_assert(1 == bitmapMetaEqual(bm6, bm7));
+
         sdsfree(bm_buf1);
         sdsfree(bm_buf2);
         sdsfree(bm_buf3);
         sdsfree(bm_buf4);
+        sdsfree(bm_buf6);
 
         bitmapMetaFree(bm1);
         bitmapMetaFree(bm2);
         bitmapMetaFree(bm3);
         bitmapMetaFree(bm4);
         bitmapMetaFree(bm5);
+        bitmapMetaFree(bm6);
+        bitmapMetaFree(bm7);
     }
 
     TEST("bitmap - meta api test rebuildFeed metaBitmapGrow marker") {
@@ -2720,7 +2735,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(action == ROCKS_PUT);
 
         bitmapEncodeData(warm_data1,intention,warm_ctx1,&numkeys,&cfs,&rawkeys,&rawvals);
-        test_assert(numkeys == warm_ctx1->subkeys_num);
+        test_assert((unsigned int)numkeys == warm_ctx1->subkeys_num);
 
         bitmapDecodeData(warm_data1,numkeys,cfs,rawkeys,rawvals,&decoded);
 
