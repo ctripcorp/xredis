@@ -2896,6 +2896,7 @@ standardConfig configs[] = {
     createBoolConfig("swap-dirty-subkeys-enabled", NULL, MODIFIABLE_CONFIG, server.swap_dirty_subkeys_enabled, 0, NULL, NULL),
     createBoolConfig("swap-persist-enabled", NULL, IMMUTABLE_CONFIG, server.swap_persist_enabled, 0, NULL, NULL),
     createBoolConfig("swap-repl-rordb-sync", NULL, MODIFIABLE_CONFIG, server.swap_repl_rordb_sync, 1, NULL, NULL),
+    createBoolConfig("swap-rdb-bitmap-encode-enabled", NULL, MODIFIABLE_CONFIG, server.swap_rdb_bitmap_encode_enabled, 1, NULL, NULL),
     createBoolConfig("rocksdb.data.cache_index_and_filter_blocks", "rocksdb.cache_index_and_filter_blocks", IMMUTABLE_CONFIG, server.rocksdb_data_cache_index_and_filter_blocks, 0, NULL, NULL),
     createBoolConfig("rocksdb.meta.cache_index_and_filter_blocks", NULL, IMMUTABLE_CONFIG, server.rocksdb_meta_cache_index_and_filter_blocks, 0, NULL, NULL),
     createBoolConfig("rocksdb.enable_pipelined_write", NULL, IMMUTABLE_CONFIG, server.rocksdb_enable_pipelined_write, 0, NULL, NULL),
@@ -3095,6 +3096,7 @@ standardConfig configs[] = {
     createSizeTConfig("hll-sparse-max-bytes", NULL, MODIFIABLE_CONFIG, 0, LONG_MAX, server.hll_sparse_max_bytes, 3000, MEMORY_CONFIG, NULL, NULL),
     createSizeTConfig("tracking-table-max-keys", NULL, MODIFIABLE_CONFIG, 0, LONG_MAX, server.tracking_table_max_keys, 1000000, INTEGER_CONFIG, NULL, NULL), /* Default: 1 million keys max. */
     createSizeTConfig("client-query-buffer-limit", NULL, MODIFIABLE_CONFIG, 1024*1024, LONG_MAX, server.client_max_querybuf_len, 1024*1024*1024, MEMORY_CONFIG, NULL, NULL), /* Default: 1GB max query buffer. */
+    createSizeTConfig("bitmap-subkey-size", NULL, MODIFIABLE_CONFIG, 256, 16*1024, server.swap_bitmap_subkey_size, 4*1024, MEMORY_CONFIG, NULL, NULL), /* Default: 4096 bytes. */
 
     /* Other configs */
     createTimeTConfig("repl-backlog-ttl", NULL, MODIFIABLE_CONFIG, 0, LONG_MAX, server.repl_backlog_time_limit, 60*60, INTEGER_CONFIG, NULL, NULL), /* Default: 1 hour */

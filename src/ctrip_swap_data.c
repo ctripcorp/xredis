@@ -33,7 +33,9 @@ swapData *createSwapData(redisDb *db, robj *key, robj *value, robj *dirty_subkey
     data->db = db;
     if (key) incrRefCount(key);
     data->key = key;
-    if (value) incrRefCount(value);
+    if (value) {
+        incrRefCount(value);
+    }
     data->value = value;
     if (dirty_subkeys) incrRefCount(dirty_subkeys);
     data->dirty_subkeys = dirty_subkeys;
@@ -79,7 +81,14 @@ int swapDataKeyRequestFinished(swapData *data) {
     }
 
     if (data->persistence_deleted) {
-        dbDeleteMeta(data->db, data->key);
+        if (data->swap_type != SWAP_TYPE_BITMAP) {
+            dbDeleteMeta(data->db, data->key);
+        } else {
+            /* bitmap need to keep marker. */
+            objectMeta *bitmap_meta = lookupMeta(data->db,data->key);
+            serverAssert(bitmap_meta != NULL);
+            bitmapMetaTransToMarkerIfNeeded(bitmap_meta);
+        }
     }
 
     if (data->set_persist_keep && !getObjectPersistKeep(data->value)) {
@@ -109,10 +118,26 @@ int swapDataAna(swapData *d, int thd, struct keyRequest *key_request,
     }
 
     if (d->type->swapAna) {
-        if (!(key_request->cmd_flags & CMD_SWAP_DATATYPE_KEYSPACE
-            || key_request->cmd_flags & d->type->cmd_swap_flags))  {
-            return SWAP_ERR_DATA_WRONG_TYPE_ERROR;
+        /* non-keyspace command, need to check if it's compatible */
+        if (!(key_request->cmd_flags & CMD_SWAP_DATATYPE_KEYSPACE)) {
+            int cmd_string_compatible =
+                (key_request->cmd_flags & CMD_SWAP_DATATYPE_STRING) ||
+                (key_request->cmd_flags & CMD_SWAP_DATATYPE_BITMAP);
+            int data_string_compatible =
+                (d->type->cmd_swap_flags & CMD_SWAP_DATATYPE_STRING) ||
+                (d->type->cmd_swap_flags & CMD_SWAP_DATATYPE_BITMAP);
+
+            if (key_request->cmd_flags & d->type->cmd_swap_flags)  {
+                /* cmd type equals swap type: proceed */
+            } else if (cmd_string_compatible && data_string_compatible) {
+                /* cmd type and swap type both string compatible: SWAP_IN_DEL */
+                serverAssert(key_request->cmd_intention == SWAP_IN);
+                key_request->cmd_intention_flags = SWAP_IN_DEL;
+            } else {
+                return SWAP_ERR_DATA_WRONG_TYPE_ERROR;
+            }
         }
+
         retval = d->type->swapAna(d,thd,key_request,intention,
                 intention_flags,datactx);
 
@@ -229,9 +254,10 @@ inline int swapDataCleanObject(swapData *d, void *datactx, int keep_data) {
         return 0;
 }
 
-inline int swapDataBeforeCall(swapData *d, client *c, void *datactx) {
+inline int swapDataBeforeCall(swapData *d, keyRequest *key_request,
+        client *c, void *datactx) {
     if (d->type->beforeCall)
-        return d->type->beforeCall(d,c,datactx);
+        return d->type->beforeCall(d,key_request,c,datactx);
     else
         return 0;
 }
@@ -308,7 +334,7 @@ sds swapDataEncodeMetaVal(swapData *d, void *datactx) {
         void *omaux = swapDataGetObjectMetaAux(d,datactx);
         extend = d->omtype->encodeObjectMeta(object_meta,omaux);
     }
-    encoded = rocksEncodeMetaVal(d->object_type,d->expire,version,extend);
+    encoded = rocksEncodeMetaVal(d->swap_type,d->expire,version,extend);
     sdsfree(extend);
     return encoded;
 }
@@ -317,13 +343,13 @@ sds swapDataEncodeMetaKey(swapData *d) {
     return rocksEncodeMetaKey(d->db,(sds)d->key->ptr);
 }
 
-int swapDataSetupMeta(swapData *d, int object_type, long long expire,
+int swapDataSetupMeta(swapData *d, int swap_type, long long expire,
         void **datactx) {
     int retval;
     serverAssert(d->type == NULL);
 
     d->expire = expire;
-    d->object_type = object_type;
+    d->swap_type = swap_type;
 
     if (!swapDataMarkedPropagateExpire(d) &&
             swapDataExpiredAndShouldDelete(d)) {
@@ -332,24 +358,27 @@ int swapDataSetupMeta(swapData *d, int object_type, long long expire,
 
     if (datactx) *datactx = NULL;
 
-    switch (d->object_type) {
-    case OBJ_STRING:
+    switch (d->swap_type) {
+    case SWAP_TYPE_STRING:
         retval = swapDataSetupWholeKey(d,datactx);
         break;
-    case OBJ_HASH:
+    case SWAP_TYPE_HASH:
         retval = swapDataSetupHash(d,datactx);
         break;
-    case OBJ_SET:
+    case SWAP_TYPE_SET:
         retval = swapDataSetupSet(d,datactx);
         break;
-    case OBJ_ZSET:
+    case SWAP_TYPE_ZSET:
         retval = swapDataSetupZSet(d, datactx);
         break;
-    case OBJ_LIST:
+    case SWAP_TYPE_LIST:
         retval = swapDataSetupList(d, datactx);
         break;
-    case OBJ_STREAM:
+    case SWAP_TYPE_STREAM:
         retval = SWAP_ERR_SETUP_UNSUPPORTED;
+        break;
+    case SWAP_TYPE_BITMAP:
+        retval = swapDataSetupBitmap(d, datactx);
         break;
     default:
         retval = SWAP_ERR_SETUP_FAIL;
@@ -361,19 +390,19 @@ int swapDataSetupMeta(swapData *d, int object_type, long long expire,
 int swapDataDecodeAndSetupMeta(swapData *d, sds rawval, void **datactx) {
     const char *extend;
     size_t extend_len;
-    int retval = 0, object_type;
+    int retval = 0, swap_type;
     long long expire;
     uint64_t version;
     objectMeta *object_meta = NULL;
 
-    retval = rocksDecodeMetaVal(rawval,sdslen(rawval),&object_type,&expire,
+    retval = rocksDecodeMetaVal(rawval,sdslen(rawval),&swap_type,&expire,
             &version,&extend,&extend_len);
     if (retval) return retval;
 
-    retval = swapDataSetupMeta(d,object_type,expire,datactx);
+    retval = swapDataSetupMeta(d,swap_type,expire,datactx);
     if (retval) return retval;
 
-    retval = buildObjectMeta(object_type,version,extend,extend_len,&object_meta);
+    retval = buildObjectMeta(swap_type,version,extend,extend_len,&object_meta);
     if (retval) return SWAP_ERR_DATA_DECODE_META_FAILED;
 
     swapDataSetColdObjectMeta(d,object_meta/*moved*/);
@@ -414,6 +443,9 @@ void swapDataRetainAbsentSubkeys(swapData *data, int num, int *cfs,
 
     /* string dont have subkey */
     if (version <= 0) return;
+
+    /* bitmap subkey is exclued out of this operation. */
+    if (data->swap_type == SWAP_TYPE_STRING) return;
 
     for (int i = 0; i < num; i++) {
         int dbid;

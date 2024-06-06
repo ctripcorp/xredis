@@ -397,7 +397,7 @@ static void swapRequestInIntentionDelEncodeKeys(swapRequest *req, RIO *rio,
         meta_rawkey = swapDataEncodeMetaKey(req->data);
     }
 
-    if (!merged_is_hot || req->data->object_type == OBJ_STRING) {
+    if (!merged_is_hot || req->data->swap_type == SWAP_TYPE_STRING) {
         int *rio_cfs = NULL, rio_numkeys = 0;
         sds *rio_rawkeys = NULL, *rio_rawvals = NULL;
 

@@ -482,7 +482,7 @@ int rocksDecodeDataCF(sds rawkey, unsigned char rdbtype, sds rdbraw,
 }
 
 int rocksDecodeMetaCF(sds rawkey, sds rawval, decodedMeta *decoded) {
-    int dbid, retval, object_type;
+    int dbid, retval, swap_type;
     const char *key, *extend;
     size_t keylen, extlen;
     long long expire;
@@ -491,7 +491,7 @@ int rocksDecodeMetaCF(sds rawkey, sds rawval, decodedMeta *decoded) {
     retval = rocksDecodeMetaKey(rawkey,sdslen(rawkey),&dbid,&key,&keylen);
     if (retval) return retval;
 
-    retval = rocksDecodeMetaVal(rawval,sdslen(rawval),&object_type,&expire,
+    retval = rocksDecodeMetaVal(rawval,sdslen(rawval),&swap_type,&expire,
             &version,&extend,&extlen);
     if (retval) return retval;
 
@@ -499,7 +499,7 @@ int rocksDecodeMetaCF(sds rawkey, sds rawval, decodedMeta *decoded) {
     decoded->dbid = dbid;
     decoded->key = sdsnewlen(key,keylen);
     decoded->version = version;
-    decoded->object_type = object_type;
+    decoded->swap_type = swap_type;
     decoded->expire = expire;
     decoded->extend = extlen > 0 ? sdsnewlen(extend,extlen) : NULL;
 
@@ -553,7 +553,7 @@ int rocksIterDecode(rocksIter *it, decodedResult *decoded,
             decodedMeta *meta = (decodedMeta*)decoded;
             serverLog(LL_NOTICE,
                     "[rdb] decoded meta: key=%s, type=%d, expire=%lld, extend=%s",
-                    meta->key, meta->object_type, meta->expire, meta->extend);
+                    meta->key, meta->swap_type, meta->expire, meta->extend);
         } else {
             decodedData *data = (decodedData*)decoded;
             sds repr = sdscatrepr(sdsempty(),data->rdbraw,sdslen(data->rdbraw));
@@ -578,10 +578,10 @@ sds rocksIterDecodeStatsDump(rocksIterDecodeStats *stats) {
 
 #ifdef REDIS_TEST
 
-#define PUT_META(redisdb,object_type,key_,expire) do {      \
+#define PUT_META(redisdb,swap_type,key_,expire) do {      \
     char *err = NULL;                                       \
     sds keysds = rocksEncodeMetaKey(redisdb, key_);         \
-    sds valsds = rocksEncodeMetaVal(object_type,expire,0,NULL);\
+    sds valsds = rocksEncodeMetaVal(swap_type,expire,0,NULL);\
     rocksdb_put_cf(server.rocks->db,server.rocks->wopts,    \
             server.rocks->cf_handles[META_CF],              \
             keysds,sdslen(keysds),valsds,sdslen(valsds),&err);\

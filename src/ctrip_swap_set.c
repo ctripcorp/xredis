@@ -257,6 +257,7 @@ int setSwapAna(swapData *data, int thd, struct keyRequest *req,
                  * after persisting data to rocksdb. */
                 int may_keep_data;
                 int noswap = setSwapAnaOutSelectSubkeys(data,datactx,&may_keep_data);
+
                 int keep_data = swapDataPersistKeepData(data,cmd_intention_flags,may_keep_data);
 
                 /* create new meta if needed */
@@ -701,6 +702,7 @@ int setSaveEnd(rdbKeySaveData *save, rio *rdb, int save_result) {
 
 rdbKeySaveType setSaveType = {
     .save_start = setSaveStart,
+    .save_hot_ext = NULL,
     .save = setSave,
     .save_end = setSaveEnd,
     .save_deinit = NULL,
@@ -750,7 +752,7 @@ void setLoadStartIntset(struct rdbKeyLoadData *load, rio *rdb, int *cf,
     extend = rocksEncodeObjectMetaLen(load->total_fields);
     *cf = META_CF;
     *rawkey = rocksEncodeMetaKey(load->db,load->key);
-    *rawval = rocksEncodeMetaVal(load->object_type,load->expire,
+    *rawval = rocksEncodeMetaVal(load->swap_type,load->expire,
             load->version,extend);
     sdsfree(extend);
 }
@@ -843,7 +845,7 @@ rdbKeyLoadType setLoadType = {
 void setLoadInit(rdbKeyLoadData *load) {
     load->type = &setLoadType;
     load->omtype = &setObjectMetaType;
-    load->object_type = OBJ_SET;
+    load->swap_type = SWAP_TYPE_SET;
 }
 
 #ifdef REDIS_TEST
@@ -1199,7 +1201,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
 
         rocksDecodeMetaVal(subraw, sdslen(subraw), &t, &e, &v, &extend, &extlen);
         buildObjectMeta(t,v,extend,extlen,&cold_meta);
-        test_assert(cold_meta->object_type == OBJ_SET && cold_meta->len == 4 && e == -1);
+        test_assert(cold_meta->swap_type == SWAP_TYPE_SET && cold_meta->len == 4 && e == -1);
 
         cont = setLoad(loadData,&sdsrdb,&cf,&subkey,&subraw,&err);
         test_assert(cont == 1 && err == 0 && cf == DATA_CF);
@@ -1209,7 +1211,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         test_assert(cont == 1 && err == 0 && cf == DATA_CF);
         cont = setLoad(loadData,&sdsrdb,&cf,&subkey,&subraw,&err);
         test_assert(cont == 0 && err == 0 && cf == DATA_CF);
-        test_assert(loadData->object_type == OBJ_SET);
+        test_assert(loadData->swap_type == SWAP_TYPE_SET);
         test_assert(loadData->total_fields == 4 && loadData->loaded_fields == 4);
         setLoadDeinit(loadData);
 
@@ -1229,7 +1231,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
 
         rocksDecodeMetaVal(subraw, sdslen(subraw), &t, &e, &v, &extend, &extlen);
         buildObjectMeta(t,v,extend,extlen,&cold_meta);
-        test_assert(cold_meta->object_type == OBJ_SET && cold_meta->len == 4 && e == -1);
+        test_assert(cold_meta->swap_type == SWAP_TYPE_SET && cold_meta->len == 4 && e == -1);
 
         cont = setLoad(loadData,&sdsrdb,&cf,&subkey,&subraw,&err);
         test_assert(cont == 1 && err == 0 && cf == DATA_CF);
@@ -1239,7 +1241,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         test_assert(cont == 1 && err == 0 && cf == DATA_CF);
         cont = setLoad(loadData,&sdsrdb,&cf,&subkey,&subraw,&err);
         test_assert(cont == 0 && err == 0 && cf == DATA_CF);
-        test_assert(loadData->object_type == OBJ_SET);
+        test_assert(loadData->swap_type == SWAP_TYPE_SET);
         test_assert(loadData->total_fields == 4 && loadData->loaded_fields == 4);
         setLoadDeinit(loadData);
 
@@ -1254,14 +1256,14 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         decoded_meta->key = decoded_data->key = key1->ptr;
         decoded_meta->cf = META_CF, decoded_data->cf = DATA_CF;
         decoded_meta->version = 0, decoded_data->version = 0;
-        decoded_meta->object_type = OBJ_SET, decoded_meta->expire = -1;
+        decoded_meta->swap_type = SWAP_TYPE_SET, decoded_meta->expire = -1;
         decoded_data->rdbtype = 0;
 
         /* rdbSave - save cold */
         dbDelete(db, key1);
         decoded_meta->extend = rocksEncodeObjectMetaLen(2);
         rioInitWithBuffer(&rdbcold,sdsempty());
-        test_assert(rdbKeySaveDataInit(saveData, db, (decodedResult*)decoded_meta) == 0);
+        test_assert(rdbKeySaveWarmColdInit(saveData, db, (decodedResult*)decoded_meta) == 0);
 
         test_assert(setSaveStart(saveData, &rdbcold) == 0);
         decoded_data->subkey = f2, decoded_data->rdbraw = sdsnewlen(rdbv2+1,sdslen(rdbv2)-1);
@@ -1277,7 +1279,7 @@ int swapDataSetTest(int argc, char **argv, int accurate) {
         setTypeAdd(value,f2);
         dbAdd(db, key1, value);
         dbAddMeta(db, key1, createSetObjectMeta(0,1));
-        test_assert(rdbKeySaveDataInit(saveData, db, (decodedResult*)decoded_meta) == 0);
+        test_assert(rdbKeySaveWarmColdInit(saveData, db, (decodedResult*)decoded_meta) == 0);
         test_assert(rdbKeySaveStart(saveData,&rdbwarm) == 0);
         decoded_data->version = saveData->object_meta->version;
         test_assert(rdbKeySave(saveData,&rdbwarm,decoded_data) == 0);

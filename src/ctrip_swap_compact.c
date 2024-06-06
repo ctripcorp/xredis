@@ -144,12 +144,12 @@ static unsigned char metaVersionFilterFilt(void* mvfilter_, int level, int cf, c
         }
 
         if (meta_val != NULL) {
-            int object_type;
+            int swap_type;
             long long expire;
             const char* extend;
             size_t extend_len;
 
-            retval = rocksDecodeMetaVal(meta_val,sdslen(meta_val),&object_type,&expire,
+            retval = rocksDecodeMetaVal(meta_val,sdslen(meta_val),&swap_type,&expire,
                     &meta_version, &extend,&extend_len);
             if (retval) {
                 serverLog(LL_NOTICE, "[metaVersionFilter] decode meta val fail: %s", meta_val);

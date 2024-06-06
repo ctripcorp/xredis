@@ -40,11 +40,47 @@ start_server {tags {"rordb replication"} overrides {}} {
             $master rpush mylist2 0 1 a b
             $master expireat mylist2 $expire_time
             $master swap.evict mylist1 mylist2
+            # bitmap
+            $master setbit mybitmap0 32767 1
+            $master setbit mybitmap0 65535 1
+            $master setbit mybitmap0 98303 1
+            $master setbit mybitmap0 131071 1
+            $master setbit mybitmap0 163839 1
+            $master setbit mybitmap0 196607 1
+            $master setbit mybitmap0 229375 1
+            $master setbit mybitmap0 262143 1
+            $master setbit mybitmap0 294911 1
+            $master setbit mybitmap0 327679 1
+            $master setbit mybitmap0 335871 1
+            $master setbit mybitmap1 32767 1
+            $master setbit mybitmap1 65535 1
+            $master setbit mybitmap1 98303 1
+            $master setbit mybitmap1 131071 1
+            $master setbit mybitmap1 163839 1
+            $master setbit mybitmap1 196607 1
+            $master setbit mybitmap1 229375 1
+            $master setbit mybitmap1 262143 1
+            $master setbit mybitmap1 294911 1
+            $master setbit mybitmap1 327679 1
+            $master setbit mybitmap1 335871 1
+            $master setbit mybitmap2 32767 1
+            $master setbit mybitmap2 65535 1
+            $master setbit mybitmap2 98303 1
+            $master setbit mybitmap2 131071 1
+            $master setbit mybitmap2 163839 1
+            $master setbit mybitmap2 196607 1
+            $master setbit mybitmap2 229375 1
+            $master setbit mybitmap2 262143 1
+            $master setbit mybitmap2 294911 1
+            $master setbit mybitmap2 327679 1
+            $master setbit mybitmap2 335871 1
+            $master expireat mybitmap2 $expire_time
+            $master swap.evict mybitmap1 mybitmap2
 
             $slave slaveof $master_host $master_port
             wait_for_sync $slave
 
-            assert_equal [$slave dbsize] 15
+            assert_equal [$slave dbsize] 18
             # string
             assert [object_is_hot $slave mystring0]
             assert_equal [$slave get mystring0] myval0
@@ -85,6 +121,14 @@ start_server {tags {"rordb replication"} overrides {}} {
             assert [object_is_cold $slave mylist2]
             assert {[$slave ttl mylist2] > 0}
             assert_equal [$slave lrange mylist2 0 -1] {0 1 a b}
+            # bitmap
+            assert [object_is_hot $slave mybitmap0]
+            assert_equal [$slave bitcount mybitmap0] {11}
+            assert [object_is_cold $slave mybitmap1]
+            assert_equal [$slave bitcount mybitmap1] {11}
+            assert [object_is_cold $slave mybitmap2]
+            assert {[$slave ttl mybitmap2] > 0}
+            assert_equal [$slave bitcount mybitmap2] {11}
         }
     }
 }

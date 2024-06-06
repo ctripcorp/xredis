@@ -281,6 +281,7 @@ int hashSwapAna(swapData *data, int thd, struct keyRequest *req,
         }
         break;
     case SWAP_DEL:
+        /* TODO add if branch, refer to list. */
         *intention = SWAP_DEL;
         *intention_flags = 0;
         break;
@@ -704,7 +705,6 @@ int hashSaveStart(rdbKeySaveData *save, rio *rdb) {
     return ret;
 }
 
-/* return 1 if hash still need to consume more rawkey. */
 int hashSave(rdbKeySaveData *save, rio *rdb, decodedData *decoded) {
     robj *key = save->key;
     serverAssert(!sdscmp(decoded->key, key->ptr));
@@ -754,6 +754,7 @@ int hashSaveEnd(rdbKeySaveData *save, rio *rdb, int save_result) {
 
 rdbKeySaveType hashSaveType = {
     .save_start = hashSaveStart,
+    .save_hot_ext = NULL,
     .save = hashSave,
     .save_end = hashSaveEnd,
     .save_deinit = NULL,
@@ -803,7 +804,7 @@ void hashLoadStartZip(struct rdbKeyLoadData *load, rio *rdb, int *cf,
     extend = rocksEncodeObjectMetaLen(load->total_fields);
     *cf = META_CF;
     *rawkey = rocksEncodeMetaKey(load->db,load->key);
-    *rawval = rocksEncodeMetaVal(load->object_type,load->expire,load->version,extend);
+    *rawval = rocksEncodeMetaVal(load->swap_type,load->expire,load->version,extend);
     sdsfree(extend);
 }
 
@@ -912,7 +913,7 @@ rdbKeyLoadType hashLoadType = {
 void hashLoadInit(rdbKeyLoadData *load) {
     load->type = &hashLoadType;
     load->omtype = &hashObjectMetaType;
-    load->object_type = OBJ_HASH;
+    load->swap_type = SWAP_TYPE_HASH;
 }
 
 #ifdef REDIS_TEST
@@ -1167,7 +1168,7 @@ int swapDataHashTest(int argc, char **argv, int accurate) {
         cont = hashLoad(load,&sdsrdb,&cf,&subkey,&subraw,&err);
         test_assert(cf == DATA_CF && cont == 0 && err == 0);
         test_assert(load->loaded_fields == 2);
-        test_assert(load->object_type == OBJ_HASH);
+        test_assert(load->swap_type == SWAP_TYPE_HASH);
         sdsfree(subkey), sdsfree(subraw);
 
         sds coldraw,warmraw,hotraw;
@@ -1185,7 +1186,7 @@ int swapDataHashTest(int argc, char **argv, int accurate) {
         decoded_meta->version = Vcur;
         decoded_meta->extend = extend;
         decoded_meta->key = myhash_key;
-        decoded_meta->object_type = OBJ_HASH;
+        decoded_meta->swap_type = SWAP_TYPE_HASH;
 
         rioInitWithBuffer(&rdbcold,sdsempty());
 
@@ -1196,10 +1197,10 @@ int swapDataHashTest(int argc, char **argv, int accurate) {
         decoded_fx->rdbtype = rdbv2[0];
 
         /* cold: skip orphan subkey */
-        init_result = rdbKeySaveDataInit(save,db,(decodedResult*)decoded_fx);
+        init_result = rdbKeySaveWarmColdInit(save,db,(decodedResult*)decoded_fx);
         test_assert(INIT_SAVE_SKIP == init_result);
 
-        test_assert(!rdbKeySaveDataInit(save,db,(decodedResult*)decoded_meta));
+        test_assert(!rdbKeySaveWarmColdInit(save,db,(decodedResult*)decoded_meta));
         test_assert(rdbKeySaveStart(save,&rdbcold) == 0);
 
         /* cold: skip old version subkey */
@@ -1229,10 +1230,10 @@ int swapDataHashTest(int argc, char **argv, int accurate) {
         dbAddMeta(db,&keyobj,object_meta);
 
         /* warm: skip orphan subkey */
-        init_result = rdbKeySaveDataInit(save,db,(decodedResult*)decoded_fx);
+        init_result = rdbKeySaveWarmColdInit(save,db,(decodedResult*)decoded_fx);
         test_assert(INIT_SAVE_SKIP == init_result);
 
-        test_assert(!rdbKeySaveDataInit(save,db,(decodedResult*)decoded_meta));
+        test_assert(!rdbKeySaveWarmColdInit(save,db,(decodedResult*)decoded_meta));
         test_assert(rdbKeySaveStart(save,&rdbwarm) == 0);
 
         /* warm: skip old version subkey */
