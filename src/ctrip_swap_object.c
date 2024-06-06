@@ -109,11 +109,11 @@ int buildObjectMeta(int swap_type, uint64_t version, const char *extend,
     return 0;
 }
 
-sds objectMetaEncode(struct objectMeta *object_meta) {
+sds objectMetaEncode(struct objectMeta *object_meta, int meta_enc_mode) {
     serverAssert(object_meta);
     objectMetaType *omtype = getObjectMetaType(object_meta->swap_type);
     if (omtype->encodeObjectMeta) {
-        return omtype->encodeObjectMeta(object_meta,NULL);
+        return omtype->encodeObjectMeta(object_meta,NULL, meta_enc_mode);
     } else {
         return NULL;
     }
@@ -197,7 +197,8 @@ objectMeta *createLenObjectMeta(int swap_type, uint64_t version, size_t len) {
 	return m;
 }
 
-sds encodeLenObjectMeta(struct objectMeta *object_meta, void *aux) {
+sds encodeLenObjectMeta(struct objectMeta *object_meta, void *aux, int meta_enc_mode) {
+    UNUSED(meta_enc_mode);
     long long cold_len = object_meta ? object_meta->len : 0;
     long long hot_len = (long long)aux;
     return rocksEncodeObjectMetaLen(hot_len+cold_len);

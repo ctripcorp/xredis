@@ -387,7 +387,7 @@ err:
 
 static int rdbSaveObjectMeta(rio *rdb, robj *key, objectMeta *object_meta) {
     int opcode = rordbOpcodeFromSwapType(object_meta->swap_type);
-    sds extend = objectMetaEncode(object_meta);
+    sds extend = objectMetaEncode(object_meta, RORDB_MODE);
     if (opcode < 0 || extend == NULL) goto err;
     rdbSaveType(rdb,opcode);
     if (rdbSaveStringObject(rdb,key) == -1) goto err;

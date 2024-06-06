@@ -630,7 +630,7 @@ static inline int keyLoadFixEnd(struct keyLoadFixData *fix,
         rawkeys = zmalloc(sizeof(sds)), rawvals = zmalloc(sizeof(sds));
         cfs[0] = META_CF;
         rawkeys[0] = rocksEncodeMetaKey(fix->db,fix->key->ptr);
-        extend = objectMetaEncode(fix->rebuild_meta);
+        extend = objectMetaEncode(fix->rebuild_meta, NORMAL_MODE);
         rawvals[0] = rocksEncodeMetaVal(fix->swap_type,fix->expire,
                 fix->version,extend);
         RIOInitPut(rio,1,cfs,rawkeys,rawvals);
