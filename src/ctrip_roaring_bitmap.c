@@ -34,7 +34,7 @@
 #define CONTAINER_BITS 12  /* default save the lower 12 bits in the container, no more than 16 */
 #define BUCKET_MAX_BITS 8
 #define BITMAP_CONTAINER_CAPACITY (1 << CONTAINER_BITS) /* bits num */
-#define BITMAP_CONTAINER_SIZE (1 << (CONTAINER_BITS - 3))
+#define BITMAP_CONTAINER_SIZE (1 << (CONTAINER_BITS - 3)) /* bit num -> byte num = size */
 #define ARRAY_CONTAINER_CAPACITY ((BITMAP_CONTAINER_SIZE >> 1) - 1)   /* bits num, array container use uint16_t save index */
 #define CONTAINER_CAPACITY BITMAP_CONTAINER_CAPACITY /* bits num */
 #define CONTAINER_MASK ((1 << CONTAINER_BITS) - 1)

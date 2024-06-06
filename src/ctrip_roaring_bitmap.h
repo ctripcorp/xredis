@@ -50,4 +50,8 @@ int rbmIsEqual(roaringBitmap* destRbm, roaringBitmap* srcRbm);
 /* Counting bitsNum bits of '1' from front to back， return real number of '1' bits, and output the indexs to idxArr(malloc by caller),  */
 uint32_t rbmLocateSetBitPos(roaringBitmap* rbm, uint32_t bitsNum, uint32_t *idxArr);
 
+char *rbmEncode(roaringBitmap* rbm, size_t *plen);
+
+roaringBitmap* rbmDecode(const char *buf, size_t len);
+
 #endif

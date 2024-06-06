@@ -332,7 +332,7 @@ sds swapDataEncodeMetaVal(swapData *d, void *datactx) {
     uint64_t version = object_meta ? object_meta->version : SWAP_VERSION_ZERO;
     if (d->omtype->encodeObjectMeta) {
         void *omaux = swapDataGetObjectMetaAux(d,datactx);
-        extend = d->omtype->encodeObjectMeta(object_meta,omaux);
+        extend = d->omtype->encodeObjectMeta(object_meta,omaux, NORMAL_MODE);
     }
     encoded = rocksEncodeMetaVal(d->swap_type,d->expire,version,extend);
     sdsfree(extend);

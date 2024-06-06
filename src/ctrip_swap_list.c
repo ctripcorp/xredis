@@ -1194,8 +1194,9 @@ sds encodeListMeta(listMeta *lm) {
     return result;
 }
 
-sds encodeListObjectMeta(struct objectMeta *object_meta, void *aux) {
+sds encodeListObjectMeta(struct objectMeta *object_meta, void *aux, int meta_enc_mode) {
     UNUSED(aux);
+    UNUSED(meta_enc_mode);
     if (object_meta == NULL) return NULL;
     serverAssert(object_meta->swap_type == SWAP_TYPE_LIST);
     return encodeListMeta(objectMetaGetPtr(object_meta));
@@ -2731,7 +2732,7 @@ int swapListMetaTest(int argc, char *argv[], int accurate) {
         listMetaAppendSegment(lm,SEGMENT_TYPE_COLD,2,2);
         listMetaAppendSegment(lm,SEGMENT_TYPE_HOT,4,2);
         objectMeta *object_meta = createListObjectMeta(0,lm);
-        sds extend = objectMetaEncode(object_meta);
+        sds extend = objectMetaEncode(object_meta, NORMAL_MODE);
         objectMeta *decoded_meta = createObjectMeta(OBJ_LIST,0);
         test_assert(objectMetaDecode(decoded_meta,extend,sdslen(extend)) == 0);
         listMeta *decoded_lm = objectMetaGetPtr(decoded_meta);

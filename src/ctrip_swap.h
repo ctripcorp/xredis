@@ -498,11 +498,16 @@ static inline void dbSetMetaDirty(redisDb *db, robj *key) {
 #define SWAP_VERSION_ZERO 0
 #define SWAP_VERSION_MAX  UINT64_MAX
 
+typedef enum {
+    NORMAL_MODE = 0,
+    RORDB_MODE,
+} meta_encode_mode;
+
 extern dictType objectMetaDictType;
 
 struct objectMeta;
 typedef struct objectMetaType {
-  sds (*encodeObjectMeta) (struct objectMeta *object_meta, void *aux);
+  sds (*encodeObjectMeta) (struct objectMeta *object_meta, void *aux, int meta_enc_mode);
   int (*decodeObjectMeta) (struct objectMeta *object_meta, const char* extend, size_t extlen);
   int (*objectIsHot)(struct objectMeta *object_meta, robj *value);
   void (*free)(struct objectMeta *object_meta);
@@ -531,7 +536,7 @@ static inline uint64_t swapGetAndIncrVersion(void) { return server.swap_key_vers
 int buildObjectMeta(int swap_type, uint64_t version, const char *extend, size_t extlen, OUT objectMeta **pobject_meta);
 objectMeta *dupObjectMeta(objectMeta *object_meta);
 void freeObjectMeta(objectMeta *object_meta);
-sds objectMetaEncode(struct objectMeta *object_meta);
+sds objectMetaEncode(struct objectMeta *object_meta, int meta_enc_mode);
 int objectMetaDecode(struct objectMeta *object_meta, const char *extend, size_t extlen);
 int keyIsHot(objectMeta *object_meta, robj *value);
 sds dumpObjectMeta(objectMeta *object_meta);
@@ -548,7 +553,7 @@ static inline void objectMetaSetPtr(objectMeta *object_meta, void *ptr) {
 objectMeta *createObjectMeta(int swap_type, uint64_t version);
 
 objectMeta *createLenObjectMeta(int swap_type, uint64_t version, size_t len);
-sds encodeLenObjectMeta(struct objectMeta *object_meta, void *aux);
+sds encodeLenObjectMeta(struct objectMeta *object_meta, void *aux, int meta_enc_mode);
 int decodeLenObjectMeta(struct objectMeta *object_meta, const char *extend, size_t extlen);
 int lenObjectMetaIsHot(struct objectMeta *object_meta, robj *value);
 
