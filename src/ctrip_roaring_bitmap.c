@@ -56,7 +56,7 @@ typedef uint16_t arrayContainer;
 typedef uint8_t bitmapContainer;
 
 typedef struct roaringContainer {
-    uint16_t elementsNum;
+    uint16_t elements_num;
     unsigned type:2;
     union {
         struct {
@@ -75,7 +75,7 @@ typedef struct roaringContainer {
 } roaringContainer;
 
 struct roaringBitmap_t {
-    uint8_t bucketsNum;
+    uint8_t buckets_num;
     uint8_t* buckets;
     roaringContainer** containers;
 };
@@ -102,53 +102,53 @@ static uint8_t bitsNumTable[256] =
 
 /* utils api */
 
-static inline uint8_t binarySearchLocUint8(const uint8_t *arr, uint8_t arrSize, uint8_t target)
+static inline uint8_t binarySearchLocUint8(const uint8_t *arr, uint8_t arr_size, uint8_t target)
 {
-    uint8_t leftIdx = 0;
-    uint8_t rightIdx = arrSize;
-    while (leftIdx < rightIdx) {
-        uint8_t mid = leftIdx + ((rightIdx - leftIdx) >> 1);
+    uint8_t left_idx = 0;
+    uint8_t right_idx = arr_size;
+    while (left_idx < right_idx) {
+        uint8_t mid = left_idx + ((right_idx - left_idx) >> 1);
         if (arr[mid] == target) {
             return mid;
         } else if (arr[mid] > target) {
-            rightIdx = mid;
+            right_idx = mid;
         } else {
-            leftIdx = mid + 1;
+            left_idx = mid + 1;
         }
     }
-    return leftIdx; /* if no target, loc should be here */
+    return left_idx; /* if no target, loc should be here */
 }
 
-static inline uint16_t binarySearchLocUint16(const uint16_t *arr, uint16_t arrSize, uint16_t target)
+static inline uint16_t binarySearchLocUint16(const uint16_t *arr, uint16_t arr_size, uint16_t target)
 {
-    uint16_t leftIdx = 0;
-    uint16_t rightIdx = arrSize;
-    while (leftIdx < rightIdx) {
-        uint16_t mid = leftIdx + ((rightIdx - leftIdx) >> 1);
+    uint16_t left_idx = 0;
+    uint16_t right_idx = arr_size;
+    while (left_idx < right_idx) {
+        uint16_t mid = left_idx + ((right_idx - left_idx) >> 1);
         if (arr[mid] == target) {
             return mid;
         } else if (arr[mid] > target) {
-            rightIdx = mid;
+            right_idx = mid;
         } else {
-            leftIdx = mid + 1;
+            left_idx = mid + 1;
         }
     }
-    return leftIdx;  /* if no target, loc should be here */
+    return left_idx;  /* if no target, loc should be here */
 }
 
 static inline void bitmapSetbit(uint8_t *bitmap, uint16_t val)
 {
     const uint8_t old_word = bitmap[val >> 3]; /* find the byte */
-    const int bitIndex = val & MOD_8_MASK; /* find the bit index in byte */
-    const uint8_t new_word = old_word | (1 << bitIndex);
+    const int bit_index = val & MOD_8_MASK; /* find the bit index in byte */
+    const uint8_t new_word = old_word | (1 << bit_index);
     bitmap[val >> 3] = new_word;
 }
 
 static inline uint8_t bitmapCheckBitStatus(const uint8_t *bitmap, uint16_t val)
 {
     const uint8_t old_word = bitmap[val >> 3]; /* find the byte */
-    const int bitIndex = val & MOD_8_MASK; /* find the bit index in byte */
-    if ((old_word & (1 << bitIndex)) != 0) {
+    const int bit_index = val & MOD_8_MASK; /* find the bit index in byte */
+    if ((old_word & (1 << bit_index)) != 0) {
         return 1;
     }
     return 0;
@@ -163,23 +163,23 @@ static inline uint32_t countUint32Bits(uint32_t n)
     return (n * 0x01010101) >> 24;
 }
 
-static uint32_t bitmapCountBits(uint8_t *bmp, uint32_t startIdx, uint32_t endIdx)
+static uint32_t bitmapCountBits(uint8_t *bmp, uint32_t start_idx, uint32_t end_idx)
 {
-    uint8_t *p = bmp + startIdx;
-    uint32_t bitsNum = 0;
-    uint32_t bytesNum = endIdx - startIdx + 1;
-    while (bytesNum & 3) {
-        bitsNum += bitsNumTable[*p++];
-        bytesNum--;
+    uint8_t *p = bmp + start_idx;
+    uint32_t bits_num = 0;
+    uint32_t bytes_num = end_idx - start_idx + 1;
+    while (bytes_num & 3) {
+        bits_num += bitsNumTable[*p++];
+        bytes_num--;
     }
 
-    /* left bytesNum is 4 * n */
-    while (bytesNum) {
-        bitsNum += countUint32Bits(*(uint32_t *)p);
+    /* left bytes_num is 4 * n */
+    while (bytes_num) {
+        bits_num += countUint32Bits(*(uint32_t *)p);
         p += 4;
-        bytesNum -= 4;
+        bytes_num -= 4;
     }
-    return bitsNum;
+    return bits_num;
 }
 
 static inline void clearContainer(roaringContainer *container)
@@ -194,45 +194,45 @@ static inline void clearContainer(roaringContainer *container)
     } else {
         container->f.none = NULL;
     }
-    container->elementsNum = 0;
+    container->elements_num = 0;
     container->type = CONTAINER_TYPE_ARRAY;
 }
 
-static inline void expandArrIfNeed(roaringContainer *container, uint16_t newNum)
+static inline void expandArrIfNeed(roaringContainer *container, uint16_t new_num)
 {
-    if (container->a.capacity >= newNum) {
+    if (container->a.capacity >= new_num) {
         return;
     }
 
-    uint32_t newCapacity = newNum * ARRAY_CONTAINER_EXPAND_SPEED;
+    uint32_t new_capacity = new_num * ARRAY_CONTAINER_EXPAND_SPEED;
 
-    container->a.capacity = MIN(newCapacity, ARRAY_CONTAINER_CAPACITY);
+    container->a.capacity = MIN(new_capacity, ARRAY_CONTAINER_CAPACITY);
     container->a.array = roaring_realloc(container->a.array, sizeof(arrayContainer) * container->a.capacity);
 }
 
 static inline void shrinkArrIfNeed(roaringContainer *container)
 {
-    if (container->elementsNum == 0 || container->a.capacity <= container->elementsNum * ARRAY_CONTAINER_EXPAND_SPEED) {
+    if (container->elements_num == 0 || container->a.capacity <= container->elements_num * ARRAY_CONTAINER_EXPAND_SPEED) {
         return;
     }
-    uint32_t newCapacity = container->elementsNum * ARRAY_CONTAINER_EXPAND_SPEED;
-    arrayContainer *newArr = roaring_malloc(newCapacity * sizeof(arrayContainer));
-    memcpy(newArr, container->a.array, container->elementsNum * sizeof(arrayContainer));
+    uint32_t new_capacity = container->elements_num * ARRAY_CONTAINER_EXPAND_SPEED;
+    arrayContainer *new_arr = roaring_malloc(new_capacity * sizeof(arrayContainer));
+    memcpy(new_arr, container->a.array, container->elements_num * sizeof(arrayContainer));
 
     roaring_free(container->a.array);
-    container->a.array = newArr;
-    container->a.capacity = newCapacity;
+    container->a.array = new_arr;
+    container->a.capacity = new_capacity;
 }
 
  static inline void transArrayToBitmapContainer(roaringContainer *container)
 {
     arrayContainer *oldArr = container->a.array;
-    bitmapContainer *newBmp = roaring_calloc(BITMAP_CONTAINER_SIZE);
-    for (int i = 0; i < container->elementsNum; i++) {
-        bitmapSetbit(newBmp, oldArr[i]);
+    bitmapContainer *new_bmp = roaring_calloc(BITMAP_CONTAINER_SIZE);
+    for (int i = 0; i < container->elements_num; i++) {
+        bitmapSetbit(new_bmp, oldArr[i]);
     }
     roaring_free(container->a.array);
-    container->b.bitmap = newBmp;
+    container->b.bitmap = new_bmp;
     container->type = CONTAINER_TYPE_BITMAP;
 }
 
@@ -240,16 +240,16 @@ static inline void transBitmapToArrayContainer(roaringContainer *container)
 {
     bitmapContainer *bmp = container->b.bitmap;
 
-    arrayContainer *newArr = roaring_calloc(container->elementsNum * sizeof(arrayContainer));
+    arrayContainer *new_arr = roaring_calloc(container->elements_num * sizeof(arrayContainer));
     uint32_t cursor = 0;
     for (uint32_t i = 0; i < BITMAP_CONTAINER_CAPACITY; i++) {
         if (bitmapCheckBitStatus(bmp, i)) {
-            newArr[cursor++] = i;
+            new_arr[cursor++] = i;
         }
     }
     roaring_free(container->b.bitmap);
-    container->a.capacity = container->elementsNum;
-    container->a.array = newArr;
+    container->a.capacity = container->elements_num;
+    container->a.array = new_arr;
     container->type = CONTAINER_TYPE_ARRAY;
 }
 
@@ -258,212 +258,212 @@ static inline void transToFullContainer(roaringContainer *container)
     clearContainer(container);
     container->type = CONTAINER_TYPE_FULL;
     container->f.none = NULL;
-    container->elementsNum = CONTAINER_CAPACITY;
+    container->elements_num = CONTAINER_CAPACITY;
 }
 
 /* container set api */
 
 static void bitmapContainerSetSingleBit(roaringContainer *container, uint16_t val)
 {
-    if (container->elementsNum <= ARRAY_CONTAINER_CAPACITY) {
+    if (container->elements_num <= ARRAY_CONTAINER_CAPACITY) {
         transArrayToBitmapContainer(container);
     }
 
     bitmapContainer *bitmap = container->b.bitmap;
 
     const uint8_t old_word = bitmap[val >> 3];
-    const int bitIndex = val & MOD_8_MASK;
-    const uint8_t new_word = old_word | (1 << bitIndex);
+    const int bit_index = val & MOD_8_MASK;
+    const uint8_t new_word = old_word | (1 << bit_index);
     bitmap[val >> 3] = new_word;
-    container->elementsNum += (new_word ^ old_word) >> bitIndex;
+    container->elements_num += (new_word ^ old_word) >> bit_index;
 }
 
-static void bitmapContainerSetBit(roaringContainer *container, uint16_t minVal, uint16_t maxVal)
+static void bitmapContainerSetBit(roaringContainer *container, uint16_t min_val, uint16_t max_val)
 {
-    if (minVal == maxVal) {
-        bitmapContainerSetSingleBit(container, minVal);
+    if (min_val == max_val) {
+        bitmapContainerSetSingleBit(container, min_val);
         return;
     }
 
-    if (container->elementsNum <= ARRAY_CONTAINER_CAPACITY) {
+    if (container->elements_num <= ARRAY_CONTAINER_CAPACITY) {
         transArrayToBitmapContainer(container);
     }
 
     bitmapContainer *bitmap = container->b.bitmap;
 
-    /* assuming minVal is first bit in byte, maxVal is last bit in byte */
-    uint16_t firstFullByteIdx = minVal >> 3;
-    uint16_t lastFullByteIdx = maxVal >> 3;
+    /* assuming min_val is first bit in byte, max_val is last bit in byte */
+    uint16_t first_full_byte_idx = min_val >> 3;
+    uint16_t last_full_byte_idx = max_val >> 3;
 
-    /* minVal maxVal at the same byte */
-    if (firstFullByteIdx == lastFullByteIdx) {
-        uint8_t *byte = bitmap + firstFullByteIdx;
-        uint8_t addBitsNum = maxVal - minVal + 1;
-        uint8_t bitIdx = minVal & MOD_8_MASK;
+    /* min_val max_val at the same byte */
+    if (first_full_byte_idx == last_full_byte_idx) {
+        uint8_t *byte = bitmap + first_full_byte_idx;
+        uint8_t add_bits_num = max_val - min_val + 1;
+        uint8_t bit_idx = min_val & MOD_8_MASK;
 
-        uint8_t oldBitsNum = bitsNumTable[*byte & (((1 << addBitsNum) - 1) << bitIdx)]; /* n bits in the mid */
-        *byte |= ((1 << addBitsNum) - 1) << bitIdx;
-        container->elementsNum += (addBitsNum - oldBitsNum);
+        uint8_t old_bits_num = bitsNumTable[*byte & (((1 << add_bits_num) - 1) << bit_idx)]; /* n bits in the mid */
+        *byte |= ((1 << add_bits_num) - 1) << bit_idx;
+        container->elements_num += (add_bits_num - old_bits_num);
         return;
     }
 
-    /* minVal maxVal at different bytes
-    if minVal is not first bit in byte */
-    if (minVal > firstFullByteIdx << 3) {
-        uint8_t *firstByte = bitmap + firstFullByteIdx;
-        uint8_t addBitsNum = ((firstFullByteIdx + 1) << 3) - minVal;  /* upper n bits */
-        uint8_t oldBitsNum = bitsNumTable[*firstByte & ~((1 << (8 - addBitsNum)) - 1)];
+    /* min_val max_val at different bytes
+    if min_val is not first bit in byte */
+    if (min_val > first_full_byte_idx << 3) {
+        uint8_t *first_byte = bitmap + first_full_byte_idx;
+        uint8_t add_bits_num = ((first_full_byte_idx + 1) << 3) - min_val;  /* upper n bits */
+        uint8_t old_bits_num = bitsNumTable[*first_byte & ~((1 << (8 - add_bits_num)) - 1)];
 
-        *firstByte |= ~((1 << (8 - addBitsNum)) - 1);
-        container->elementsNum += (addBitsNum - oldBitsNum);
-        firstFullByteIdx++;
+        *first_byte |= ~((1 << (8 - add_bits_num)) - 1);
+        container->elements_num += (add_bits_num - old_bits_num);
+        first_full_byte_idx++;
     }
 
-    /* maxVal is not last bit in byte */
-    if (maxVal < ((lastFullByteIdx + 1) << 3) - 1) {
-        uint8_t *lastByte = bitmap + lastFullByteIdx;
-        uint8_t addBitsNum = maxVal - (lastFullByteIdx << 3) + 1;
-        uint8_t oldBitsNum = bitsNumTable[*lastByte & ((1 << addBitsNum) - 1)];  /* lower n bits */
+    /* max_val is not last bit in byte */
+    if (max_val < ((last_full_byte_idx + 1) << 3) - 1) {
+        uint8_t *last_byte = bitmap + last_full_byte_idx;
+        uint8_t add_bits_num = max_val - (last_full_byte_idx << 3) + 1;
+        uint8_t old_bits_num = bitsNumTable[*last_byte & ((1 << add_bits_num) - 1)];  /* lower n bits */
 
-        *lastByte |= (1 << addBitsNum) - 1;
-        container->elementsNum += (addBitsNum - oldBitsNum);
-        lastFullByteIdx--;
+        *last_byte |= (1 << add_bits_num) - 1;
+        container->elements_num += (add_bits_num - old_bits_num);
+        last_full_byte_idx--;
     }
 
-    if (firstFullByteIdx <= lastFullByteIdx) {
-        uint32_t oldBitNum = bitmapCountBits(bitmap, firstFullByteIdx, lastFullByteIdx);
-        memset(bitmap + firstFullByteIdx, 0xffU, lastFullByteIdx - firstFullByteIdx + 1);
-        uint32_t newbitNum = (lastFullByteIdx - firstFullByteIdx + 1) << 3;
-        container->elementsNum += (newbitNum - oldBitNum);
+    if (first_full_byte_idx <= last_full_byte_idx) {
+        uint32_t old_bit_num = bitmapCountBits(bitmap, first_full_byte_idx, last_full_byte_idx);
+        memset(bitmap + first_full_byte_idx, 0xffU, last_full_byte_idx - first_full_byte_idx + 1);
+        uint32_t new_bit_num = (last_full_byte_idx - first_full_byte_idx + 1) << 3;
+        container->elements_num += (new_bit_num - old_bit_num);
     }
 }
 
-static void arrayContainerRebuildInterval(roaringContainer *container, uint16_t minVal, uint16_t maxVal)
+static void arrayContainerRebuildInterval(roaringContainer *container, uint16_t min_val, uint16_t max_val)
 {
-    uint32_t newElementsNum = maxVal - minVal + 1;
+    uint32_t new_elements_num = max_val - min_val + 1;
 
-    if (newElementsNum > ARRAY_CONTAINER_CAPACITY) {
+    if (new_elements_num > ARRAY_CONTAINER_CAPACITY) {
         clearContainer(container);
-        bitmapContainerSetBit(container, minVal, maxVal);
+        bitmapContainerSetBit(container, min_val, max_val);
         return;
     }
 
-    expandArrIfNeed(container, newElementsNum);
+    expandArrIfNeed(container, new_elements_num);
 
     arrayContainer *arr = container->a.array;
-    for (uint32_t i = 0; i < newElementsNum; i++) {
-        arr[i] = minVal + i;
+    for (uint32_t i = 0; i < new_elements_num; i++) {
+        arr[i] = min_val + i;
     }
-    container->elementsNum = newElementsNum;
+    container->elements_num = new_elements_num;
 }
 
-static void arrayContainerInsertInterval(roaringContainer *container, uint16_t minVal, uint16_t maxVal)
+static void arrayContainerInsertInterval(roaringContainer *container, uint16_t min_val, uint16_t max_val)
 {
-     /* insert [minVal, maxVal], if minVal or maxVal alreadly exists, we will rewrite */
+     /* insert [min_val, max_val], if min_val or max_val alreadly exists, we will rewrite */
     arrayContainer *arr = container->a.array;
 
-    uint16_t leftLoc = binarySearchLocUint16(arr, container->elementsNum, minVal); /* leftLoc is not in perserved */
-    uint16_t rightLoc = binarySearchLocUint16(arr, container->elementsNum, maxVal + 1); /* rightLoc is perserved */
+    uint16_t left_loc = binarySearchLocUint16(arr, container->elements_num, min_val); /* left_loc is not in perserved */
+    uint16_t right_loc = binarySearchLocUint16(arr, container->elements_num, max_val + 1); /* right_loc is perserved */
 
-    if (leftLoc != container->elementsNum && rightLoc != 0 &&
-        arr[leftLoc] == minVal && arr[rightLoc - 1] == maxVal && rightLoc - leftLoc - 1 == maxVal - minVal) {
+    if (left_loc != container->elements_num && right_loc != 0 &&
+        arr[left_loc] == min_val && arr[right_loc - 1] == max_val && right_loc - left_loc - 1 == max_val - min_val) {
         /* whole interval alreadly exists */
         return;
     }
 
-    uint32_t leftPerservedNum = leftLoc;
-    uint32_t rightPerservedNum = container->elementsNum - rightLoc;
-    uint32_t insertNum = maxVal - minVal + 1;
-    uint32_t newNum = leftPerservedNum + insertNum + rightPerservedNum; /* is impossible zero */
+    uint32_t left_perserved_num = left_loc;
+    uint32_t right_perserved_num = container->elements_num - right_loc;
+    uint32_t insert_num = max_val - min_val + 1;
+    uint32_t new_num = left_perserved_num + insert_num + right_perserved_num; /* is impossible zero */
 
-    if (newNum > ARRAY_CONTAINER_CAPACITY) {
-        bitmapContainerSetBit(container, minVal, maxVal);
+    if (new_num > ARRAY_CONTAINER_CAPACITY) {
+        bitmapContainerSetBit(container, min_val, max_val);
         return;
     }
 
-    expandArrIfNeed(container, newNum);
-    arrayContainer *newArr = container->a.array;
+    expandArrIfNeed(container, new_num);
+    arrayContainer *new_arr = container->a.array;
 
-    if (rightPerservedNum) {
-        memmove(newArr + leftPerservedNum + insertNum, newArr + leftPerservedNum, sizeof(arrayContainer) * rightPerservedNum);
+    if (right_perserved_num) {
+        memmove(new_arr + left_perserved_num + insert_num, new_arr + left_perserved_num, sizeof(arrayContainer) * right_perserved_num);
     }
-    for (uint32_t i = 0; i < insertNum; i++) {
-        newArr[leftPerservedNum + i] = minVal + i;
+    for (uint32_t i = 0; i < insert_num; i++) {
+        new_arr[left_perserved_num + i] = min_val + i;
     }
 
-    container->elementsNum = newNum;
+    container->elements_num = new_num;
 }
 
 static void arrayContainerSetSingleBit(roaringContainer *container, uint16_t val)
 {
     arrayContainer *arr = container->a.array;
 
-    uint16_t loc = binarySearchLocUint16(arr, container->elementsNum, val);
-    if (loc < container->elementsNum && arr[loc] == val) {
+    uint16_t loc = binarySearchLocUint16(arr, container->elements_num, val);
+    if (loc < container->elements_num && arr[loc] == val) {
         return;
     }
-    if (container->elementsNum + 1 > ARRAY_CONTAINER_CAPACITY) {
+    if (container->elements_num + 1 > ARRAY_CONTAINER_CAPACITY) {
         bitmapContainerSetSingleBit(container, val);
         return;
     }
 
-    expandArrIfNeed(container, container->elementsNum + 1);
+    expandArrIfNeed(container, container->elements_num + 1);
     arr = container->a.array;
 
     /* append mode */
-    if (container->elementsNum == 0 || arr[container->elementsNum - 1] < val) {
-        arr[container->elementsNum++] = val;
+    if (container->elements_num == 0 || arr[container->elements_num - 1] < val) {
+        arr[container->elements_num++] = val;
     } else {
         /* insert mode */
-        if (loc != container->elementsNum) {
-            memmove(arr + loc + 1, arr + loc, (container->elementsNum - loc) * sizeof(arrayContainer));
+        if (loc != container->elements_num) {
+            memmove(arr + loc + 1, arr + loc, (container->elements_num - loc) * sizeof(arrayContainer));
         }
         arr[loc] = val;
-        container->elementsNum++;
+        container->elements_num++;
     }
 }
 
-static void arrayContainerSetBit(roaringContainer *container, uint16_t minVal, uint16_t maxVal)
+static void arrayContainerSetBit(roaringContainer *container, uint16_t min_val, uint16_t max_val)
 {
-    if (minVal == maxVal) {
-        arrayContainerSetSingleBit(container, minVal);
+    if (min_val == max_val) {
+        arrayContainerSetSingleBit(container, min_val);
         return;
     }
-    if (container->elementsNum == 0) {
-        arrayContainerRebuildInterval(container, minVal, maxVal);
+    if (container->elements_num == 0) {
+        arrayContainerRebuildInterval(container, min_val, max_val);
         return;
     }
-    arrayContainerInsertInterval(container, minVal, maxVal);
+    arrayContainerInsertInterval(container, min_val, max_val);
 }
 
-static void containerSetBit(roaringContainer *container, uint16_t minVal, uint16_t maxVal)
+static void containerSetBit(roaringContainer *container, uint16_t min_val, uint16_t max_val)
 {
-    if (maxVal - minVal + 1 == CONTAINER_CAPACITY) {
+    if (max_val - min_val + 1 == CONTAINER_CAPACITY) {
         transToFullContainer(container);
         return;
     }
     if (container->type == CONTAINER_TYPE_FULL) {
         return;
     } else if (container->type == CONTAINER_TYPE_BITMAP) {
-        bitmapContainerSetBit(container, minVal, maxVal);
+        bitmapContainerSetBit(container, min_val, max_val);
     } else {
-        arrayContainerSetBit(container, minVal, maxVal);
+        arrayContainerSetBit(container, min_val, max_val);
     }
-    if (container->elementsNum == CONTAINER_CAPACITY) {
+    if (container->elements_num == CONTAINER_CAPACITY) {
         transToFullContainer(container);
     }
 }
 
  /* container clear api */
 
-static void fullContainerClearBit(roaringContainer *container, uint16_t minVal, uint16_t maxVal)
+static void fullContainerClearBit(roaringContainer *container, uint16_t min_val, uint16_t max_val)
 {
     clearContainer(container);
-    if (minVal != 0) {
-        containerSetBit(container, 0, minVal - 1);
+    if (min_val != 0) {
+        containerSetBit(container, 0, min_val - 1);
     }
-    if (maxVal != CONTAINER_CAPACITY - 1) {
-        containerSetBit(container, maxVal + 1, CONTAINER_CAPACITY - 1);
+    if (max_val != CONTAINER_CAPACITY - 1) {
+        containerSetBit(container, max_val + 1, CONTAINER_CAPACITY - 1);
     }
 }
 
@@ -472,87 +472,87 @@ static void bitmapContainerClearSingleBit(roaringContainer *container, uint16_t 
     bitmapContainer *bitmap = container->b.bitmap;
 
     const uint8_t old_word = bitmap[val >> 3];
-    const int bitIndex = val & MOD_8_MASK;
-    const uint8_t new_word = old_word & ~(1 << bitIndex);
+    const int bit_index = val & MOD_8_MASK;
+    const uint8_t new_word = old_word & ~(1 << bit_index);
     bitmap[val >> 3] = new_word;
-    container->elementsNum -= (new_word ^ old_word) >> bitIndex;
-    if (container->elementsNum <= ARRAY_CONTAINER_CAPACITY) {
+    container->elements_num -= (new_word ^ old_word) >> bit_index;
+    if (container->elements_num <= ARRAY_CONTAINER_CAPACITY) {
         transBitmapToArrayContainer(container);
     }
 }
 
-static void bitmapContainerClearBit(roaringContainer *container, uint16_t minVal, uint16_t maxVal)
+static void bitmapContainerClearBit(roaringContainer *container, uint16_t min_val, uint16_t max_val)
 {
-    if (minVal == maxVal) {
-        bitmapContainerClearSingleBit(container, minVal);
+    if (min_val == max_val) {
+        bitmapContainerClearSingleBit(container, min_val);
         return;
     }
     bitmapContainer *bitmap = container->b.bitmap;
 
-    /* assuming minVal is first bit in byte, maxVal is last bit in byte */
-    uint16_t firstFullByteIdx = minVal >> 3;
-    uint16_t lastFullByteIdx = maxVal >> 3;
+    /* assuming min_val is first bit in byte, max_val is last bit in byte */
+    uint16_t first_full_byte_idx = min_val >> 3;
+    uint16_t last_full_byte_idx = max_val >> 3;
 
-    if (firstFullByteIdx == lastFullByteIdx) {
-        uint8_t *byte = bitmap + firstFullByteIdx;
-        uint32_t clearBitNum = maxVal - minVal + 1;
-        uint8_t bitIdx = minVal & MOD_8_MASK;
+    if (first_full_byte_idx == last_full_byte_idx) {
+        uint8_t *byte = bitmap + first_full_byte_idx;
+        uint32_t clear_bit_num = max_val - min_val + 1;
+        uint8_t bit_idx = min_val & MOD_8_MASK;
 
-        uint32_t oldBitNums = bitsNumTable[*byte & (((1 << clearBitNum) - 1) << bitIdx)]; /* mid n bits */
-        *byte &= ~(((1 << clearBitNum) - 1) << bitIdx);
-        container->elementsNum -= oldBitNums;
+        uint32_t old_bit_nums = bitsNumTable[*byte & (((1 << clear_bit_num) - 1) << bit_idx)]; /* mid n bits */
+        *byte &= ~(((1 << clear_bit_num) - 1) << bit_idx);
+        container->elements_num -= old_bit_nums;
         return;
     }
 
-    /* minVal maxVal at different bytes */
-    /* if minVal is not first bit in byte */
-    if (minVal > firstFullByteIdx << 3) {
-        uint8_t *firstByte = bitmap + (minVal >> 3);
-        uint8_t clearBitsNum = ((firstFullByteIdx + 1) << 3) - minVal; /* clear the upper n bits */
-        uint8_t oldBitsNum = bitsNumTable[*firstByte & ~((1 << (8 - clearBitsNum)) - 1)];
+    /* min_val max_val at different bytes */
+    /* if min_val is not first bit in byte */
+    if (min_val > first_full_byte_idx << 3) {
+        uint8_t *first_byte = bitmap + (min_val >> 3);
+        uint8_t clear_bits_num = ((first_full_byte_idx + 1) << 3) - min_val; /* clear the upper n bits */
+        uint8_t old_bits_num = bitsNumTable[*first_byte & ~((1 << (8 - clear_bits_num)) - 1)];
 
-        *firstByte &= (1 << (8 - clearBitsNum)) - 1;
-        container->elementsNum -= oldBitsNum;
+        *first_byte &= (1 << (8 - clear_bits_num)) - 1;
+        container->elements_num -= old_bits_num;
 
-        firstFullByteIdx++;
+        first_full_byte_idx++;
     }
 
-    /* maxVal is not last bit in byte*/
-    if (maxVal < ((lastFullByteIdx + 1) << 3) - 1) {
-        uint8_t *lastByte = bitmap + (maxVal >> 3);
-        uint8_t clearBitsNum = maxVal - (lastFullByteIdx << 3) + 1; /* clear the lower bits */
+    /* max_val is not last bit in byte*/
+    if (max_val < ((last_full_byte_idx + 1) << 3) - 1) {
+        uint8_t *last_byte = bitmap + (max_val >> 3);
+        uint8_t clear_bits_num = max_val - (last_full_byte_idx << 3) + 1; /* clear the lower bits */
 
-        uint8_t oldBitsNum = bitsNumTable[*lastByte & ((1 << clearBitsNum) - 1)];
-        *lastByte &= ~((1 << clearBitsNum) - 1);
-        container->elementsNum -= oldBitsNum;
-        lastFullByteIdx--;
+        uint8_t old_bits_num = bitsNumTable[*last_byte & ((1 << clear_bits_num) - 1)];
+        *last_byte &= ~((1 << clear_bits_num) - 1);
+        container->elements_num -= old_bits_num;
+        last_full_byte_idx--;
     }
 
-    if (firstFullByteIdx <= lastFullByteIdx) {
-        uint32_t oldBitNum = bitmapCountBits(bitmap, firstFullByteIdx, lastFullByteIdx);
-        memset(bitmap + firstFullByteIdx, 0, lastFullByteIdx - firstFullByteIdx + 1);
-        container->elementsNum -= oldBitNum;
+    if (first_full_byte_idx <= last_full_byte_idx) {
+        uint32_t old_bit_num = bitmapCountBits(bitmap, first_full_byte_idx, last_full_byte_idx);
+        memset(bitmap + first_full_byte_idx, 0, last_full_byte_idx - first_full_byte_idx + 1);
+        container->elements_num -= old_bit_num;
     }
-    if (container->elementsNum <= ARRAY_CONTAINER_CAPACITY) {
+    if (container->elements_num <= ARRAY_CONTAINER_CAPACITY) {
         transBitmapToArrayContainer(container);
     }
 }
 
-static void arrayContainerClearInterval(roaringContainer *container, uint16_t minVal, uint16_t maxVal)
+static void arrayContainerClearInterval(roaringContainer *container, uint16_t min_val, uint16_t max_val)
 {
     arrayContainer *arr = container->a.array;
 
-    uint16_t rightLoc = binarySearchLocUint16(arr, container->elementsNum, maxVal + 1); /* rightLoc is perserved */
-    uint16_t leftLoc = binarySearchLocUint16(arr, container->elementsNum, minVal); /* leftLoc is not perserved */
+    uint16_t right_loc = binarySearchLocUint16(arr, container->elements_num, max_val + 1); /* right_loc is perserved */
+    uint16_t left_loc = binarySearchLocUint16(arr, container->elements_num, min_val); /* left_loc is not perserved */
 
-    /* leftPerservedNum , rightperservedNum are impossible both zero */
-    uint32_t leftPerservedNum = leftLoc;
-    uint32_t rightperservedNum = container->elementsNum - rightLoc;
+    /* left_perserved_num , right_perserved_num are impossible both zero */
+    uint32_t left_perserved_num = left_loc;
+    uint32_t right_perserved_num = container->elements_num - right_loc;
 
-    if (rightperservedNum != 0) {
-        memmove(arr + leftPerservedNum, arr + rightLoc, sizeof(arrayContainer) * rightperservedNum);
+    if (right_perserved_num != 0) {
+        memmove(arr + left_perserved_num, arr + right_loc, sizeof(arrayContainer) * right_perserved_num);
     }
-    container->elementsNum = leftPerservedNum + rightperservedNum;
+    container->elements_num = left_perserved_num + right_perserved_num;
     shrinkArrIfNeed(container);
 }
 
@@ -560,234 +560,234 @@ static void arrayContainerClearSingleBit(roaringContainer *container, uint16_t v
 {
     arrayContainer *arr = container->a.array;
 
-    uint16_t loc = binarySearchLocUint16(arr, container->elementsNum, val);
-    if (loc == container->elementsNum || arr[loc] != val) {
+    uint16_t loc = binarySearchLocUint16(arr, container->elements_num, val);
+    if (loc == container->elements_num || arr[loc] != val) {
         return;
     }
 
-    uint32_t backPreservedNum = container->elementsNum - loc - 1;
-    if (backPreservedNum != 0) {
-        memmove(arr + loc, arr + loc + 1, backPreservedNum * sizeof(arrayContainer));
+    uint32_t back_preserved_num = container->elements_num - loc - 1;
+    if (back_preserved_num != 0) {
+        memmove(arr + loc, arr + loc + 1, back_preserved_num * sizeof(arrayContainer));
     }
-    container->elementsNum--;
+    container->elements_num--;
     shrinkArrIfNeed(container);
 }
 
-static void arrayContainerClearBit(roaringContainer *container, uint16_t minVal, uint16_t maxVal)
+static void arrayContainerClearBit(roaringContainer *container, uint16_t min_val, uint16_t max_val)
 {
-     if (minVal == maxVal) {
-         arrayContainerClearSingleBit(container, minVal);
+     if (min_val == max_val) {
+         arrayContainerClearSingleBit(container, min_val);
          return;
      }
     arrayContainer *arr = container->a.array;
-    uint16_t firstVal = arr[0];
-    uint16_t lastVal = arr[container->elementsNum - 1];
+    uint16_t first_val = arr[0];
+    uint16_t last_val = arr[container->elements_num - 1];
 
-    if (minVal <= firstVal && maxVal >= lastVal) {
-        container->elementsNum = 0;
-    } else if (maxVal < firstVal || minVal > lastVal) {
+    if (min_val <= first_val && max_val >= last_val) {
+        container->elements_num = 0;
+    } else if (max_val < first_val || min_val > last_val) {
         return;
     } else {
         /* just clear the part of the array */
-        arrayContainerClearInterval(container, minVal, maxVal);
+        arrayContainerClearInterval(container, min_val, max_val);
     }
 }
 
-static void containerClearBit(roaringContainer *container, uint16_t minVal, uint16_t maxVal)
+static void containerClearBit(roaringContainer *container, uint16_t min_val, uint16_t max_val)
 {
-    if (container == NULL || container->elementsNum == 0) {
+    if (container == NULL || container->elements_num == 0) {
         return;
     }
-    uint32_t clearNum = maxVal - minVal + 1;
+    uint32_t clear_num = max_val - min_val + 1;
 
-    if (clearNum == CONTAINER_CAPACITY) {
+    if (clear_num == CONTAINER_CAPACITY) {
         clearContainer(container);
         return;
     }
     if (container->type == CONTAINER_TYPE_FULL) {
-        fullContainerClearBit(container, minVal, maxVal);
+        fullContainerClearBit(container, min_val, max_val);
     } else if (container->type == CONTAINER_TYPE_BITMAP) {
-        bitmapContainerClearBit(container, minVal, maxVal);
+        bitmapContainerClearBit(container, min_val, max_val);
     } else {
-        arrayContainerClearBit(container, minVal, maxVal);
+        arrayContainerClearBit(container, min_val, max_val);
     }
 }
 
  /* container get api */
 
-static uint32_t bitmapContainerGetBitNum(roaringContainer *container, uint16_t minVal, uint16_t maxVal)
+static uint32_t bitmapContainerGetBitNum(roaringContainer *container, uint16_t min_val, uint16_t max_val)
 {
     bitmapContainer *bitmap = container->b.bitmap;
 
-    if (minVal == maxVal) {
-        return bitmapCheckBitStatus(bitmap, minVal);
+    if (min_val == max_val) {
+        return bitmapCheckBitStatus(bitmap, min_val);
     }
-    /* assuming minVal is first bit in byte, maxVal is last bit in byte */
-    uint16_t firstFullByteIdx = minVal >> 3;
-    uint16_t lastFullByteIdx = maxVal >> 3;
+    /* assuming min_val is first bit in byte, max_val is last bit in byte */
+    uint16_t first_full_byte_idx = min_val >> 3;
+    uint16_t last_full_byte_idx = max_val >> 3;
 
-    uint32_t bitsNum = 0;
+    uint32_t bits_num = 0;
 
-    if (firstFullByteIdx == lastFullByteIdx) {
-        uint8_t *byte = bitmap + firstFullByteIdx;
-        uint32_t getBitNum = maxVal - minVal + 1;
-        uint8_t bitIdx = minVal & MOD_8_MASK;
+    if (first_full_byte_idx == last_full_byte_idx) {
+        uint8_t *byte = bitmap + first_full_byte_idx;
+        uint32_t get_bit_num = max_val - min_val + 1;
+        uint8_t bit_idx = min_val & MOD_8_MASK;
 
-        return bitsNumTable[*byte & (((1 << getBitNum) - 1) << bitIdx)]; /* n bits mid of the byte */
-    }
-
-    /* minVal maxVal at different bytes */
-    /* if minVal is not first bit in byte */
-    if (minVal > firstFullByteIdx << 3) {
-        uint8_t *firstByte = bitmap + firstFullByteIdx;
-        uint8_t checkBitsNum = ((firstFullByteIdx + 1) << 3) - minVal; /* the upper n bits */
-
-        bitsNum += bitsNumTable[*firstByte & ~((1 << (8 - checkBitsNum)) - 1)];
-        firstFullByteIdx++;
+        return bitsNumTable[*byte & (((1 << get_bit_num) - 1) << bit_idx)]; /* n bits mid of the byte */
     }
 
-    /* maxVal is not last bit in byte */
-    if (maxVal < ((lastFullByteIdx + 1) << 3) - 1) {
-        uint8_t *lastByte = bitmap + lastFullByteIdx;
-        uint8_t checkBitsNum = maxVal - (lastFullByteIdx << 3) + 1; /* the lower n bits */
+    /* min_val max_val at different bytes */
+    /* if min_val is not first bit in byte */
+    if (min_val > first_full_byte_idx << 3) {
+        uint8_t *first_byte = bitmap + first_full_byte_idx;
+        uint8_t check_bits_num = ((first_full_byte_idx + 1) << 3) - min_val; /* the upper n bits */
 
-        bitsNum += bitsNumTable[*lastByte & ((1 << checkBitsNum) - 1)];
-        lastFullByteIdx--;
-    }
-    if (firstFullByteIdx <= lastFullByteIdx) {
-        bitsNum += bitmapCountBits(bitmap, firstFullByteIdx, lastFullByteIdx);
+        bits_num += bitsNumTable[*first_byte & ~((1 << (8 - check_bits_num)) - 1)];
+        first_full_byte_idx++;
     }
 
-    return bitsNum;
+    /* max_val is not last bit in byte */
+    if (max_val < ((last_full_byte_idx + 1) << 3) - 1) {
+        uint8_t *last_byte = bitmap + last_full_byte_idx;
+        uint8_t check_bits_num = max_val - (last_full_byte_idx << 3) + 1; /* the lower n bits */
+
+        bits_num += bitsNumTable[*last_byte & ((1 << check_bits_num) - 1)];
+        last_full_byte_idx--;
+    }
+    if (first_full_byte_idx <= last_full_byte_idx) {
+        bits_num += bitmapCountBits(bitmap, first_full_byte_idx, last_full_byte_idx);
+    }
+
+    return bits_num;
 }
 
 static uint8_t arrayContainerGetSingleBit(roaringContainer *container, uint16_t val) {
     arrayContainer *arr = container->a.array;
 
-    uint16_t loc = binarySearchLocUint16(arr, container->elementsNum, val);
-    if (loc < container->elementsNum && arr[loc] == val) {
+    uint16_t loc = binarySearchLocUint16(arr, container->elements_num, val);
+    if (loc < container->elements_num && arr[loc] == val) {
         return 1;
     }
     return 0;
 }
 
-static uint32_t arrayContainerGetBitNum(roaringContainer *container, uint16_t minVal, uint16_t maxVal)
+static uint32_t arrayContainerGetBitNum(roaringContainer *container, uint16_t min_val, uint16_t max_val)
 {
-     if (minVal == maxVal) {
-         return arrayContainerGetSingleBit(container, minVal);
+     if (min_val == max_val) {
+         return arrayContainerGetSingleBit(container, min_val);
      }
     arrayContainer *arr = container->a.array;
-    uint16_t firstVal = arr[0];
-    uint16_t lastVal = arr[container->elementsNum - 1];
+    uint16_t first_val = arr[0];
+    uint16_t last_val = arr[container->elements_num - 1];
 
-    if (maxVal < firstVal || minVal > lastVal) {
+    if (max_val < first_val || min_val > last_val) {
         return 0;
     }
-    uint16_t leftLoc = binarySearchLocUint16(arr, container->elementsNum, minVal);
-    uint16_t rightLoc = binarySearchLocUint16(arr, container->elementsNum, maxVal);
+    uint16_t left_loc = binarySearchLocUint16(arr, container->elements_num, min_val);
+    uint16_t right_loc = binarySearchLocUint16(arr, container->elements_num, max_val);
 
-    /* maxVal not exist */
-    if (rightLoc == container->elementsNum || arr[rightLoc] != maxVal) {
-        rightLoc--;
+    /* max_val not exist */
+    if (right_loc == container->elements_num || arr[right_loc] != max_val) {
+        right_loc--;
     }
-    if (rightLoc >= leftLoc) {
-        return rightLoc - leftLoc + 1;
+    if (right_loc >= left_loc) {
+        return right_loc - left_loc + 1;
     }
     return 0;
 }
 
-static uint32_t containerGetBitNum(roaringContainer *container, uint16_t minVal, uint16_t maxVal)
+static uint32_t containerGetBitNum(roaringContainer *container, uint16_t min_val, uint16_t max_val)
 {
-    if (container == NULL || container->elementsNum == 0) {
+    if (container == NULL || container->elements_num == 0) {
         return 0;
     }
-    if (maxVal - minVal + 1 == CONTAINER_CAPACITY) {
-        return container->elementsNum;
+    if (max_val - min_val + 1 == CONTAINER_CAPACITY) {
+        return container->elements_num;
     }
 
     if (container->type == CONTAINER_TYPE_FULL) {
-        return maxVal - minVal + 1;
+        return max_val - min_val + 1;
     } else if (container->type == CONTAINER_TYPE_BITMAP) {
-        return bitmapContainerGetBitNum(container, minVal, maxVal);
+        return bitmapContainerGetBitNum(container, min_val, max_val);
     } else {
-        return arrayContainerGetBitNum(container, minVal, maxVal);
+        return arrayContainerGetBitNum(container, min_val, max_val);
     }
 }
 
 /* rbm operate container api */
 
-static void rbmDeleteBucket(roaringBitmap* rbm, uint8_t bucketIdx)
+static void rbmDeleteBucket(roaringBitmap* rbm, uint8_t bucket_idx)
 {
-    uint32_t loc = binarySearchLocUint8(rbm->buckets, rbm->bucketsNum, bucketIdx);
+    uint32_t loc = binarySearchLocUint8(rbm->buckets, rbm->buckets_num, bucket_idx);
 
-    if (loc == rbm->bucketsNum || rbm->buckets[loc] != bucketIdx) {
+    if (loc == rbm->buckets_num || rbm->buckets[loc] != bucket_idx) {
         return;
     }
 
     clearContainer(rbm->containers[loc]);
     roaring_free(rbm->containers[loc]);
 
-    uint32_t leftPerservedNum = loc;
-    uint32_t rightPerservedNum = rbm->bucketsNum - loc - 1;
-    uint32_t newNum = leftPerservedNum + rightPerservedNum;
+    uint32_t left_perserved_num = loc;
+    uint32_t right_perserved_num = rbm->buckets_num - loc - 1;
+    uint32_t new_num = left_perserved_num + right_perserved_num;
 
-    uint8_t *newKeys = roaring_malloc(sizeof(uint8_t) * newNum);
-    roaringContainer **newContainers = roaring_malloc(sizeof(roaringContainer *) * newNum);
+    uint8_t *new_keys = roaring_malloc(sizeof(uint8_t) * new_num);
+    roaringContainer **new_containers = roaring_malloc(sizeof(roaringContainer *) * new_num);
 
-    if (leftPerservedNum) {
-        memcpy(newKeys, rbm->buckets, sizeof(uint8_t) * leftPerservedNum);
-        memcpy(newContainers, rbm->containers, sizeof(roaringContainer *) * leftPerservedNum);
+    if (left_perserved_num) {
+        memcpy(new_keys, rbm->buckets, sizeof(uint8_t) * left_perserved_num);
+        memcpy(new_containers, rbm->containers, sizeof(roaringContainer *) * left_perserved_num);
     }
-    if (rightPerservedNum) {
-        memcpy(newKeys + leftPerservedNum, rbm->buckets + leftPerservedNum + 1, sizeof(uint8_t) * rightPerservedNum);
-        memcpy(newContainers + leftPerservedNum, rbm->containers + leftPerservedNum + 1, sizeof(roaringContainer *) * rightPerservedNum);
+    if (right_perserved_num) {
+        memcpy(new_keys + left_perserved_num, rbm->buckets + left_perserved_num + 1, sizeof(uint8_t) * right_perserved_num);
+        memcpy(new_containers + left_perserved_num, rbm->containers + left_perserved_num + 1, sizeof(roaringContainer *) * right_perserved_num);
     }
 
     roaring_free(rbm->buckets);
     roaring_free(rbm->containers);
-    rbm->buckets = newKeys;
-    rbm->containers = newContainers;
-    rbm->bucketsNum = newNum;
+    rbm->buckets = new_keys;
+    rbm->containers = new_containers;
+    rbm->buckets_num = new_num;
 }
 
-/* cursor is the physical idx of buckets, bucketIndex will be saved in keys */
-static void rbmInsertBucket(roaringBitmap* rbm, uint32_t cursor, uint8_t bucketIndex)
+/* cursor is the physical idx of buckets, bucket_index will be saved in keys */
+static void rbmInsertBucket(roaringBitmap* rbm, uint32_t cursor, uint8_t bucket_index)
 {
-    rbm->buckets = roaring_realloc(rbm->buckets, (rbm->bucketsNum + 1) * sizeof(uint8_t));
-    rbm->containers = roaring_realloc(rbm->containers, (rbm->bucketsNum + 1) * sizeof(roaringContainer *));
+    rbm->buckets = roaring_realloc(rbm->buckets, (rbm->buckets_num + 1) * sizeof(uint8_t));
+    rbm->containers = roaring_realloc(rbm->containers, (rbm->buckets_num + 1) * sizeof(roaringContainer *));
 
-    uint8_t leftBucketsNum = cursor;
+    uint8_t left_buckets_num = cursor;
 
-    if (rbm->bucketsNum - leftBucketsNum != 0) {
-        memmove(rbm->buckets + leftBucketsNum + 1, rbm->buckets + leftBucketsNum, (rbm->bucketsNum - leftBucketsNum) * sizeof(uint8_t));
-        memmove(rbm->containers + leftBucketsNum + 1, rbm->containers + leftBucketsNum, (rbm->bucketsNum - leftBucketsNum) *
+    if (rbm->buckets_num - left_buckets_num != 0) {
+        memmove(rbm->buckets + left_buckets_num + 1, rbm->buckets + left_buckets_num, (rbm->buckets_num - left_buckets_num) * sizeof(uint8_t));
+        memmove(rbm->containers + left_buckets_num + 1, rbm->containers + left_buckets_num, (rbm->buckets_num - left_buckets_num) *
                                                                                         sizeof(roaringContainer *));
     }
 
-    rbm->buckets[leftBucketsNum] = bucketIndex;
-    rbm->containers[leftBucketsNum] = roaring_calloc(sizeof(roaringContainer));
-    rbm->bucketsNum++;
+    rbm->buckets[left_buckets_num] = bucket_index;
+    rbm->containers[left_buckets_num] = roaring_calloc(sizeof(roaringContainer));
+    rbm->buckets_num++;
 }
 
-static roaringContainer *rbmGetContainerIfNoInsert(roaringBitmap* rbm, uint8_t bucketIndex)
+static roaringContainer *rbmGetContainerIfNoInsert(roaringBitmap* rbm, uint8_t bucket_index)
 {
-    uint8_t idx = binarySearchLocUint8(rbm->buckets, rbm->bucketsNum, bucketIndex);
+    uint8_t idx = binarySearchLocUint8(rbm->buckets, rbm->buckets_num, bucket_index);
 
-    if (idx < rbm->bucketsNum && rbm->buckets[idx] == bucketIndex) {
+    if (idx < rbm->buckets_num && rbm->buckets[idx] == bucket_index) {
         return rbm->containers[idx];
     }
-    rbmInsertBucket(rbm, idx, bucketIndex);
+    rbmInsertBucket(rbm, idx, bucket_index);
     return rbm->containers[idx];
 }
 
-static roaringContainer *rbmGetContainer(roaringBitmap* rbm, uint8_t bucketIndex)
+static roaringContainer *rbmGetContainer(roaringBitmap* rbm, uint8_t bucket_index)
 {
-    if (rbm->bucketsNum == 0) {
+    if (rbm->buckets_num == 0) {
         return NULL;
     }
-    uint8_t idx = binarySearchLocUint8(rbm->buckets, rbm->bucketsNum, bucketIndex);
+    uint8_t idx = binarySearchLocUint8(rbm->buckets, rbm->buckets_num, bucket_index);
 
-    if (idx == rbm->bucketsNum || rbm->buckets[idx] != bucketIndex) {
+    if (idx == rbm->buckets_num || rbm->buckets[idx] != bucket_index) {
         return NULL;
     }
     return rbm->containers[idx];
@@ -795,136 +795,136 @@ static roaringContainer *rbmGetContainer(roaringBitmap* rbm, uint8_t bucketIndex
 
 /* bucket set get clear api */
 
-static void bucketClearBit(roaringBitmap* rbm, uint8_t bucketIdx, uint16_t minVal, uint16_t maxVal)
+static void bucketClearBit(roaringBitmap* rbm, uint8_t bucket_idx, uint16_t min_val, uint16_t max_val)
 {
-    roaringContainer *container = rbmGetContainer(rbm, bucketIdx);
+    roaringContainer *container = rbmGetContainer(rbm, bucket_idx);
     if (container == NULL) {
         return;
     }
-    containerClearBit(container, minVal, maxVal);
-    if (container->elementsNum == 0) {
-        rbmDeleteBucket(rbm, bucketIdx);
+    containerClearBit(container, min_val, max_val);
+    if (container->elements_num == 0) {
+        rbmDeleteBucket(rbm, bucket_idx);
     }
 }
 
-static void bucketSetBit(roaringBitmap* rbm, uint8_t bucketIdx, uint16_t minVal, uint16_t maxVal)
+static void bucketSetBit(roaringBitmap* rbm, uint8_t bucket_idx, uint16_t min_val, uint16_t max_val)
 {
-    containerSetBit(rbmGetContainerIfNoInsert(rbm, bucketIdx), minVal, maxVal);
+    containerSetBit(rbmGetContainerIfNoInsert(rbm, bucket_idx), min_val, max_val);
 }
 
-static uint32_t bucketGetBitNum(roaringBitmap* rbm, uint8_t bucketIdx, uint16_t minVal, uint16_t maxVal)
+static uint32_t bucketGetBitNum(roaringBitmap* rbm, uint8_t bucket_idx, uint16_t min_val, uint16_t max_val)
 {
-    return containerGetBitNum(rbmGetContainer(rbm, bucketIdx), minVal, maxVal);
+    return containerGetBitNum(rbmGetContainer(rbm, bucket_idx), min_val, max_val);
 }
 
-static void rbmSetBucketsFull(roaringBitmap* rbm, uint8_t minBucket, uint8_t maxBucket)
+static void rbmSetBucketsFull(roaringBitmap* rbm, uint8_t min_bucket, uint8_t max_bucket)
 {
-    uint32_t leftLoc = binarySearchLocUint8(rbm->buckets, rbm->bucketsNum, minBucket); /*  in set interval */
-    uint32_t rightLoc = binarySearchLocUint8(rbm->buckets, rbm->bucketsNum, maxBucket + 1); /* out of set interval */
+    uint32_t left_loc = binarySearchLocUint8(rbm->buckets, rbm->buckets_num, min_bucket); /*  in set interval */
+    uint32_t right_loc = binarySearchLocUint8(rbm->buckets, rbm->buckets_num, max_bucket + 1); /* out of set interval */
 
     /* the buckets alreaddy exist */
-    if (leftLoc != rbm->bucketsNum && rightLoc != 0 && rbm->buckets[leftLoc] == minBucket &&
-        rbm->buckets[rightLoc - 1] == maxBucket && rightLoc - 1 - leftLoc == (uint32_t)(maxBucket - minBucket)) {
-        for (uint32_t i = leftLoc; i < rightLoc; i++) {
+    if (left_loc != rbm->buckets_num && right_loc != 0 && rbm->buckets[left_loc] == min_bucket &&
+        rbm->buckets[right_loc - 1] == max_bucket && right_loc - 1 - left_loc == (uint32_t)(max_bucket - min_bucket)) {
+        for (uint32_t i = left_loc; i < right_loc; i++) {
             transToFullContainer(rbm->containers[i]);
         }
         return;
     }
 
-    for (uint32_t i = leftLoc; i < rightLoc; i++) {
+    for (uint32_t i = left_loc; i < right_loc; i++) {
         clearContainer(rbm->containers[i]);
         roaring_free(rbm->containers[i]);
     }
 
-    uint32_t leftPerservedNum = leftLoc;
-    uint32_t rightPerservedNum = rbm->bucketsNum - rightLoc;
-    uint32_t insertNum = maxBucket - minBucket + 1;
-    uint32_t newNum = leftPerservedNum + insertNum + rightPerservedNum;
+    uint32_t left_perserved_num = left_loc;
+    uint32_t right_perserved_num = rbm->buckets_num - right_loc;
+    uint32_t insert_num = max_bucket - min_bucket + 1;
+    uint32_t new_num = left_perserved_num + insert_num + right_perserved_num;
 
-    rbm->buckets = roaring_realloc(rbm->buckets, sizeof(uint8_t) * newNum);
-    rbm->containers = roaring_realloc(rbm->containers, sizeof(roaringContainer *) * newNum);
+    rbm->buckets = roaring_realloc(rbm->buckets, sizeof(uint8_t) * new_num);
+    rbm->containers = roaring_realloc(rbm->containers, sizeof(roaringContainer *) * new_num);
 
-    if (rightPerservedNum) {
-        memmove(rbm->buckets + leftPerservedNum + insertNum, rbm->buckets + rightLoc, sizeof(uint8_t) * rightPerservedNum);
-        memmove(rbm->containers + leftPerservedNum + insertNum, rbm->containers + rightLoc, sizeof(roaringContainer *) * rightPerservedNum);
+    if (right_perserved_num) {
+        memmove(rbm->buckets + left_perserved_num + insert_num, rbm->buckets + right_loc, sizeof(uint8_t) * right_perserved_num);
+        memmove(rbm->containers + left_perserved_num + insert_num, rbm->containers + right_loc, sizeof(roaringContainer *) * right_perserved_num);
     }
 
-    for (uint32_t i = leftPerservedNum, cursor = 0; i < leftPerservedNum + insertNum; i++, cursor++) {
-        rbm->buckets[i] = minBucket + cursor;
+    for (uint32_t i = left_perserved_num, cursor = 0; i < left_perserved_num + insert_num; i++, cursor++) {
+        rbm->buckets[i] = min_bucket + cursor;
         rbm->containers[i] = roaring_calloc(sizeof(roaringContainer));
         transToFullContainer(rbm->containers[i]);
     }
 
-    rbm->bucketsNum = newNum;
+    rbm->buckets_num = new_num;
 }
 
-static void rbmSetBucketsEmpty(roaringBitmap* rbm, uint8_t minBucket, uint8_t maxBucket)
+static void rbmSetBucketsEmpty(roaringBitmap* rbm, uint8_t min_bucket, uint8_t max_bucket)
 {
-    uint32_t leftLoc = binarySearchLocUint8(rbm->buckets, rbm->bucketsNum, minBucket); /* in the interval to be deleted */
-    uint32_t rightLoc = binarySearchLocUint8(rbm->buckets, rbm->bucketsNum, maxBucket + 1); /* out of the interval to be deleted */
+    uint32_t left_loc = binarySearchLocUint8(rbm->buckets, rbm->buckets_num, min_bucket); /* in the interval to be deleted */
+    uint32_t right_loc = binarySearchLocUint8(rbm->buckets, rbm->buckets_num, max_bucket + 1); /* out of the interval to be deleted */
 
     /* interval to be deleted not exist */
-    if (leftLoc == rightLoc) {
+    if (left_loc == right_loc) {
         return;
     }
 
-    for (uint32_t i = leftLoc; i < rightLoc; i++) {
+    for (uint32_t i = left_loc; i < right_loc; i++) {
         clearContainer(rbm->containers[i]);
         roaring_free(rbm->containers[i]);
     }
 
-    uint32_t leftPerservedNum = leftLoc;
-    uint32_t rightPerservedNum = rbm->bucketsNum - rightLoc;
-    uint32_t newNum = leftPerservedNum + rightPerservedNum;
+    uint32_t left_perserved_num = left_loc;
+    uint32_t right_perserved_num = rbm->buckets_num - right_loc;
+    uint32_t new_num = left_perserved_num + right_perserved_num;
 
-    uint8_t *newKeys = roaring_malloc(sizeof(uint8_t) * newNum);
-    roaringContainer **newContainers = roaring_malloc(sizeof(roaringContainer *) * newNum);
+    uint8_t *new_keys = roaring_malloc(sizeof(uint8_t) * new_num);
+    roaringContainer **new_containers = roaring_malloc(sizeof(roaringContainer *) * new_num);
 
-    if (leftPerservedNum) {
-        memcpy(newKeys, rbm->buckets, sizeof(uint8_t) * leftPerservedNum);
-        memcpy(newContainers, rbm->containers, sizeof(roaringContainer *) * leftPerservedNum);
+    if (left_perserved_num) {
+        memcpy(new_keys, rbm->buckets, sizeof(uint8_t) * left_perserved_num);
+        memcpy(new_containers, rbm->containers, sizeof(roaringContainer *) * left_perserved_num);
     }
-    if (rightPerservedNum) {
-        memcpy(newKeys + leftPerservedNum, rbm->buckets + rightLoc, sizeof(uint8_t) * rightPerservedNum);
-        memcpy(newContainers + leftPerservedNum, rbm->containers + rightLoc, sizeof(roaringContainer *) * rightPerservedNum);
+    if (right_perserved_num) {
+        memcpy(new_keys + left_perserved_num, rbm->buckets + right_loc, sizeof(uint8_t) * right_perserved_num);
+        memcpy(new_containers + left_perserved_num, rbm->containers + right_loc, sizeof(roaringContainer *) * right_perserved_num);
     }
 
     roaring_free(rbm->buckets);
     roaring_free(rbm->containers);
-    rbm->buckets = newKeys;
-    rbm->containers = newContainers;
-    rbm->bucketsNum = newNum;
+    rbm->buckets = new_keys;
+    rbm->containers = new_containers;
+    rbm->buckets_num = new_num;
 }
 
-static uint32_t rbmGetSingleBucketBitNum(roaringBitmap* rbm, uint8_t bucketIndex)
+static uint32_t rbmGetSingleBucketBitNum(roaringBitmap* rbm, uint8_t bucket_index)
 {
-    roaringContainer *container = rbmGetContainer(rbm, bucketIndex);
+    roaringContainer *container = rbmGetContainer(rbm, bucket_index);
     if (container == NULL) {
         return 0;
     }
-    return container->elementsNum;
+    return container->elements_num;
 }
 
-static uint32_t rbmGetBucketsBitNum(roaringBitmap* rbm, uint8_t minBucket, uint8_t maxBucket)
+static uint32_t rbmGetBucketsBitNum(roaringBitmap* rbm, uint8_t min_bucket, uint8_t max_bucket)
 {
-    assert(minBucket <= maxBucket);
+    assert(min_bucket <= max_bucket);
 
-    if (minBucket == maxBucket) {
-        return rbmGetSingleBucketBitNum(rbm, minBucket);
+    if (min_bucket == max_bucket) {
+        return rbmGetSingleBucketBitNum(rbm, min_bucket);
     }
 
-    uint8_t leftLoc = binarySearchLocUint8(rbm->buckets, rbm->bucketsNum, minBucket);
-    uint8_t rightLoc = binarySearchLocUint8(rbm->buckets, rbm->bucketsNum, maxBucket);
+    uint8_t left_loc = binarySearchLocUint8(rbm->buckets, rbm->buckets_num, min_bucket);
+    uint8_t right_loc = binarySearchLocUint8(rbm->buckets, rbm->buckets_num, max_bucket);
 
-    uint32_t bitsNum = 0;
+    uint32_t bits_num = 0;
 
-    for (uint8_t i = leftLoc; i <= rightLoc; i++) {
-        if (i == rbm->bucketsNum || rbm->buckets[i] > maxBucket) {
+    for (uint8_t i = left_loc; i <= right_loc; i++) {
+        if (i == rbm->buckets_num || rbm->buckets[i] > max_bucket) {
             break;
         }
-        bitsNum += rbm->containers[i]->elementsNum;
+        bits_num += rbm->containers[i]->elements_num;
     }
-    return bitsNum;
+    return bits_num;
 }
 
 /* rbm export api */
@@ -932,7 +932,7 @@ static uint32_t rbmGetBucketsBitNum(roaringBitmap* rbm, uint8_t minBucket, uint8
 roaringBitmap* rbmCreate(void)
 {
     roaringBitmap *bitmap = roaring_malloc(sizeof(roaringBitmap));
-    bitmap->bucketsNum = 0;
+    bitmap->buckets_num = 0;
     bitmap->containers = NULL;
     bitmap->buckets = NULL;
     return bitmap;
@@ -944,7 +944,7 @@ void rbmDestory(roaringBitmap* rbm)
         return;
     }
     roaring_free(rbm->buckets);
-    for (int i = 0; i < rbm->bucketsNum; i++) {
+    for (int i = 0; i < rbm->buckets_num; i++) {
         clearContainer(rbm->containers[i]);
         roaring_free(rbm->containers[i]);
     }
@@ -952,163 +952,163 @@ void rbmDestory(roaringBitmap* rbm)
     roaring_free(rbm);
 }
 
-void rbmSetBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit)
+void rbmSetBitRange(roaringBitmap* rbm, uint32_t min_bit, uint32_t max_bit)
 {
-    serverAssert(rbm != NULL && minBit <= maxBit);
+    serverAssert(rbm != NULL && min_bit <= max_bit);
 
-    uint32_t firstBucketIdx = minBit >> CONTAINER_BITS;
-    uint32_t lastBucketIdx = maxBit >> CONTAINER_BITS;
+    uint32_t first_bucket_idx = min_bit >> CONTAINER_BITS;
+    uint32_t last_bucket_idx = max_bit >> CONTAINER_BITS;
 
-    assert(lastBucketIdx < (1 << BUCKET_MAX_BITS));
+    assert(last_bucket_idx < (1 << BUCKET_MAX_BITS));
 
-    uint16_t minVal = minBit & CONTAINER_MASK;
-    uint16_t maxVal = maxBit & CONTAINER_MASK;
+    uint16_t min_val = min_bit & CONTAINER_MASK;
+    uint16_t max_val = max_bit & CONTAINER_MASK;
 
-    /* minBit maxBit in the same Container */
-    if (firstBucketIdx == lastBucketIdx) {
-        bucketSetBit(rbm, firstBucketIdx, minVal, maxVal);
+    /* min_bit max_bit in the same Container */
+    if (first_bucket_idx == last_bucket_idx) {
+        bucketSetBit(rbm, first_bucket_idx, min_val, max_val);
         return;
     }
 
-    /* assuming the minBit is first bit in the container, maxBit is last bit in the container */
-    uint32_t firstWholeBucket = firstBucketIdx;
-    uint32_t lastWholeBucket = lastBucketIdx;
+    /* assuming the min_bit is first bit in the container, max_bit is last bit in the container */
+    uint32_t first_whole_bucket = first_bucket_idx;
+    uint32_t last_whole_bucket = last_bucket_idx;
 
-    /* minBit is not first bit in the container */
-    if ((minBit & CONTAINER_MASK) != 0) {
-        minVal = minBit & CONTAINER_MASK;
-        maxVal = ((firstBucketIdx + 1) * CONTAINER_CAPACITY - 1) & CONTAINER_MASK;
-        bucketSetBit(rbm, firstBucketIdx, minVal, maxVal);
-        firstWholeBucket++;
+    /* min_bit is not first bit in the container */
+    if ((min_bit & CONTAINER_MASK) != 0) {
+        min_val = min_bit & CONTAINER_MASK;
+        max_val = ((first_bucket_idx + 1) * CONTAINER_CAPACITY - 1) & CONTAINER_MASK;
+        bucketSetBit(rbm, first_bucket_idx, min_val, max_val);
+        first_whole_bucket++;
     }
-    /* maxBit is not last bit in the container */
-    if (((maxBit + 1) & CONTAINER_MASK) != 0) {
-        minVal = (lastBucketIdx * CONTAINER_CAPACITY) & CONTAINER_MASK;
-        maxVal = maxBit & CONTAINER_MASK;
-        bucketSetBit(rbm, lastBucketIdx, minVal, maxVal);
-        lastWholeBucket--;
+    /* max_bit is not last bit in the container */
+    if (((max_bit + 1) & CONTAINER_MASK) != 0) {
+        min_val = (last_bucket_idx * CONTAINER_CAPACITY) & CONTAINER_MASK;
+        max_val = max_bit & CONTAINER_MASK;
+        bucketSetBit(rbm, last_bucket_idx, min_val, max_val);
+        last_whole_bucket--;
     }
 
-    if (firstWholeBucket <= lastWholeBucket) {
-        rbmSetBucketsFull(rbm, firstWholeBucket, lastWholeBucket);
+    if (first_whole_bucket <= last_whole_bucket) {
+        rbmSetBucketsFull(rbm, first_whole_bucket, last_whole_bucket);
     }
 }
 
-uint32_t rbmGetBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit)
+uint32_t rbmGetBitRange(roaringBitmap* rbm, uint32_t min_bit, uint32_t max_bit)
 {
-    serverAssert(rbm != NULL && minBit <= maxBit);
-    uint32_t firstBucketIdx = minBit >> CONTAINER_BITS;
-    uint32_t lastBucketIdx = maxBit >> CONTAINER_BITS;
+    serverAssert(rbm != NULL && min_bit <= max_bit);
+    uint32_t first_bucket_idx = min_bit >> CONTAINER_BITS;
+    uint32_t last_bucket_idx = max_bit >> CONTAINER_BITS;
 
-    assert(lastBucketIdx < (1 << BUCKET_MAX_BITS));
+    assert(last_bucket_idx < (1 << BUCKET_MAX_BITS));
 
-    uint16_t minVal = minBit & CONTAINER_MASK;
-    uint16_t maxVal = maxBit & CONTAINER_MASK;
+    uint16_t min_val = min_bit & CONTAINER_MASK;
+    uint16_t max_val = max_bit & CONTAINER_MASK;
 
-    uint32_t bitsNum = 0;
-    /* minBit maxBit in the same Container */
-    if (firstBucketIdx == lastBucketIdx) {
-        return bucketGetBitNum(rbm, firstBucketIdx, minVal, maxVal);
+    uint32_t bits_num = 0;
+    /* min_bit max_bit in the same Container */
+    if (first_bucket_idx == last_bucket_idx) {
+        return bucketGetBitNum(rbm, first_bucket_idx, min_val, max_val);
     }
 
-    /* process  container of minBit */
-    maxVal = ((firstBucketIdx + 1) * CONTAINER_CAPACITY - 1) & CONTAINER_MASK;
-    bitsNum += bucketGetBitNum(rbm, firstBucketIdx, minVal, maxVal);
+    /* process  container of min_bit */
+    max_val = ((first_bucket_idx + 1) * CONTAINER_CAPACITY - 1) & CONTAINER_MASK;
+    bits_num += bucketGetBitNum(rbm, first_bucket_idx, min_val, max_val);
 
-    /* process  container of maxBit */
-    minVal = (lastBucketIdx * CONTAINER_CAPACITY) & CONTAINER_MASK;
-    maxVal = maxBit & CONTAINER_MASK;
-    bitsNum += bucketGetBitNum(rbm, lastBucketIdx, minVal, maxVal);
+    /* process  container of max_bit */
+    min_val = (last_bucket_idx * CONTAINER_CAPACITY) & CONTAINER_MASK;
+    max_val = max_bit & CONTAINER_MASK;
+    bits_num += bucketGetBitNum(rbm, last_bucket_idx, min_val, max_val);
 
-    if (firstBucketIdx + 1 < lastBucketIdx) {
-        bitsNum += rbmGetBucketsBitNum(rbm, firstBucketIdx + 1, lastBucketIdx - 1);
+    if (first_bucket_idx + 1 < last_bucket_idx) {
+        bits_num += rbmGetBucketsBitNum(rbm, first_bucket_idx + 1, last_bucket_idx - 1);
     }
 
-    return bitsNum;
+    return bits_num;
 }
 
-void rbmClearBitRange(roaringBitmap* rbm, uint32_t minBit, uint32_t maxBit)
+void rbmClearBitRange(roaringBitmap* rbm, uint32_t min_bit, uint32_t max_bit)
 {
-    serverAssert(rbm != NULL && minBit <= maxBit);
-    uint32_t firstBucketIdx = minBit >> CONTAINER_BITS;
-    uint32_t lastBucketIdx = maxBit >> CONTAINER_BITS;
+    serverAssert(rbm != NULL && min_bit <= max_bit);
+    uint32_t first_bucket_idx = min_bit >> CONTAINER_BITS;
+    uint32_t last_bucket_idx = max_bit >> CONTAINER_BITS;
 
-    assert(lastBucketIdx < (1 << BUCKET_MAX_BITS));
+    assert(last_bucket_idx < (1 << BUCKET_MAX_BITS));
 
-    uint16_t minVal = minBit & CONTAINER_MASK;
-    uint16_t maxVal = maxBit & CONTAINER_MASK;
+    uint16_t min_val = min_bit & CONTAINER_MASK;
+    uint16_t max_val = max_bit & CONTAINER_MASK;
 
-    /* minBit maxBit in the same Container */
-    if (firstBucketIdx == lastBucketIdx) {
-        bucketClearBit(rbm, firstBucketIdx, minVal, maxVal);
+    /* min_bit max_bit in the same Container */
+    if (first_bucket_idx == last_bucket_idx) {
+        bucketClearBit(rbm, first_bucket_idx, min_val, max_val);
         return;
     }
 
-    /* assuming the minBit is first bit in the container, maxBit is last bit in the container */
-    uint32_t firstWholeBucket = firstBucketIdx;
-    uint32_t lastWholeBucket = lastBucketIdx;
+    /* assuming the min_bit is first bit in the container, max_bit is last bit in the container */
+    uint32_t first_whole_bucket = first_bucket_idx;
+    uint32_t last_whole_bucket = last_bucket_idx;
 
-    /* minBit is not first bit in the container */
-    if ((minBit & CONTAINER_MASK) != 0) {
+    /* min_bit is not first bit in the container */
+    if ((min_bit & CONTAINER_MASK) != 0) {
         /* 处理startBit 所属Container */
-        minVal = minBit & CONTAINER_MASK;
-        maxVal = ((firstBucketIdx + 1) * CONTAINER_CAPACITY - 1) & CONTAINER_MASK;
-        bucketClearBit(rbm, firstBucketIdx, minVal, maxVal);
-        firstWholeBucket++;
+        min_val = min_bit & CONTAINER_MASK;
+        max_val = ((first_bucket_idx + 1) * CONTAINER_CAPACITY - 1) & CONTAINER_MASK;
+        bucketClearBit(rbm, first_bucket_idx, min_val, max_val);
+        first_whole_bucket++;
     }
-    /* maxBit is not last bit in the container */
-    if (((maxBit + 1) & CONTAINER_MASK) != 0) {
-        minVal = (lastBucketIdx * CONTAINER_CAPACITY) & CONTAINER_MASK;
-        maxVal = maxBit & CONTAINER_MASK;
-        bucketClearBit(rbm, lastBucketIdx, minVal, maxVal);
-        lastWholeBucket--;
+    /* max_bit is not last bit in the container */
+    if (((max_bit + 1) & CONTAINER_MASK) != 0) {
+        min_val = (last_bucket_idx * CONTAINER_CAPACITY) & CONTAINER_MASK;
+        max_val = max_bit & CONTAINER_MASK;
+        bucketClearBit(rbm, last_bucket_idx, min_val, max_val);
+        last_whole_bucket--;
     }
 
-    if (firstWholeBucket <= lastWholeBucket) {
-        rbmSetBucketsEmpty(rbm, firstWholeBucket, lastWholeBucket);
+    if (first_whole_bucket <= last_whole_bucket) {
+        rbmSetBucketsEmpty(rbm, first_whole_bucket, last_whole_bucket);
     }
 }
 
-static inline void containersDup(roaringContainer **destContainers, roaringContainer **srcContainers, uint32_t num)
+static inline void containersDup(roaringContainer **dest_containers, roaringContainer **src_containers, uint32_t num)
 {
     for (uint32_t i = 0; i < num; i++) {
-        destContainers[i] = roaring_calloc(sizeof(roaringContainer));
-        destContainers[i]->elementsNum = srcContainers[i]->elementsNum;
-        destContainers[i]->type = srcContainers[i]->type;
-        if (destContainers[i]->type == CONTAINER_TYPE_BITMAP) {
-            destContainers[i]->b.bitmap = roaring_malloc(BITMAP_CONTAINER_SIZE);
-            memcpy(destContainers[i]->b.bitmap, srcContainers[i]->b.bitmap, BITMAP_CONTAINER_SIZE);
-        } else if (destContainers[i]->type == CONTAINER_TYPE_ARRAY) {
-            destContainers[i]->a.capacity = srcContainers[i]->a.capacity;
-            destContainers[i]->a.array = roaring_malloc(destContainers[i]->a.capacity * sizeof(arrayContainer));
-            memcpy(destContainers[i]->a.array, srcContainers[i]->a.array, destContainers[i]->a.capacity * sizeof(arrayContainer));
+        dest_containers[i] = roaring_calloc(sizeof(roaringContainer));
+        dest_containers[i]->elements_num = src_containers[i]->elements_num;
+        dest_containers[i]->type = src_containers[i]->type;
+        if (dest_containers[i]->type == CONTAINER_TYPE_BITMAP) {
+            dest_containers[i]->b.bitmap = roaring_malloc(BITMAP_CONTAINER_SIZE);
+            memcpy(dest_containers[i]->b.bitmap, src_containers[i]->b.bitmap, BITMAP_CONTAINER_SIZE);
+        } else if (dest_containers[i]->type == CONTAINER_TYPE_ARRAY) {
+            dest_containers[i]->a.capacity = src_containers[i]->a.capacity;
+            dest_containers[i]->a.array = roaring_malloc(dest_containers[i]->a.capacity * sizeof(arrayContainer));
+            memcpy(dest_containers[i]->a.array, src_containers[i]->a.array, dest_containers[i]->a.capacity * sizeof(arrayContainer));
         }
     }
 }
 
-void rbmdup(roaringBitmap* destRbm, roaringBitmap* srcRbm)
+void rbmdup(roaringBitmap* dest_rbm, roaringBitmap* src_rbm)
 {
-    serverAssert(destRbm != NULL && srcRbm != NULL);
-    serverAssert(destRbm->buckets == NULL && destRbm->containers == NULL);
-    destRbm->bucketsNum = srcRbm->bucketsNum;
-    destRbm->buckets = roaring_malloc(destRbm->bucketsNum * sizeof(uint8_t));
-    memcpy(destRbm->buckets, srcRbm->buckets, sizeof(uint8_t) * destRbm->bucketsNum);
-    destRbm->containers = roaring_calloc(destRbm->bucketsNum * sizeof(roaringContainer *));
-    containersDup(destRbm->containers, srcRbm->containers, destRbm->bucketsNum);
+    serverAssert(dest_rbm != NULL && src_rbm != NULL);
+    serverAssert(dest_rbm->buckets == NULL && dest_rbm->containers == NULL);
+    dest_rbm->buckets_num = src_rbm->buckets_num;
+    dest_rbm->buckets = roaring_malloc(dest_rbm->buckets_num * sizeof(uint8_t));
+    memcpy(dest_rbm->buckets, src_rbm->buckets, sizeof(uint8_t) * dest_rbm->buckets_num);
+    dest_rbm->containers = roaring_calloc(dest_rbm->buckets_num * sizeof(roaringContainer *));
+    containersDup(dest_rbm->containers, src_rbm->containers, dest_rbm->buckets_num);
 }
 
-static inline int containersAreEqual(roaringContainer **destContainers, roaringContainer **srcContainers, uint32_t num)
+static inline int containersAreEqual(roaringContainer **dest_containers, roaringContainer **src_containers, uint32_t num)
 {
     for (uint32_t i = 0; i < num; i++) {
-        if (destContainers[i]->elementsNum != srcContainers[i]->elementsNum || destContainers[i]->type != srcContainers[i]->type) {
+        if (dest_containers[i]->elements_num != src_containers[i]->elements_num || dest_containers[i]->type != src_containers[i]->type) {
             return 0;
         }
-        if (destContainers[i]->type == CONTAINER_TYPE_BITMAP) {
-            if (0 != memcmp(destContainers[i]->b.bitmap, srcContainers[i]->b.bitmap, BITMAP_CONTAINER_SIZE)) {
+        if (dest_containers[i]->type == CONTAINER_TYPE_BITMAP) {
+            if (0 != memcmp(dest_containers[i]->b.bitmap, src_containers[i]->b.bitmap, BITMAP_CONTAINER_SIZE)) {
                 return 0;
             }
-        } else if (destContainers[i]->type == CONTAINER_TYPE_ARRAY) {
-            if (0 != memcmp(destContainers[i]->a.array, srcContainers[i]->a.array, destContainers[i]->elementsNum * sizeof(arrayContainer))) {
+        } else if (dest_containers[i]->type == CONTAINER_TYPE_ARRAY) {
+            if (0 != memcmp(dest_containers[i]->a.array, src_containers[i]->a.array, dest_containers[i]->elements_num * sizeof(arrayContainer))) {
                 return 0;
             }
         }
@@ -1116,111 +1116,111 @@ static inline int containersAreEqual(roaringContainer **destContainers, roaringC
     return 1;
 }
 
-int rbmIsEqual(roaringBitmap* destRbm, roaringBitmap* srcRbm)
+int rbmIsEqual(roaringBitmap* dest_rbm, roaringBitmap* src_rbm)
 {
-    serverAssert(destRbm != NULL && srcRbm != NULL);
-    if (destRbm->bucketsNum != srcRbm->bucketsNum || 0 != memcmp(destRbm->buckets, srcRbm->buckets, destRbm->bucketsNum *
+    serverAssert(dest_rbm != NULL && src_rbm != NULL);
+    if (dest_rbm->buckets_num != src_rbm->buckets_num || 0 != memcmp(dest_rbm->buckets, src_rbm->buckets, dest_rbm->buckets_num *
             sizeof(uint8_t))) {
         return 0;
     }
-    return containersAreEqual(destRbm->containers, srcRbm->containers, destRbm->bucketsNum);
+    return containersAreEqual(dest_rbm->containers, src_rbm->containers, dest_rbm->buckets_num);
 }
 
-static inline uint32_t arrayContainerLocateSetBitPos(roaringContainer *container, uint8_t bitIdxPrefix, uint32_t *idxArrCursor, uint32_t bitsNum)
+static inline uint32_t arrayContainerLocateSetBitPos(roaringContainer *container, uint8_t bit_idx_prefix, uint32_t *idx_arr_cursor, uint32_t bits_num)
 {
-    uint32_t leftNum = bitsNum;
-    uint32_t idxPrefix = bitIdxPrefix;
-    for (int i = 0; i < container->elementsNum && leftNum != 0; i++) {
-        uint32_t bitIdx = (idxPrefix << CONTAINER_BITS) + container->a.array[i];
-        *idxArrCursor = bitIdx;
-        idxArrCursor++;
-        leftNum--;
+    uint32_t left_num = bits_num;
+    uint32_t idx_prefix = bit_idx_prefix;
+    for (int i = 0; i < container->elements_num && left_num != 0; i++) {
+        uint32_t bit_idx = (idx_prefix << CONTAINER_BITS) + container->a.array[i];
+        *idx_arr_cursor = bit_idx;
+        idx_arr_cursor++;
+        left_num--;
     }
-    return bitsNum - leftNum;
+    return bits_num - left_num;
 }
 
-static inline uint32_t bitmapContainerLocateSetBitPos(roaringContainer *container, uint8_t bitIdxPrefix, uint32_t *idxArrCursor, uint32_t bitsNum)
+static inline uint32_t bitmapContainerLocateSetBitPos(roaringContainer *container, uint8_t bit_idx_prefix, uint32_t *idx_arr_cursor, uint32_t bits_num)
 {
-    uint32_t idxPrefix = bitIdxPrefix;
-    uint32_t leftBytes = BITMAP_CONTAINER_SIZE;
-    uint32_t bytePos = 0;
-    uint32_t leftNum = bitsNum;
-    while (leftBytes > 0 && leftNum) {
-        bitmapContainer *cursor = container->b.bitmap + bytePos;
-        if (leftBytes > sizeof(uint64_t) && *((uint64_t *)(cursor)) == 0) {
-            bytePos += sizeof(uint64_t);
-            leftBytes -= sizeof(uint64_t);
+    uint32_t idx_prefix = bit_idx_prefix;
+    uint32_t left_bytes = BITMAP_CONTAINER_SIZE;
+    uint32_t byte_pos = 0;
+    uint32_t left_num = bits_num;
+    while (left_bytes > 0 && left_num) {
+        bitmapContainer *cursor = container->b.bitmap + byte_pos;
+        if (left_bytes > sizeof(uint64_t) && *((uint64_t *)(cursor)) == 0) {
+            byte_pos += sizeof(uint64_t);
+            left_bytes -= sizeof(uint64_t);
             continue;
-        } else if (leftBytes > sizeof(uint32_t) && *((uint32_t *)(cursor)) == 0) {
-            bytePos += sizeof(uint32_t);
-            leftBytes -= sizeof(uint32_t);
+        } else if (left_bytes > sizeof(uint32_t) && *((uint32_t *)(cursor)) == 0) {
+            byte_pos += sizeof(uint32_t);
+            left_bytes -= sizeof(uint32_t);
             continue;
-        } else if (leftBytes > sizeof(uint16_t) && *((uint16_t *)(cursor)) == 0) {
-            bytePos += sizeof(uint16_t);
-            leftBytes -= sizeof(uint16_t);
+        } else if (left_bytes > sizeof(uint16_t) && *((uint16_t *)(cursor)) == 0) {
+            byte_pos += sizeof(uint16_t);
+            left_bytes -= sizeof(uint16_t);
             continue;
         } else if (*((uint8_t *)(cursor)) == 0) {
-            bytePos += sizeof(uint8_t);
-            leftBytes -= sizeof(uint8_t);
+            byte_pos += sizeof(uint8_t);
+            left_bytes -= sizeof(uint8_t);
             continue;
         }
 
         const uint8_t word = *cursor;
-        for (int i = 0; i < 8 && leftNum != 0; i++) {
+        for (int i = 0; i < 8 && left_num != 0; i++) {
             if (word & (1 << i)) {
-                uint32_t bitIdx = i + bytePos * BITS_NUM_IN_BYTE + (idxPrefix << CONTAINER_BITS);
-                *idxArrCursor = bitIdx;
-                idxArrCursor++;
-                leftNum--;
+                uint32_t bit_idx = i + byte_pos * BITS_NUM_IN_BYTE + (idx_prefix << CONTAINER_BITS);
+                *idx_arr_cursor = bit_idx;
+                idx_arr_cursor++;
+                left_num--;
             }
         }
-        bytePos += sizeof(uint8_t);
-        leftBytes -= sizeof(uint8_t);
+        byte_pos += sizeof(uint8_t);
+        left_bytes -= sizeof(uint8_t);
     }
-    return bitsNum - leftNum;
+    return bits_num - left_num;
 }
 
-static inline uint32_t fullContainerLocateSetBitPos(uint8_t bitIdxPrefix, uint32_t *idxArrCursor, uint32_t bitsNum) {
-    uint32_t idxPrefix = bitIdxPrefix;
-    uint32_t leftNum = bitsNum;
-    for (int i = 0; i < CONTAINER_CAPACITY && leftNum != 0; i++, leftNum--) {
-        uint32_t bitIdx = (idxPrefix << CONTAINER_BITS) + i;
-        *idxArrCursor = bitIdx;
-        idxArrCursor++;
+static inline uint32_t fullContainerLocateSetBitPos(uint8_t bit_idx_prefix, uint32_t *idx_arr_cursor, uint32_t bits_num) {
+    uint32_t idx_prefix = bit_idx_prefix;
+    uint32_t left_num = bits_num;
+    for (int i = 0; i < CONTAINER_CAPACITY && left_num != 0; i++, left_num--) {
+        uint32_t bit_idx = (idx_prefix << CONTAINER_BITS) + i;
+        *idx_arr_cursor = bit_idx;
+        idx_arr_cursor++;
     }
-    return bitsNum - leftNum;
+    return bits_num - left_num;
 }
 
-static inline uint32_t bucketLocateSetBitPos(roaringBitmap *rbm, uint8_t bucketPhyIdx, uint32_t *idxArrCursor, uint32_t bitsNum)
+static inline uint32_t bucketLocateSetBitPos(roaringBitmap *rbm, uint8_t bucketPhyIdx, uint32_t *idx_arr_cursor, uint32_t bits_num)
 {
-    uint8_t bitIdxPrefix = rbm->buckets[bucketPhyIdx];
+    uint8_t bit_idx_prefix = rbm->buckets[bucketPhyIdx];
     roaringContainer *container = rbm->containers[bucketPhyIdx];
     if (container == NULL) {
         return 0;
     }
     if (container->type == CONTAINER_TYPE_ARRAY) {
-        return arrayContainerLocateSetBitPos(container, bitIdxPrefix, idxArrCursor, bitsNum);
+        return arrayContainerLocateSetBitPos(container, bit_idx_prefix, idx_arr_cursor, bits_num);
     } else if (container->type == CONTAINER_TYPE_BITMAP) {
-        return bitmapContainerLocateSetBitPos(container, bitIdxPrefix, idxArrCursor, bitsNum);
+        return bitmapContainerLocateSetBitPos(container, bit_idx_prefix, idx_arr_cursor, bits_num);
     } else {
-        return fullContainerLocateSetBitPos(bitIdxPrefix, idxArrCursor, bitsNum);
+        return fullContainerLocateSetBitPos(bit_idx_prefix, idx_arr_cursor, bits_num);
     }
 }
 
-uint32_t rbmLocateSetBitPos(roaringBitmap* rbm, uint32_t bitsNum, uint32_t *idxArr)
+uint32_t rbmLocateSetBitPos(roaringBitmap* rbm, uint32_t bits_num, uint32_t *idx_arr)
 {
-    serverAssert(rbm != NULL || bitsNum != 0 || idxArr != NULL);
-    uint32_t *idxArrCursor = idxArr;
-    uint32_t leftBitsNum = bitsNum;
-    for (int i = 0; i < rbm->bucketsNum; i++) {
-        uint32_t realBitsNum = bucketLocateSetBitPos(rbm, i, idxArrCursor, leftBitsNum);
-        leftBitsNum -= realBitsNum;
-        idxArrCursor += realBitsNum;
-        if (leftBitsNum == 0) {
-            return bitsNum;
+    serverAssert(rbm != NULL || bits_num != 0 || idx_arr != NULL);
+    uint32_t *idx_arr_cursor = idx_arr;
+    uint32_t left_bits_num = bits_num;
+    for (int i = 0; i < rbm->buckets_num; i++) {
+        uint32_t real_bits_num = bucketLocateSetBitPos(rbm, i, idx_arr_cursor, left_bits_num);
+        left_bits_num -= real_bits_num;
+        idx_arr_cursor += real_bits_num;
+        if (left_bits_num == 0) {
+            return bits_num;
         }
     }
-    return bitsNum - leftBitsNum;
+    return bits_num - left_bits_num;
 }
 
 /* append to encoded if not NULL, update cursor anyway. */
@@ -1237,21 +1237,21 @@ static inline int rbmEncodeAppend_(char *encoded, size_t len, const void *p, siz
 static ssize_t rbmEncode_(const roaringBitmap* rbm, char* encoded, size_t len) {
     size_t cursor = 0;
 
-    if (rbmEncodeAppend_(encoded,len,&rbm->bucketsNum,sizeof(rbm->bucketsNum),&cursor)) goto err;
-    if (rbmEncodeAppend_(encoded,len,rbm->buckets,sizeof(uint8_t)*rbm->bucketsNum,&cursor)) goto err;
+    if (rbmEncodeAppend_(encoded,len,&rbm->buckets_num,sizeof(rbm->buckets_num),&cursor)) goto err;
+    if (rbmEncodeAppend_(encoded,len,rbm->buckets,sizeof(uint8_t)*rbm->buckets_num,&cursor)) goto err;
 
-    for(int i = 0; i < rbm->bucketsNum; i++) {
-        uint16_t elementsNum = htons(rbm->containers[i]->elementsNum);
-        if (rbmEncodeAppend_(encoded,len,&elementsNum,sizeof(elementsNum),&cursor)) goto err;
+    for(int i = 0; i < rbm->buckets_num; i++) {
+        uint16_t elements_num = htons(rbm->containers[i]->elements_num);
+        if (rbmEncodeAppend_(encoded,len,&elements_num,sizeof(elements_num),&cursor)) goto err;
 
         uint8_t type = rbm->containers[i]->type;
         if (rbmEncodeAppend_(encoded,len,&type,sizeof(type),&cursor)) goto err;
 
         if (rbm->containers[i]->type == CONTAINER_TYPE_ARRAY) {
-            size_t arrayLen = sizeof(arrayContainer) * rbm->containers[i]->elementsNum;
+            size_t arrayLen = sizeof(arrayContainer) * rbm->containers[i]->elements_num;
             if (encoded) {
                 if (cursor + arrayLen > len) goto err;
-                for(int j=0; j<rbm->containers[i]->elementsNum; j++) {
+                for(int j=0; j<rbm->containers[i]->elements_num; j++) {
                     arrayContainer ele = htons(rbm->containers[i]->a.array[j]);
                     if (rbmEncodeAppend_(encoded,len,&ele,sizeof(ele),&cursor)) goto err;
                 }
@@ -1294,26 +1294,26 @@ roaringBitmap* rbmDecode(const char *buf, size_t len) {
     roaringBitmap* rbm = rbmCreate();
 
     if (len < sizeof(uint8_t)) goto err;
-    memcpy(&rbm->bucketsNum,cursor,sizeof(uint8_t));
+    memcpy(&rbm->buckets_num,cursor,sizeof(uint8_t));
     cursor += sizeof(uint8_t), len -= sizeof(uint8_t);
 
-    size_t bucketsLen = rbm->bucketsNum * sizeof(uint8_t);
-    if (len < bucketsLen) goto err;
-    rbm->buckets = roaring_malloc(bucketsLen);
-    memcpy(rbm->buckets,cursor,bucketsLen);
-    cursor += bucketsLen, len -= bucketsLen;
+    size_t buckets_len = rbm->buckets_num * sizeof(uint8_t);
+    if (len < buckets_len) goto err;
+    rbm->buckets = roaring_malloc(buckets_len);
+    memcpy(rbm->buckets,cursor,buckets_len);
+    cursor += buckets_len, len -= buckets_len;
 
-    rbm->containers = roaring_calloc(rbm->bucketsNum * sizeof(roaringContainer *));
+    rbm->containers = roaring_calloc(rbm->buckets_num * sizeof(roaringContainer *));
 
-    for (int i = 0; i< rbm->bucketsNum; i++) {
+    for (int i = 0; i< rbm->buckets_num; i++) {
         rbm->containers[i] = roaring_calloc(sizeof(roaringContainer));
 
-        uint16_t elementsNum = 0;
-        if (len < sizeof(elementsNum)) goto err;
-        memcpy(&elementsNum,cursor,sizeof(elementsNum));
-        elementsNum = ntohs(elementsNum);
-        rbm->containers[i]->elementsNum = elementsNum;
-        cursor += sizeof(elementsNum), len -= sizeof(elementsNum);
+        uint16_t elements_num = 0;
+        if (len < sizeof(elements_num)) goto err;
+        memcpy(&elements_num,cursor,sizeof(elements_num));
+        elements_num = ntohs(elements_num);
+        rbm->containers[i]->elements_num = elements_num;
+        cursor += sizeof(elements_num), len -= sizeof(elements_num);
 
         uint8_t type = 0;
         if (len < sizeof(type)) goto err;
@@ -1322,18 +1322,18 @@ roaringBitmap* rbmDecode(const char *buf, size_t len) {
         rbm->containers[i]->type = type;
 
         if (type == CONTAINER_TYPE_ARRAY) {
-            size_t arraySize = sizeof(arrayContainer) * rbm->containers[i]->elementsNum;
-            if (len < arraySize) goto err;
-            rbm->containers[i]->a.array = roaring_malloc(arraySize);
-            rbm->containers[i]->a.capacity = rbm->containers[i]->elementsNum;
-            for(int j=0; j<rbm->containers[i]->elementsNum; j++) {
+            size_t array_size = sizeof(arrayContainer) * rbm->containers[i]->elements_num;
+            if (len < array_size) goto err;
+            rbm->containers[i]->a.array = roaring_malloc(array_size);
+            rbm->containers[i]->a.capacity = rbm->containers[i]->elements_num;
+            for(int j=0; j<rbm->containers[i]->elements_num; j++) {
                 arrayContainer* array = (arrayContainer*)cursor;
                 cursor += sizeof(arrayContainer);
                 uint16_t value = *array;
                 value = ntohs(value);
                 rbm->containers[i]->a.array[j] = value;
             }
-            len -= arraySize;
+            len -= array_size;
         } else if (type == CONTAINER_TYPE_BITMAP) {
             if (len < BITMAP_CONTAINER_SIZE) goto err;
             rbm->containers[i]->b.bitmap = roaring_malloc(BITMAP_CONTAINER_SIZE);
@@ -1381,8 +1381,7 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             roaringBitmap* rbm = rbmCreate();
             uint32_t bitNum = 0;
 
-            /* 个数元素 量级 */
-            /* 正常测 */
+            /* normal test */
             /* [0, 8] */
             rbmSetBitRange(rbm, 0, 8);
 
@@ -1395,56 +1394,56 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             bitNum = rbmGetBitRange(rbm, 9, 9);
             test_assert(bitNum == 0);
 
-            /* 边界测 */
+            /* boundry test */
             bitNum = rbmGetBitRange(rbm, 20, 20);
             test_assert(bitNum == 0);
 
             bitNum = rbmGetBitRange(rbm, 8, 200);
             test_assert(bitNum == 1);
 
-            /* array container 量级 */
-            /* 正常测 */
+            /* array container  */
+            /* normal test */
             /* [0, 8]  [10, 200]*/
             rbmSetBitRange(rbm, 10, 200);
             bitNum = rbmGetBitRange(rbm, 0, 200);
             test_assert(bitNum == 200);
 
-            bitNum = rbmGetBitRange(rbm, 9, 9);  /* 界内 */
+            bitNum = rbmGetBitRange(rbm, 9, 9);  /* inside boundry */
             test_assert(bitNum == 0);
 
-            bitNum = rbmGetBitRange(rbm, 100, 150);  /* 界内 */
+            bitNum = rbmGetBitRange(rbm, 100, 150);  /* inside boundry */
             test_assert(bitNum == 51);
 
-            bitNum = rbmGetBitRange(rbm, 100, 300);  /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm, 100, 300);  /* across boundry */
             test_assert(bitNum == 101);
 
-            bitNum = rbmGetBitRange(rbm, 8, 100);  /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm, 8, 100);  /* across boundry */
             test_assert(bitNum == 92);
 
-            bitNum = rbmGetBitRange(rbm, 201, 400); /* 边界外 */
+            bitNum = rbmGetBitRange(rbm, 201, 400); /* beyond boundry */
             test_assert(bitNum == 0);
 
-            bitNum = rbmGetBitRange(rbm, 201, 201);  /* 边界外 */
+            bitNum = rbmGetBitRange(rbm, 201, 201);  /* beyond boundry */
             test_assert(bitNum == 0);
 
-            bitNum = rbmGetBitRange(rbm, 196, 205); /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm, 196, 205); /* across boundry */
             test_assert(bitNum == 5);
 
-            bitNum = rbmGetBitRange(rbm, 9, 205); /* 横跨 set范围 */
+            bitNum = rbmGetBitRange(rbm, 9, 205); /* across set boundry */
             test_assert(bitNum == 191);
 
-            rbmSetBitRange(rbm, 150, 160);  /* 重复set */
+            rbmSetBitRange(rbm, 150, 160);  /* repeat set */
 
-            bitNum = rbmGetBitRange(rbm, 0, 4095); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm, 0, 4095); /* container level test */
             test_assert(bitNum == 200);
 
-            rbmSetBitRange(rbm, 200, 300);  /* 边界set */
+            rbmSetBitRange(rbm, 200, 300);  /* boundry set */
 
             /* [0, 8]  [10, 300]*/
-            bitNum = rbmGetBitRange(rbm, 0, 4095); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm, 0, 4095); /* container level test */
             test_assert(bitNum == 300);
 
-            /* Bitmap container 量级 */
+            /* Bitmap container  */
             /* [0, 8]  [10, 1000]*/
             rbmSetBitRange(rbm, 200, 1000);
             bitNum = rbmGetBitRange(rbm, 0, 1000);
@@ -1456,34 +1455,34 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             bitNum = rbmGetBitRange(rbm, 9, 9);
             test_assert(bitNum == 0);
 
-            bitNum = rbmGetBitRange(rbm, 100, 150);  /* 界内 */
+            bitNum = rbmGetBitRange(rbm, 100, 150);  /* inside boundry */
             test_assert(bitNum == 51);
 
-            bitNum = rbmGetBitRange(rbm, 8, 100);  /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm, 8, 100);  /* across boundry */
             test_assert(bitNum == 92);
 
-            bitNum = rbmGetBitRange(rbm, 996, 1005); /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm, 996, 1005); /* across boundry */
             test_assert(bitNum == 5);
 
-            bitNum = rbmGetBitRange(rbm, 9, 1005); /* 横跨 set范围 */
+            bitNum = rbmGetBitRange(rbm, 9, 1005); /* across set boundry */
             test_assert(bitNum == 991);
 
-            rbmSetBitRange(rbm, 150, 160);  /* 重复set */
+            rbmSetBitRange(rbm, 150, 160);  /* repeat set */
 
-            bitNum = rbmGetBitRange(rbm, 0, 4095); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm, 0, 4095); /* container level test */
             test_assert(bitNum == 1000);
 
-            /* 跨 Container set get */
+            /* across container set get */
             /* [0, 8]  [10, 1000]  [4000, 4096 + 100]*/
             rbmSetBitRange(rbm, 4000, 4096 + 100);
 
-            bitNum = rbmGetBitRange(rbm, 0, 4096 * 2); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm, 0, 4096 * 2); /* container level test */
             test_assert(bitNum == 1197);
 
-            bitNum = rbmGetBitRange(rbm, 4096 - 5, 4096 + 5); /* 区间跨container验证 */
+            bitNum = rbmGetBitRange(rbm, 4096 - 5, 4096 + 5); /* across container test */
             test_assert(bitNum == 11);
 
-            /* 跨full Container set get */
+            /* across full Container set get */
             rbmSetBitRange(rbm, 4096 * 2, 4096 * 3 - 1);
             /* [0, 8]  [10, 1000]  [4000, 4096 + 100]  [4096 * 2, 4096 * 3 - 1]*/
 
@@ -1492,19 +1491,19 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             bitNum = rbmGetBitRange(rbm, 4000, 4096 * 2 + 1000);
             test_assert(bitNum == 1198);
 
-            /* 跨empty container set get */
+            /* across empty container set get */
             bitNum = rbmGetBitRange(rbm, 4096 * 3 - 1000, 4096 * 3 + 1000);
             test_assert(bitNum == 1000);
 
             /* [0, 8]  [10, 1000]  [4000, 4096 + 100]  [4096 * 2, 4096 * 3 - 1]  [4096 * 3 + 1000, 4096 * 3 + 2000]*/
-            rbmSetBitRange(rbm, 4096 * 3 + 1000, 4096 * 3 + 2000); /* 填充empty */
+            rbmSetBitRange(rbm, 4096 * 3 + 1000, 4096 * 3 + 2000); /* fill empty */
 
-            bitNum = rbmGetBitRange(rbm, 4096 * 3, 4096 * 4 - 1); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm, 4096 * 3, 4096 * 4 - 1); /* container level test */
             test_assert(bitNum == 1001);
 
-            /* 整个roaring Bitmap get */
+            /* whole roaring Bitmap get */
 
-            bitNum = rbmGetBitRange(rbm, 0, 4096 * 128 - 1); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm, 0, 4096 * 128 - 1); /* container level test */
             test_assert(bitNum == 6294);
 
             rbmDestory(rbm);
@@ -1514,8 +1513,7 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             roaringBitmap* rbm = rbmCreate();
             uint32_t bitNum = 0;
 
-            /* 个数 量级 */
-            /* 正常测 */
+            /* normal test */
             rbmSetBitRange(rbm, 4, 8);   /* [4, 8] */
 
             bitNum = rbmGetBitRange(rbm, 0, 10);
@@ -1527,7 +1525,7 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             bitNum = rbmGetBitRange(rbm, 8, 8);
             test_assert(bitNum == 1);
 
-            /* 边界测 */
+            /* boundry test */
             bitNum = rbmGetBitRange(rbm, 9, 9);
             test_assert(bitNum == 0);
 
@@ -1551,8 +1549,8 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             test_assert(bitNum == 2);
 
 
-            /* array container 量级 */
-            /* 正常测 */
+            /* array container  */
+            /* normal test */
             rbmSetBitRange(rbm, 10, 200);  /* [4, 5]   [10 ,200] */
             bitNum = rbmGetBitRange(rbm, 0, 200);
             test_assert(bitNum == 193);
@@ -1562,66 +1560,66 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             bitNum = rbmGetBitRange(rbm, 9, 9);
             test_assert(bitNum == 0);
 
-            bitNum = rbmGetBitRange(rbm, 100, 300);  /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm, 100, 300);  /* across boundry */
             test_assert(bitNum == 101);
 
-            bitNum = rbmGetBitRange(rbm, 201, 400); /* 边界外 */
+            bitNum = rbmGetBitRange(rbm, 201, 400); /* beyond boundry */
             test_assert(bitNum == 0);
 
             rbmClearBitRange(rbm, 10, 99);    /* [100 ,200] */
 
-            bitNum = rbmGetBitRange(rbm, 191, 210);  /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm, 191, 210);  /* across boundry */
             test_assert(bitNum == 10);
 
             rbmClearBitRange(rbm, 191, 200);    /* [100 , 190] */
 
-            bitNum = rbmGetBitRange(rbm, 181, 210);  /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm, 181, 210);  /* across boundry */
             test_assert(bitNum == 10);
 
-            rbmClearBitRange(rbm, 151, 159);    /* 存在区间 [100 ,150]， [160, 190] */
+            rbmClearBitRange(rbm, 151, 159);    /*  [100 ,150]， [160, 190] */
 
-            bitNum = rbmGetBitRange(rbm, 141, 169);  /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm, 141, 169);  /* across boundry */
             test_assert(bitNum == 20);
 
 
-            /* Bitmap container 量级 */
-            rbmSetBitRange(rbm, 200, 1000);   /* 存在区间 100 ~150， 160 ~ 190 , 200 ~ 1000 */ /* 触发array container 转为Bitmapcontainer */
-            bitNum = rbmGetBitRange(rbm, 0, 1000);   /* array container最大值， Bitmap Container 最大值之间 */
+            /* Bitmap container  */
+            rbmSetBitRange(rbm, 200, 1000);   /*  100 ~150， 160 ~ 190 , 200 ~ 1000 */ /* array container to Bitmapcontainer */
+            bitNum = rbmGetBitRange(rbm, 0, 1000);   /* between array container max capacity， Bitmap Container  max capacity */
             test_assert(bitNum == 883);
 
-            bitNum = rbmGetBitRange(rbm, 1001, 1001); /* 边界外 */
+            bitNum = rbmGetBitRange(rbm, 1001, 1001); /* beyond boundry */
             test_assert(bitNum == 0);
 
-            bitNum = rbmGetBitRange(rbm, 165, 165);   /* 范围中 */
+            bitNum = rbmGetBitRange(rbm, 165, 165);   /* inside boundry */
             test_assert(bitNum == 1);
 
-            bitNum = rbmGetBitRange(rbm, 160, 160);   /* 范围中 */
+            bitNum = rbmGetBitRange(rbm, 160, 160);   /* inside boundry */
             test_assert(bitNum == 1);
 
-            bitNum = rbmGetBitRange(rbm, 220, 220);   /* 范围中 */
+            bitNum = rbmGetBitRange(rbm, 220, 220);   /* inside boundry */
             test_assert(bitNum == 1);
 
-            bitNum = rbmGetBitRange(rbm, 159, 159);   /* 边界外 */
+            bitNum = rbmGetBitRange(rbm, 159, 159);   /* beyond boundry */
             test_assert(bitNum == 0);
 
-            bitNum = rbmGetBitRange(rbm, 160, 220); /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm, 160, 220); /* across boundry */
             test_assert(bitNum == 52);
 
-            /* 存在区间 100 ~150， 160 ~ 190 , 301 ~ 1000 */
-            rbmClearBitRange(rbm, 200, 300);    /* 范围外 clear */
+            /*  100 ~150， 160 ~ 190 , 301 ~ 1000 */
+            rbmClearBitRange(rbm, 200, 300);    /* boundry outside clear */
 
             bitNum = rbmGetBitRange(rbm, 0, 1000);
             test_assert(bitNum == 782);
 
-            rbmClearBitRange(rbm, 501, 2000);  /* 边界 clear */
+            rbmClearBitRange(rbm, 501, 2000);  /* boundry clear */
             bitNum = rbmGetBitRange(rbm, 0, 1000);
             test_assert(bitNum == 282);
 
-            rbmClearBitRange(rbm, 0, 129);   /* 边界 clear */
+            rbmClearBitRange(rbm, 0, 129);   /* boundry clear */
             bitNum = rbmGetBitRange(rbm, 0, 1000);
             test_assert(bitNum == 252);
 
-            rbmClearBitRange(rbm, 171, 180);  /* 范围内 Clear */
+            rbmClearBitRange(rbm, 171, 180);  /* boundry inside Clear */
             bitNum = rbmGetBitRange(rbm, 0, 1000);
             test_assert(bitNum == 242);
 
@@ -1629,16 +1627,16 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             rbmSetBitRange(rbm, 100, 129);
             rbmSetBitRange(rbm, 171, 180);
 
-            /* 跨 Container */
-            rbmSetBitRange(rbm, 200, 4096 * 2 + 1);   /* 存在区间 100 ~150， 160 ~ 190 , 200 ~ 4096 * 2 + 1 */
+            /* across container */
+            rbmSetBitRange(rbm, 200, 4096 * 2 + 1);   /*  100 ~150， 160 ~ 190 , 200 ~ 4096 * 2 + 1 */
             bitNum = rbmGetBitRange(rbm, 0, 4096 * 2 + 1);
             test_assert(bitNum == 8076);
 
             bitNum = rbmGetBitRange(rbm, 4096 * 2 + 1, 4096 * 2 + 1);
             test_assert(bitNum == 1);
 
-              /* 存在区间 100 ~150， 160 ~ 190 , 200 ~ 4096 * 2 */
-            rbmClearBitRange(rbm, 4096 * 2 + 1, 4096 * 2 + 1); /* 边界 Clear */
+              /*  100 ~150， 160 ~ 190 , 200 ~ 4096 * 2 */
+            rbmClearBitRange(rbm, 4096 * 2 + 1, 4096 * 2 + 1); /* boundry clear */
 
             bitNum = rbmGetBitRange(rbm, 4096 * 2, 4096 * 2);
             test_assert(bitNum == 1);
@@ -1649,30 +1647,30 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             bitNum = rbmGetBitRange(rbm, 0, 4096 * 2);
             test_assert(bitNum == 8075);
 
-               /* 存在区间 100 ~150， 160 ~ 190 , 200 ~ 4096 */
-            rbmClearBitRange(rbm, 4096 + 1, 4096 * 2); /* 跨 full Container clear */  /*  full Container clear 边界， 生成bitmap container */
+               /*  100 ~150， 160 ~ 190 , 200 ~ 4096 */
+            rbmClearBitRange(rbm, 4096 + 1, 4096 * 2); /* across  full Container clear */  /*  full Container clear boundry， trans to bitmap container */
 
             bitNum = rbmGetBitRange(rbm, 0, 4096 * 2 + 1);
             test_assert(bitNum == 3979);
 
-            bitNum = rbmGetBitRange(rbm, 4090, 4100);   /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm, 4090, 4100);   /* across boundry */
             test_assert(bitNum == 7);
 
-              /* 存在区间 100 ~150， 160 ~ 190 , 200 ~ 4096 * 2 - 1 */
-            rbmSetBitRange(rbm, 4096 + 1, 4096 * 2 - 1); /* 重新产生 full container */
+              /*  100 ~150， 160 ~ 190 , 200 ~ 4096 * 2 - 1 */
+            rbmSetBitRange(rbm, 4096 + 1, 4096 * 2 - 1); /*  full container */
 
-            /* 存在区间 100 ~150， 160 ~ 190 , 200 ~ 4096 + 9 ,  4096 + 4095 ~ 4096 + 4095 */
-            rbmClearBitRange(rbm, 4096 + 10, 4096 + 4094); /* full container 中间Clear， 生成 array container */
+            /*  100 ~150， 160 ~ 190 , 200 ~ 4096 + 9 ,  4096 + 4095 ~ 4096 + 4095 */
+            rbmClearBitRange(rbm, 4096 + 10, 4096 + 4094); /* full container Clear， trans to  array container */
 
             bitNum = rbmGetBitRange(rbm, 4096 + 1, 4096 + 4095);
             test_assert(bitNum == 10);
 
-            bitNum = rbmGetBitRange(rbm, 0, 4096 * 4);   /* container 级别统计 */
+            bitNum = rbmGetBitRange(rbm, 0, 4096 * 4);   /* container test */
             test_assert(bitNum == 3989);
 
-            rbmClearBitRange(rbm, 4096 * 3, 4096 * 4 - 1000); /* clear empty container, 无效果 */
+            rbmClearBitRange(rbm, 4096 * 3, 4096 * 4 - 1000); /* clear empty container */
 
-            bitNum = rbmGetBitRange(rbm, 0, 4096 * 4);   /* container 级别统计 */
+            bitNum = rbmGetBitRange(rbm, 0, 4096 * 4);   /* container test */
             test_assert(bitNum == 3989);
 
             rbmDestory(rbm);
@@ -1684,26 +1682,24 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             uint32_t bitNum = rbmGetBitRange(rbm, 0, 131071);  /*maxbit*/
             test_assert(bitNum == 0);
 
-            /* rbmSetBitRange(rbm, 0, 131072);   超出范围， 直接被assert */
+            /* setbit*/
+            rbmSetBitRange(rbm, 131071, 131071);        /*  [131071, 131071] */
 
-            /* 从高位 往低位 单个 setbit*/
-            rbmSetBitRange(rbm, 131071, 131071);        /* 区间 [131071, 131071] */
-
-            bitNum = rbmGetBitRange(rbm, 0, 131071);   /* 边界 */
+            bitNum = rbmGetBitRange(rbm, 0, 131071);   /* boundry */
             test_assert(bitNum == 1);
 
-            /* 从高位 往低位 批量 setbit*/
-            rbmSetBitRange(rbm, 131071 - 4096 - 1, 131070);    /* 区间 [131071 - 4096 - 1, 131071] */
+            /* batch  setbit*/
+            rbmSetBitRange(rbm, 131071 - 4096 - 1, 131070);    /*  [131071 - 4096 - 1, 131071] */
 
             bitNum = rbmGetBitRange(rbm, 0, 131071);
             test_assert(bitNum == 4098);
 
-            rbmSetBitRange(rbm, 131071 - 4096 * 2, 131071 - 4096 - 2);   /* 区间 [131071 - 4096 * 2, 131071] */
+            rbmSetBitRange(rbm, 131071 - 4096 * 2, 131071 - 4096 - 2);   /*  [131071 - 4096 * 2, 131071] */
 
-            bitNum = rbmGetBitRange(rbm, 0, 131071);  /* 批量getbit */
+            bitNum = rbmGetBitRange(rbm, 0, 131071);  /* batch getbit */
             test_assert(bitNum == 4096 * 2 + 1);
 
-            bitNum = rbmGetBitRange(rbm, 130000, 130000); /* 单个getbit */
+            bitNum = rbmGetBitRange(rbm, 130000, 130000); /* getbit */
             test_assert(bitNum == 1);
 
             bitNum = rbmGetBitRange(rbm, 131071 - 4096 * 2, 131071 - 4096 * 2);
@@ -1712,11 +1708,11 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             bitNum = rbmGetBitRange(rbm, 131071 - 4096 * 2 - 1, 131071 - 4096 * 2 - 1);
             test_assert(bitNum == 0);
 
-            bitNum = rbmGetBitRange(rbm, 131071, 131071);   /* 边界 */
+            bitNum = rbmGetBitRange(rbm, 131071, 131071);   /* boundry */
             test_assert(bitNum == 1);
 
-            /* 从高位往低位 单个 Clearbit */
-            rbmClearBitRange(rbm, 131071, 131071);    /* 区间 [131071 - 4096 * 2, 131070] */
+            /*  Clearbit */
+            rbmClearBitRange(rbm, 131071, 131071);    /*  [131071 - 4096 * 2, 131070] */
 
             bitNum = rbmGetBitRange(rbm, 131071, 131071);  /*maxbit*/
             test_assert(bitNum == 0);
@@ -1724,8 +1720,8 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             bitNum = rbmGetBitRange(rbm, 0, 131071);
             test_assert(bitNum == 4096 * 2);
 
-            /* 批量Clear, 触发最后一个container 从Bitmap转为array */
-            rbmClearBitRange(rbm, 131071 - 4096 - 4000, 131071 - 4096 - 1);   /* 区间 [131071 - 4096 * 2, 131071 - 4096 - 4001], [131071 - 4096, 131070] */
+            /* batch Clear, container of Bitmap to array */
+            rbmClearBitRange(rbm, 131071 - 4096 - 4000, 131071 - 4096 - 1);   /*  [131071 - 4096 * 2, 131071 - 4096 - 4001], [131071 - 4096, 131070] */
 
             bitNum = rbmGetBitRange(rbm, 0, 131071);
             test_assert(bitNum == 4192);
@@ -1749,19 +1745,19 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             roaringBitmap* rbm = rbmCreate();
             uint32_t bitNum = 0;
 
-            rbmSetBitRange(rbm, 0, 100);  /* 从低位 批量set */
+            rbmSetBitRange(rbm, 0, 100);  /* from low pos batch set */
             bitNum = rbmGetBitRange(rbm, 0, 4096);
             test_assert(bitNum == 101);
 
-            rbmSetBitRange(rbm, 101, 101);  /* 从低位 单个set */
+            rbmSetBitRange(rbm, 101, 101);  /* point set */
             bitNum = rbmGetBitRange(rbm, 0, 4096);
             test_assert(bitNum == 102);
 
-            rbmSetBitRange(rbm, 102, 4000);  /* 触发从 array container转为 Bitmap container */
+            rbmSetBitRange(rbm, 102, 4000);  /* array container to Bitmap container */
             bitNum = rbmGetBitRange(rbm, 0, 4096);
             test_assert(bitNum == 4001);
 
-            rbmSetBitRange(rbm, 4096, 4096 * 4 + 4090); /* 触发 产生3 个 full container */
+            rbmSetBitRange(rbm, 4096, 4096 * 4 + 4090); /* 3 个 full container */
 
             /* full container get */
             bitNum = rbmGetBitRange(rbm, 4096 * 2, 4096 * 5 - 1);
@@ -1779,7 +1775,7 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             bitNum = rbmGetBitRange(rbm, 4096, 4096 * 2 - 1);
             test_assert(bitNum == 4096);
 
-            rbmClearBitRange(rbm, 4096, 4096); /* 单点 Clear 第一个 full container */
+            rbmClearBitRange(rbm, 4096, 4096); /*  point  Clear first full container */
 
             bitNum = rbmGetBitRange(rbm, 4096, 4096);
             test_assert(bitNum == 0);
@@ -1787,7 +1783,7 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             bitNum = rbmGetBitRange(rbm, 4096 + 1, 4096 + 1);
             test_assert(bitNum == 1);
 
-            rbmClearBitRange(rbm, 4096 * 2 + 1, 4096 * 2 + 1); /* 单点 Clear 第二 full container */
+            rbmClearBitRange(rbm, 4096 * 2 + 1, 4096 * 2 + 1); /*  point  Clear second full container */
 
             bitNum = rbmGetBitRange(rbm, 4096 * 2, 4096 * 2);
             test_assert(bitNum == 1);
@@ -1798,7 +1794,7 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             bitNum = rbmGetBitRange(rbm, 4096 * 2 + 2, 4096 * 2 + 2);
             test_assert(bitNum == 1);
 
-            rbmClearBitRange(rbm, 4096 * 3 + 101, 4096 * 3 + 4000); /* 批量 Clear 第三 full container */
+            rbmClearBitRange(rbm, 4096 * 3 + 101, 4096 * 3 + 4000); /* batch  Clear third full container */
             bitNum = rbmGetBitRange(rbm, 4096 * 3 + 100, 4096 * 3 + 100);
             test_assert(bitNum == 1);
 
@@ -1808,9 +1804,8 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             bitNum = rbmGetBitRange(rbm, 0, 4096 * 4 + 4090);
             test_assert(bitNum == 4001 + 4096 * 2 - 2 + 196 + 4091);
 
-            rbmSetBitRange(rbm, 4096 * 4 + 4091, 4096 * 5 - 1); /* 产生第四个full Container */
+            rbmSetBitRange(rbm, 4096 * 4 + 4091, 4096 * 5 - 1); /* fourth full Container */
 
-            /* 对第四个full Container 进行单点， 范围get set操作 */
             rbmSetBitRange(rbm, 4096 * 4, 4096 * 4);
             bitNum = rbmGetBitRange(rbm, 4096 * 4, 4096 * 5 - 1);
             test_assert(bitNum == 4096);
@@ -1829,7 +1824,7 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             rbmSetBitRange(rbm, 4096, 4096 + 100);
             rbmSetBitRange(rbm, 4096 * 2, 4096 * 3 - 1);
 
-            rbmClearBitRange(rbm, 4096, 4096 + 100); /* 第二个 container为empty */
+            rbmClearBitRange(rbm, 4096, 4096 + 100); /* second container is empty */
 
             /* empty container get */
             bitNum = rbmGetBitRange(rbm, 4096, 4096 + 200);
@@ -1875,49 +1870,49 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             uint32_t bitNum = rbmGetBitRange(rbm, 0, 131071);
             test_assert(bitNum == 0);
 
-            /* 单点 set 触发insert 3个 Bucket */
+            /*  point  set insert 3 Buckets */
             rbmSetBitRange(rbm, 4096 * 2, 4096 * 2);
             rbmSetBitRange(rbm, 4096 * 3, 4096 * 3);
             rbmSetBitRange(rbm, 4096 * 5 - 1, 4096 * 5 - 1);
 
-            test_assert(rbm->bucketsNum == 3);
+            test_assert(rbm->buckets_num == 3);
 
             bitNum = rbmGetBitRange(rbm, 0, 131071);
             test_assert(bitNum == 3);
 
-            /* 范围 set 触发insert 3个 Bucket */
+            /* range set insert 3 Buckets */
             rbmSetBitRange(rbm, 4096 * 6, 4096 * 6 + 99);
             rbmSetBitRange(rbm, 4096 * 7, 4096 * 7 + 99);
             rbmSetBitRange(rbm, 4096 * 8, 4096 * 8 + 99);
 
-            test_assert(rbm->bucketsNum == 6);
+            test_assert(rbm->buckets_num == 6);
 
             bitNum = rbmGetBitRange(rbm, 0, 131071);
             test_assert(bitNum == 303);
 
-            /*  set full container 触发insert 3个 Bucket */
+            /*  set full container trigger inserting 3 Buckets */
             rbmSetBitRange(rbm, 4096 * 9, 4096 * 10 - 1);
             rbmSetBitRange(rbm, 4096 * 10, 4096 * 11 - 1);
             rbmSetBitRange(rbm, 4096 * 11, 4096 * 12 - 1);
 
-            test_assert(rbm->bucketsNum == 9);
+            test_assert(rbm->buckets_num == 9);
 
             bitNum = rbmGetBitRange(rbm, 0, 131071);
             test_assert(bitNum == 303 + 4096 * 3);
 
-            /* 单点删除 Bucket */
+            /*  point del Bucket */
             rbmClearBitRange(rbm, 4096 * 9, 4096 * 10 - 1);
             rbmClearBitRange(rbm, 4096 * 6, 4096 * 6 + 99);
             rbmClearBitRange(rbm, 4096 * 2, 4096 * 2);
 
-            test_assert(rbm->bucketsNum == 6);
+            test_assert(rbm->buckets_num == 6);
 
             bitNum = rbmGetBitRange(rbm, 0, 131071);
             test_assert(bitNum == 202 + 4096 * 2);
 
-            /* 批量删除 Bucket */
+            /* batch del Bucket */
             rbmClearBitRange(rbm, 4096 * 5, 4096 * 12 - 1);
-            test_assert(rbm->bucketsNum == 2);
+            test_assert(rbm->buckets_num == 2);
 
             bitNum = rbmGetBitRange(rbm, 0, 131071);
             test_assert(bitNum == 2);
@@ -1929,38 +1924,37 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             roaringBitmap* rbm = rbmCreate();
             uint32_t bitNum = 0;
 
-            /* 个数 量级 */
-            /* 正常测 */
+            /* normal test */
             rbmSetBitRange(rbm, 4, 8);   /* [4, 8] */
 
-            uint32_t *idxArr = zmalloc(sizeof(uint32_t) * CONTAINER_CAPACITY);
+            uint32_t *idx_arr = zmalloc(sizeof(uint32_t) * CONTAINER_CAPACITY);
 
-            bitNum = rbmLocateSetBitPos(rbm, 6, idxArr);
+            bitNum = rbmLocateSetBitPos(rbm, 6, idx_arr);
             test_assert(bitNum == 5);
-            test_assert(idxArr[0] == 4);
-            test_assert(idxArr[1] == 5);
-            test_assert(idxArr[2] == 6);
-            test_assert(idxArr[3] == 7);
-            test_assert(idxArr[4] == 8);
+            test_assert(idx_arr[0] == 4);
+            test_assert(idx_arr[1] == 5);
+            test_assert(idx_arr[2] == 6);
+            test_assert(idx_arr[3] == 7);
+            test_assert(idx_arr[4] == 8);
 
             rbmClearBitRange(rbm, 6, 8);    /* [4, 5] */
-            bitNum = rbmLocateSetBitPos(rbm, 6, idxArr);
+            bitNum = rbmLocateSetBitPos(rbm, 6, idx_arr);
             test_assert(bitNum == 2);
-            test_assert(idxArr[0] == 4);
-            test_assert(idxArr[1] == 5);
+            test_assert(idx_arr[0] == 4);
+            test_assert(idx_arr[1] == 5);
 
-            /* array container 量级 */
-            /* 正常测 */
+            /* array container  */
+            /* normal test */
             rbmSetBitRange(rbm, 10, 200);  /* [4, 5]   [10 ,200] */
-            bitNum = rbmLocateSetBitPos(rbm, 100, idxArr);
+            bitNum = rbmLocateSetBitPos(rbm, 100, idx_arr);
             test_assert(bitNum == 100);
-            test_assert(idxArr[0] == 4);
-            test_assert(idxArr[99] == 107);
+            test_assert(idx_arr[0] == 4);
+            test_assert(idx_arr[99] == 107);
 
-            bitNum = rbmLocateSetBitPos(rbm, 200, idxArr);
+            bitNum = rbmLocateSetBitPos(rbm, 200, idx_arr);
             test_assert(bitNum == 193);
-            test_assert(idxArr[0] == 4);
-            test_assert(idxArr[192] == 200);
+            test_assert(idx_arr[0] == 4);
+            test_assert(idx_arr[192] == 200);
 
             rbmClearBitRange(rbm, 0, 9);    /* [10 ,200] */
 
@@ -1968,65 +1962,65 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
 
             rbmClearBitRange(rbm, 191, 200);    /* [100 , 190] */
 
-            rbmClearBitRange(rbm, 151, 159);    /* 存在区间 [100 ,150]， [160, 190] */
+            rbmClearBitRange(rbm, 151, 159);    /*  [100 ,150]， [160, 190] */
 
-            /* Bitmap container 量级 */
-            rbmSetBitRange(rbm, 200, 1000);   /* 存在区间 100 ~ 150， 160 ~ 190 , 200 ~ 1000 */ /* 触发array container 转为Bitmapcontainer */
+            /* Bitmap container  */
+            rbmSetBitRange(rbm, 200, 1000);   /*  100 ~ 150， 160 ~ 190 , 200 ~ 1000 */ /* array container to Bitmapcontainer */
 
-            bitNum = rbmLocateSetBitPos(rbm, 1000, idxArr);
+            bitNum = rbmLocateSetBitPos(rbm, 1000, idx_arr);
             test_assert(bitNum == 883);
-            test_assert(idxArr[0] == 100);
-            test_assert(idxArr[882] == 1000);
+            test_assert(idx_arr[0] == 100);
+            test_assert(idx_arr[882] == 1000);
 
-            bitNum = rbmLocateSetBitPos(rbm, 800, idxArr);
+            bitNum = rbmLocateSetBitPos(rbm, 800, idx_arr);
             test_assert(bitNum == 800);
-            test_assert(idxArr[0] == 100);
-            test_assert(idxArr[799] == 917);
+            test_assert(idx_arr[0] == 100);
+            test_assert(idx_arr[799] == 917);
 
-            /* 存在区间 100 ~150， 160 ~ 190 , 301 ~ 1000 */
-            rbmClearBitRange(rbm, 200, 300);    /* 范围外 clear */
+            /*  100 ~150， 160 ~ 190 , 301 ~ 1000 */
+            rbmClearBitRange(rbm, 200, 300);    /* boundry outside clear */
 
 
-            rbmClearBitRange(rbm, 501, 2000);  /* 边界 clear */
+            rbmClearBitRange(rbm, 501, 2000);  /* boundry clear */
 
-            rbmClearBitRange(rbm, 0, 129);   /* 边界 clear */
+            rbmClearBitRange(rbm, 0, 129);   /* boundry clear */
 
-            rbmClearBitRange(rbm, 171, 180);  /* 范围内 Clear */
+            rbmClearBitRange(rbm, 171, 180);  /* boundry inside Clear */
 
             rbmSetBitRange(rbm, 501, 1000);
             rbmSetBitRange(rbm, 100, 129);
             rbmSetBitRange(rbm, 171, 180);
 
             /* across Container bitmap, full , array */
-            rbmSetBitRange(rbm, 200, 4096 * 2 + 1);   /* 存在区间 100 ~150， 160 ~ 190 , 200 ~ 4096 * 2 + 1 */
+            rbmSetBitRange(rbm, 200, 4096 * 2 + 1);   /*  100 ~150， 160 ~ 190 , 200 ~ 4096 * 2 + 1 */
 
-            bitNum = rbmLocateSetBitPos(rbm, 4096 * 2 + 1, idxArr);
+            bitNum = rbmLocateSetBitPos(rbm, 4096 * 2 + 1, idx_arr);
             test_assert(bitNum == 8076);
-            test_assert(idxArr[0] == 100);
-            test_assert(idxArr[8075] == 4096 * 2 + 1);
+            test_assert(idx_arr[0] == 100);
+            test_assert(idx_arr[8075] == 4096 * 2 + 1);
 
-              /* 存在区间 100 ~150， 160 ~ 190 , 200 ~ 4096 * 2 */
-            rbmClearBitRange(rbm, 4096 * 2 + 1, 4096 * 2 + 1); /* 边界 Clear */
+              /*  100 ~150， 160 ~ 190 , 200 ~ 4096 * 2 */
+            rbmClearBitRange(rbm, 4096 * 2 + 1, 4096 * 2 + 1); /* boundry clear */
 
-             /* 存在区间 100 ~150， 160 ~ 190 , 200 ~ 4096 */
-            rbmClearBitRange(rbm, 4096 + 1, 4096 * 2); /* 跨 full Container clear */  /*  full Container clear 边界， 生成bitmap container */
+             /*  100 ~150， 160 ~ 190 , 200 ~ 4096 */
+            rbmClearBitRange(rbm, 4096 + 1, 4096 * 2); /* across  full Container clear */  /*  full Container clear boundry， trans to bitmap container */
 
-              /* 存在区间 100 ~150， 160 ~ 190 , 200 ~ 4096 * 2 - 1 */
-            rbmSetBitRange(rbm, 4096 + 1, 4096 * 2 - 1); /* 重新产生 full container */
+              /*  100 ~150， 160 ~ 190 , 200 ~ 4096 * 2 - 1 */
+            rbmSetBitRange(rbm, 4096 + 1, 4096 * 2 - 1); /*  full container */
 
             /*  full container, mid of container */
-            bitNum = rbmLocateSetBitPos(rbm, 4096, idxArr);
+            bitNum = rbmLocateSetBitPos(rbm, 4096, idx_arr);
             test_assert(bitNum == 4096);
-            test_assert(idxArr[0] == 100);
-            test_assert(idxArr[4095] == 4213);
+            test_assert(idx_arr[0] == 100);
+            test_assert(idx_arr[4095] == 4213);
 
             /*  full container, end of container */
-            bitNum = rbmLocateSetBitPos(rbm, 8074, idxArr);
+            bitNum = rbmLocateSetBitPos(rbm, 8074, idx_arr);
             test_assert(bitNum == 8074);
-            test_assert(idxArr[0] == 100);
-            test_assert(idxArr[8073] == 4096 * 2 - 1);
+            test_assert(idx_arr[0] == 100);
+            test_assert(idx_arr[8073] == 4096 * 2 - 1);
 
-            zfree(idxArr);
+            zfree(idx_arr);
             rbmDestory(rbm);
         }
 
@@ -2034,8 +2028,7 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             roaringBitmap* rbm = rbmCreate();
             uint32_t bitNum = 0;
 
-            /* 个数元素 量级 */
-            /* 正常测 */
+            /* normal test */
             /* [0, 8] */
             rbmSetBitRange(rbm, 0, 8);
 
@@ -2048,7 +2041,7 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             bitNum = rbmGetBitRange(rbm, 9, 9);
             test_assert(bitNum == 0);
 
-            /* 边界测 */
+            /* boundry test */
             bitNum = rbmGetBitRange(rbm, 20, 20);
             test_assert(bitNum == 0);
 
@@ -2067,7 +2060,7 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             bitNum = rbmGetBitRange(rbm1, 9, 9);
             test_assert(bitNum == 0);
 
-            /* 边界测 */
+            /* boundry test */
             bitNum = rbmGetBitRange(rbm1, 20, 20);
             test_assert(bitNum == 0);
 
@@ -2076,91 +2069,91 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
 
             rbmDestory(rbm1);
 
-            /* array container 量级 */
-            /* 正常测 */
+            /* array container  */
+            /* normal test */
             /* [0, 8]  [10, 200]*/
             rbmSetBitRange(rbm, 10, 200);
             bitNum = rbmGetBitRange(rbm, 0, 200);
             test_assert(bitNum == 200);
 
-            bitNum = rbmGetBitRange(rbm, 9, 9);  /* 界内 */
+            bitNum = rbmGetBitRange(rbm, 9, 9);  /* inside boundry */
             test_assert(bitNum == 0);
 
-            bitNum = rbmGetBitRange(rbm, 100, 150);  /* 界内 */
+            bitNum = rbmGetBitRange(rbm, 100, 150);  /* inside boundry */
             test_assert(bitNum == 51);
 
-            bitNum = rbmGetBitRange(rbm, 100, 300);  /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm, 100, 300);  /* across boundry */
             test_assert(bitNum == 101);
 
-            bitNum = rbmGetBitRange(rbm, 8, 100);  /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm, 8, 100);  /* across boundry */
             test_assert(bitNum == 92);
 
-            bitNum = rbmGetBitRange(rbm, 201, 400); /* 边界外 */
+            bitNum = rbmGetBitRange(rbm, 201, 400); /* beyond boundry */
             test_assert(bitNum == 0);
 
-            bitNum = rbmGetBitRange(rbm, 201, 201);  /* 边界外 */
+            bitNum = rbmGetBitRange(rbm, 201, 201);  /* beyond boundry */
             test_assert(bitNum == 0);
 
-            bitNum = rbmGetBitRange(rbm, 196, 205); /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm, 196, 205); /* across boundry */
             test_assert(bitNum == 5);
 
-            bitNum = rbmGetBitRange(rbm, 9, 205); /* 横跨 set范围 */
+            bitNum = rbmGetBitRange(rbm, 9, 205); /* across set boundry */
             test_assert(bitNum == 191);
 
             roaringBitmap* rbm2 = rbmCreate();
             rbmdup(rbm2, rbm);
 
-            bitNum = rbmGetBitRange(rbm2, 9, 9);  /* 界内 */
+            bitNum = rbmGetBitRange(rbm2, 9, 9);  /* inside boundry */
             test_assert(bitNum == 0);
 
-            bitNum = rbmGetBitRange(rbm2, 100, 150);  /* 界内 */
+            bitNum = rbmGetBitRange(rbm2, 100, 150);  /* inside boundry */
             test_assert(bitNum == 51);
 
-            bitNum = rbmGetBitRange(rbm2, 100, 300);  /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm2, 100, 300);  /* across boundry */
             test_assert(bitNum == 101);
 
-            bitNum = rbmGetBitRange(rbm2, 8, 100);  /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm2, 8, 100);  /* across boundry */
             test_assert(bitNum == 92);
 
-            bitNum = rbmGetBitRange(rbm2, 201, 400); /* 边界外 */
+            bitNum = rbmGetBitRange(rbm2, 201, 400); /* beyond boundry */
             test_assert(bitNum == 0);
 
-            bitNum = rbmGetBitRange(rbm2, 201, 201);  /* 边界外 */
+            bitNum = rbmGetBitRange(rbm2, 201, 201);  /* beyond boundry */
             test_assert(bitNum == 0);
 
-            bitNum = rbmGetBitRange(rbm2, 196, 205); /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm2, 196, 205); /* across boundry */
             test_assert(bitNum == 5);
 
-            bitNum = rbmGetBitRange(rbm2, 9, 205); /* 横跨 set范围 */
+            bitNum = rbmGetBitRange(rbm2, 9, 205); /* across set boundry */
             test_assert(bitNum == 191);
 
-            /* 增量修改 rbm */
-            rbmSetBitRange(rbm, 150, 160);  /* 重复set */
+            /* non-in-place modification rbm */
+            rbmSetBitRange(rbm, 150, 160);  /* repeat set */
 
-            bitNum = rbmGetBitRange(rbm, 0, 4095); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm, 0, 4095); /* container level test */
             test_assert(bitNum == 200);
 
-            rbmSetBitRange(rbm, 200, 300);  /* 边界set */
+            rbmSetBitRange(rbm, 200, 300);  /* boundry set */
 
             /* [0, 8]  [10, 300] */
-            bitNum = rbmGetBitRange(rbm, 0, 4095); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm, 0, 4095); /* container level test */
             test_assert(bitNum == 300);
 
-            /* 增量修改 rbm2 */
-            rbmSetBitRange(rbm2, 150, 160);  /* 重复set */
+            /* non-in-place modification rbm2 */
+            rbmSetBitRange(rbm2, 150, 160);  /* repeat set */
 
-            bitNum = rbmGetBitRange(rbm2, 0, 4095); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm2, 0, 4095); /* container level test */
             test_assert(bitNum == 200);
 
-            rbmSetBitRange(rbm2, 200, 300);  /* 边界set */
+            rbmSetBitRange(rbm2, 200, 300);  /* boundry set */
 
             /* [0, 8]  [10, 300] */
-            bitNum = rbmGetBitRange(rbm2, 0, 4095); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm2, 0, 4095); /* container level test */
             test_assert(bitNum == 300);
 
             rbmDestory(rbm2);
 
-            /* Bitmap container 量级 */
+            /* Bitmap container  */
             /* [0, 8]  [10, 1000] */
             rbmSetBitRange(rbm, 200, 1000);
 
@@ -2176,53 +2169,53 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             bitNum = rbmGetBitRange(rbm3, 9, 9);
             test_assert(bitNum == 0);
 
-            bitNum = rbmGetBitRange(rbm3, 100, 150);  /* 界内 */
+            bitNum = rbmGetBitRange(rbm3, 100, 150);  /* inside boundry */
             test_assert(bitNum == 51);
 
-            bitNum = rbmGetBitRange(rbm3, 8, 100);  /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm3, 8, 100);  /* across boundry */
             test_assert(bitNum == 92);
 
-            bitNum = rbmGetBitRange(rbm3, 996, 1005); /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm3, 996, 1005); /* across boundry */
             test_assert(bitNum == 5);
 
-            bitNum = rbmGetBitRange(rbm3, 9, 1005); /* 横跨 set范围 */
+            bitNum = rbmGetBitRange(rbm3, 9, 1005); /* across set boundry */
             test_assert(bitNum == 991);
 
-            /* 增量修改rbm */
-            rbmSetBitRange(rbm, 150, 160);  /* 重复set */
+            /* non-in-place modificationrbm */
+            rbmSetBitRange(rbm, 150, 160);  /* repeat set */
 
-            bitNum = rbmGetBitRange(rbm, 0, 4095); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm, 0, 4095); /* container level test */
             test_assert(bitNum == 1000);
 
-            /* 增量修改rbm3 */
-            rbmSetBitRange(rbm3, 150, 160);  /* 重复set */
+            /* non-in-place modificationrbm3 */
+            rbmSetBitRange(rbm3, 150, 160);  /* repeat set */
 
-            bitNum = rbmGetBitRange(rbm3, 0, 4095); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm3, 0, 4095); /* container level test */
             test_assert(bitNum == 1000);
 
-            /* rbm 跨 Container set get */
+            /* rbm across container set get */
             /* [0, 8]  [10, 1000]  [4000, 4096 + 100]*/
             rbmSetBitRange(rbm, 4000, 4096 + 100);
 
-            bitNum = rbmGetBitRange(rbm, 0, 4096 * 2); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm, 0, 4096 * 2); /* container level test */
             test_assert(bitNum == 1197);
 
-            bitNum = rbmGetBitRange(rbm, 4096 - 5, 4096 + 5); /* 区间跨container验证 */
+            bitNum = rbmGetBitRange(rbm, 4096 - 5, 4096 + 5); /* across container test */
             test_assert(bitNum == 11);
 
-            /* rbm3 跨 Container set get */
+            /* rbm3 across container set get */
             /* [0, 8]  [10, 1000]  [4000, 4096 + 100]*/
             rbmSetBitRange(rbm3, 4000, 4096 + 100);
 
-            bitNum = rbmGetBitRange(rbm3, 0, 4096 * 2); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm3, 0, 4096 * 2); /* container level test */
             test_assert(bitNum == 1197);
 
-            bitNum = rbmGetBitRange(rbm3, 4096 - 5, 4096 + 5); /* 区间跨container验证 */
+            bitNum = rbmGetBitRange(rbm3, 4096 - 5, 4096 + 5); /* across container test */
             test_assert(bitNum == 11);
 
             rbmDestory(rbm3);
 
-            /* 跨full Container set get */
+            /* across full Container set get */
             rbmSetBitRange(rbm, 4096 * 2, 4096 * 3 - 1);
             /* [0, 8]  [10, 1000]  [4000, 4096 + 100]  [4096 * 2, 4096 * 3 - 1] */
 
@@ -2237,36 +2230,36 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             bitNum = rbmGetBitRange(rbm4, 4000, 4096 * 2 + 1000);
             test_assert(bitNum == 1198);
 
-            /* 跨empty container set get */
+            /* across empty container set get */
             bitNum = rbmGetBitRange(rbm, 4096 * 3 - 1000, 4096 * 3 + 1000);
             test_assert(bitNum == 1000);
 
-            /* 跨empty container set get */
+            /* across empty container set get */
             bitNum = rbmGetBitRange(rbm4, 4096 * 3 - 1000, 4096 * 3 + 1000);
             test_assert(bitNum == 1000);
 
             rbmDestory(rbm4);
 
             /* [0, 8]  [10, 1000]  [4000, 4096 + 100]  [4096 * 2, 4096 * 3 - 1]  [4096 * 3 + 1000, 4096 * 3 + 2000]*/
-            rbmSetBitRange(rbm, 4096 * 3 + 1000, 4096 * 3 + 2000); /* 填充empty */
+            rbmSetBitRange(rbm, 4096 * 3 + 1000, 4096 * 3 + 2000); /* fill empty */
 
-            bitNum = rbmGetBitRange(rbm, 4096 * 3, 4096 * 4 - 1); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm, 4096 * 3, 4096 * 4 - 1); /* container level test */
             test_assert(bitNum == 1001);
 
-            /* 整个roaring Bitmap get */
+            /* whole roaring Bitmap get */
 
-            bitNum = rbmGetBitRange(rbm, 0, 4096 * 128 - 1); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm, 0, 4096 * 128 - 1); /* container level test */
             test_assert(bitNum == 6294);
 
             roaringBitmap* rbm5 = rbmCreate();
             rbmdup(rbm5, rbm);
 
-            bitNum = rbmGetBitRange(rbm5, 4096 * 3, 4096 * 4 - 1); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm5, 4096 * 3, 4096 * 4 - 1); /* container level test */
             test_assert(bitNum == 1001);
 
-            /* 整个roaring Bitmap get */
+            /* whole roaring Bitmap get */
 
-            bitNum = rbmGetBitRange(rbm5, 0, 4096 * 128 - 1); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm5, 0, 4096 * 128 - 1); /* container level test */
             test_assert(bitNum == 6294);
 
             rbmDestory(rbm);
@@ -2277,8 +2270,7 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             roaringBitmap* rbm = rbmCreate();
             uint32_t bitNum = 0;
 
-            /* 个数元素 量级 */
-            /* 正常测 */
+            /* normal test */
             /* [0, 8] */
             rbmSetBitRange(rbm, 0, 8);
 
@@ -2291,7 +2283,7 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             bitNum = rbmGetBitRange(rbm, 9, 9);
             test_assert(bitNum == 0);
 
-            /* 边界测 */
+            /* boundry test */
             bitNum = rbmGetBitRange(rbm, 20, 20);
             test_assert(bitNum == 0);
 
@@ -2310,7 +2302,7 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             bitNum = rbmGetBitRange(rbm1, 9, 9);
             test_assert(bitNum == 0);
 
-            /* 边界测 */
+            /* boundry test */
             bitNum = rbmGetBitRange(rbm1, 20, 20);
             test_assert(bitNum == 0);
 
@@ -2324,96 +2316,96 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             test_assert(0 == rbmIsEqual(rbm1, rbm));
             rbmDestory(rbm1);
 
-            /* array container 量级 */
-            /* 正常测 */
+            /* array container  */
+            /* normal test */
             /* [0, 8]  [10, 200]*/
             rbmSetBitRange(rbm, 10, 200);
             bitNum = rbmGetBitRange(rbm, 0, 200);
             test_assert(bitNum == 200);
 
-            bitNum = rbmGetBitRange(rbm, 9, 9);  /* 界内 */
+            bitNum = rbmGetBitRange(rbm, 9, 9);  /* inside boundry */
             test_assert(bitNum == 0);
 
-            bitNum = rbmGetBitRange(rbm, 100, 150);  /* 界内 */
+            bitNum = rbmGetBitRange(rbm, 100, 150);  /* inside boundry */
             test_assert(bitNum == 51);
 
-            bitNum = rbmGetBitRange(rbm, 100, 300);  /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm, 100, 300);  /* across boundry */
             test_assert(bitNum == 101);
 
-            bitNum = rbmGetBitRange(rbm, 8, 100);  /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm, 8, 100);  /* across boundry */
             test_assert(bitNum == 92);
 
-            bitNum = rbmGetBitRange(rbm, 201, 400); /* 边界外 */
+            bitNum = rbmGetBitRange(rbm, 201, 400); /* beyond boundry */
             test_assert(bitNum == 0);
 
-            bitNum = rbmGetBitRange(rbm, 201, 201);  /* 边界外 */
+            bitNum = rbmGetBitRange(rbm, 201, 201);  /* beyond boundry */
             test_assert(bitNum == 0);
 
-            bitNum = rbmGetBitRange(rbm, 196, 205); /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm, 196, 205); /* across boundry */
             test_assert(bitNum == 5);
 
-            bitNum = rbmGetBitRange(rbm, 9, 205); /* 横跨 set范围 */
+            bitNum = rbmGetBitRange(rbm, 9, 205); /* across set boundry */
             test_assert(bitNum == 191);
 
             roaringBitmap* rbm2 = rbmCreate();
             rbmdup(rbm2, rbm);
 
-            bitNum = rbmGetBitRange(rbm2, 9, 9);  /* 界内 */
+            bitNum = rbmGetBitRange(rbm2, 9, 9);  /* inside boundry */
             test_assert(bitNum == 0);
 
-            bitNum = rbmGetBitRange(rbm2, 100, 150);  /* 界内 */
+            bitNum = rbmGetBitRange(rbm2, 100, 150);  /* inside boundry */
             test_assert(bitNum == 51);
 
-            bitNum = rbmGetBitRange(rbm2, 100, 300);  /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm2, 100, 300);  /* across boundry */
             test_assert(bitNum == 101);
 
-            bitNum = rbmGetBitRange(rbm2, 8, 100);  /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm2, 8, 100);  /* across boundry */
             test_assert(bitNum == 92);
 
-            bitNum = rbmGetBitRange(rbm2, 201, 400); /* 边界外 */
+            bitNum = rbmGetBitRange(rbm2, 201, 400); /* beyond boundry */
             test_assert(bitNum == 0);
 
-            bitNum = rbmGetBitRange(rbm2, 201, 201);  /* 边界外 */
+            bitNum = rbmGetBitRange(rbm2, 201, 201);  /* beyond boundry */
             test_assert(bitNum == 0);
 
-            bitNum = rbmGetBitRange(rbm2, 196, 205); /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm2, 196, 205); /* across boundry */
             test_assert(bitNum == 5);
 
-            bitNum = rbmGetBitRange(rbm2, 9, 205); /* 横跨 set范围 */
+            bitNum = rbmGetBitRange(rbm2, 9, 205); /* across set boundry */
             test_assert(bitNum == 191);
 
             test_assert(1 == rbmIsEqual(rbm2, rbm));
 
-            /* 增量修改 rbm */
-            rbmSetBitRange(rbm, 150, 160);  /* 重复set */
+            /* non-in-place modification rbm */
+            rbmSetBitRange(rbm, 150, 160);  /* repeat set */
 
-            bitNum = rbmGetBitRange(rbm, 0, 4095); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm, 0, 4095); /* container level test */
             test_assert(bitNum == 200);
 
-            rbmSetBitRange(rbm, 200, 300);  /* 边界set */
+            rbmSetBitRange(rbm, 200, 300);  /* boundry set */
 
             /* [0, 8]  [10, 300] */
-            bitNum = rbmGetBitRange(rbm, 0, 4095); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm, 0, 4095); /* container level test */
             test_assert(bitNum == 300);
 
             test_assert(0 == rbmIsEqual(rbm2, rbm));
 
-            /* 增量修改 rbm2 */
-            rbmSetBitRange(rbm2, 150, 160);  /* 重复set */
+            /* non-in-place modification rbm2 */
+            rbmSetBitRange(rbm2, 150, 160);  /* repeat set */
 
-            bitNum = rbmGetBitRange(rbm2, 0, 4095); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm2, 0, 4095); /* container level test */
             test_assert(bitNum == 200);
 
-            rbmSetBitRange(rbm2, 200, 300);  /* 边界set */
+            rbmSetBitRange(rbm2, 200, 300);  /* boundry set */
 
             /* [0, 8]  [10, 300] */
-            bitNum = rbmGetBitRange(rbm2, 0, 4095); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm2, 0, 4095); /* container level test */
             test_assert(bitNum == 300);
 
             test_assert(1 == rbmIsEqual(rbm2, rbm));
             rbmDestory(rbm2);
 
-            /* Bitmap container 量级 */
+            /* Bitmap container  */
             /* [0, 8]  [10, 1000] */
             rbmSetBitRange(rbm, 200, 1000);
 
@@ -2429,62 +2421,62 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             bitNum = rbmGetBitRange(rbm3, 9, 9);
             test_assert(bitNum == 0);
 
-            bitNum = rbmGetBitRange(rbm3, 100, 150);  /* 界内 */
+            bitNum = rbmGetBitRange(rbm3, 100, 150);  /* inside boundry */
             test_assert(bitNum == 51);
 
-            bitNum = rbmGetBitRange(rbm3, 8, 100);  /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm3, 8, 100);  /* across boundry */
             test_assert(bitNum == 92);
 
-            bitNum = rbmGetBitRange(rbm3, 996, 1005); /* 跨边界 */
+            bitNum = rbmGetBitRange(rbm3, 996, 1005); /* across boundry */
             test_assert(bitNum == 5);
 
-            bitNum = rbmGetBitRange(rbm3, 9, 1005); /* 横跨 set范围 */
+            bitNum = rbmGetBitRange(rbm3, 9, 1005); /* across set boundry */
             test_assert(bitNum == 991);
 
             test_assert(1 == rbmIsEqual(rbm3, rbm));
 
-            /* 增量修改rbm */
-            rbmSetBitRange(rbm, 150, 160);  /* 重复set */
+            /* non-in-place modificationrbm */
+            rbmSetBitRange(rbm, 150, 160);  /* repeat set */
 
-            bitNum = rbmGetBitRange(rbm, 0, 4095); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm, 0, 4095); /* container level test */
             test_assert(bitNum == 1000);
 
             test_assert(1 == rbmIsEqual(rbm3, rbm));
 
-            /* 增量修改rbm3 */
-            rbmSetBitRange(rbm3, 150, 160);  /* 重复set */
+            /* non-in-place modificationrbm3 */
+            rbmSetBitRange(rbm3, 150, 160);  /* repeat set */
 
-            bitNum = rbmGetBitRange(rbm3, 0, 4095); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm3, 0, 4095); /* container level test */
             test_assert(bitNum == 1000);
 
             test_assert(1 == rbmIsEqual(rbm3, rbm));
 
-            /* rbm 跨 Container set get */
+            /* rbm across container set get */
             /* [0, 8]  [10, 1000]  [4000, 4096 + 100]*/
             rbmSetBitRange(rbm, 4000, 4096 + 100);
 
-            bitNum = rbmGetBitRange(rbm, 0, 4096 * 2); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm, 0, 4096 * 2); /* container level test */
             test_assert(bitNum == 1197);
 
-            bitNum = rbmGetBitRange(rbm, 4096 - 5, 4096 + 5); /* 区间跨container验证 */
+            bitNum = rbmGetBitRange(rbm, 4096 - 5, 4096 + 5); /* across container test */
             test_assert(bitNum == 11);
 
             test_assert(0 == rbmIsEqual(rbm3, rbm));
 
-            /* rbm3 跨 Container set get */
+            /* rbm3 across container set get */
             /* [0, 8]  [10, 1000]  [4000, 4096 + 100]*/
             rbmSetBitRange(rbm3, 4000, 4096 + 100);
 
-            bitNum = rbmGetBitRange(rbm3, 0, 4096 * 2); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm3, 0, 4096 * 2); /* container level test */
             test_assert(bitNum == 1197);
 
-            bitNum = rbmGetBitRange(rbm3, 4096 - 5, 4096 + 5); /* 区间跨container验证 */
+            bitNum = rbmGetBitRange(rbm3, 4096 - 5, 4096 + 5); /* across container test */
             test_assert(bitNum == 11);
 
             test_assert(1 == rbmIsEqual(rbm3, rbm));
             rbmDestory(rbm3);
 
-            /* 跨full Container set get */
+            /* across full Container set get */
             rbmSetBitRange(rbm, 4096 * 2, 4096 * 3 - 1);
             /* [0, 8]  [10, 1000]  [4000, 4096 + 100]  [4096 * 2, 4096 * 3 - 1] */
 
@@ -2499,26 +2491,25 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             bitNum = rbmGetBitRange(rbm4, 4000, 4096 * 2 + 1000);
             test_assert(bitNum == 1198);
 
-            /* 跨empty container set get */
+            /* across empty container set get */
             bitNum = rbmGetBitRange(rbm, 4096 * 3 - 1000, 4096 * 3 + 1000);
             test_assert(bitNum == 1000);
 
-            /* 跨empty container set get */
+            /* across empty container set get */
             bitNum = rbmGetBitRange(rbm4, 4096 * 3 - 1000, 4096 * 3 + 1000);
             test_assert(bitNum == 1000);
 
             /* [0, 8]  [10, 1000]  [4000, 4096 + 100]  [4096 * 2, 4096 * 3 - 1]  [4096 * 3 + 1000, 4096 * 3 + 2000]*/
-            rbmSetBitRange(rbm, 4096 * 3 + 1000, 4096 * 3 + 2000); /* 填充empty */
+            rbmSetBitRange(rbm, 4096 * 3 + 1000, 4096 * 3 + 2000); /* fill empty */
 
-            /* rbm update 之后， 不再相等*/
             test_assert(0 == rbmIsEqual(rbm4, rbm));
 
-            bitNum = rbmGetBitRange(rbm, 4096 * 3, 4096 * 4 - 1); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm, 4096 * 3, 4096 * 4 - 1); /* container level test */
             test_assert(bitNum == 1001);
 
-            /* 整个roaring Bitmap get */
+            /* whole roaring Bitmap get */
 
-            bitNum = rbmGetBitRange(rbm, 0, 4096 * 128 - 1); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm, 0, 4096 * 128 - 1); /* container level test */
             test_assert(bitNum == 6294);
 
             rbmDestory(rbm4);
@@ -2526,12 +2517,12 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             roaringBitmap* rbm5 = rbmCreate();
             rbmdup(rbm5, rbm);
 
-            bitNum = rbmGetBitRange(rbm5, 4096 * 3, 4096 * 4 - 1); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm5, 4096 * 3, 4096 * 4 - 1); /* container level test */
             test_assert(bitNum == 1001);
 
-            /* 整个roaring Bitmap get */
+            /* whole roaring Bitmap get */
 
-            bitNum = rbmGetBitRange(rbm5, 0, 4096 * 128 - 1); /* container 级别验证 */
+            bitNum = rbmGetBitRange(rbm5, 0, 4096 * 128 - 1); /* container level test */
             test_assert(bitNum == 6294);
 
             test_assert(1 == rbmIsEqual(rbm5, rbm));
@@ -2540,8 +2531,8 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             rbmDestory(rbm5);
         }
 
-            /* 第一个为 array， 第二个为Bitmap， 第三个为 empty, 第四个为full */
-        /*TEST("roaring bitmap: container save 14bits") {
+            /* first is  array， second is Bitmap，  third is  empty,  fourth is full */
+        TEST("roaring bitmap: container save 14bits") {
 
             roaringBitmap* rbm = rbmCreate();
             uint32_t bitNum = 0;
@@ -2568,8 +2559,6 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             bitNum = rbmGetBitRange(rbm, 16384 * 3, 16384 * 3 + 100);
             test_assert(bitNum == 101);
 
-
-
             rbmClearBitRange(rbm, 100, 100);
 
             rbmClearBitRange(rbm, 16384 + 100, 16384 + 100);
@@ -2590,10 +2579,10 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             bitNum = rbmGetBitRange(rbm, 16384 * 3, 16384 * 3 + 100);
             test_assert(bitNum == 50);
             rbmDestory(rbm);
-        } */
+        }
 
-        /* 第一个为 array， 第二个为Bitmap， 第三个为 empty, 第四个为full */
-        /*
+        /* first is array， second is Bitmap，  third is  empty,  fourth is full */
+        
         TEST("roaring bitmap: container save 10 bits") {
 
             roaringBitmap* rbm = rbmCreate();
@@ -2643,7 +2632,7 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             test_assert(bitNum == 100);
             rbmDestory(rbm);
 
-        } */
+        }
 
         /* 500W QPS: [set]: 1/3 [get]: 2/3  total time = 1410622us  */
 
@@ -2655,15 +2644,15 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             uint32_t maxBitNum = 131072;
 
             for (uint32_t i = 0; i < querytimes; i++) {
-                uint32_t bitIdx = i % maxBitNum;
+                uint32_t bit_idx = i % maxBitNum;
 
-                uint32_t bitNum = rbmGetBitRange(rbm, bitIdx, bitIdx);
+                uint32_t bitNum = rbmGetBitRange(rbm, bit_idx, bit_idx);
                 UNUSED(bitNum);
-                rbmSetBitRange(rbm, bitIdx, bitIdx);
-                bitNum = rbmGetBitRange(rbm, 0, bitIdx);
+                rbmSetBitRange(rbm, bit_idx, bit_idx);
+                bitNum = rbmGetBitRange(rbm, 0, bit_idx);
 
-                if (bitIdx == maxBitNum - 1) {
-                    rbmClearBitRange(rbm, 0, bitIdx / 2);
+                if (bit_idx == maxBitNum - 1) {
+                    rbmClearBitRange(rbm, 0, bit_idx / 2);
                 }
 
             }
@@ -2672,7 +2661,7 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             rbmDestory(rbm);
         }
 
-        /* 单测接口性能数据 , 单位 TIME/OP (ns)：
+        /* Performance test, TIME/OP (ns)：
             [bitmap single set]: 48
             [bitmap single get]: 32
             [bitmap range get]: 118
@@ -2688,49 +2677,49 @@ int roaringBitmapTest(int argc, char *argv[], int accurate) {
             uint32_t maxBitNum = 131072;
 
             for (uint32_t i = 0; i < querytimes; i++) {
-                uint32_t bitIdx = i % maxBitNum;
-                rbmSetBitRange(rbm, bitIdx, bitIdx);
+                uint32_t bit_idx = i % maxBitNum;
+                rbmSetBitRange(rbm, bit_idx, bit_idx);
             }
             printf("[bitmap single set]: %lld\n", (ustime() - start) / 500);
 
             start = ustime();
             for (uint32_t i = 0; i < querytimes; i++) {
-                uint32_t bitIdx = i % maxBitNum;
+                uint32_t bit_idx = i % maxBitNum;
 
-                uint32_t bitNum = rbmGetBitRange(rbm, bitIdx, bitIdx);
+                uint32_t bitNum = rbmGetBitRange(rbm, bit_idx, bit_idx);
                 UNUSED(bitNum);
             }
             printf("[bitmap single get]: %lld\n", (ustime() - start) / 500);
 
             start = ustime();
             for (uint32_t i = 0; i < querytimes; i++) {
-                uint32_t bitIdx = i % maxBitNum;
+                uint32_t bit_idx = i % maxBitNum;
 
-                uint32_t bitNum = rbmGetBitRange(rbm, 0, bitIdx);
+                uint32_t bitNum = rbmGetBitRange(rbm, 0, bit_idx);
                 UNUSED(bitNum);
             }
             printf("[bitmap range get]: %lld\n", (ustime() - start) / 500);
 
             start = ustime();
             for (uint32_t i = 0; i < querytimes; i++) {
-                uint32_t bitIdx = i % maxBitNum;
+                uint32_t bit_idx = i % maxBitNum;
 
-                rbmClearBitRange(rbm, bitIdx, bitIdx);
+                rbmClearBitRange(rbm, bit_idx, bit_idx);
             }
             printf("[bitmap single clear]: %lld\n", (ustime() - start) / 500);
 
             start = ustime();
             for (uint32_t i = 0; i < querytimes; i++) {
-                uint32_t bitIdx = i % maxBitNum;
-                rbmSetBitRange(rbm, 0, bitIdx);
+                uint32_t bit_idx = i % maxBitNum;
+                rbmSetBitRange(rbm, 0, bit_idx);
             }
             printf("[bitmap range set]: %lld\n", (ustime() - start) / 500);
 
             start = ustime();
             for (uint32_t i = 0; i < querytimes; i++) {
-                uint32_t bitIdx = i % maxBitNum;
+                uint32_t bit_idx = i % maxBitNum;
 
-                rbmClearBitRange(rbm, 0, bitIdx);
+                rbmClearBitRange(rbm, 0, bit_idx);
             }
             printf("[bitmap range clear]: %lld\n", (ustime() - start) / 500);
             rbmDestory(rbm);

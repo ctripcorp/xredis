@@ -60,11 +60,6 @@ proc object_is_dirty {r key} {
 
 proc object_is_cold {r key} {
     set str [$r swap object $key]
-    # puts "\ncold11111111111111111111 $str"
-    #预期 cold22222222222222222222 为空
-    # puts "\ncold22222222222222222222 [swap_object_property $str value at]"
-    #预期 cold33333333333333333333 非空
-    # puts "\ncold33333333333333333333 [swap_object_property $str cold_meta swap_type]"
     if { [swap_object_property $str value at] == "" && [swap_object_property $str cold_meta swap_type] != "" } {
         set _ 1
     } else {
@@ -83,11 +78,7 @@ proc object_is_warm {r key} {
 
 proc object_is_hot {r key} {
     set str [$r swap object $key]
-    # puts "\nhot11111111111111111111 $str"
-    # puts "\nhot22222222222222222222 [swap_object_property $str value at]"
-    # 预期 hot22222222222222222222 非空
     if {[swap_object_property $str value at] != "" } {
-        # puts "\nhot33333333333333333333 [swap_object_property $str cold_meta swap_type]"
         set sw_type [swap_object_property $str hot_meta swap_type]
         if {$sw_type == ""} {
             # no hot meta
@@ -99,12 +90,6 @@ proc object_is_hot {r key} {
             # list
             set _ 0
         } elseif {$sw_type == 7} {
-            # 预期 hot44444444444444444444 非空
-            # puts "\nhot44444444444444444444 [swap_object_property $str value at]"
-            # 预期 hot55555555555555555555 为 0
-            # puts "\nhot55555555555555555555 [swap_object_property $str hot_meta pure_cold_subkeys_num]"
-            # 预期 hot66666666666666666666 非空
-            # puts "\nhot66666666666666666666 [swap_object_property $str hot_meta swap_type]"
             if {[swap_object_property $str hot_meta pure_cold_subkeys_num] == 0} {
                 set _ 1
             } else {
@@ -163,16 +148,9 @@ proc object_is_string {r key} {
 
 proc bitmap_object_is_pure_hot {r key} {
     set str [$r swap object $key]
-    # puts "\n11111111111111111111 $str"
     if {[swap_object_property $str value at] != "" } {
         set sw_type [swap_object_property $str hot_meta swap_type]
-        # puts "\n22222222222222222222 $sw_type"
         if {$sw_type == 7} {
-            # no hot meta
-            # puts "\n33333333333333333333 $sw_type"
-            # puts "\n44444444444444444444 [swap_object_property $str cold_meta swap_type]"
-            # puts "\n55555555555555555555 [swap_object_property $str hot_meta marker]"
-            # press_enter_to_continue
             if { [swap_object_property $str cold_meta swap_type] == "" && [swap_object_property $str hot_meta marker] == "true" } {
                 set _ 1
             }

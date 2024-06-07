@@ -1181,7 +1181,6 @@ int getKeyRequestsBitcount(int dbid, struct redisCommand *cmd, robj **argv,
     } else {
         if (getLongLongFromObject(argv[2],&start) != C_OK) return -1;
         if (getLongLongFromObject(argv[3],&end) != C_OK) return -1;
-        //TODO 此处为什么是BYTE? 语法上可以是BIT或者BYTE
         getKeyRequestsSingleKeyWithRanges(dbid, cmd, argv, argc,
                 result, 1, -1, -1, RANGE_BYTE_BITMAP, 1/*num_ranges*/, start, end,0);
     }
@@ -1199,13 +1198,11 @@ int getKeyRequestsBitpos(int dbid, struct redisCommand *cmd, robj **argv,
 
         /* max size of bitmap is 512MB, last possible bit (equal to 2^32 - 1, UINT_MAX),
          * start and end specify a byte index, UINT_MAX could cover the range. */
-        //TODO 为甚么此处是BYTE?
         getKeyRequestsSingleKeyWithRanges(dbid, cmd, argv, argc,
                 result, 1, -1, -1, RANGE_BYTE_BITMAP, 1/*num_ranges*/, start, UINT_MAX, 0);
     } else {
         if (getLongLongFromObject(argv[3],&start) != C_OK) return -1;
         if (getLongLongFromObject(argv[4],&end) != C_OK) return -1;
-        //TODO 为甚么此处是BYTE?
         getKeyRequestsSingleKeyWithRanges(dbid, cmd, argv, argc,
                 result, 1, -1, -1, RANGE_BYTE_BITMAP, 1/*num_ranges*/, start, end, 0);
     }
