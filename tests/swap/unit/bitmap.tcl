@@ -981,36 +981,36 @@ start_server {
         r flushdb
     }
 
-    test {small_bitmap cold rdbsave and rdbload with bitmap-subkey-size exchange 2048 to 4096} {
+    test {small_bitmap cold rdbsave and rdbload with swap-bitmap-subkey-size exchange 2048 to 4096} {
         r flushdb
-        set bak_bitmap_subkey_size [lindex [r config get bitmap-subkey-size] 1]
-        r CONFIG SET bitmap-subkey-size 2048
+        set bak_bitmap_subkey_size [lindex [r config get swap-bitmap-subkey-size] 1]
+        r CONFIG SET swap-bitmap-subkey-size 2048
         build_cold_small_bitmap small_bitmap1
         r SAVE
         # check if this bit will exist after loading
         r setbit small_bitmap1 16 1
-        r CONFIG SET bitmap-subkey-size 4096
+        r CONFIG SET swap-bitmap-subkey-size 4096
         r DEBUG RELOAD NOSAVE
         # check_data
         check_small_bitmap_is_right small_bitmap0 small_bitmap1 $notextend
-        r config set bitmap-subkey-size $bak_bitmap_subkey_size
+        r config set swap-bitmap-subkey-size $bak_bitmap_subkey_size
         r flushdb
     }
 
-    test {small_bitmap cold rdbsave and rdbload with bitmap-subkey-size exchange 4096 to 2048} {
+    test {small_bitmap cold rdbsave and rdbload with swap-bitmap-subkey-size exchange 4096 to 2048} {
         r flushdb
-        set bak_bitmap_subkey_size [lindex [r config get bitmap-subkey-size] 1]
+        set bak_bitmap_subkey_size [lindex [r config get swap-bitmap-subkey-size] 1]
         build_cold_small_bitmap small_bitmap1
         r SAVE
         # check if this bit will exist after loading
         r setbit small_bitmap1 16 1
-        r CONFIG SET bitmap-subkey-size 2048
+        r CONFIG SET swap-bitmap-subkey-size 2048
         r DEBUG RELOAD NOSAVE
         # check_data
         check_small_bitmap_is_right small_bitmap0 small_bitmap1 $notextend
         r flushdb
         # reset default config
-        r config set bitmap-subkey-size $bak_bitmap_subkey_size
+        r config set swap-bitmap-subkey-size $bak_bitmap_subkey_size
     }
 
     set bak_rdb_bitmap_enable [lindex [r config get swap-rdb-bitmap-encode-enabled] 1]
@@ -1528,38 +1528,38 @@ start_server {
     }
 
 
-    test {cold rdbsave and rdbload with bitmap-subkey-size exchange 2048 to 4096} {
+    test {cold rdbsave and rdbload with swap-bitmap-subkey-size exchange 2048 to 4096} {
         r flushdb
-        set bak_bitmap_subkey_size [lindex [r config get bitmap-subkey-size] 1]
+        set bak_bitmap_subkey_size [lindex [r config get swap-bitmap-subkey-size] 1]
         # mybitmap 41kb
-        r CONFIG SET bitmap-subkey-size 2048
+        r CONFIG SET swap-bitmap-subkey-size 2048
         build_cold_data mybitmap1
         r SAVE
         # check if this bit will exist after loading
         r setbit mybitmap1 335872 1
-        r CONFIG SET bitmap-subkey-size 4096
+        r CONFIG SET swap-bitmap-subkey-size 4096
         r DEBUG RELOAD NOSAVE
         # check_data
         check_mybitmap_is_right mybitmap1 $notextend
-        r config set bitmap-subkey-size $bak_bitmap_subkey_size
+        r config set swap-bitmap-subkey-size $bak_bitmap_subkey_size
         r flushdb
     }
 
-    test {cold rdbsave and rdbload with bitmap-subkey-size exchange 4096 to 2048} {
+    test {cold rdbsave and rdbload with swap-bitmap-subkey-size exchange 4096 to 2048} {
         r flushdb
-        set bak_bitmap_subkey_size [lindex [r config get bitmap-subkey-size] 1]
+        set bak_bitmap_subkey_size [lindex [r config get swap-bitmap-subkey-size] 1]
         # mybitmap 41kb
         build_cold_data mybitmap1
         r SAVE
         # check if this bit will exist after loading
         r setbit mybitmap1 335872 1
-        r CONFIG SET bitmap-subkey-size 2048
+        r CONFIG SET swap-bitmap-subkey-size 2048
         r DEBUG RELOAD NOSAVE
         # check_data
         check_mybitmap_is_right mybitmap1 $notextend
         r flushdb
         # reset default config
-        r config set bitmap-subkey-size $bak_bitmap_subkey_size
+        r config set swap-bitmap-subkey-size $bak_bitmap_subkey_size
     }
 
     set bak_rdb_bitmap_enable [lindex [r config get swap-rdb-bitmap-encode-enabled] 1]
@@ -1854,10 +1854,10 @@ start_server {
         r flushdb
     }
 
-    test {cold rdbsave and rdbload with bitmap-subkey-size exchange 2048 to 4096} {
+    test {cold rdbsave and rdbload with swap-bitmap-subkey-size exchange 2048 to 4096} {
         r flushdb
-        set bak_bitmap_subkey_size [lindex [r config get bitmap-subkey-size] 1]
-        r CONFIG SET bitmap-subkey-size 2048
+        set bak_bitmap_subkey_size [lindex [r config get swap-bitmap-subkey-size] 1]
+        r CONFIG SET swap-bitmap-subkey-size 2048
 
         r set mybitmap ""
         assert_equal {0} [r bitcount mybitmap]
@@ -1868,20 +1868,20 @@ start_server {
         r SAVE
         # check if this bit will exist after loading, expect it not exist
         r setbit mybitmap 16 1
-        r CONFIG SET bitmap-subkey-size 4096
+        r CONFIG SET swap-bitmap-subkey-size 4096
         r DEBUG RELOAD NOSAVE
         # check_data
         assert_equal {0} [r bitcount mybitmap]
 
         assert_equal [r dbsize] 1 
-        r config set bitmap-subkey-size $bak_bitmap_subkey_size
+        r config set swap-bitmap-subkey-size $bak_bitmap_subkey_size
 
         r flushdb
     }
 
-    test {cold rdbsave and rdbload with bitmap-subkey-size exchange 4096 to 2048} {
+    test {cold rdbsave and rdbload with swap-bitmap-subkey-size exchange 4096 to 2048} {
         r flushdb
-        set bak_bitmap_subkey_size [lindex [r config get bitmap-subkey-size] 1]
+        set bak_bitmap_subkey_size [lindex [r config get swap-bitmap-subkey-size] 1]
 
         r set mybitmap ""
         assert_equal {0} [r bitcount mybitmap]
@@ -1892,7 +1892,7 @@ start_server {
         r SAVE
         # check if this bit will exist after loading, expect it not exist
         r setbit small_bitmap1 16 1
-        r CONFIG SET bitmap-subkey-size 2048
+        r CONFIG SET swap-bitmap-subkey-size 2048
         r DEBUG RELOAD NOSAVE
         # check_data
         assert_equal {0} [r bitcount mybitmap]
@@ -1900,7 +1900,7 @@ start_server {
 
         r flushdb
         # reset default config
-        r config set bitmap-subkey-size $bak_bitmap_subkey_size
+        r config set swap-bitmap-subkey-size $bak_bitmap_subkey_size
     }
 
     set bak_rdb_bitmap_enable [lindex [r config get swap-rdb-bitmap-encode-enabled] 1]
