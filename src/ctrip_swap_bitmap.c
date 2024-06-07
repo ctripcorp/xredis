@@ -95,33 +95,43 @@ static inline void bitmapMetaInit(bitmapMeta *bitmap_meta, robj *value) {
         BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE) - 1);
 }
 
+
+
+#define MARKER_ENCODE_FLAG 0x00
+#define NORMAL_ENCODE_FLAG 0x01
+#define RORDB_ENCODE_FLAG 0x02
+
+/* two types of bitmap meta encoding:
+ * 1.  flag == 0x01,   flag (1 byte) | size (8 bytes)
+ * 2.  flag == 0x02,   flag (1 byte) | size (8 bytes) | pure_cold_subkeys_num (8 bytes) | rbm encode len (8 bytes) | rbm n bytes 
+ */
 static inline sds bitmapMetaEncode(bitmapMeta *bm, int meta_enc_mode) {
     serverAssert(bm);
 
     /* flag 1 byte | size 8 bytes */
-    if (meta_enc_mode == 0) {
-        sds buffer = sdsnewlen(NULL, 9);
-        buffer[0] |= 0x01;
+    if (meta_enc_mode == NORMAL_MODE) {
+        sds buffer = sdsnewlen(NULL, 1 + sizeof(unsigned long long));
+        buffer[0] |= NORMAL_ENCODE_FLAG;
         unsigned long long size = htonu64(bm->size);
         memcpy(buffer + 1, &size, sizeof(unsigned long long));
         return buffer;
     }
 
     /* flag (1 byte) | size (8 bytes) | pure_cold_subkeys_num (8 bytes) | rbm encode len (8 bytes) | rbm n bytes */
-    sds buffer = sdsnewlen(NULL, 25);
-    buffer[0] |= 0x02;
+    sds buffer = sdsnewlen(NULL, 1 + sizeof(unsigned long long) * 3);
+    buffer[0] |= RORDB_ENCODE_FLAG;
 
     unsigned long long size = htonu64(bm->size);
     memcpy(buffer + 1, &size, sizeof(unsigned long long));
 
     unsigned long long pure_cold_subkeys_num = htonu64(bm->pure_cold_subkeys_num);
-    memcpy(buffer + 9, &pure_cold_subkeys_num, sizeof(unsigned long long));
+    memcpy(buffer + 1 + sizeof(unsigned long long), &pure_cold_subkeys_num, sizeof(unsigned long long));
 
     size_t rbm_buf_size = 0;
     char* rbm_buf = rbmEncode(bm->subkeys_status, &rbm_buf_size);
 
     unsigned long long buf_size = htonu64(rbm_buf_size);
-    memcpy(buffer + 17, &buf_size, sizeof(unsigned long long));
+    memcpy(buffer + 1 + sizeof(unsigned long long) * 2, &buf_size, sizeof(unsigned long long));
 
     buffer = sdscatlen(buffer, rbm_buf, rbm_buf_size);
 
@@ -131,7 +141,7 @@ static inline sds bitmapMetaEncode(bitmapMeta *bm, int meta_enc_mode) {
 
 static inline bitmapMeta *bitmapMetaDecode(const char *extend,
         size_t extend_len) {
-    serverAssert(extend_len >= 9);
+    serverAssert(extend_len >= 1 + sizeof(unsigned long long));
     const char *buffer = extend;
     
     bitmapMeta *bitmap_meta = bitmapMetaCreate();
@@ -139,23 +149,25 @@ static inline bitmapMeta *bitmapMetaDecode(const char *extend,
     unsigned long long size = *(unsigned long long*)(extend + 1);
     bitmap_meta->size = ntohu64(size);
 
-    if (buffer[0] == 0x01) {
-        serverAssert(extend_len == 9);
+    if (buffer[0] == NORMAL_ENCODE_FLAG) {
+        /* flag 1 byte | size 8 bytes */
+        serverAssert(extend_len == 1 + sizeof(unsigned long long));
         bitmap_meta->pure_cold_subkeys_num =
             BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE);
         return bitmap_meta;
     }
 
-    serverAssert(buffer[0] == 0x02);
-    serverAssert(extend_len >= 25);
+    serverAssert(buffer[0] == RORDB_ENCODE_FLAG);
+    /* flag (1 byte) | size (8 bytes) | pure_cold_subkeys_num (8 bytes) | rbm encode len (8 bytes) | rbm n bytes */
+    serverAssert(extend_len >= 1 + sizeof(unsigned long long) * 3);
 
-    unsigned long long pure_cold_subkeys_num = *(unsigned long long*)(extend + 9);
+    unsigned long long pure_cold_subkeys_num = *(unsigned long long*)(extend + 1 + sizeof(unsigned long long));
     bitmap_meta->pure_cold_subkeys_num = ntohu64(pure_cold_subkeys_num);
 
-    unsigned long long rbm_buf_size_ = *(unsigned long long*)(extend + 17);
+    unsigned long long rbm_buf_size_ = *(unsigned long long*)(extend + 1 + sizeof(unsigned long long) * 2);
     unsigned long long rbm_buf_size = ntohu64(rbm_buf_size_);
 
-    bitmap_meta->subkeys_status = rbmDecode(extend + 25, rbm_buf_size);
+    bitmap_meta->subkeys_status = rbmDecode(extend + 1 + sizeof(unsigned long long) * 3, rbm_buf_size);
     return bitmap_meta;
 }
 
@@ -232,8 +244,10 @@ static inline int bitmapMetaIsMarker(void *meta) {
 
 /* used in rordb to save and load bitmap marker, so that slave will alse treat
  * key with marker as pure hot bitmap just like master. */
+
+/* bitmap marker encoding:
+ * 1.  flag == 0x00,   flag (1 byte)  */
 static inline sds bitmapMarkerEncode() {
-    /* flag (1 byte) */
     sds buffer = sdsnewlen(NULL,1);
     return buffer;
 }
@@ -274,7 +288,7 @@ int bitmapObjectMetaDecode(struct objectMeta *object_meta, const char *extend,
 
     bool isMarker = false;
     unsigned char byte = 0x00;
-    if ((extend[0] | byte) == 0x00) isMarker = true;
+    if ((extend[0] | byte) == MARKER_ENCODE_FLAG) isMarker = true;
 
     if (isMarker)
         objectMetaSetPtr(object_meta, bitmapMarkerDecode());
