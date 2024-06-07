@@ -144,7 +144,7 @@ static inline bitmapMeta *bitmapMetaDecode(const char *extend,
     serverAssert(extend_len >= 1 + sizeof(unsigned long long));
     const char *buffer = extend;
     
-    bitmapMeta *bitmap_meta = bitmapMetaCreate();
+    bitmapMeta *bitmap_meta = zmalloc(sizeof(bitmapMeta));
 
     unsigned long long size = *(unsigned long long*)(extend + 1);
     bitmap_meta->size = ntohu64(size);
@@ -154,6 +154,8 @@ static inline bitmapMeta *bitmapMetaDecode(const char *extend,
         serverAssert(extend_len == 1 + sizeof(unsigned long long));
         bitmap_meta->pure_cold_subkeys_num =
             BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE);
+            
+        bitmap_meta->subkeys_status = rbmCreate();
         return bitmap_meta;
     }
 
