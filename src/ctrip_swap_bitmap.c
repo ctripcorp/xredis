@@ -198,7 +198,7 @@ static inline int bitmapMetaGetHotSubkeysNum(bitmapMeta *bitmap_meta,
         return 0;
     }
     if (end_subkey_idx >= subkeys_num) {
-        /* just show the subkey with bitmap range. */
+        /* just show the subkey within bitmap range. */
         end_subkey_idx = subkeys_num - 1;
     }
     return rbmGetBitRange(bitmap_meta->subkeys_status, start_subkey_idx, end_subkey_idx);
@@ -540,19 +540,16 @@ void bitmapSwapAnaInSelectSubKeys(swapData *data, bitmapDataCtx *datactx,
     int required_subkey_start_idx = 0;
     int required_subkey_end_idx = 0;
 
-    range *range = req->l.ranges;
-
     unsigned int subkeys_num = BITMAP_GET_SUBKEYS_NUM(meta->size, BITMAP_SUBKEY_SIZE);
 
-    if (range->type == RANGE_BIT_BITMAP) {
-        serverAssert(range->start == range->end);
-        if (range->start < 0 || (range->start >> 3) >= server.proto_max_bulk_len) {
+    if (req->type == KEYREQUEST_TYPE_BTIMAP_OFFSET) {
+        if (req->bo.offset < 0 || (req->bo.offset >> 3) >= server.proto_max_bulk_len) {
             /* setbit, getbit command, argument offset is non-negative and less than 512MB,
              * which will be check firstly in setbitCommand/getbitCommand,
              * so no need to swap in. */
             return;
         }
-        required_subkey_start_idx = range->start / BITMAP_SUBKEY_BITS;
+        required_subkey_start_idx = req->bo.offset / BITMAP_SUBKEY_BITS;
 
         /* when setbit command required subkeys range that exceeded the max subkey idx,
          * then maybe redis will extend for a bigger new bitmap.
@@ -565,11 +562,11 @@ void bitmapSwapAnaInSelectSubKeys(swapData *data, bitmapDataCtx *datactx,
         required_subkey_end_idx = required_subkey_start_idx;
     }
 
-    if (range->type == RANGE_BYTE_BITMAP) {
+    if (req->type == KEYREQUEST_TYPE_BTIMAP_RANGE) {
         /* bitcount, bitpos command, maybe argument offset is negative. */
-        long long start = range->start;
-        if (range->start < 0) {
-            start = range->start + meta->size;
+        long long start = req->br.start;
+        if (req->br.start < 0) {
+            start = req->br.start + meta->size;
             if (start < 0) {
                 start = 0;
             }
@@ -580,9 +577,9 @@ void bitmapSwapAnaInSelectSubKeys(swapData *data, bitmapDataCtx *datactx,
            and required_subkey_end_idx should keep integer. */
         required_subkey_start_idx = start / BITMAP_SUBKEY_SIZE;
 
-        long long end = range->end;
-        if (range->end < 0) {
-            end = range->end + meta->size;
+        long long end = req->br.end;
+        if (req->br.end < 0) {
+            end = req->br.end + meta->size;
             if (end < 0) {
                 end = 0;
             }
@@ -705,11 +702,16 @@ int bitmapSwapAna(swapData *data, int thd, struct keyRequest *req,
             *intention_flags = 0;
             break;
         case SWAP_IN:
+            serverAssert(req->type == KEYREQUEST_TYPE_KEY ||
+                req->type == KEYREQUEST_TYPE_SUBKEY ||
+                req->type == KEYREQUEST_TYPE_BTIMAP_OFFSET ||
+                req->type == KEYREQUEST_TYPE_BTIMAP_RANGE);
             if (!swapDataPersisted(data)) {
                 /* No need to swap for pure hot key */
                 *intention = SWAP_NOP;
                 *intention_flags = 0;
-            } else if (req->l.num_ranges == 0) {
+            } else if (req->type == KEYREQUEST_TYPE_SUBKEY || req->type == KEYREQUEST_TYPE_KEY) {
+                /* swap in for entire key */
                 if (cmd_intention_flags == SWAP_IN_DEL_MOCK_VALUE) {
                     /* DEL, unlink */
                     datactx->ctx_flag |= BIG_DATA_CTX_FLAG_MOCK_VALUE;
@@ -749,8 +751,9 @@ int bitmapSwapAna(swapData *data, int thd, struct keyRequest *req,
                     *intention = SWAP_IN;
                     *intention_flags = 0;
                 }
-            } else { /* range requests */
-
+            } else {
+                serverAssert(req->type == KEYREQUEST_TYPE_BTIMAP_OFFSET ||
+                req->type == KEYREQUEST_TYPE_BTIMAP_RANGE);
                 bitmapSwapAnaInSelectSubKeys(data, datactx, req);
 
                 *intention = datactx->subkeys_num == 0 ? SWAP_NOP : SWAP_IN;
@@ -1280,12 +1283,8 @@ int bitmapBeforeCall(swapData *data, keyRequest *key_request, client *c,
         return 0;
     }
 
-    bitmapDataCtx *datactx = datactx_;
-    argRewriteRequest first_arg_req = datactx->arg_reqs[0];
-
-    /* 1. no arg need to rewrite.
-     * 2. no need to rewrite bitcount,bitpos arg. */
-    if (first_arg_req.arg_idx < 0 || first_arg_req.arg_type == RANGE_BYTE_BITMAP) {
+    /* no need to rewrite bitcount,bitpos arg. */
+    if (key_request->type == KEYREQUEST_TYPE_BTIMAP_RANGE) {
         return 0;
     }
     objectMeta *object_meta = lookupMeta(data->db,data->key);
@@ -1305,57 +1304,57 @@ int bitmapBeforeCall(swapData *data, keyRequest *key_request, client *c,
     serverAssert(!bitmapObjectMetaIsMarker(object_meta));
     bitmapMeta *bitmap_meta = objectMetaGetPtr(object_meta);
 
-    for (int i = 0; i < 2; i++) {
-        argRewriteRequest arg_req = datactx->arg_reqs[i];
-        /* 1. impossible to modify when the arg_idx = 0 and -1 (no need to rewrite)
-         * 2. the arg needed to rewrite maybe not exist. */
-        if (arg_req.arg_idx <= 0 || arg_req.arg_idx >= c->argc) continue;
-        long long offset;
-        int ret;
+    bitmapDataCtx *datactx = datactx_;
 
-        if (arg_req.mstate_idx < 0) {
-            ret = getLongLongFromObject(c->argv[arg_req.arg_idx], &offset);
+    argRewriteRequest arg_req = datactx->arg_reqs[0];
+    /* 1. impossible to modify when the arg_idx = 0 and -1 (no need to rewrite)
+     * 2. the arg needed to rewrite maybe not exist. */
+    if (arg_req.arg_idx <= 0 || arg_req.arg_idx >= c->argc) return 0;
+    long long offset;
+    int ret;
+
+    if (arg_req.mstate_idx < 0) {
+        ret = getLongLongFromObject(c->argv[arg_req.arg_idx], &offset);
+    } else {
+        serverAssert(arg_req.mstate_idx < c->mstate.count);
+        ret = getLongLongFromObject(c->mstate.commands[arg_req.mstate_idx].argv[arg_req.arg_idx], &offset);
+    }
+
+    serverAssert(ret == C_OK);
+
+    if (offset < 0 || (offset >> 3) >= server.proto_max_bulk_len) {
+        /* setbit, getbit command, argument offset is non-negative.
+            * command must be syntax error, just return. */
+        return 0;
+    }
+
+    unsigned int subkey_idx = offset / BITMAP_SUBKEY_BITS;
+
+    if (subkey_idx == 0) {
+        /* no hole in front of idx = 0 of bitmap, no need to rewrite. */
+        return 0;
+    }
+
+    unsigned int subkeys_num_ahead = bitmapMetaGetHotSubkeysNum(bitmap_meta, 0, subkey_idx - 1);
+    if (subkeys_num_ahead == subkey_idx) {
+        /* no need to modify offset */
+        return 0;
+    } else {
+        /* setbit, getbit */
+
+        unsigned int subkeys_num = BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE);
+        unsigned int cold_subkeys_num_ahead = 0;
+        if (subkey_idx > subkeys_num - 1) {
+            /* subkey_idx may exceed the right boundry, 
+                the extending part should not be treated as pure cold subkeys. */
+            cold_subkeys_num_ahead = subkeys_num - subkeys_num_ahead;
         } else {
-            serverAssert(arg_req.mstate_idx < c->mstate.count);
-            ret = getLongLongFromObject(c->mstate.commands[arg_req.mstate_idx].argv[arg_req.arg_idx], &offset);
+            cold_subkeys_num_ahead = subkey_idx - subkeys_num_ahead;
         }
+        unsigned long newOffset = offset - cold_subkeys_num_ahead * BITMAP_SUBKEY_BITS;
 
-        serverAssert(ret == C_OK);
-
-        if (offset < 0 || (offset >> 3) >= server.proto_max_bulk_len) {
-            /* setbit, getbit command, argument offset is non-negative.
-             * command must be syntax error, just return. */
-            return 0;
-        }
-
-        unsigned int subkey_idx = offset / BITMAP_SUBKEY_BITS;
-
-        if (subkey_idx == 0) {
-            /* no hole in front of idx = 0 of bitmap, no need to rewrite. */
-            continue;
-        }
-
-        unsigned int subkeys_num_ahead = bitmapMetaGetHotSubkeysNum(bitmap_meta, 0, subkey_idx - 1);
-        if (subkeys_num_ahead == subkey_idx) {
-            /* no need to modify offset */
-            continue;
-        } else {
-            /* setbit, getbit */
-
-            unsigned int subkeys_num = BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE);
-            unsigned int cold_subkeys_num_ahead = 0;
-            if (subkey_idx > subkeys_num - 1) {
-                /* subkey_idx may exceed the right boundry, 
-                   the extending part should not be treated as pure cold subkeys. */
-                cold_subkeys_num_ahead = subkeys_num - subkeys_num_ahead;
-            } else {
-                cold_subkeys_num_ahead = subkey_idx - subkeys_num_ahead;
-            }
-            unsigned long newOffset = offset - cold_subkeys_num_ahead * BITMAP_SUBKEY_BITS;
-
-            robj *new_arg = createObject(OBJ_STRING,sdsfromlonglong(newOffset));
-            clientArgRewrite(c, arg_req, new_arg);
-        }
+        robj *new_arg = createObject(OBJ_STRING,sdsfromlonglong(newOffset));
+        clientArgRewrite(c, arg_req, new_arg);
     }
 
     return 0;
@@ -2035,12 +2034,12 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         str = NULL;
 
         incrRefCount(purehot_key1);
+        memset(purehot_keyReq1, 0x00, sizeof(keyRequest));
         purehot_keyReq1->key = purehot_key1;
         purehot_keyReq1->type = KEYREQUEST_TYPE_SUBKEY;
         purehot_keyReq1->level = REQUEST_LEVEL_KEY;
         purehot_keyReq1->cmd_flags = CMD_SWAP_DATATYPE_BITMAP;
-        purehot_keyReq1->l.num_ranges = 0;
-        purehot_keyReq1->l.ranges = NULL;
+        purehot_keyReq1->b.num_subkeys = 0;
 
         /* 3 subkeys in hot bitmap*/
         hot_key1 = createStringObject("hot_key1", 8);
@@ -2058,12 +2057,12 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         dbAdd(db,hot_key1,hot_bitmap1);
 
         incrRefCount(hot_key1);
+        memset(hot_keyReq1, 0x00, sizeof(keyRequest));
         hot_keyReq1->key = hot_key1;
         hot_keyReq1->type = KEYREQUEST_TYPE_SUBKEY;
         hot_keyReq1->level = REQUEST_LEVEL_KEY;
         hot_keyReq1->cmd_flags = CMD_SWAP_DATATYPE_BITMAP;
-        hot_keyReq1->l.num_ranges = 0;
-        hot_keyReq1->l.ranges = NULL;
+        hot_keyReq1->b.num_subkeys = 0;
 
         /* 3 subkeys in cold bitmap*/
         cold_key1 = createStringObject("cold_key1",9);
@@ -2077,12 +2076,12 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         bitmapObjectMetaDecode(cold_meta1, coldBitmapSize, sdslen(coldBitmapSize));
 
         incrRefCount(cold_key1);
+        memset(cold_keyReq1, 0x00, sizeof(keyRequest));
         cold_keyReq1->key = cold_key1;
         cold_keyReq1->level = REQUEST_LEVEL_KEY;
         cold_keyReq1->type = KEYREQUEST_TYPE_SUBKEY;
         cold_keyReq1->cmd_flags = CMD_SWAP_DATATYPE_BITMAP;
-        cold_keyReq1->l.num_ranges = 0;
-        cold_keyReq1->l.ranges = NULL;
+        cold_keyReq1->b.num_subkeys = 0;
 
         purehot_data1 = createSwapData(db, purehot_key1, purehot_bitmap1, NULL);
         swapDataSetupMeta(purehot_data1,SWAP_TYPE_BITMAP, -1,(void**)&purehot_ctx1);
@@ -2114,12 +2113,12 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         swapDataSetObjectMeta(warm_data3, warm_meta3);
 
         incrRefCount(warm_key3);
+        memset(warm_keyReq3, 0x00, sizeof(keyRequest));
         warm_keyReq3->key = warm_key3;
         warm_keyReq3->type = KEYREQUEST_TYPE_SUBKEY;
         warm_keyReq3->level = REQUEST_LEVEL_KEY;
         warm_keyReq3->cmd_flags = CMD_SWAP_DATATYPE_BITMAP;
-        warm_keyReq3->l.num_ranges = 0;
-        warm_keyReq3->l.ranges = NULL;
+        warm_keyReq3->b.num_subkeys = 0;
 
         sdsfree(str1);
         str1 = NULL;
@@ -2420,27 +2419,20 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(purehot_ctx1->ctx_flag == 0);
         test_assert(purehot_ctx1->subkeys_num == 0);
 
-        range *range1 = zmalloc(sizeof(range));
 
-        range1->start = BITMAP_SUBKEY_SIZE * 2;            /* out of range, read operation */
-        range1->end = BITMAP_SUBKEY_SIZE * 3 + BITMAP_SUBKEY_SIZE / 2 - 1;
-        range1->type = RANGE_BYTE_BITMAP;
-        warm_keyReq3->l.num_ranges = 1;
-        warm_keyReq3->l.ranges = range1;
+        warm_keyReq3->type = KEYREQUEST_TYPE_BTIMAP_RANGE;
+        warm_keyReq3->br.start = BITMAP_SUBKEY_SIZE * 2;            /* out of range, read operation */
+        warm_keyReq3->br.end = BITMAP_SUBKEY_SIZE * 3 + BITMAP_SUBKEY_SIZE / 2 - 1;
 
         warm_keyReq3->cmd_intention = SWAP_IN, warm_keyReq3->cmd_intention_flags = 0;
         swapDataAna(warm_data3,0,warm_keyReq3,&intention,&intention_flags,warm_ctx3);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
         test_assert(warm_ctx3->subkeys_num == 0);
 
-        /* in: for persist data, l.num_ranges != 0 */
+        /* in: for persist data */
 
-        range1->start = BITMAP_SUBKEY_BITS * 4;            /* out of range, read operation */
-        range1->end = BITMAP_SUBKEY_BITS * 4;
-        range1->type = RANGE_BIT_BITMAP;
-
-        cold_keyReq1->l.num_ranges = 1;
-        cold_keyReq1->l.ranges = range1;
+        cold_keyReq1->type = KEYREQUEST_TYPE_BTIMAP_OFFSET;
+        cold_keyReq1->bo.offset = BITMAP_SUBKEY_BITS * 4;            /* out of range, read operation */
         cold_keyReq1->cmd_intention = SWAP_IN, cold_keyReq1->cmd_intention_flags = 0;
         swapDataAna(cold_data1,0,cold_keyReq1,&intention,&intention_flags,cold_ctx1);
         test_assert(intention == SWAP_IN && intention_flags == 0);
@@ -2449,12 +2441,8 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(cold_ctx1->subkeys_num == 1);
         bitmapDataCtxReset(cold_ctx1);
 
-        range1->start = BITMAP_SUBKEY_BITS * 4;            /* out of range, read operation */
-        range1->end = BITMAP_SUBKEY_BITS * 4;
-        range1->type = RANGE_BIT_BITMAP;
-
-        cold_keyReq1->l.num_ranges = 1;
-        cold_keyReq1->l.ranges = range1;
+        cold_keyReq1->type = KEYREQUEST_TYPE_BTIMAP_OFFSET;
+        cold_keyReq1->bo.offset = BITMAP_SUBKEY_BITS * 4;            /* out of range, read operation */
         cold_keyReq1->cmd_intention = SWAP_IN, cold_keyReq1->cmd_intention_flags = 0;
         swapDataAna(cold_data1,0,cold_keyReq1,&intention,&intention_flags,cold_ctx1);
         test_assert(intention == SWAP_IN && intention_flags == 0);
@@ -2463,12 +2451,8 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(cold_ctx1->subkeys_num == 1);
         bitmapDataCtxReset(cold_ctx1);
 
-        range1->start = BITMAP_SUBKEY_BITS * 4 + 1;                /* out of range, write operation */
-        range1->end = BITMAP_SUBKEY_BITS * 4 + 1;
-        range1->type = RANGE_BIT_BITMAP;
-
-        cold_keyReq1->l.num_ranges = 1;
-        cold_keyReq1->l.ranges = range1;
+        cold_keyReq1->type = KEYREQUEST_TYPE_BTIMAP_OFFSET;
+        cold_keyReq1->bo.offset = BITMAP_SUBKEY_BITS * 4 + 1;                /* out of range, write operation */
         cold_keyReq1->cmd_intention = SWAP_IN, cold_keyReq1->cmd_intention_flags = 0;
         swapDataAna(cold_data1,0,cold_keyReq1,&intention,&intention_flags,cold_ctx1);
         test_assert(intention == SWAP_IN && intention_flags == 0);
@@ -2476,12 +2460,8 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(cold_ctx1->subkeys_logic_idx[0] == 2);
         bitmapDataCtxReset(cold_ctx1);
 
-        range1->start = BITMAP_SUBKEY_BITS * 5 - 1;                /* out of range, write operation */
-        range1->end = BITMAP_SUBKEY_BITS * 5 - 1;
-        range1->type = RANGE_BIT_BITMAP;
-
-        cold_keyReq1->l.num_ranges = 1;
-        cold_keyReq1->l.ranges = range1;
+        cold_keyReq1->type = KEYREQUEST_TYPE_BTIMAP_OFFSET;
+        cold_keyReq1->bo.offset = BITMAP_SUBKEY_BITS * 5 - 1;                /* out of range, write operation */
         cold_keyReq1->cmd_intention = SWAP_IN, cold_keyReq1->cmd_intention_flags = 0;
         swapDataAna(cold_data1,0,cold_keyReq1,&intention,&intention_flags,cold_ctx1);
         test_assert(intention == SWAP_IN && intention_flags == 0);
@@ -2489,12 +2469,9 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(cold_ctx1->subkeys_logic_idx[0] == 2);
         bitmapDataCtxReset(cold_ctx1);
 
-        range1->start = 0;                /* swap in all */
-        range1->end = BITMAP_SUBKEY_SIZE * 3 - 1;
-        range1->type = RANGE_BYTE_BITMAP;
-
-        cold_keyReq1->l.num_ranges = 1;
-        cold_keyReq1->l.ranges = range1;
+        cold_keyReq1->type = KEYREQUEST_TYPE_BTIMAP_RANGE;
+        cold_keyReq1->br.start = 0;                /* swap in all */
+        cold_keyReq1->br.end = BITMAP_SUBKEY_SIZE * 3 - 1;
         cold_keyReq1->cmd_intention = SWAP_IN, cold_keyReq1->cmd_intention_flags = 0;
         swapDataAna(cold_data1,0,cold_keyReq1,&intention,&intention_flags,cold_ctx1);
         test_assert(intention == SWAP_IN && intention_flags == 0);
@@ -2503,12 +2480,9 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(cold_ctx1->subkeys_num == 0);
         bitmapDataCtxReset(cold_ctx1);
 
-        range1->start = BITMAP_SUBKEY_SIZE;              /* swap in part */
-        range1->end = BITMAP_SUBKEY_SIZE * 2 - 1;
-        range1->type = RANGE_BYTE_BITMAP;
-
-        cold_keyReq1->l.num_ranges = 1;
-        cold_keyReq1->l.ranges = range1;
+        cold_keyReq1->type = KEYREQUEST_TYPE_BTIMAP_RANGE;
+        cold_keyReq1->br.start = BITMAP_SUBKEY_SIZE;              /* swap in part */
+        cold_keyReq1->br.end = BITMAP_SUBKEY_SIZE * 2 - 1;
         cold_keyReq1->cmd_intention = SWAP_IN, cold_keyReq1->cmd_intention_flags = 0;
         swapDataAna(cold_data1,0,cold_keyReq1,&intention,&intention_flags,cold_ctx1);
         test_assert(intention == SWAP_IN && intention_flags == 0);
@@ -2516,12 +2490,8 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(cold_ctx1->subkeys_logic_idx[0] == 1);
         bitmapDataCtxReset(cold_ctx1);
 
-        range1->start = BITMAP_SUBKEY_BITS;
-        range1->end = BITMAP_SUBKEY_BITS;
-        range1->type = RANGE_BIT_BITMAP;
-
-        cold_keyReq1->l.num_ranges = 1;
-        cold_keyReq1->l.ranges = range1;
+        cold_keyReq1->type = KEYREQUEST_TYPE_BTIMAP_OFFSET;
+        cold_keyReq1->bo.offset = BITMAP_SUBKEY_BITS;
         cold_keyReq1->cmd_intention = SWAP_IN, cold_keyReq1->cmd_intention_flags = 0;          /* getbit */
         swapDataAna(cold_data1,0,cold_keyReq1,&intention,&intention_flags,cold_ctx1);
         test_assert(intention == SWAP_IN && intention_flags == 0);
@@ -2529,12 +2499,9 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(cold_ctx1->subkeys_logic_idx[0] == 1);
         bitmapDataCtxReset(cold_ctx1);
 
-        range1->start = BITMAP_SUBKEY_SIZE;
-        range1->end = BITMAP_SUBKEY_SIZE * 3 - 1;
-        range1->type = RANGE_BYTE_BITMAP;
-
-        cold_keyReq1->l.num_ranges = 1;
-        cold_keyReq1->l.ranges = range1;
+        cold_keyReq1->type = KEYREQUEST_TYPE_BTIMAP_RANGE;
+        cold_keyReq1->br.start = BITMAP_SUBKEY_SIZE;
+        cold_keyReq1->br.end = BITMAP_SUBKEY_SIZE * 3 - 1;
         cold_keyReq1->cmd_intention = SWAP_IN, cold_keyReq1->cmd_intention_flags = 0;             /* bitcount */
         swapDataAna(cold_data1,0,cold_keyReq1,&intention,&intention_flags,cold_ctx1);
         test_assert(intention == SWAP_IN && intention_flags == 0);
@@ -2543,12 +2510,9 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(cold_ctx1->subkeys_logic_idx[1] == 2);
         bitmapDataCtxReset(cold_ctx1);
 
-        range1->start = 0;
-        range1->end = BITMAP_SUBKEY_SIZE * 2 - 1;
-        range1->type = RANGE_BYTE_BITMAP;
-
-        cold_keyReq1->l.num_ranges = 1;
-        cold_keyReq1->l.ranges = range1;
+        cold_keyReq1->br.start = 0;
+        cold_keyReq1->br.end = BITMAP_SUBKEY_SIZE * 2 - 1;
+        cold_keyReq1->type = KEYREQUEST_TYPE_BTIMAP_RANGE;
         cold_keyReq1->cmd_intention = SWAP_IN, cold_keyReq1->cmd_intention_flags = 0;             /* bitpos */
         swapDataAna(cold_data1,0,cold_keyReq1,&intention,&intention_flags,cold_ctx1);
         test_assert(intention == SWAP_IN && intention_flags == 0);
@@ -2557,24 +2521,18 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(cold_ctx1->subkeys_logic_idx[1] == 1);
         bitmapDataCtxReset(cold_ctx1);
 
-        range1->start = 0;
-        range1->end = UINT_MAX;
-        range1->type = RANGE_BYTE_BITMAP;
-
-        cold_keyReq1->l.num_ranges = 1;
-        cold_keyReq1->l.ranges = range1;
+        cold_keyReq1->br.start = 0;
+        cold_keyReq1->br.end = UINT_MAX;
+        cold_keyReq1->type = KEYREQUEST_TYPE_BTIMAP_RANGE;
         cold_keyReq1->cmd_intention = SWAP_IN, cold_keyReq1->cmd_intention_flags = 0;             /* bitpos */
         swapDataAna(cold_data1,0,cold_keyReq1,&intention,&intention_flags,cold_ctx1);
         test_assert(intention == SWAP_IN && intention_flags == 0);
         test_assert(cold_ctx1->subkeys_num == 0);
         bitmapDataCtxReset(cold_ctx1);
 
-        range1->start = BITMAP_SUBKEY_SIZE * 2;            /* range across boundry.  bitcount. */
-        range1->end = BITMAP_SUBKEY_SIZE * 5 - 1;
-        range1->type = RANGE_BYTE_BITMAP;
-
-        cold_keyReq1->l.num_ranges = 1;
-        cold_keyReq1->l.ranges = range1;
+        cold_keyReq1->br.start = BITMAP_SUBKEY_SIZE * 2;            /* range across boundry.  bitcount. */
+        cold_keyReq1->br.end = BITMAP_SUBKEY_SIZE * 5 - 1;
+        cold_keyReq1->type = KEYREQUEST_TYPE_BTIMAP_RANGE;
         cold_keyReq1->cmd_intention = SWAP_IN, cold_keyReq1->cmd_intention_flags = 0;
         swapDataAna(cold_data1,0,cold_keyReq1,&intention,&intention_flags,cold_ctx1);
         test_assert(intention == SWAP_IN && intention_flags == 0);
@@ -2582,12 +2540,9 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(cold_ctx1->subkeys_logic_idx[0] == 2);
         bitmapDataCtxReset(cold_ctx1);
 
-        range1->start = BITMAP_SUBKEY_SIZE * 2;            /* range across boundry.  bitpos. */
-        range1->end = BITMAP_SUBKEY_SIZE * 5 - 1;
-        range1->type = RANGE_BYTE_BITMAP;
-
-        cold_keyReq1->l.num_ranges = 1;
-        cold_keyReq1->l.ranges = range1;
+        cold_keyReq1->br.start = BITMAP_SUBKEY_SIZE * 2;            /* range across boundry.  bitpos. */
+        cold_keyReq1->br.end = BITMAP_SUBKEY_SIZE * 5 - 1;
+        cold_keyReq1->type = KEYREQUEST_TYPE_BTIMAP_RANGE;
         cold_keyReq1->cmd_intention = SWAP_IN, cold_keyReq1->cmd_intention_flags = 0;
         swapDataAna(cold_data1,0,cold_keyReq1,&intention,&intention_flags,cold_ctx1);
         test_assert(intention == SWAP_IN && intention_flags == 0);
@@ -2595,12 +2550,9 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(cold_ctx1->subkeys_logic_idx[0] == 2);
         bitmapDataCtxReset(cold_ctx1);
 
-        range1->start = BITMAP_SUBKEY_SIZE;            /* range across boundry.  bitpos. */
-        range1->end = UINT_MAX;
-        range1->type = RANGE_BYTE_BITMAP;
-
-        cold_keyReq1->l.num_ranges = 1;
-        cold_keyReq1->l.ranges = range1;
+        cold_keyReq1->br.start = BITMAP_SUBKEY_SIZE;            /* range across boundry.  bitpos. */
+        cold_keyReq1->br.end = UINT_MAX;
+        cold_keyReq1->type = KEYREQUEST_TYPE_BTIMAP_RANGE;
         cold_keyReq1->cmd_intention = SWAP_IN, cold_keyReq1->cmd_intention_flags = 0;
         swapDataAna(cold_data1,0,cold_keyReq1,&intention,&intention_flags,cold_ctx1);
         test_assert(intention == SWAP_IN && intention_flags == 0);
@@ -2609,47 +2561,37 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(cold_ctx1->subkeys_logic_idx[1] == 2);
         bitmapDataCtxReset(cold_ctx1);
 
-        zfree(range1);
-
-        /* in : for persist data, l.num_ranges = 0, specific flags*/
-        cold_keyReq1->l.num_ranges = 0;
-        cold_keyReq1->l.ranges = NULL;
+        /* in : for persist data,  specific flags*/
+        cold_keyReq1->b.num_subkeys = 0;
+        cold_keyReq1->type = KEYREQUEST_TYPE_SUBKEY;
         cold_keyReq1->cmd_intention = SWAP_IN, cold_keyReq1->cmd_intention_flags = SWAP_IN_DEL_MOCK_VALUE;
         swapDataAna(cold_data1,0,cold_keyReq1,&intention,&intention_flags,cold_ctx1);
         test_assert(intention == SWAP_DEL && intention_flags == SWAP_FIN_DEL_SKIP);
         test_assert(cold_ctx1->ctx_flag & BIG_DATA_CTX_FLAG_MOCK_VALUE);
         bitmapDataCtxReset(cold_ctx1);
 
-        cold_keyReq1->l.num_ranges = 0;
-        cold_keyReq1->l.ranges = NULL;
         cold_keyReq1->cmd_intention = SWAP_IN, cold_keyReq1->cmd_intention_flags = SWAP_IN_DEL;
         swapDataAna(cold_data1,0,cold_keyReq1,&intention,&intention_flags,cold_ctx1);
         test_assert(intention == SWAP_IN && intention_flags == SWAP_EXEC_IN_DEL);
         bitmapDataCtxReset(cold_ctx1);
 
-        hot_keyReq1->l.num_ranges = 0;
-        hot_keyReq1->l.ranges = NULL;
+        hot_keyReq1->b.num_subkeys = 0;
+        hot_keyReq1->type = KEYREQUEST_TYPE_SUBKEY;
         hot_keyReq1->cmd_intention = SWAP_IN, hot_keyReq1->cmd_intention_flags = SWAP_IN_DEL;
         swapDataAna(hot_data1,0,hot_keyReq1,&intention,&intention_flags,hot_ctx1);
         test_assert(intention == SWAP_DEL && intention_flags == SWAP_FIN_DEL_SKIP);
         bitmapDataCtxReset(hot_ctx1);
 
-        hot_keyReq1->l.num_ranges = 0;
-        hot_keyReq1->l.ranges = NULL;
         hot_keyReq1->cmd_intention = SWAP_IN, hot_keyReq1->cmd_intention_flags = 0;
         swapDataAna(hot_data1,0,hot_keyReq1,&intention,&intention_flags,hot_ctx1);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
         bitmapDataCtxReset(hot_ctx1);
 
-        hot_keyReq1->l.num_ranges = 0;
-        hot_keyReq1->l.ranges = NULL;
         hot_keyReq1->cmd_intention = SWAP_IN, hot_keyReq1->cmd_intention_flags = SWAP_IN_META;
         swapDataAna(hot_data1,0,hot_keyReq1,&intention,&intention_flags,hot_ctx1);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
         bitmapDataCtxReset(hot_ctx1);
 
-        cold_keyReq1->l.num_ranges = 0;
-        cold_keyReq1->l.ranges = NULL;
         cold_keyReq1->cmd_intention = SWAP_IN, cold_keyReq1->cmd_intention_flags = SWAP_IN_META;
         swapDataAna(cold_data1,0,cold_keyReq1,&intention,&intention_flags,cold_ctx1);
         test_assert(intention == SWAP_IN && intention_flags == 0);
@@ -2659,8 +2601,6 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(cold_ctx1->subkeys_logic_idx[0] == 0);
         bitmapDataCtxReset(cold_ctx1);
 
-        cold_keyReq1->l.num_ranges = 0;
-        cold_keyReq1->l.ranges = NULL;
         cold_keyReq1->cmd_intention = SWAP_IN, cold_keyReq1->cmd_intention_flags = 0;
         swapDataAna(cold_data1,0,cold_keyReq1,&intention,&intention_flags,cold_ctx1);
         bitmapSwapAnaAction(cold_data1, intention, cold_ctx1, &action);
@@ -2670,6 +2610,8 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         bitmapDataCtxReset(cold_ctx1);
 
         /* del: for hot data*/
+        purehot_keyReq1->b.num_subkeys = 0;
+        purehot_keyReq1->type = KEYREQUEST_TYPE_SUBKEY;
         purehot_keyReq1->cmd_intention = SWAP_DEL, purehot_keyReq1->cmd_intention_flags = 0;
         swapDataAna(purehot_data1, 0, purehot_keyReq1, &intention, &intention_flags, purehot_ctx1);
         test_assert(intention == SWAP_NOP && intention_flags == 0);
@@ -2730,8 +2672,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         warm_keyReq1->type = KEYREQUEST_TYPE_SUBKEY;
         warm_keyReq1->level = REQUEST_LEVEL_KEY;
         warm_keyReq1->cmd_flags = CMD_SWAP_DATATYPE_BITMAP;
-        warm_keyReq1->l.num_ranges = 0;
-        warm_keyReq1->l.ranges = NULL;
+        warm_keyReq1->b.num_subkeys = 0;
 
         warm_data1 = createSwapData(db, warm_key1, warm_bitmap1, NULL);
         swapDataSetupMeta(warm_data1,SWAP_TYPE_BITMAP, -1,(void**)&warm_ctx1);
@@ -2799,8 +2740,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         cold_keyReq2->level = REQUEST_LEVEL_KEY;
         cold_keyReq2->type = KEYREQUEST_TYPE_SUBKEY;
         cold_keyReq2->cmd_flags = CMD_SWAP_DATATYPE_BITMAP;
-        cold_keyReq2->l.num_ranges = 0;
-        cold_keyReq2->l.ranges = NULL;
+        cold_keyReq2->b.num_subkeys = 0;
 
         cold_data2 = createSwapData(db, cold_key2, NULL, NULL);
         swapDataSetupMeta(cold_data2, SWAP_TYPE_BITMAP, -1, (void**)&cold_ctx2);
@@ -2887,8 +2827,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         warm_keyReq2->type = KEYREQUEST_TYPE_SUBKEY;
         warm_keyReq2->level = REQUEST_LEVEL_KEY;
         warm_keyReq2->cmd_flags = CMD_SWAP_DATATYPE_BITMAP;
-        warm_keyReq2->l.num_ranges = 0;
-        warm_keyReq2->l.ranges = NULL;
+        warm_keyReq2->b.num_subkeys = 0;
 
         warm_data2 = createSwapData(db, warm_key2, warm_bitmap2, NULL);
         swapDataSetupMeta(warm_data2,SWAP_TYPE_BITMAP, -1,(void**)&warm_ctx2);
@@ -2976,8 +2915,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         purehot_keyReq2->type = KEYREQUEST_TYPE_SUBKEY;
         purehot_keyReq2->level = REQUEST_LEVEL_KEY;
         purehot_keyReq2->cmd_flags = CMD_SWAP_DATATYPE_BITMAP;
-        purehot_keyReq2->l.num_ranges = 0;
-        purehot_keyReq2->l.ranges = NULL;
+        purehot_keyReq2->b.num_subkeys = 0;
 
         purehot_data2 = createSwapData(db, purehot_key2, purehot_bitmap2, NULL);
         swapDataSetupMeta(purehot_data2,SWAP_TYPE_BITMAP, -1,(void**)&purehot_ctx2);
@@ -3046,8 +2984,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         purehot_keyReq3->type = KEYREQUEST_TYPE_SUBKEY;
         purehot_keyReq3->level = REQUEST_LEVEL_KEY;
         purehot_keyReq3->cmd_flags = CMD_SWAP_DATATYPE_BITMAP;
-        purehot_keyReq3->l.num_ranges = 0;
-        purehot_keyReq3->l.ranges = NULL;
+        purehot_keyReq3->b.num_subkeys = 0;
 
         purehot_data3 = createSwapData(db, purehot_key3, purehot_bitmap3, NULL);
         swapDataSetupMeta(purehot_data3,SWAP_TYPE_BITMAP, -1,(void**)&purehot_ctx3);
@@ -3108,8 +3045,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         purehot_keyReq4->type = KEYREQUEST_TYPE_SUBKEY;
         purehot_keyReq4->level = REQUEST_LEVEL_KEY;
         purehot_keyReq4->cmd_flags = CMD_SWAP_DATATYPE_BITMAP;
-        purehot_keyReq4->l.num_ranges = 0;
-        purehot_keyReq4->l.ranges = NULL;
+        purehot_keyReq4->b.num_subkeys = 0;
 
         purehot_data4 = createSwapData(db, purehot_key4, purehot_bitmap4, NULL);
         swapDataSetupMeta(purehot_data4,SWAP_TYPE_BITMAP, -1,(void**)&purehot_ctx4);
@@ -3176,14 +3112,14 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
         bitmapMeta *bitmap_meta = bitmapMetaCreate();
 
-        /* subkeys sum = 5, part { 2, 3 } both in redis and rocks, {0, 1, 4} in rocksDb. */
-        bitmapMetaSetSubkeyStatus(bitmap_meta, 2, 2, BITMAP_SUBKEY_STATUS_HOT);
-        bitmapMetaSetSubkeyStatus(bitmap_meta, 3, 3, BITMAP_SUBKEY_STATUS_HOT);
+        /* subkeys sum = 6, part { 0,1,3,4,5} both in redis and rocks, {2} in rocksDb. */
+        bitmapMetaSetSubkeyStatus(bitmap_meta, 0, 1, BITMAP_SUBKEY_STATUS_HOT);
+        bitmapMetaSetSubkeyStatus(bitmap_meta, 3, 5, BITMAP_SUBKEY_STATUS_HOT);
 
-        bitmap_meta->pure_cold_subkeys_num = 3;
+        bitmap_meta->pure_cold_subkeys_num = 1;
 
-        /* size of subkey 4 is half of BITMAP_SUBKEY_SIZE */
-        bitmap_meta->size = 4 * BITMAP_SUBKEY_SIZE + BITMAP_SUBKEY_SIZE / 2;
+        /* size of subkey 5 is half of BITMAP_SUBKEY_SIZE */
+        bitmap_meta->size = 5 * BITMAP_SUBKEY_SIZE + BITMAP_SUBKEY_SIZE / 2;
 
         objectMeta *object_meta = createBitmapObjectMeta(0, bitmap_meta);
 
@@ -3197,27 +3133,36 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         dbAddMeta(db,key,object_meta);
 
         datactx->arg_reqs[0].mstate_idx = -1;
-        datactx->arg_reqs[1].mstate_idx = -1;
-
         datactx->arg_reqs[0].arg_idx = 2;
-        datactx->arg_reqs[1].arg_idx = -1;
 
-        datactx->arg_reqs[0].arg_type = RANGE_BIT_BITMAP;
-        datactx->arg_reqs[0].arg_type = RANGE_BIT_BITMAP;
+        keyRequest req;
+        memset(&req, 0x00, sizeof(keyRequest));
+        req.type = KEYREQUEST_TYPE_BTIMAP_OFFSET;
+        rewriteResetClientCommandCString(c, 3, "GETBIT", "mybitmap", "32868"); /* 32768 + 100 */
+        bitmapBeforeCall(data, &req, c, datactx);
+        test_assert(!strcmp(c->argv[2]->ptr,"32868"));
 
-        rewriteResetClientCommandCString(c, 3, "GETBIT", "mybitmap", "65636"); /* 32768 * 2 + 100 */
-        bitmapBeforeCall(data, NULL, c, datactx);
-        test_assert(!strcmp(c->argv[2]->ptr,"100"));
+        rewriteResetClientCommandCString(c, 3, "GETBIT", "mybitmap", "98404"); /* 32768 * 3 + 100 */
+        bitmapBeforeCall(data, &req, c, datactx);
+        test_assert(!strcmp(c->argv[2]->ptr,"65636"));   /* 32768 * 2 + 100 */
+
         clientArgRewritesRestore(c);
-        test_assert(!strcmp(c->argv[2]->ptr,"65636"));
+        test_assert(!strcmp(c->argv[2]->ptr,"98404"));
 
-        datactx->arg_reqs[0].mstate_idx = -1;
-        datactx->arg_reqs[1].mstate_idx = -1;
-        datactx->arg_reqs[0].arg_idx = 2;
-        datactx->arg_reqs[1].arg_idx = 3;
+        rewriteResetClientCommandCString(c, 3, "GETBIT", "mybitmap", "229476"); /* 32768 * 7 + 100 */
+        bitmapBeforeCall(data, &req, c, datactx);
+        test_assert(!strcmp(c->argv[2]->ptr,"196708"));   /* 32768 * 6 + 100 */
 
-        datactx->arg_reqs[0].arg_type = RANGE_BYTE_BITMAP;
-        datactx->arg_reqs[1].arg_type = RANGE_BYTE_BITMAP;
+        clientArgRewritesRestore(c);
+        test_assert(!strcmp(c->argv[2]->ptr,"229476"));
+
+        bitmapMetaSetSubkeyStatus(bitmap_meta, 2, 2, BITMAP_SUBKEY_STATUS_HOT);
+        bitmap_meta->pure_cold_subkeys_num = 0;
+
+        /* turn to hot */
+        rewriteResetClientCommandCString(c, 3, "GETBIT", "mybitmap", "229476"); /* 32768 * 7 + 100 */
+        bitmapBeforeCall(data, &req, c, datactx);
+        test_assert(!strcmp(c->argv[2]->ptr,"229476"));   /* 32768 * 7 + 100 */
 
         dbDelete(db, key);
         swapDataFree(data, datactx);

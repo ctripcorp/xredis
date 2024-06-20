@@ -162,13 +162,8 @@ static inline const char *requestLevelName(int level) {
 #define SEGMENT_TYPE_COLD 1
 #define SEGMENT_TYPE_BOTH 2
 
-#define RANGE_LIST 0
-#define RANGE_BIT_BITMAP 1
-#define RANGE_BYTE_BITMAP 2
-
 /* Both start and end are inclusive, see addListRangeReply for details. */
 typedef struct range {
-  int type; /* RANGE_LIST, RANGE_BIT_BITMAP, RANGE_BYTE_BITMAP*/
   long long start;
   long long end;
   int reverse; /* LTRIM command specifies range to keep, so swap in the reverse range */
@@ -179,17 +174,17 @@ typedef struct range {
 #define KEYREQUEST_TYPE_RANGE  2
 #define KEYREQUEST_TYPE_SCORE  3
 #define KEYREQUEST_TYPE_SAMPLE 4
+#define KEYREQUEST_TYPE_BTIMAP_OFFSET  5
+#define KEYREQUEST_TYPE_BTIMAP_RANGE  6
 
 typedef struct argRewriteRequest {
   int mstate_idx; /* >=0 if current command is a exec, means index in mstate; -1 means req not in multi/exec */
   int arg_idx; /* index of argument to use for rewrite func */
-  int arg_type; /* RANGE_LIST, RANGE_BIT_BITMAP, RANGE_BYTE_BITMAP */
 } argRewriteRequest;
 
 static inline void argRewriteRequestInit(argRewriteRequest *arg_req) {
   arg_req->mstate_idx = -1;
   arg_req->arg_idx = -1;
-  arg_req->arg_type = -1;
 }
 
 typedef struct keyRequest{
@@ -209,7 +204,7 @@ typedef struct keyRequest{
     struct {
       int num_ranges;
       range *ranges;
-    } l; /* range: list, bitmap */
+    } l; /* range: list */
     struct {
       zrangespec* rangespec;
       int reverse;
@@ -218,6 +213,13 @@ typedef struct keyRequest{
     struct {
       int count;
     } sp; /* sample */
+    struct {
+      long long offset;
+    } bo; /* bitmap offset*/
+    struct {
+      long long start;
+      long long end;
+    } br; /* bitmap range*/
   };
   argRewriteRequest arg_rewrite[2];
   swapCmdTrace *swap_cmd;
