@@ -32,7 +32,6 @@
 #define BITMAP_SUBKEY_STATUS_HOT 1
 #define BITMAP_SUBKEY_STATUS_COLD 0
 
-//TODO subkey size save to meta
 #define BITMAP_SUBKEY_SIZE (server.swap_bitmap_subkey_size) /* default 4KB */
 #define BITMAP_SUBKEY_BITS (BITMAP_SUBKEY_SIZE * 8)
 
@@ -111,30 +110,36 @@ static inline void bitmapMetaInit(bitmapMeta *bitmap_meta, robj *value) {
 static inline sds bitmapMetaEncode(bitmapMeta *bm, int meta_enc_mode) {
     serverAssert(bm);
 
-    /* flag 1 byte | size 8 bytes */
+    /* flag 1 byte | size 8 bytes | subkey_size (8 bytes) */
     if (meta_enc_mode == NORMAL_MODE) {
-        sds buffer = sdsnewlen(NULL, 1 + sizeof(unsigned long long));
+        sds buffer = sdsnewlen(NULL, 1 + sizeof(unsigned long long) * 2);
         buffer[0] |= NORMAL_ENCODE_FLAG;
         unsigned long long size = htonu64(bm->size);
         memcpy(buffer + 1, &size, sizeof(unsigned long long));
+
+        unsigned long long subkey_size = htonu64(bm->subkey_size);
+        memcpy(buffer + 1 + sizeof(unsigned long long), &subkey_size, sizeof(unsigned long long));
         return buffer;
     }
 
-    /* flag (1 byte) | size (8 bytes) | pure_cold_subkeys_num (8 bytes) | rbm encode len (8 bytes) | rbm n bytes */
-    sds buffer = sdsnewlen(NULL, 1 + sizeof(unsigned long long) * 3);
+    /* flag (1 byte) | size (8 bytes) | subkey_size (8 bytes) | pure_cold_subkeys_num (8 bytes) | rbm buf size (8 bytes) | rbm n bytes */
+    sds buffer = sdsnewlen(NULL, 1 + sizeof(unsigned long long) * 4);
     buffer[0] |= RORDB_ENCODE_FLAG;
 
     unsigned long long size = htonu64(bm->size);
     memcpy(buffer + 1, &size, sizeof(unsigned long long));
 
+    unsigned long long subkey_size = htonu64(bm->subkey_size);
+    memcpy(buffer + 1 + sizeof(unsigned long long), &subkey_size, sizeof(unsigned long long));
+
     unsigned long long pure_cold_subkeys_num = htonu64(bm->pure_cold_subkeys_num);
-    memcpy(buffer + 1 + sizeof(unsigned long long), &pure_cold_subkeys_num, sizeof(unsigned long long));
+    memcpy(buffer + 1 + sizeof(unsigned long long) * 2, &pure_cold_subkeys_num, sizeof(unsigned long long));
 
     size_t rbm_buf_size = 0;
     char* rbm_buf = rbmEncode(bm->subkeys_status, &rbm_buf_size);
 
     unsigned long long buf_size = htonu64(rbm_buf_size);
-    memcpy(buffer + 1 + sizeof(unsigned long long) * 2, &buf_size, sizeof(unsigned long long));
+    memcpy(buffer + 1 + sizeof(unsigned long long) * 3, &buf_size, sizeof(unsigned long long));
 
     buffer = sdscatlen(buffer, rbm_buf, rbm_buf_size);
 
@@ -152,27 +157,31 @@ static inline bitmapMeta *bitmapMetaDecode(const char *extend,
     unsigned long long size = *(unsigned long long*)(extend + 1);
     bitmap_meta->size = ntohu64(size);
 
+    unsigned long long subkey_size = *(unsigned long long*)(extend + 1 + sizeof(unsigned long long));
+    bitmap_meta->subkey_size = ntohu64(subkey_size);
+
     if (buffer[0] == NORMAL_ENCODE_FLAG) {
-        /* flag 1 byte | size 8 bytes */
-        serverAssert(extend_len == 1 + sizeof(unsigned long long));
+        /* flag 1 byte | size 8 bytes | subkey_size (8 bytes) */
+        serverAssert(extend_len == 1 + sizeof(unsigned long long) * 2);
+
         bitmap_meta->pure_cold_subkeys_num =
-            BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE);
+            BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, bitmap_meta->subkey_size);
             
         bitmap_meta->subkeys_status = rbmCreate();
         return bitmap_meta;
     }
 
     serverAssert(buffer[0] == RORDB_ENCODE_FLAG);
-    /* flag (1 byte) | size (8 bytes) | pure_cold_subkeys_num (8 bytes) | rbm encode len (8 bytes) | rbm n bytes */
-    serverAssert(extend_len >= 1 + sizeof(unsigned long long) * 3);
+    /* flag (1 byte) | size (8 bytes) | subkey_size (8 bytes) | pure_cold_subkeys_num (8 bytes) | rbm encode len (8 bytes) | rbm n bytes */
+    serverAssert(extend_len >= 1 + sizeof(unsigned long long) * 4);
 
-    unsigned long long pure_cold_subkeys_num = *(unsigned long long*)(extend + 1 + sizeof(unsigned long long));
+    unsigned long long pure_cold_subkeys_num = *(unsigned long long*)(extend + 1 + sizeof(unsigned long long) * 2);
     bitmap_meta->pure_cold_subkeys_num = ntohu64(pure_cold_subkeys_num);
 
-    unsigned long long rbm_buf_size_ = *(unsigned long long*)(extend + 1 + sizeof(unsigned long long) * 2);
+    unsigned long long rbm_buf_size_ = *(unsigned long long*)(extend + 1 + sizeof(unsigned long long) * 3);
     unsigned long long rbm_buf_size = ntohu64(rbm_buf_size_);
 
-    bitmap_meta->subkeys_status = rbmDecode(extend + 1 + sizeof(unsigned long long) * 3, rbm_buf_size);
+    bitmap_meta->subkeys_status = rbmDecode(extend + 1 + sizeof(unsigned long long) * 4, rbm_buf_size);
     return bitmap_meta;
 }
 
@@ -327,10 +336,10 @@ void bitmapObjectMetaDup(struct objectMeta *dup_meta,
 
 sds bitmapMetaDump(sds result, bitmapMeta *bm) {
     if (bitmapMetaIsMarker(bm)) {
-        result = sdscatprintf(result,"(marker=true,size=0,pure_cold_subkeys_num=0,)");
+        result = sdscatprintf(result,"(marker=true,size=0,subkey_size=0,pure_cold_subkeys_num=0,)");
     } else {
-        result = sdscatprintf(result,"(marker=false,size=%lu,pure_cold_subkeys_num=%d,)",
-            bm->size,bm->pure_cold_subkeys_num);
+        result = sdscatprintf(result,"(marker=false,size=%lu,subkey_size=%lu,pure_cold_subkeys_num=%d,)",
+            bm->size,bm->subkey_size,bm->pure_cold_subkeys_num);
     }
     return result;
 }
@@ -2057,6 +2066,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
         bitmapMetaSetSubkeyStatus(hot_bitmap_meta, 0, 2, BITMAP_SUBKEY_STATUS_HOT);
         hot_bitmap_meta->pure_cold_subkeys_num = 0;
+        hot_bitmap_meta->subkey_size = BITMAP_SUBKEY_SIZE;
         hot_bitmap_meta->size = 3 * BITMAP_SUBKEY_SIZE;
         objectMetaSetPtr(hot_meta1, hot_bitmap_meta);
 
@@ -2079,6 +2089,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         unsigned long size = 3 * BITMAP_SUBKEY_SIZE;
         bitmapMeta bm;
         bm.size = size;
+        bm.subkey_size = BITMAP_SUBKEY_SIZE;
         sds coldBitmapSize = bitmapMetaEncode(&bm, NORMAL_MODE);
 
         bitmapObjectMetaDecode(cold_meta1, coldBitmapSize, sdslen(coldBitmapSize));
@@ -2110,6 +2121,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
         bitmapMeta *meta = bitmapMetaCreate();
         meta->size = BITMAP_SUBKEY_SIZE * 3 + BITMAP_SUBKEY_SIZE / 2;
+        meta->subkey_size = BITMAP_SUBKEY_SIZE;
         meta->pure_cold_subkeys_num = 2;
         bitmapMetaSetSubkeyStatus(meta, 3, 3, BITMAP_SUBKEY_STATUS_HOT);
         bitmapMetaSetSubkeyStatus(meta, 2, 2, BITMAP_SUBKEY_STATUS_HOT);
@@ -2146,6 +2158,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         bitmap_meta1 = bitmapMetaCreate();
 
         bitmap_meta1->size = BITMAP_SUBKEY_SIZE + 1;
+        bitmap_meta1->subkey_size = BITMAP_SUBKEY_SIZE;
         bitmap_meta1->pure_cold_subkeys_num = 1;
         bitmapMetaSetSubkeyStatus(bitmap_meta1, 0, 0, BITMAP_SUBKEY_STATUS_HOT);
 
@@ -2200,25 +2213,30 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         /* bitmap meta */
         bitmapMeta bm0;
         bm0.size = 1;
+        bm0.subkey_size = BITMAP_SUBKEY_SIZE;
         sds bm_buf1 = bitmapMetaEncode(&bm0, NORMAL_MODE);
 
         bitmapMeta *bm1 = bitmapMetaDecode(bm_buf1, sdslen(bm_buf1));
         test_assert(bm0.size == bm1->size);
+        test_assert(bm0.subkey_size == bm1->subkey_size);
 
         bm0.size = 155;
         sds bm_buf2 = bitmapMetaEncode(&bm0, NORMAL_MODE);
 
         bitmapMeta *bm2 = bitmapMetaDecode(bm_buf2, sdslen(bm_buf2));
         test_assert(bm0.size == bm2->size);
+        test_assert(bm0.subkey_size == bm2->subkey_size);
 
         bm0.size = 2147483647;
         sds bm_buf3 = bitmapMetaEncode(&bm0, NORMAL_MODE);
 
         bitmapMeta *bm3 = bitmapMetaDecode(bm_buf3, sdslen(bm_buf3));
         test_assert(bm0.size == bm3->size);
+        test_assert(bm0.subkey_size == bm3->subkey_size);
 
         bitmapMeta *bm4 = bitmapMetaCreate();
         bm4->size = BITMAP_SUBKEY_SIZE * 5;
+        bm4->subkey_size = BITMAP_SUBKEY_SIZE;
         bm4->pure_cold_subkeys_num = 3;
         bitmapMetaSetSubkeyStatus(bm4, 0, 1, BITMAP_SUBKEY_STATUS_HOT);
 
@@ -2229,6 +2247,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
         bitmapMeta *bm6 = bitmapMetaCreate();
         bm6->size = BITMAP_SUBKEY_SIZE * (4096 * 2 + 100);
+        bm6->subkey_size = BITMAP_SUBKEY_SIZE;
         bm6->pure_cold_subkeys_num = 4696;
         bitmapMetaSetSubkeyStatus(bm6, 0, 4095, BITMAP_SUBKEY_STATUS_HOT);
         bitmapMetaSetSubkeyStatus(bm6, 4096, 4096 + 499, BITMAP_SUBKEY_STATUS_HOT);
@@ -2278,6 +2297,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         sdsfree(subkey);
 
         test_assert(bitmap_meta1->pure_cold_subkeys_num == 4);
+        test_assert(bitmap_meta1->subkey_size == BITMAP_SUBKEY_SIZE);
         test_assert(bitmap_meta1->size == BITMAP_SUBKEY_SIZE*4);
 
         sds str = sdsnewlen(NULL, BITMAP_SUBKEY_SIZE * 4);
@@ -2332,6 +2352,7 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         bitmap_meta2 = bitmapMetaCreate();
 
         bitmap_meta2->size = BITMAP_SUBKEY_SIZE * 4;
+        bitmap_meta2->subkey_size = BITMAP_SUBKEY_SIZE;
         bitmap_meta2->pure_cold_subkeys_num = 2;
         bitmapMetaSetSubkeyStatus(bitmap_meta2, 1, 1, BITMAP_SUBKEY_STATUS_HOT);
         bitmapMetaSetSubkeyStatus(bitmap_meta2, 3, 3, BITMAP_SUBKEY_STATUS_HOT);
