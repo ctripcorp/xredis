@@ -64,6 +64,7 @@ static inline unsigned long long bitmapDecodeSubkeyIdx(const char *str, size_t l
 
 typedef struct bitmapMeta {
     size_t size;
+    size_t subkey_size;
     int pure_cold_subkeys_num;
     roaringBitmap *subkeys_status;  /* status set to 1 if subkey hot. */
 } bitmapMeta;
@@ -71,6 +72,7 @@ typedef struct bitmapMeta {
 bitmapMeta *bitmapMetaCreate(void) {
     bitmapMeta *bitmap_meta = zmalloc(sizeof(bitmapMeta));
     bitmap_meta->size = 0;
+    bitmap_meta->subkey_size = 0;
     bitmap_meta->pure_cold_subkeys_num = 0;
     bitmap_meta->subkeys_status = rbmCreate();
     return bitmap_meta;
@@ -90,6 +92,7 @@ size_t bitmapMetaGetSize(struct bitmapMeta *bitmap_meta) {
 
 static inline void bitmapMetaInit(bitmapMeta *bitmap_meta, robj *value) {
     bitmap_meta->size = stringObjectLen(value);
+    bitmap_meta->subkey_size = server.swap_bitmap_subkey_size;
     bitmap_meta->pure_cold_subkeys_num = 0;
     rbmSetBitRange(bitmap_meta->subkeys_status, 0, 
         BITMAP_GET_SUBKEYS_NUM(bitmap_meta->size, BITMAP_SUBKEY_SIZE) - 1);
@@ -102,8 +105,8 @@ static inline void bitmapMetaInit(bitmapMeta *bitmap_meta, robj *value) {
 #define RORDB_ENCODE_FLAG 0x02
 
 /* two types of bitmap meta encoding:
- * 1.  flag == 0x01,   flag (1 byte) | size (8 bytes)
- * 2.  flag == 0x02,   flag (1 byte) | size (8 bytes) | pure_cold_subkeys_num (8 bytes) | rbm encode len (8 bytes) | rbm n bytes 
+ * 1.  flag == 0x01,   flag (1 byte) | size (8 bytes) | subkey_size (8 bytes)
+ * 2.  flag == 0x02,   flag (1 byte) | size (8 bytes) | subkey_size (8 bytes) | pure_cold_subkeys_num (8 bytes) | rbm encode len (8 bytes) | rbm n bytes 
  */
 static inline sds bitmapMetaEncode(bitmapMeta *bm, int meta_enc_mode) {
     serverAssert(bm);
@@ -176,6 +179,7 @@ static inline bitmapMeta *bitmapMetaDecode(const char *extend,
 static inline bitmapMeta *bitmapMetaDup(bitmapMeta *bitmap_meta) {
     bitmapMeta *meta = zmalloc(sizeof(bitmapMeta));
     meta->size = bitmap_meta->size;
+    meta->subkey_size = bitmap_meta->subkey_size;
     meta->pure_cold_subkeys_num = bitmap_meta->pure_cold_subkeys_num;
     meta->subkeys_status = rbmCreate();
     rbmdup(meta->subkeys_status, bitmap_meta->subkeys_status);
@@ -184,7 +188,7 @@ static inline bitmapMeta *bitmapMetaDup(bitmapMeta *bitmap_meta) {
 
 int bitmapMetaEqual(bitmapMeta *dest_meta, bitmapMeta *src_meta) {
     return (dest_meta->pure_cold_subkeys_num == src_meta->pure_cold_subkeys_num) &&
-        (dest_meta->size == src_meta->size) &&
+        (dest_meta->size == src_meta->size) && (dest_meta->subkey_size == src_meta->subkey_size) &&
         rbmIsEqual(dest_meta->subkeys_status, src_meta->subkeys_status);
 }
 
@@ -354,6 +358,8 @@ int bitmapObjectMetaRebuildFeed(struct objectMeta *rebuild_meta,
     if (subkey) {
         meta->pure_cold_subkeys_num++;
         meta->size += stringObjectLen(subval);
+        if (meta->subkey_size == 0)
+            meta->subkey_size = stringObjectLen(subval);
         return 0;
     } else {
         return -1;
@@ -1783,7 +1789,8 @@ typedef struct bitmapLoadInfo
     sds consuming_old_subval; /* subval read , part of it has not been comsumed to transfer to subval with new size. */
     unsigned long consuming_offset;  /* offset description for consuming_old_subval, data behind offset is not yet consumed. */
     unsigned int num_old_subvals_waiting_load; /* num of old subvals waiting be load in rio. */
-    unsigned long bitmap_size;
+    size_t bitmap_size;
+    size_t new_subkey_size;
 } bitmapLoadInfo;
 
 void bitmapLoadStart(struct rdbKeyLoadData *load, rio *rdb, int *cf,
@@ -1809,7 +1816,7 @@ void bitmapLoadStart(struct rdbKeyLoadData *load, rio *rdb, int *cf,
         return;
     }
 
-    unsigned long new_subkey_size = BITMAP_SUBKEY_SIZE;
+    unsigned long new_subkey_size = server.swap_bitmap_subkey_size;
 
     load->total_fields = BITMAP_GET_SUBKEYS_NUM(bitmap_size, new_subkey_size);
 
@@ -1817,6 +1824,7 @@ void bitmapLoadStart(struct rdbKeyLoadData *load, rio *rdb, int *cf,
 
     load_info->num_old_subvals_waiting_load = BITMAP_GET_SUBKEYS_NUM(bitmap_size, old_subkey_size);
     load_info->bitmap_size = bitmap_size;
+    load_info->new_subkey_size = new_subkey_size;
 
     bitmapMeta bitmap_meta;
     bitmap_meta.size = bitmap_size;
