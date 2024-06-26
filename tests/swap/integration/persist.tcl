@@ -354,6 +354,59 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         set dbsize_after [r dbsize]
         assert {[expr $dbsize_before - $dbsize_after] < 1000}
     }
+
+    test {persist and restart check bitmap subkey size} {
+
+        set bak_bitmap_subkey_size [lindex [r config get swap-bitmap-subkey-size] 1]
+
+        r CONFIG SET swap-bitmap-subkey-size 4096
+
+        r setbit mybitmap7 32767 1
+        r setbit mybitmap7 65535 1
+        r setbit mybitmap7 98303 1
+        r setbit mybitmap7 131071 1
+        r setbit mybitmap7 163839 1
+        r setbit mybitmap7 196607 1
+        r setbit mybitmap7 229375 1
+        r setbit mybitmap7 262143 1
+        r setbit mybitmap7 294911 1
+        r setbit mybitmap7 327679 1
+        r setbit mybitmap7 335871 1
+
+        # only one subkey in mybitmap8 
+        r setbit mybitmap8 300 1
+
+        # mybitmap9 is empty string
+        r set mybitmap9 ""
+        assert_equal {0} [r bitcount mybitmap9]
+
+        wait_key_clean r mybitmap7
+        assert [object_is_hot r mybitmap7]
+
+        wait_key_clean r mybitmap8
+        assert [object_is_hot r mybitmap8]
+
+        wait_key_clean r mybitmap9
+        assert [object_is_hot r mybitmap9]
+
+        assert_equal [object_meta_subkey_size r mybitmap7] 4096
+        assert_equal [object_meta_subkey_size r mybitmap8] 4096
+        assert_equal [object_meta_subkey_size r mybitmap9] 4096
+
+        r CONFIG SET swap-bitmap-subkey-size 2048
+        restart_server 0 true false
+
+        assert_equal [object_meta_subkey_size r mybitmap7] 4096
+        assert_equal [object_meta_subkey_size r mybitmap8] 4096
+        assert_equal [object_meta_subkey_size r mybitmap9] 4096
+
+        assert_equal [r bitcount mybitmap7] {11}
+        assert_equal [r bitcount mybitmap8] {1}
+        assert_equal [r bitcount mybitmap9] {0}
+
+        r config set swap-bitmap-subkey-size $bak_bitmap_subkey_size
+    }
+
 }
 
 start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subkeys-enabled yes}} {

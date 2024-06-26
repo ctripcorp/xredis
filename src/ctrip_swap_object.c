@@ -216,7 +216,7 @@ int lenObjectMetaIsHot(objectMeta *object_meta, robj *value) {
     return object_meta->len == 0;
 }
 
-static inline int lenObjectMetaRebuildFeed(struct objectMeta *rebuild_meta,
+static inline int lenObjectMetaRebuildFeed(struct objectMeta *rebuild_meta, 
         uint64_t version, const char *subkey, size_t sublen, robj *subval) {
     UNUSED(sublen), UNUSED(version), UNUSED(subval);
 

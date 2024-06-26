@@ -543,7 +543,7 @@ int objectMetaDecode(struct objectMeta *object_meta, const char *extend, size_t 
 int keyIsHot(objectMeta *object_meta, robj *value);
 sds dumpObjectMeta(objectMeta *object_meta);
 int objectMetaEqual(struct objectMeta *oma, struct objectMeta *omb);
-int objectMetaRebuildFeed(struct objectMeta *object_meta, uint64_t version, const char *subkey, size_t sublen, robj *subval);
+int objectMetaRebuildFeed(struct objectMeta *rebuild_meta, uint64_t version, const char *subkey, size_t sublen, robj *subval);
 
 static inline void *objectMetaGetPtr(objectMeta *object_meta) {
   return (void*)(long)object_meta->ptr;
@@ -987,6 +987,8 @@ struct bitmapMeta;
 void bitmapMetaFree(struct bitmapMeta *bitmap_meta);
 
 size_t bitmapMetaGetSize(struct bitmapMeta *bitmap_meta);
+
+size_t bitmapMetaGetSubkeySize(struct bitmapMeta *bitmap_meta);
 
 objectMeta *createBitmapObjectMeta(uint64_t version, MOVE struct bitmapMeta *bitmap_meta);
 
