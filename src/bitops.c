@@ -495,7 +495,6 @@ robj *lookupStringForBitCommand(client *c, uint64_t maxbit) {
             serverAssert(om->swap_type == SWAP_TYPE_BITMAP);
             metaBitmapInit(&meta_bitmap, objectMetaGetPtr(om), o);
         } else {
-            //TODO confirm fixed how?
             /* maybe it is a empty string object. */
             /* it is never processed as bitmap in ror. */
             metaBitmapInit(&meta_bitmap, NULL, o);
