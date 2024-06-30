@@ -1295,11 +1295,13 @@ int getKeyRequestsMemory(int dbid, struct redisCommand *cmd, robj **argv,
             count = value;
         }
 
-        key = argv[2];
-        incrRefCount(key);
-        getKeyRequestsAppendSampleResult(result,REQUEST_LEVEL_KEY,key,
-                count*GET_KEYREQUESTS_MEMORY_MUL,
-                cmd->intention,cmd->intention_flags,cmd->flags,dbid);
+        if (argc > 2) {
+            key = argv[2];
+            incrRefCount(key);
+            getKeyRequestsAppendSampleResult(result,REQUEST_LEVEL_KEY,key,
+                    count*GET_KEYREQUESTS_MEMORY_MUL,
+                    cmd->intention,cmd->intention_flags,cmd->flags,dbid);
+        }
         return 0;
     } else {
         return getKeyRequestsNone(dbid,cmd,argv,argc,result);
