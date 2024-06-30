@@ -721,13 +721,26 @@ int bitmapSwapAna(swapData *data, int thd, struct keyRequest *req,
             break;
         case SWAP_IN:
             serverAssert(req->type == KEYREQUEST_TYPE_KEY ||
-                req->type == KEYREQUEST_TYPE_SUBKEY ||
+                req->type == KEYREQUEST_TYPE_SUBKEY || 
+                req->type == KEYREQUEST_TYPE_SAMPLE ||
                 req->type == KEYREQUEST_TYPE_BTIMAP_OFFSET ||
                 req->type == KEYREQUEST_TYPE_BTIMAP_RANGE);
             if (!swapDataPersisted(data)) {
                 /* No need to swap for pure hot key */
                 *intention = SWAP_NOP;
                 *intention_flags = 0;
+            } else if (req->type == KEYREQUEST_TYPE_SAMPLE) {
+                /* bitmap sample require for ‘size’ which is in bitmap meta. */
+                if (swapDataIsCold(data)) {
+                    datactx->subkeys_num = 1;
+                    datactx->subkeys_logic_idx = zmalloc(sizeof(int));
+                    datactx->subkeys_logic_idx[0] = 0;
+                    *intention = SWAP_IN;
+                    *intention_flags = 0;
+                } else {
+                    *intention = SWAP_NOP;
+                    *intention_flags = 0;
+                }
             } else if (req->type == KEYREQUEST_TYPE_SUBKEY || req->type == KEYREQUEST_TYPE_KEY) {
                 /* swap in for entire key */
                 if (cmd_intention_flags == SWAP_IN_DEL_MOCK_VALUE) {
@@ -755,7 +768,6 @@ int bitmapSwapAna(swapData *data, int thd, struct keyRequest *req,
                     *intention = SWAP_NOP;
                     *intention_flags = 0;
                 } else if (cmd_intention_flags == SWAP_IN_META) {
-
                     /* swap in first element if cold */
                     datactx->subkeys_num = 1;
                     datactx->subkeys_logic_idx = zmalloc(sizeof(int));
@@ -1303,8 +1315,8 @@ int bitmapBeforeCall(swapData *data, keyRequest *key_request, client *c,
         return 0;
     }
 
-    /* no need to rewrite bitcount,bitpos arg. */
-    if (key_request->type == KEYREQUEST_TYPE_BTIMAP_RANGE) {
+    /* just need to rewrite arg setbit,getbit. */
+    if (key_request->type != KEYREQUEST_TYPE_BTIMAP_OFFSET) {
         return 0;
     }
     objectMeta *object_meta = lookupMeta(data->db,data->key);
@@ -2649,6 +2661,30 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
         test_assert(intention == SWAP_IN && intention_flags == 0);
         test_assert(cold_ctx1->subkeys_num == 0);
         bitmapDataCtxReset(cold_ctx1);
+
+        cold_keyReq1->type = KEYREQUEST_TYPE_SAMPLE;
+        cold_keyReq1->cmd_intention = SWAP_IN, cold_keyReq1->cmd_intention_flags = 0;
+        swapDataAna(cold_data1,0,cold_keyReq1,&intention,&intention_flags,cold_ctx1);
+        bitmapSwapAnaAction(cold_data1, intention, cold_ctx1, &action);
+        test_assert(action == ROCKS_GET);
+        test_assert(intention == SWAP_IN && intention_flags == 0);
+        test_assert(cold_ctx1->subkeys_num == 1);
+        test_assert(cold_ctx1->subkeys_logic_idx[0] == 0);
+        bitmapDataCtxReset(cold_ctx1);
+
+        hot_keyReq1->type = KEYREQUEST_TYPE_SAMPLE;
+        hot_keyReq1->cmd_intention = SWAP_IN, hot_keyReq1->cmd_intention_flags = 0;
+        swapDataAna(hot_data1,0,hot_keyReq1,&intention,&intention_flags,hot_ctx1);
+        test_assert(intention == SWAP_NOP && intention_flags == 0);
+        bitmapDataCtxReset(hot_ctx1);
+
+        purehot_keyReq1->type = KEYREQUEST_TYPE_SAMPLE;
+        purehot_keyReq1->cmd_intention = SWAP_IN, purehot_keyReq1->cmd_intention_flags = 0;
+        swapDataAna(purehot_data1,0,purehot_keyReq1,&intention,&intention_flags,purehot_ctx1);
+        test_assert(intention == SWAP_NOP && intention_flags == 0);
+        test_assert(objectMetaGetPtr(purehot_meta1) == NULL);
+        test_assert(purehot_ctx1->ctx_flag == 0);
+        test_assert(purehot_ctx1->subkeys_num == 0);
 
         /* del: for hot data*/
         purehot_keyReq1->b.num_subkeys = 0;
