@@ -137,6 +137,7 @@ static void replCommandDispatch(client *wc, client *c) {
 
     wc->argc = c->argc, c->argc = 0;
     wc->argv = c->argv, c->argv = NULL;
+    wc->cmtArgv = c->cmtArgv, c->cmtArgv = NULL;
     wc->cmd = c->cmd;
     wc->lastcmd = c->lastcmd;
     wc->flags = c->flags;

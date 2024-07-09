@@ -701,6 +701,7 @@ struct client *createAOFClient(void) {
     c->querybuf_peak = 0;
     c->argc = 0;
     c->argv = NULL;
+    c->cmtArgv = NULL;
     c->original_argc = 0;
     c->original_argv = NULL;
     c->argv_len_sum = 0;
@@ -736,6 +737,11 @@ struct client *createAOFClient(void) {
 }
 
 void freeFakeClientArgv(struct client *c) {
+    if(c->cmtArgv) {
+        c->argc++;
+        c->argv--;
+        c->cmtArgv = NULL;
+    }
     int j;
 
     for (j = 0; j < c->argc; j++)
