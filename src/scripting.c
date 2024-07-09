@@ -589,6 +589,7 @@ int luaRedisGenericCommand(lua_State *lua, int raise_error) {
 
     /* Setup our fake client for command execution */
     c->argv = argv;
+    c->cmtArgv = NULL;
     c->argc = argc;
     c->user = server.lua_caller->user;
 
@@ -835,6 +836,11 @@ cleanup:
     }
 
     if (c->argv != argv) {
+        if(c->cmtArgv) {
+            c->argc++;
+            c->argv--;
+            c->cmtArgv = NULL;
+        }
         zfree(c->argv);
         argv = NULL;
         argv_size = 0;

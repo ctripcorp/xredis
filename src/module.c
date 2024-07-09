@@ -4273,6 +4273,11 @@ cleanup:
         pubsubUnsubscribeAllChannels(c,0);
         pubsubUnsubscribeAllPatterns(c,0);
         resetClient(c); /* frees the contents of argv */
+        if(c->cmtArgv) {
+            c->argc++;
+            c->argv--;
+            c->cmtArgv = NULL;
+        }
         zfree(c->argv);
         c->argv = NULL;
         c->resp = 2;

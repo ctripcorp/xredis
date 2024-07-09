@@ -147,6 +147,7 @@ client *createClient(connection *conn) {
     c->reqtype = 0;
     c->argc = 0;
     c->argv = NULL;
+    c->cmtArgv = NULL;
     c->argv_len_sum = 0;
     c->original_argc = 0;
     c->original_argv = NULL;
@@ -1232,6 +1233,12 @@ void freeClientOriginalArgv(client *c) {
 }
 
 static void freeClientArgv(client *c) {
+    if (c->cmtArgv) {
+        c->argc++;
+        c->argv--;
+        c->cmtArgv = NULL;
+    }
+
     int j;
     for (j = 0; j < c->argc; j++)
         decrRefCount(c->argv[j]);
@@ -1391,6 +1398,7 @@ void freeClientsInDeferedQueue(void) {
 void shiftReplicationId(void);
 
 void freeClient(client *c) {
+
     listNode *ln;
 
     /* Unlinked repl client from server.repl_swapping_clients. */
@@ -1853,6 +1861,40 @@ void unprotectClient(client *c) {
     }
 }
 
+int processComment(client *c) {
+    char* comment = (char*)c->argv[0]->ptr;
+    int dis_begin, dis_end;
+    dis_begin = dis_end = 0;
+    char *begin, *end;
+    begin = end = comment;
+    bool isComment = false;
+
+    while ((begin = strstr(begin + dis_begin, "/*")) != NULL) {
+        isComment = true;
+        end = strstr(comment + dis_end, "*/");
+        if (end == NULL || end - begin < 0) {
+            addReplyError(c,"Protocol error: wrong format comment");
+            setProtocolError("wrong format comment",c);
+            return C_ERR;
+        }
+        dis_begin += begin - comment + strlen("/*");
+        dis_end += end - comment + strlen("*/");
+    }
+
+    if (strstr(comment + dis_end, "*/") != NULL) {
+        addReplyError(c,"Protocol error: wrong format comment");
+        setProtocolError("wrong format comment",c);
+        return C_ERR;
+    }
+
+    if (isComment) {
+        c->cmtArgv = c->argv[0];
+        c->argv++;
+        c->argc--;
+    }
+    return C_OK;
+}
+
 /* Like processMultibulkBuffer(), but for the inline protocol instead of RESP,
  * this function consumes the client query buffer and creates a command ready
  * to be executed inside the client structure. Returns C_OK if the command
@@ -1918,6 +1960,11 @@ int processInlineBuffer(client *c) {
 
     /* Setup argv array on client structure */
     if (argc) {
+        if(c->cmtArgv) {
+            c->argc++;
+            c->argv--;
+            c->cmtArgv = NULL;
+        }
         if (c->argv) zfree(c->argv);
         c->argv = zmalloc(sizeof(robj*)*argc);
         c->argv_len_sum = 0;
@@ -2021,6 +2068,11 @@ int processMultibulkBuffer(client *c) {
         c->multibulklen = ll;
 
         /* Setup argv array on client structure */
+        if(c->cmtArgv) {
+            c->argc++;
+            c->argv--;
+            c->cmtArgv = NULL;
+        }
         if (c->argv) zfree(c->argv);
         c->argv = zmalloc(sizeof(robj*)*c->multibulklen);
         c->argv_len_sum = 0;
@@ -2286,6 +2338,10 @@ void processInputBuffer(client *c) {
             if (c->flags & CLIENT_PENDING_READ) {
                 c->flags |= CLIENT_PENDING_COMMAND;
                 break;
+            }
+
+            if (processComment(c) == C_ERR) {
+                return;
             }
 
             /* We are finally ready to execute the command. */
@@ -3271,6 +3327,7 @@ void rewriteClientCommandVector(client *c, int argc, ...) {
 void replaceClientCommandVector(client *c, int argc, robj **argv) {
     int j;
     retainOriginalCommandVector(c);
+
     freeClientArgv(c);
     zfree(c->argv);
     c->argv = argv;
@@ -3299,6 +3356,7 @@ void rewriteClientCommandArgument(client *c, int i, robj *newval) {
     retainOriginalCommandVector(c);
     if (i >= c->argc) {
         c->argv = zrealloc(c->argv,sizeof(robj*)*(i+1));
+        c->cmtArgv = NULL;
         c->argc = i+1;
         c->argv[i] = NULL;
     }
