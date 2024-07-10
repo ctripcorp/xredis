@@ -836,11 +836,7 @@ cleanup:
     }
 
     if (c->argv != argv) {
-        if(c->cmtArgv) {
-            c->argc++;
-            c->argv--;
-            c->cmtArgv = NULL;
-        }
+        restoreCommtArgv(c);
         zfree(c->argv);
         argv = NULL;
         argv_size = 0;
