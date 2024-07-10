@@ -4273,7 +4273,7 @@ cleanup:
         pubsubUnsubscribeAllChannels(c,0);
         pubsubUnsubscribeAllPatterns(c,0);
         resetClient(c); /* frees the contents of argv */
-        restoreCommtArgv(c);
+        restoreCommentArgv(c);
         zfree(c->argv);
         c->argv = NULL;
         c->resp = 2;
