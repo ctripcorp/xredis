@@ -1411,7 +1411,6 @@ void freeClientsInDeferedQueue(void) {
 void shiftReplicationId(void);
 
 void freeClient(client *c) {
-
     listNode *ln;
 
     /* Unlinked repl client from server.repl_swapping_clients. */
@@ -1810,6 +1809,7 @@ int handleClientsWithPendingWrites(void) {
 
 /* resetClient prepare the client to process the next command */
 void resetClient(client *c) {
+
     redisCommandProc *prevcmd = c->cmd ? c->cmd->proc : NULL;
     freeClientArgv(c);
     c->reqtype = 0;
@@ -1967,7 +1967,6 @@ int processInlineBuffer(client *c) {
 
     /* Setup argv array on client structure */
     if (argc) {
-        restoreCommentArgv(c);
         if (c->argv) zfree(c->argv);
         c->argv = zmalloc(sizeof(robj*)*argc);
         c->argv_len_sum = 0;
@@ -3328,7 +3327,6 @@ void rewriteClientCommandVector(client *c, int argc, ...) {
 void replaceClientCommandVector(client *c, int argc, robj **argv) {
     int j;
     retainOriginalCommandVector(c);
-
     freeClientArgv(c);
     zfree(c->argv);
     c->argv = argv;
