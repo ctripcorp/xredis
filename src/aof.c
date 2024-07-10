@@ -737,11 +737,7 @@ struct client *createAOFClient(void) {
 }
 
 void freeFakeClientArgv(struct client *c) {
-    if(c->cmtArgv) {
-        c->argc++;
-        c->argv--;
-        c->cmtArgv = NULL;
-    }
+    restoreCommtArgv(c);
     int j;
 
     for (j = 0; j < c->argc; j++)

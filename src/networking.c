@@ -1232,13 +1232,15 @@ void freeClientOriginalArgv(client *c) {
     c->original_argc = 0;
 }
 
-static void freeClientArgv(client *c) {
+void restoreCommtArgv(client *c) {
     if (c->cmtArgv) {
         c->argc++;
         c->argv--;
         c->cmtArgv = NULL;
     }
+}
 
+static void freeClientArgv(client *c) {
     int j;
     for (j = 0; j < c->argc; j++)
         decrRefCount(c->argv[j]);
@@ -1957,11 +1959,7 @@ int processInlineBuffer(client *c) {
 
     /* Setup argv array on client structure */
     if (argc) {
-        if(c->cmtArgv) {
-            c->argc++;
-            c->argv--;
-            c->cmtArgv = NULL;
-        }
+        restoreCommtArgv(c);
         if (c->argv) zfree(c->argv);
         c->argv = zmalloc(sizeof(robj*)*argc);
         c->argv_len_sum = 0;
@@ -2065,11 +2063,7 @@ int processMultibulkBuffer(client *c) {
         c->multibulklen = ll;
 
         /* Setup argv array on client structure */
-        if(c->cmtArgv) {
-            c->argc++;
-            c->argv--;
-            c->cmtArgv = NULL;
-        }
+        restoreCommtArgv(c);
         if (c->argv) zfree(c->argv);
         c->argv = zmalloc(sizeof(robj*)*c->multibulklen);
         c->argv_len_sum = 0;
