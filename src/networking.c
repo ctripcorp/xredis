@@ -1232,6 +1232,14 @@ void freeClientOriginalArgv(client *c) {
     c->original_argc = 0;
 }
 
+void splitCommentArgv(client *c, bool isComment) {
+    if (isComment) {
+        c->cmtArgv = c->argv[0];
+        c->argv++;
+        c->argc--;
+    }
+}
+
 void restoreCommentArgv(client *c) {
     if (c->cmtArgv) {
         c->argc++;
@@ -1883,11 +1891,7 @@ int processComment(client *c) {
 
     if (strstr(comment + dis_end, "*/") != NULL) goto err;
 
-    if (isComment) {
-        c->cmtArgv = c->argv[0];
-        c->argv++;
-        c->argc--;
-    }
+    splitCommentArgv(c, isComment);
     return C_OK;
 
 err:
