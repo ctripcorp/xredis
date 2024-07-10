@@ -1882,6 +1882,7 @@ int processComment(client *c) {
     bool isComment = false;
 
     while ((begin = strstr(begin + dis_begin, "/*")) != NULL) {
+        if(isComment == false && begin-comment != 0) goto err;
         isComment = true;
         end = strstr(comment + dis_end, "*/");
         if (end == NULL || end - begin < 0) goto err;
@@ -1890,6 +1891,7 @@ int processComment(client *c) {
     }
 
     if (strstr(comment + dis_end, "*/") != NULL) goto err;
+    if (isComment && sdslen(comment) != dis_end) goto err;
 
     splitCommentArgv(c, isComment);
     return C_OK;
