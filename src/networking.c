@@ -1232,7 +1232,7 @@ void freeClientOriginalArgv(client *c) {
     c->original_argc = 0;
 }
 
-void restoreCommtArgv(client *c) {
+void restoreCommentArgv(client *c) {
     if (c->cmtArgv) {
         c->argc++;
         c->argv--;
@@ -1241,7 +1241,7 @@ void restoreCommtArgv(client *c) {
 }
 
 static void freeClientArgv(client *c) {
-    restoreCommtArgv(c);
+    restoreCommentArgv(c);
     int j;
     for (j = 0; j < c->argc; j++) {
         serverLog(LL_NOTICE, "free c->argv[%d]=%p", j, c->argv[j]->ptr);
@@ -1961,7 +1961,7 @@ int processInlineBuffer(client *c) {
 
     /* Setup argv array on client structure */
     if (argc) {
-        restoreCommtArgv(c);
+        restoreCommentArgv(c);
         if (c->argv) zfree(c->argv);
         c->argv = zmalloc(sizeof(robj*)*argc);
         c->argv_len_sum = 0;

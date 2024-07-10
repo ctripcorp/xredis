@@ -836,7 +836,7 @@ cleanup:
     }
 
     if (c->argv != argv) {
-        restoreCommtArgv(c);
+        restoreCommentArgv(c);
         zfree(c->argv);
         argv = NULL;
         argv_size = 0;
