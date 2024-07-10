@@ -2151,6 +2151,7 @@ void redisSetCpuAffinity(const char *cpulist);
 /* networking.c -- Networking and Client related operations */
 client *createClient(connection *conn);
 void closeTimedoutClients(void);
+void splitCommentArgv(client *c, bool isComment);
 void restoreCommentArgv(client *c);
 void freeClient(client *c);
 void freeClientAsync(client *c);
