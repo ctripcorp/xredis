@@ -1866,10 +1866,10 @@ void unprotectClient(client *c) {
 }
 
 int processComment(client *c) {
-    char* comment = (char*)c->argv[0]->ptr;
+    sds comment = (sds)c->argv[0]->ptr;
     int dis_begin, dis_end;
     dis_begin = dis_end = 0;
-    char *begin, *end;
+    sds begin, end;
     begin = end = comment;
     bool isComment = false;
 
