@@ -1872,20 +1872,12 @@ int processComment(client *c) {
     while ((begin = strstr(begin + dis_begin, "/*")) != NULL) {
         isComment = true;
         end = strstr(comment + dis_end, "*/");
-        if (end == NULL || end - begin < 0) {
-            addReplyError(c,"Protocol error: wrong format comment");
-            setProtocolError("wrong format comment",c);
-            return C_ERR;
-        }
+        if (end == NULL || end - begin < 0) goto err;
         dis_begin += begin - comment + strlen("/*");
         dis_end += end - comment + strlen("*/");
     }
 
-    if (strstr(comment + dis_end, "*/") != NULL) {
-        addReplyError(c,"Protocol error: wrong format comment");
-        setProtocolError("wrong format comment",c);
-        return C_ERR;
-    }
+    if (strstr(comment + dis_end, "*/") != NULL) goto err;
 
     if (isComment) {
         c->cmtArgv = c->argv[0];
@@ -1893,6 +1885,11 @@ int processComment(client *c) {
         c->argc--;
     }
     return C_OK;
+
+err:
+    addReplyError(c,"Protocol error: wrong format comment");
+    setProtocolError("wrong format comment",c);
+    return C_ERR;
 }
 
 /* Like processMultibulkBuffer(), but for the inline protocol instead of RESP,
