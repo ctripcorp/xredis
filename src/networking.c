@@ -1243,8 +1243,10 @@ void restoreCommtArgv(client *c) {
 static void freeClientArgv(client *c) {
     restoreCommtArgv(c);
     int j;
-    for (j = 0; j < c->argc; j++)
+    for (j = 0; j < c->argc; j++) {
+        serverLog(LL_NOTICE, "free c->argv[%d]=%p", j, c->argv[j]->ptr);
         decrRefCount(c->argv[j]);
+    }
     c->argc = 0;
     c->cmd = NULL;
     c->argv_len_sum = 0;
@@ -1801,7 +1803,6 @@ int handleClientsWithPendingWrites(void) {
 /* resetClient prepare the client to process the next command */
 void resetClient(client *c) {
     redisCommandProc *prevcmd = c->cmd ? c->cmd->proc : NULL;
-
     freeClientArgv(c);
     c->reqtype = 0;
     c->multibulklen = 0;
@@ -1969,6 +1970,7 @@ int processInlineBuffer(client *c) {
     /* Create redis objects for all arguments. */
     for (c->argc = 0, j = 0; j < argc; j++) {
         c->argv[c->argc] = createObject(OBJ_STRING,argv[j]);
+        serverLog(LL_NOTICE, "create c->argv[%d]=%p", j, c->argv[j]->ptr);
         c->argc++;
         c->argv_len_sum += sdslen(argv[j]);
     }
@@ -2143,6 +2145,7 @@ int processMultibulkBuffer(client *c) {
                 sdslen(c->querybuf) == (size_t)(c->bulklen+2))
             {
                 c->argv[c->argc++] = createObject(OBJ_STRING,c->querybuf);
+                serverLog(LL_NOTICE, "create c->argv[%d]=%p", c->argc-1, c->argv[c->argc-1]->ptr);
                 c->argv_len_sum += c->bulklen;
                 sdsIncrLen(c->querybuf,-2); /* remove CRLF */
                 /* Assume that if we saw a fat argument we'll see another one
@@ -2152,6 +2155,7 @@ int processMultibulkBuffer(client *c) {
             } else {
                 c->argv[c->argc++] =
                     createStringObject(c->querybuf+c->qb_pos,c->bulklen);
+                serverLog(LL_NOTICE, "create c->argv[%d]=%p", c->argc-1, c->argv[c->argc-1]->ptr);
                 c->argv_len_sum += c->bulklen;
                 c->qb_pos += c->bulklen+2;
             }
