@@ -1241,6 +1241,7 @@ void restoreCommtArgv(client *c) {
 }
 
 static void freeClientArgv(client *c) {
+    restoreCommtArgv(c);
     int j;
     for (j = 0; j < c->argc; j++)
         decrRefCount(c->argv[j]);
@@ -2063,7 +2064,6 @@ int processMultibulkBuffer(client *c) {
         c->multibulklen = ll;
 
         /* Setup argv array on client structure */
-        restoreCommtArgv(c);
         if (c->argv) zfree(c->argv);
         c->argv = zmalloc(sizeof(robj*)*c->multibulklen);
         c->argv_len_sum = 0;
