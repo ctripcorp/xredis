@@ -257,7 +257,7 @@ void submitSwapBlockedClientRequest(client* c, readyList *rl, dict* key_sets) {
         robj* rkey = dictGetKey(de);
         incrRefCount(rkey);
         getKeyRequestsSwapBlockedLmove(dbid, SWAP_IN, c->cmd->intention_flags, CMD_SWAP_DATATYPE_LIST,
-            rkey, &result, -1, -1, 1/*num_ranges*/, -1, -1, 0);
+            rkey, &result, -1, -1, 1/*num_ranges*/, -1L, -1L, (int)0);
     }
     dictReleaseIterator(di);
     swapUnblockedKeyChain* chain = createSwapUnblockedKeyChain(rl->db, rl->key);
