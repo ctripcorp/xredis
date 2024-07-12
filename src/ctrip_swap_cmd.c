@@ -823,7 +823,7 @@ int getKeyRequestsLpop(int dbid, struct redisCommand *cmd, robj **argv,
     }
 
     getKeyRequestsSingleKeyWithRanges(dbid,cmd,argv,argc,
-            result,1,-1,-1,1/*num_ranges*/,0,count,0);
+            result,1,-1,-1,1/*num_ranges*/,0L,(long)count,(int)0);
     return 0;
 
 }
@@ -832,7 +832,7 @@ int getKeyRequestsBlpop(int dbid, struct redisCommand *cmd, robj **argv,
         int argc, struct getKeyRequestsResult *result) {
     for (int i = 1; i < argc-1; i++) {
         getKeyRequestsSingleKeyWithRanges(dbid,cmd,argv,argc,
-                result,i,-1,-1,1/*num_ranges*/,0,0,0);
+                result,i,-1,-1,1/*num_ranges*/,0L,0L,(int)0);
     }
     return 0;
 }
@@ -847,7 +847,7 @@ int getKeyRequestsRpop(int dbid, struct redisCommand *cmd, robj **argv,
     }
 
     getKeyRequestsSingleKeyWithRanges(dbid,cmd,argv,argc,
-            result,1,-1,-1,1/*num_ranges*/,-count,-1,0);
+            result,1,-1,-1,1/*num_ranges*/,(long)-count,-1L,(int)0);
     return 0;
 }
 
@@ -855,7 +855,7 @@ int getKeyRequestsBrpop(int dbid, struct redisCommand *cmd, robj **argv,
         int argc, struct getKeyRequestsResult *result) {
     for (int i = 1; i < argc-1; i++) {
         getKeyRequestsSingleKeyWithRanges(dbid,cmd,argv,argc,
-                result,i,-1,-1,1/*num_ranges*/,-1,-1,0);
+                result,i,-1,-1,1/*num_ranges*/,-1L,-1L,(int)0);
     }
     return 0;
 }
@@ -863,7 +863,7 @@ int getKeyRequestsBrpop(int dbid, struct redisCommand *cmd, robj **argv,
 int getKeyRequestsRpoplpush(int dbid, struct redisCommand *cmd, robj **argv,
         int argc, struct getKeyRequestsResult *result) {
     getKeyRequestsSingleKeyWithRanges(dbid,cmd,argv,argc,
-            result,1,-1,-1,1/*num_ranges*/,-1,-1,0); /* source */
+            result,1,-1,-1,1/*num_ranges*/,-1L,-1L,(int)0); /* source */
     getKeyRequestsSingleKey(result,argv[2],SWAP_IN,SWAP_IN_META,cmd->flags | CMD_SWAP_DATATYPE_KEYSPACE,dbid);
     return 0;
 }
@@ -884,7 +884,7 @@ int getKeyRequestsLmove(int dbid, struct redisCommand *cmd, robj **argv,
     }
     /* source */
     getKeyRequestsSingleKeyWithRanges(dbid,cmd,argv,argc,
-            result,1,-1,-1,1/*num_ranges*/,start,end,0);
+            result,1,-1,-1,1/*num_ranges*/,start,end,(int)0);
     /* destination */
     getKeyRequestsSingleKey(result,argv[2],SWAP_IN,SWAP_IN_META,cmd->flags,dbid);
     return 0;
@@ -895,7 +895,7 @@ int getKeyRequestsLindex(int dbid, struct redisCommand *cmd, robj **argv,
     long long index;
     if (getLongLongFromObject(argv[2],&index) != C_OK) return -1;
     getKeyRequestsSingleKeyWithRanges(dbid,cmd,argv,argc,
-            result,1,2,-1,1/*num_ranges*/,index,index,0);
+            result,1,2,-1,1/*num_ranges*/,(long)index,(long)index,(int)0);
     return 0;
 }
 
@@ -905,7 +905,7 @@ int getKeyRequestsLrange(int dbid, struct redisCommand *cmd, robj **argv,
     if (getLongLongFromObject(argv[2],&start) != C_OK) return -1;
     if (getLongLongFromObject(argv[3],&end) != C_OK) return -1;
     getKeyRequestsSingleKeyWithRanges(dbid,cmd,argv,argc,
-            result,1,2,3,1/*num_ranges*/,start,end,0);
+            result,1,2,3,1/*num_ranges*/,(long)start,(long)end,(int)0);
     return 0;
 }
 
@@ -915,7 +915,7 @@ int getKeyRequestsLtrim(int dbid, struct redisCommand *cmd, robj **argv,
     if (getLongLongFromObject(argv[2],&start) != C_OK) return -1;
     if (getLongLongFromObject(argv[3],&stop) != C_OK) return -1;
     getKeyRequestsSingleKeyWithRanges(dbid,cmd,argv,argc,
-            result,1,2,3,1/*num_ranges*/,start,stop,1/*reverse*/);
+            result,1,2,3,1/*num_ranges*/,(long)start,(long)stop,(int)1/*reverse*/);
     return 0;
 }
 /** zset **/
