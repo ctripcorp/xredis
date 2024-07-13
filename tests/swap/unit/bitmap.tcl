@@ -749,6 +749,26 @@ start_server {
         r flushdb
     }
 
+    test {bitmap move} {
+        r flushdb
+        build_cold_data mybitmap1
+        build_pure_hot_data mybitmap2
+
+        r move mybitmap1 10
+        r move mybitmap2 10
+        assert_equal [r dbsize] 0
+
+        r select 10
+        assert_equal [r dbsize] 2
+        assert [bitmap_object_is_pure_hot r mybitmap1]
+        assert [bitmap_object_is_pure_hot r mybitmap2]
+
+        check_mybitmap_is_right mybitmap1 $notextend
+        check_mybitmap_is_right mybitmap2 $notextend
+
+        r flushdb
+    }
+
 }
 
 

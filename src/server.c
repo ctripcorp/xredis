@@ -660,8 +660,8 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,getKeyRequestsGlobal,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"move",moveCommand,3,
-     "write fast @keyspace",
-     0,NULL,NULL,SWAP_NOP,0,1,1,1,0,0,0},
+     "write fast @keyspace @swap_keyspace",
+     0,NULL,getKeyRequestsMove,SWAP_IN,SWAP_IN_DEL,1,1,1,0,0,0},
 
     {"copy",copyCommand,-3,
      "write use-memory @keyspace @swap_keyspace",

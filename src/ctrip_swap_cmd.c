@@ -1308,6 +1308,13 @@ int getKeyRequestsMemory(int dbid, struct redisCommand *cmd, robj **argv,
     }
 }
 
+int getKeyRequestsMove(int dbid, struct redisCommand *cmd, robj **argv,
+                         int argc, struct getKeyRequestsResult *result) {
+    UNUSED(argc);
+    getKeyRequestsSingleKey(result,argv[1],cmd->intention,cmd->intention_flags,cmd->flags | CMD_SWAP_DATATYPE_KEYSPACE,dbid);
+    return 0;
+}
+
 #ifdef REDIS_TEST
 
 void rewriteResetClientCommandCString(client *c, int argc, ...) {

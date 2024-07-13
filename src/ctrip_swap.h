@@ -315,7 +315,7 @@ int getKeyRequestsBitField(int dbid, struct redisCommand *cmd, robj **argv, int 
 
 int getKeyRequestsMemory(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 
-int getKeyRequestsMemory(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+int getKeyRequestsMove(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 
 #define GET_KEYREQUESTS_RESULT_INIT { {{0}}, NULL, NULL, 0, MAX_KEYREQUESTS_BUFFER}
 

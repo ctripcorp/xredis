@@ -1318,12 +1318,20 @@ void moveCommand(client *c) {
     }
     expire = getExpire(c->db,c->argv[1]);
 
-    /* Return zero if the key already exists in the target DB */
-    if (lookupKeyWrite(dst,c->argv[1]) != NULL) {
+    /* Return zero if the key or meta already exist in the target DB */
+    if (lookupKeyWrite(dst,c->argv[1]) != NULL || lookupMeta(dst, c->argv[1]) != NULL) {
         addReply(c,shared.czero);
         return;
     }
+
     dbAdd(dst,c->argv[1],o);
+
+    objectMeta *om = lookupMeta(src, c->argv[1]);
+    if (om != NULL) {
+        objectMeta *dst_om = dupObjectMeta(om);
+        dbAddMeta(dst,c->argv[1],dst_om);
+    }
+
     if (expire != -1) setExpire(c,dst,c->argv[1],expire);
     incrRefCount(o);
 
