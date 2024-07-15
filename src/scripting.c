@@ -587,9 +587,20 @@ int luaRedisGenericCommand(lua_State *lua, int raise_error) {
         return raise_error ? luaRaiseError(lua) : 1;
     }
 
+    robj** cmtArgv = NULL;
+    if ((strstr(argv[0]->ptr, "/*") != NULL) &&
+         (processComment(NULL, &argc, &argv, &cmtArgv, IS_LUA) != C_OK)) {
+        luaPushError(lua,
+            "Lua redis() comment format error");
+        inuse--;
+        return raise_error ? luaRaiseError(lua) : 1;
+    } else {
+
+    }
+
     /* Setup our fake client for command execution */
     c->argv = argv;
-    c->cmtArgv = NULL;
+    c->cmtArgv = cmtArgv;
     c->argc = argc;
     c->user = server.lua_caller->user;
 
@@ -812,6 +823,7 @@ int luaRedisGenericCommand(lua_State *lua, int raise_error) {
     c->reply_bytes = 0;
 
 cleanup:
+    restoreCommentArgv(c);
     /* Clean up. Command code may have changed argv/argc so we use the
      * argv/argc of the client instead of the local variables. */
     for (j = 0; j < c->argc; j++) {
@@ -836,7 +848,6 @@ cleanup:
     }
 
     if (c->argv != argv) {
-        restoreCommentArgv(c);
         zfree(c->argv);
         argv = NULL;
         argv_size = 0;
