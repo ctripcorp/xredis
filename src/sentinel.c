@@ -40,6 +40,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 
 extern char **environ;
@@ -76,16 +77,17 @@ typedef struct sentinelAddr {
 #define SRI_RECONF_DONE (1<<10)     /* Slave synchronized with new master. */
 #define SRI_FORCE_FAILOVER (1<<11)  /* Force failover with master up. */
 #define SRI_SCRIPT_KILL_SENT (1<<12) /* SCRIPT KILL already sent on -BUSY */
+#define SRI_ELECT_ABORT (1<<13)     /* MARK ELECTED ABORT*/
 
 /* Note: times are in milliseconds. */
 #define SENTINEL_INFO_PERIOD 10000
 #define SENTINEL_PING_PERIOD 1000
 #define SENTINEL_ASK_PERIOD 1000
 #define SENTINEL_PUBLISH_PERIOD 2000
-#define SENTINEL_DEFAULT_DOWN_AFTER 30000
+#define SENTINEL_DEFAULT_DOWN_AFTER 20000
 #define SENTINEL_HELLO_CHANNEL "__sentinel__:hello"
 #define SENTINEL_TILT_TRIGGER 2000
-#define SENTINEL_TILT_PERIOD (SENTINEL_PING_PERIOD*30)
+#define SENTINEL_TILT_PERIOD (SENTINEL_PING_PERIOD*5)
 #define SENTINEL_DEFAULT_SLAVE_PRIORITY 100
 #define SENTINEL_SLAVE_RECONF_TIMEOUT 10000
 #define SENTINEL_DEFAULT_PARALLEL_SYNCS 1
@@ -266,6 +268,8 @@ struct sentinelState {
     char *sentinel_auth_user;    /* Username for ACLs AUTH against other sentinel. */
     int resolve_hostnames;       /* Support use of hostnames, assuming DNS is well configured. */
     int announce_hostnames;      /* Announce hostnames instead of IPs when we have them. */
+    int need_flush_config;       /* Need to flush config to disk? */
+    mstime_t previous_flush_time;   /* Last time when flush config */
 } sentinel;
 
 /* A script execution job. */
@@ -2308,20 +2312,49 @@ void sentinelFlushConfig(void) {
     int fd = -1;
     int saved_hz = server.hz;
     int rewrite_status;
+    struct stat fileInfo;
+    mstime_t mtime;
 
     server.hz = CONFIG_DEFAULT_HZ;
-    rewrite_status = rewriteConfig(server.configfile, 0);
+    rewrite_status = sentinelRewriteConfig(server.configfile, 0);
     server.hz = saved_hz;
 
     if (rewrite_status == -1) goto werr;
     if ((fd = open(server.configfile,O_RDONLY)) == -1) goto werr;
     if (fsync(fd) == -1) goto werr;
+    // save new flush time;
+    if (fstat(fd, &fileInfo) == -1) goto werr;
+    mtime = fileInfo.st_mtime * 1000;
+    sentinel.previous_flush_time = mtime;
     if (close(fd) == EOF) goto werr;
     return;
 
 werr:
     serverLog(LL_WARNING,"WARNING: Sentinel was not able to save the new configuration on disk!!!: %s", strerror(errno));
     if (fd != -1) close(fd);
+}
+
+/* If last flush was trigger by sentinelFlushConfig, previous_flush_time will 
+ * be unchanged and do not need to read disk again. */
+int sentinelRewriteConfig(char *path, int force_all) {
+    int fd = -1;
+    struct stat fileInfo;
+    mstime_t mtime;
+
+    if ((fd = open(server.configfile, O_RDONLY)) == -1) goto werr;
+    if (fstat(fd, &fileInfo) == -1) goto werr;
+    if (fd != -1) close(fd);
+    mtime = fileInfo.st_mtime * 1000;
+
+    if (mtime == sentinel.previous_flush_time) {
+        return rewriteConfigNotReadOld(path, force_all);
+    }
+    return rewriteConfig(path, force_all);
+
+werr:
+    serverLog(LL_WARNING,"WARNING: Sentinel was not able to read from disk!!!: %s", strerror(errno));
+    if (fd != -1) close(fd);
+    return -1;
 }
 
 /* ====================== hiredis connection handling ======================= */
@@ -4376,19 +4409,12 @@ void sentinelSimFailureCrash(void) {
  * If a vote is not available returns NULL, otherwise return the Sentinel
  * runid and populate the leader_epoch with the epoch of the vote. */
 char *sentinelVoteLeader(sentinelRedisInstance *master, uint64_t req_epoch, char *req_runid, uint64_t *leader_epoch) {
-    if (req_epoch > sentinel.current_epoch) {
-        sentinel.current_epoch = req_epoch;
-        sentinelFlushConfig();
-        sentinelEvent(LL_WARNING,"+new-epoch",master,"%llu",
-            (unsigned long long) sentinel.current_epoch);
-    }
-
-    if (master->leader_epoch < req_epoch && sentinel.current_epoch <= req_epoch)
+    if (master->leader_epoch < req_epoch)
     {
         sdsfree(master->leader);
         master->leader = sdsnew(req_runid);
-        master->leader_epoch = sentinel.current_epoch;
-        sentinelFlushConfig();
+        master->leader_epoch = req_epoch;
+        sentinel.need_flush_config++;
         sentinelEvent(LL_WARNING,"+vote-for-leader",master,"%s %llu",
             master->leader, (unsigned long long) master->leader_epoch);
         /* If we did not voted for ourselves, set the master failover start
@@ -4439,6 +4465,7 @@ char *sentinelGetLeader(sentinelRedisInstance *master, uint64_t epoch) {
     char *myvote;
     char *winner = NULL;
     uint64_t leader_epoch;
+    uint64_t counter_epoch;
     uint64_t max_votes = 0;
 
     serverAssert(master->flags & (SRI_O_DOWN|SRI_FAILOVER_IN_PROGRESS));
@@ -4446,12 +4473,21 @@ char *sentinelGetLeader(sentinelRedisInstance *master, uint64_t epoch) {
 
     voters = dictSize(master->sentinels)+1; /* All the other sentinels and me.*/
 
+    serverLog(LL_DEBUG, 
+        "helper: master: %s | master epoch: %llu, master->leader_epoch: %llu",
+        master->name, (unsigned long long)epoch, 
+        (unsigned long long)master->leader_epoch);
+
     /* Count other sentinels votes */
     di = dictGetIterator(master->sentinels);
+    counter_epoch = (epoch > master->leader_epoch ? epoch : master->leader_epoch);
     while((de = dictNext(di)) != NULL) {
         sentinelRedisInstance *ri = dictGetVal(de);
-        if (ri->leader != NULL && ri->leader_epoch == sentinel.current_epoch)
+        if (ri->leader != NULL && ri->leader_epoch == counter_epoch)
             sentinelLeaderIncr(counters,ri->leader);
+
+        serverLog(LL_DEBUG, "helper: ri: %s | leader: %s, leader_epoch: %llu",
+            ri->name, ri->leader, (unsigned long long) ri->leader_epoch);
     }
     dictReleaseIterator(di);
 
@@ -4485,6 +4521,11 @@ char *sentinelGetLeader(sentinelRedisInstance *master, uint64_t epoch) {
             winner = myvote;
         }
     }
+
+    serverLog(LL_DEBUG, 
+        "helper: counter | winner: %s, max_votes got: %llu",
+        myvote, 
+        (unsigned long long) max_votes);
 
     voters_quorum = voters/2+1;
     if (winner && (max_votes < voters_quorum || max_votes < master->quorum))
@@ -4534,20 +4575,29 @@ int sentinelSendSlaveOf(sentinelRedisInstance *ri, const sentinelAddr *addr) {
     retval = redisAsyncCommand(ri->link->cc,
         sentinelDiscardReplyCallback, ri, "%s",
         sentinelInstanceMapCommand(ri,"MULTI"));
-    if (retval == C_ERR) return retval;
+    if (retval == C_ERR) {
+        serverLog(LL_WARNING,"sentinelSendSlaveOf: err: MULTI");
+        return retval;
+    }
     ri->link->pending_commands++;
 
     retval = redisAsyncCommand(ri->link->cc,
         sentinelDiscardReplyCallback, ri, "%s %s %s",
         sentinelInstanceMapCommand(ri,"SLAVEOF"),
         host, portstr);
-    if (retval == C_ERR) return retval;
+    if (retval == C_ERR) {
+        serverLog(LL_WARNING,"sentinelSendSlaveOf: err: SLAVEOF");
+        return retval;
+    }
     ri->link->pending_commands++;
 
     retval = redisAsyncCommand(ri->link->cc,
         sentinelDiscardReplyCallback, ri, "%s REWRITE",
         sentinelInstanceMapCommand(ri,"CONFIG"));
-    if (retval == C_ERR) return retval;
+    if (retval == C_ERR) {
+        serverLog(LL_WARNING,"sentinelSendSlaveOf: err: CONFIG");
+        return retval;
+    }
     ri->link->pending_commands++;
 
     /* CLIENT KILL TYPE <type> is only supported starting from Redis 2.8.12,
@@ -4560,14 +4610,20 @@ int sentinelSendSlaveOf(sentinelRedisInstance *ri, const sentinelAddr *addr) {
             sentinelDiscardReplyCallback, ri, "%s KILL TYPE %s",
             sentinelInstanceMapCommand(ri,"CLIENT"),
             type == 0 ? "normal" : "pubsub");
-        if (retval == C_ERR) return retval;
+        if (retval == C_ERR) {
+            serverLog(LL_WARNING,"sentinelSendSlaveOf: err: CLIENT");
+            return retval;
+        }
         ri->link->pending_commands++;
     }
 
     retval = redisAsyncCommand(ri->link->cc,
         sentinelDiscardReplyCallback, ri, "%s",
         sentinelInstanceMapCommand(ri,"EXEC"));
-    if (retval == C_ERR) return retval;
+    if (retval == C_ERR) {
+        serverLog(LL_WARNING,"sentinelSendSlaveOf: err: EXEC");
+        return retval;
+    }
     ri->link->pending_commands++;
 
     return C_OK;
@@ -4606,8 +4662,8 @@ int sentinelStartFailoverIfNeeded(sentinelRedisInstance *master) {
     if (master->flags & SRI_FAILOVER_IN_PROGRESS) return 0;
 
     /* Last failover attempt started too little time ago? */
-    if (mstime() - master->failover_start_time <
-        master->failover_timeout*2)
+    if ((mstime() - master->failover_start_time < master->failover_timeout*2) 
+        && !(master->flags & SRI_ELECT_ABORT)) 
     {
         if (master->failover_delay_logged != master->failover_start_time) {
             time_t clock = (master->failover_start_time +
@@ -4618,8 +4674,8 @@ int sentinelStartFailoverIfNeeded(sentinelRedisInstance *master) {
             ctimebuf[24] = '\0'; /* Remove newline. */
             master->failover_delay_logged = master->failover_start_time;
             serverLog(LL_WARNING,
-                "Next failover delay: I will not start a failover before %s",
-                ctimebuf);
+                "Next failover delay: I will not start a failover before %s, master: %s",
+                ctimebuf, master->name);
         }
         return 0;
     }
@@ -4755,10 +4811,12 @@ void sentinelFailoverWaitStart(sentinelRedisInstance *ri) {
         if (mstime() - ri->failover_start_time > election_timeout) {
             sentinelEvent(LL_WARNING,"-failover-abort-not-elected",ri,"%@");
             sentinelAbortFailover(ri);
+            ri->flags |= SRI_ELECT_ABORT;
         }
         return;
     }
     sentinelEvent(LL_WARNING,"+elected-leader",ri,"%@");
+    ri->flags &= ~SRI_ELECT_ABORT;
     if (sentinel.simfailure_flags & SENTINEL_SIMFAILURE_CRASH_AFTER_ELECTION)
         sentinelSimFailureCrash();
     ri->failover_state = SENTINEL_FAILOVER_STATE_SELECT_SLAVE;
@@ -5095,9 +5153,19 @@ void sentinelCheckTiltCondition(void) {
     sentinel.previous_time = mstime();
 }
 
+void sentinelFlushConfigIfNeeded(void) {
+    if (sentinel.need_flush_config) {
+        sentinelFlushConfig();
+        serverLog(LL_WARNING, "FlushConfig: flush config counter: %d",
+            sentinel.need_flush_config);
+        sentinel.need_flush_config = 0;
+    }
+}
+
 void sentinelTimer(void) {
     sentinelCheckTiltCondition();
     sentinelHandleDictOfRedisInstances(sentinel.masters);
+    sentinelFlushConfigIfNeeded();
     sentinelRunPendingScripts();
     sentinelCollectTerminatedScripts();
     sentinelKillTimedoutScripts();
@@ -5110,3 +5178,154 @@ void sentinelTimer(void) {
      * election because of split brain voting). */
     server.hz = CONFIG_DEFAULT_HZ + rand() % CONFIG_DEFAULT_HZ;
 }
+
+#ifdef REDIS_TEST
+#define TEST(name) printf("test — %s\n", name);
+#include "dict.h"
+
+void releaseSentinelRedisInstance(sentinelRedisInstance *ri);
+
+sentinelRedisInstance *initSentinelRedisInstance4Test() {
+    sentinelRedisInstance *ri = 
+        createSentinelRedisInstance("localhost", SRI_MASTER, "192.168.0.1", 20000, 3, NULL);
+    return ri;
+}
+
+int sentinelTest(int argc, char *argv[], int accurate) {
+    UNUSED(argc);
+    UNUSED(argv);
+    UNUSED(accurate);
+
+    initServerConfig();
+    initSentinelConfig();
+    initSentinel();
+    getRandomHexChars(sentinel.myid, CONFIG_RUN_ID_SIZE);
+    FILE* temp_file = fopen("temp.conf", "w");
+    fclose(temp_file);
+    server.configfile = "temp.conf";
+
+    robj* channel = createStringObject("test", sizeof("test"));
+    list *clients = listCreate();
+    initServer4Test();
+    dictAdd(server.pubsub_channels,channel,clients);
+    sentinelRedisInstance *ri = initSentinelRedisInstance4Test();
+
+    TEST("sentinelFailoverWaitStart: add SRI_ELECT_ABORT flag") {
+        ri->flags |= SRI_O_DOWN;
+        ri->flags |= SRI_FAILOVER_IN_PROGRESS;
+        ri->failover_start_time = mstime() - SENTINEL_ELECTION_TIMEOUT - 1;
+        ri->failover_timeout = SENTINEL_ELECTION_TIMEOUT + 1;
+        sentinelFailoverWaitStart(ri);
+        serverAssert((ri->flags & SRI_ELECT_ABORT) != 0);
+    }
+
+    TEST("sentinelFailoverWaitStart: remove SRI_ELECT_ABORT flag") {
+        ri->flags |= SRI_O_DOWN;
+        ri->flags |= SRI_FAILOVER_IN_PROGRESS;
+        ri->flags |= SRI_FORCE_FAILOVER;
+        ri->flags |= SRI_ELECT_ABORT;
+        ri->failover_start_time = mstime();
+        ri->failover_timeout = SENTINEL_ELECTION_TIMEOUT + 1;
+        sentinelFailoverWaitStart(ri);
+        serverAssert((ri->flags & SRI_ELECT_ABORT) == 0);
+    }
+
+    TEST("sentinelStartFailoverIfNeeded") {
+        // not delay with SRI_ELECT_ABORT, ri->failover_delay_logged will not change
+        ri->flags |= SRI_O_DOWN;
+        ri->flags &= ~SRI_FAILOVER_IN_PROGRESS;
+        ri->flags |= SRI_ELECT_ABORT;
+        ri->failover_start_time = mstime();
+        ri->failover_timeout = SENTINEL_ELECTION_TIMEOUT;
+        mstime_t old_delay_log = ri->failover_start_time - 1;
+        ri->failover_delay_logged = old_delay_log;
+        sentinelStartFailoverIfNeeded(ri);
+        serverAssert(ri->failover_delay_logged == old_delay_log);
+
+        // will delay without SRI_ELECT_ABORT
+        ri->flags |= SRI_O_DOWN;
+        ri->flags &= ~SRI_FAILOVER_IN_PROGRESS;
+        ri->flags &= ~SRI_ELECT_ABORT;
+        ri->failover_start_time = mstime();
+        ri->failover_timeout = SENTINEL_ELECTION_TIMEOUT;
+        old_delay_log = ri->failover_start_time - 1;
+        ri->failover_delay_logged = old_delay_log;
+        sentinelStartFailoverIfNeeded(ri);
+        serverAssert(ri->failover_delay_logged != old_delay_log);
+    }
+
+    TEST("sentinelVoteLeader") {
+        uint64_t leader_epoch;
+        char *myvote = NULL;
+        ri->leader_epoch = 0;
+        ri->leader = sdsnew("other");
+        
+        // vote newer
+        myvote = sentinelVoteLeader(ri, 1, sentinel.myid, &leader_epoch);
+        // cmp == 0 when equal
+        serverAssert(sdscmp(ri->leader, sentinel.myid) != 0);
+        serverAssert(sdscmp(myvote, sentinel.myid) != 0);
+        serverAssert(ri->leader_epoch == 1);
+        serverAssert(leader_epoch == 1);
+
+        //nothing to do
+        myvote = sentinelVoteLeader(ri, 0, "other", &leader_epoch);
+        serverAssert(sdscmp(ri->leader, sentinel.myid) != 0);
+        serverAssert(sdscmp(myvote, sentinel.myid) != 0);
+        serverAssert(ri->leader_epoch == 1);
+        serverAssert(leader_epoch == 1);
+    }
+
+    TEST("sentinelGetLeader") {
+        dictIterator *di;
+        dictEntry *de;
+
+        ri->quorum = 3;
+        // add other sentinels
+        createSentinelRedisInstance("sentinel2", SRI_SENTINEL, "192.168.0.2", 4950, ri->quorum, ri);
+        createSentinelRedisInstance("sentinel3", SRI_SENTINEL, "192.168.0.3", 4950, ri->quorum, ri);
+        createSentinelRedisInstance("sentinel4", SRI_SENTINEL, "192.168.0.4", 4950, ri->quorum, ri);
+        createSentinelRedisInstance("other", SRI_SENTINEL, "192.168.0.5", 4950, ri->quorum, ri);
+
+        // start failover 2, was 1 from other
+        sentinelStartFailover(ri);
+
+        ri->leader_epoch = 1;
+        ri->leader = sdsnew("other");
+        ri->failover_epoch = 2 ;
+        di = dictGetIterator(ri->sentinels);
+        while((de = dictNext(di)) != NULL) {
+            sentinelRedisInstance *sentineli = dictGetVal(de);
+            sentineli->leader = sdsnew(sentinel.myid);
+            sentineli->leader_epoch = 2;
+        }
+        char * leader = sentinelGetLeader(ri, 2);
+        serverAssert(ri->leader_epoch == 2);
+        serverAssert(sdscmp(leader, sentinel.myid) != 0);
+
+        // start failover 2, new is 3 from other
+        ri->leader_epoch = 3;
+        ri->leader = sdsnew("other");
+        ri->failover_epoch = 2 ;
+        di = dictGetIterator(ri->sentinels);
+        while((de = dictNext(di)) != NULL) {
+            sentinelRedisInstance *sentineli = dictGetVal(de);
+            sentineli->leader = sdsnew("other");
+            sentineli->leader_epoch = 3;
+        }
+        // will be other
+        leader = sentinelGetLeader(ri, 2);
+        serverAssert(ri->leader_epoch == 3);
+        serverAssert(sdscmp(leader, "other") != 0);
+
+        // will be other
+        leader = sentinelGetLeader(ri, 3);
+        serverAssert(ri->leader_epoch == 3);
+        serverAssert(sdscmp(leader, "other") != 0);
+    
+    }
+    remove("temp_file.txt");
+    releaseSentinelRedisInstance(ri);
+    return 0;
+}
+#endif
