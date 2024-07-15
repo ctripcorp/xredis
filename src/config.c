@@ -1135,6 +1135,18 @@ void rewriteConfigMarkAsProcessed(struct rewriteConfigState *state, const char *
     if (dictAdd(state->rewritten,opt,NULL) != DICT_OK) sdsfree(opt);
 }
 
+/* Init rewriteConfigState */
+struct rewriteConfigState *initRewriteConfigState(void) {
+    struct rewriteConfigState *state = zmalloc(sizeof(*state));
+        state->option_to_line = dictCreate(&optionToLineDictType,NULL);
+        state->rewritten = dictCreate(&optionSetDictType,NULL);
+        state->numlines = 0;
+        state->lines = NULL;
+        state->has_tail = 0;
+        state->force_all = 0;
+    return state;
+}
+
 /* Read the old file, split it into lines to populate a newly created
  * config rewrite state, and return it to the caller.
  *
@@ -1146,13 +1158,7 @@ struct rewriteConfigState *rewriteConfigReadOldFile(char *path) {
 
     char buf[CONFIG_MAX_LINE+1];
     int linenum = -1;
-    struct rewriteConfigState *state = zmalloc(sizeof(*state));
-    state->option_to_line = dictCreate(&optionToLineDictType,NULL);
-    state->rewritten = dictCreate(&optionSetDictType,NULL);
-    state->numlines = 0;
-    state->lines = NULL;
-    state->has_tail = 0;
-    state->force_all = 0;
+    struct rewriteConfigState *state = initRewriteConfigState();
     if (fp == NULL) return state;
 
     /* Read the old file line by line, populate the state. */
@@ -1683,13 +1689,27 @@ cleanup:
  * written. This is currently only used for testing purposes.
  *
  * On error -1 is returned and errno is set accordingly, otherwise 0. */
+
 int rewriteConfig(char *path, int force_all) {
+    return rewriteConfigOptional(path, force_all, 1);
+}
+
+int rewriteConfigNotReadOld(char *path, int force_all) {
+    return rewriteConfigOptional(path, force_all, 0);
+}
+
+int rewriteConfigOptional(char *path, int force_all, int read_old_file) {
     struct rewriteConfigState *state;
     sds newcontent;
     int retval;
 
-    /* Step 1: read the old config into our rewrite state. */
-    if ((state = rewriteConfigReadOldFile(path)) == NULL) return -1;
+    /* Step 1: read the old config into our rewrite state. Or just init state.*/
+    if (read_old_file) {
+        state = rewriteConfigReadOldFile(path); 
+    } else {
+        state = initRewriteConfigState();
+    }
+    if (state == NULL) return -1;
     if (force_all) state->force_all = 1;
 
     /* Step 2: rewrite every single option, replacing or appending it inside

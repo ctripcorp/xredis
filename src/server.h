@@ -2347,6 +2347,8 @@ struct rewriteConfigState; /* Forward declaration to export API. */
 void rewriteConfigRewriteLine(struct rewriteConfigState *state, const char *option, sds line, int force);
 void rewriteConfigMarkAsProcessed(struct rewriteConfigState *state, const char *option);
 int rewriteConfig(char *path, int force_all);
+int rewriteConfigNotReadOld(char *path, int force_all);
+int rewriteConfigOptional(char *path, int force_all, int read_old_file);
 void initConfigValues();
 
 /* db.c -- Keyspace access API */
@@ -2448,6 +2450,12 @@ void queueSentinelConfig(sds *argv, int argc, int linenum, sds line);
 void loadSentinelConfigFromQueue(void);
 void sentinelIsRunning(void);
 void sentinelCheckConfigFile(void);
+int sentinelRewriteConfig(char *path, int force_all);
+#ifdef REDIS_TEST
+int sentinelTest(int argc, char *argv[], int accurate);
+void initServerConfig(void);
+void initServer4Test(void);
+#endif
 
 /* redis-check-rdb & aof */
 int redis_check_rdb(char *rdbfilename, FILE *fp);

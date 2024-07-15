@@ -4733,6 +4733,7 @@ sds genRedisInfoString(const char *section) {
             "# Server\r\n"
             "redis_version:%s\r\n"
             "xredis_version:%s\r\n"
+            "sentinel_version:%s\r\n"
             "redis_git_sha1:%s\r\n"
             "redis_git_dirty:%i\r\n"
             "redis_build_id:%s\r\n"
@@ -4757,6 +4758,7 @@ sds genRedisInfoString(const char *section) {
             "io_threads_active:%i\r\n",
             REDIS_VERSION,
             XREDIS_VERSION,
+            SENTINEL_VERSION,
             redisGitSHA1(),
             strtol(redisGitDirty(),NULL,10) > 0,
             redisBuildIdString(),
@@ -6207,6 +6209,13 @@ int iAmMaster(void) {
 }
 
 #ifdef REDIS_TEST
+void initServer4Test(void) {
+    server.pubsub_channels = dictCreate(&keylistDictType,NULL);
+    server.pubsub_patterns = dictCreate(&keylistDictType,NULL);
+}
+#endif
+
+#ifdef REDIS_TEST
 typedef int redisTestProc(int argc, char **argv, int accurate);
 struct redisTest {
     char *name;
@@ -6223,7 +6232,8 @@ struct redisTest {
     {"crc64", crc64Test},
     {"zmalloc", zmalloc_test},
     {"sds", sdsTest},
-    {"dict", dictTest}
+    {"dict", dictTest},
+    {"sentinel", sentinelTest}
 };
 redisTestProc *getTestProcByName(const char *name) {
     int numtests = sizeof(redisTests)/sizeof(struct redisTest);
