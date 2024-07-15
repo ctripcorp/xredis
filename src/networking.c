@@ -1232,29 +1232,46 @@ void freeClientOriginalArgv(client *c) {
     c->original_argc = 0;
 }
 
-void splitCommentArgv(client *c, bool isComment) {
-    if (isComment) {
-        c->cmtArgv = c->argv[0];
-        c->argv++;
+void splitCommentArgv(client *c, 
+    IN int* argc, IN robj ***argv,
+    OUT robj*** cmtArgv,
+    int isLua) {
+    
+    serverAssert(((isLua & IS_LUA) && c==NULL && argc && argv && cmtArgv) || 
+                ((isLua & NOT_LUA) && c!=NULL && !argc && !argv && !cmtArgv));
+
+    if (isLua & NOT_LUA) {
+        int j;
+        c->cmtArgv = c->argv;
+        serverAssert(&c->argv[1] == c->argv+1);
+        serverAssert(c->cmtArgv == c->argv);
+        c->argv = &c->argv[1];
         c->argc--;
+    } else {
+        int j;
+        *cmtArgv = *argv;
+        serverAssert(*cmtArgv == *argv);
+        *argv = &((*argv)[1]);
+        *argc = *argc-1;
     }
 }
 
-void restoreCommentArgv(client *c) {
-    if (c->cmtArgv) {
+int restoreCommentArgv(client *c) {
+    if (c->cmtArgv != NULL) {
+        int j;
         c->argc++;
-        c->argv--;
+        c->argv = c->cmtArgv;
         c->cmtArgv = NULL;
+        return 1;
     }
+    return 0;
 }
 
 static void freeClientArgv(client *c) {
     restoreCommentArgv(c);
     int j;
-    for (j = 0; j < c->argc; j++) {
-        serverLog(LL_NOTICE, "free c->argv[%d]=%p", j, c->argv[j]->ptr);
+    for (j = 0; j < c->argc; j++)
         decrRefCount(c->argv[j]);
-    }
     c->argc = 0;
     c->cmd = NULL;
     c->argv_len_sum = 0;
@@ -1809,8 +1826,8 @@ int handleClientsWithPendingWrites(void) {
 
 /* resetClient prepare the client to process the next command */
 void resetClient(client *c) {
-
     redisCommandProc *prevcmd = c->cmd ? c->cmd->proc : NULL;
+
     freeClientArgv(c);
     c->reqtype = 0;
     c->multibulklen = 0;
@@ -1873,17 +1890,27 @@ void unprotectClient(client *c) {
     }
 }
 
-int processComment(client *c) {
-    sds comment = (sds)c->argv[0]->ptr;
+int processComment(client *c, 
+    IN int* argc, IN robj ***argv,
+    OUT robj*** cmtArgv,
+    int isLua) {
+    serverAssert(((isLua & IS_LUA) && c==NULL && argc && argv && cmtArgv) || 
+                ((isLua & NOT_LUA) && c!=NULL && !argc && !argv && !cmtArgv));
+    sds comment;
+    if (isLua & NOT_LUA) {
+        comment = (sds)c->argv[0]->ptr;
+    } else {
+        comment = (sds)((*argv)[0]->ptr);
+    }
     int dis_begin, dis_end;
     dis_begin = dis_end = 0;
     sds begin, end;
     begin = end = comment;
-    bool isComment = false;
+    int isComment = 0;
 
     while ((begin = strstr(begin + dis_begin, "/*")) != NULL) {
-        if(isComment == false && begin-comment != 0) goto err;
-        isComment = true;
+        if(isComment == 1 && begin-comment != 0) goto err;
+        isComment = 1;
         end = strstr(comment + dis_end, "*/");
         if (end == NULL || end - begin < 0) goto err;
         dis_begin += begin - comment + strlen("/*");
@@ -1893,12 +1920,10 @@ int processComment(client *c) {
     if (strstr(comment + dis_end, "*/") != NULL) goto err;
     if (isComment && sdslen(comment) != dis_end) goto err;
 
-    splitCommentArgv(c, isComment);
+    if(isComment) splitCommentArgv(c, argc, argv, cmtArgv, isLua);
     return C_OK;
 
 err:
-    addReplyError(c,"Protocol error: wrong format comment");
-    setProtocolError("wrong format comment",c);
     return C_ERR;
 }
 
@@ -1975,7 +2000,6 @@ int processInlineBuffer(client *c) {
     /* Create redis objects for all arguments. */
     for (c->argc = 0, j = 0; j < argc; j++) {
         c->argv[c->argc] = createObject(OBJ_STRING,argv[j]);
-        serverLog(LL_NOTICE, "create c->argv[%d]=%p", j, c->argv[j]->ptr);
         c->argc++;
         c->argv_len_sum += sdslen(argv[j]);
     }
@@ -2071,7 +2095,10 @@ int processMultibulkBuffer(client *c) {
         c->multibulklen = ll;
 
         /* Setup argv array on client structure */
-        if (c->argv) zfree(c->argv);
+        if (c->argv) {
+            restoreCommentArgv(c);
+            zfree(c->argv);
+        }
         c->argv = zmalloc(sizeof(robj*)*c->multibulklen);
         c->argv_len_sum = 0;
     }
@@ -2150,7 +2177,6 @@ int processMultibulkBuffer(client *c) {
                 sdslen(c->querybuf) == (size_t)(c->bulklen+2))
             {
                 c->argv[c->argc++] = createObject(OBJ_STRING,c->querybuf);
-                serverLog(LL_NOTICE, "create c->argv[%d]=%p", c->argc-1, c->argv[c->argc-1]->ptr);
                 c->argv_len_sum += c->bulklen;
                 sdsIncrLen(c->querybuf,-2); /* remove CRLF */
                 /* Assume that if we saw a fat argument we'll see another one
@@ -2160,7 +2186,6 @@ int processMultibulkBuffer(client *c) {
             } else {
                 c->argv[c->argc++] =
                     createStringObject(c->querybuf+c->qb_pos,c->bulklen);
-                serverLog(LL_NOTICE, "create c->argv[%d]=%p", c->argc-1, c->argv[c->argc-1]->ptr);
                 c->argv_len_sum += c->bulklen;
                 c->qb_pos += c->bulklen+2;
             }
@@ -2340,7 +2365,9 @@ void processInputBuffer(client *c) {
                 break;
             }
 
-            if (processComment(c) == C_ERR) {
+            if (processComment(c, NULL, NULL, NULL, NOT_LUA) == C_ERR) {
+                addReplyError(c,"Protocol error: wrong format comment");
+                setProtocolError("wrong format comment",c);
                 return;
             }
 
@@ -2550,7 +2577,9 @@ sds catClientInfoString(sds s, client *client) {
      * i.e. unused sds space and internal fragmentation, just the string length. but this is enough to
      * spot problematic clients. */
     total_mem += client->argv_len_sum;
-    if (client->argv)
+    if (client->cmtArgv)
+        total_mem += zmalloc_size(client->cmtArgv);
+    else
         total_mem += zmalloc_size(client->argv);
 
     return sdscatfmt(s,

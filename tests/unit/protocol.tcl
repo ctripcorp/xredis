@@ -198,6 +198,10 @@ start_server {tags {"protocol network"}} {
         r flush
         assert_equal "0" [r read]
 
+        r write "*3\r\n\$19\r\n/* comment hello */\r\n\$3\r\ndel\r\n\$1\r\nk\r\n"
+        r flush
+        assert_equal "0" [r read]
+
         r write "*3\r\n\$9\r\n/*comment\r\n\$3\r\ndel\r\n\$1\r\nk\r\n"
         r flush
         assert_error "*wrong format comment*" {r read}
@@ -206,6 +210,8 @@ start_server {tags {"protocol network"}} {
     test "Command Comment Test - Inline" {
         set redis_host [srv 0 host]
         set redis_port [srv 0 port]
+        # set redis_host 127.1
+        # set redis_port 6379
 
         set s [socket $redis_host $redis_port]
         fconfigure $s -blocking 0
@@ -215,10 +221,21 @@ start_server {tags {"protocol network"}} {
         after 100
         assert_match [read $s] +OK\n
 
+        set cmd "\"/* comment hello */\" set k v\r\n"
+        puts $s $cmd
+        flush $s
+        after 100
+        assert_match [read $s] +OK\n
+
         puts $s "/*comment*/ del k\r\n"
         flush $s
         after 100
         assert_match [read $s] :1\n
+
+        puts $s "\"/* comment hello */\" del k\r\n"
+        flush $s
+        after 100
+        assert_match [read $s] :0\n
 
         puts -nonewline $s "/*comment del k\r\n"
         flush $s

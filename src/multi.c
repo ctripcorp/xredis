@@ -47,9 +47,18 @@ void freeClientMultiState(client *c) {
         int i;
         multiCmd *mc = c->mstate.commands+j;
 
-        for (i = 0; i < mc->argc; i++)
-            decrRefCount(mc->argv[i]);
-        zfree(mc->argv);
+        if(mc->cmtArgv) {
+            for (i = 0; i < mc->argc+1; i++)
+                decrRefCount(mc->cmtArgv[i]);
+            zfree(mc->cmtArgv);
+            mc->cmtArgv = NULL;
+            mc->argv = NULL;
+        } else {
+            for (i = 0; i < mc->argc; i++)
+                decrRefCount(mc->argv[i]);
+            zfree(mc->argv);
+            mc->argv = NULL;
+        }
         argRewritesFree(mc->swap_arg_rewrites);
         if (mc->swap_cmd) swapCmdTraceFree(mc->swap_cmd);
     }
@@ -74,11 +83,22 @@ void queueMultiCommand(client *c) {
     mc->cmd = c->cmd;
     mc->swap_cmd = NULL;
     mc->argc = c->argc;
-    mc->argv = zmalloc(sizeof(robj*)*c->argc);
+    mc->cmtArgv = NULL;
     mc->swap_arg_rewrites = argRewritesCreate();
-    memcpy(mc->argv,c->argv,sizeof(robj*)*c->argc);
-    for (j = 0; j < c->argc; j++)
-        incrRefCount(mc->argv[j]);
+
+    if(c->cmtArgv) {
+        mc->cmtArgv = zmalloc(sizeof(robj*)*(c->argc+1));
+        memcpy(mc->cmtArgv,c->cmtArgv,sizeof(robj*)*(c->argc+1));
+        mc->argv = &mc->cmtArgv[1];
+        for (j = 0; j < c->argc+1; j++)
+            incrRefCount(mc->cmtArgv[j]);
+    } else {
+        mc->argv = zmalloc(sizeof(robj*)*c->argc);
+        memcpy(mc->argv,c->argv,sizeof(robj*)*c->argc);
+        for (j = 0; j < c->argc; j++)
+            incrRefCount(mc->argv[j]);
+    }
+    
     c->mstate.count++;
     c->mstate.cmd_flags |= c->cmd->flags;
     c->mstate.cmd_inv_flags |= ~c->cmd->flags;
@@ -159,12 +179,21 @@ void execCommandAbort(client *c, sds error) {
     /* Send EXEC to clients waiting data from MONITOR. We did send a MULTI
      * already, and didn't send any of the queued commands, now we'll just send
      * EXEC so it is clear that the transaction is over. */
-    replicationFeedMonitors(c,server.monitors,c->db->id,c->argv,c->argc);
+    if(c->cmtArgv) {
+        robj *cmtArgv[c->argc+1];
+        cmtArgv[0] = *c->cmtArgv;
+        for(int i=0;i<c->argc;i++)
+            cmtArgv[i+1] = c->argv[i];
+        replicationFeedMonitors(c,server.monitors,c->db->id,cmtArgv,c->argc+1);
+    } else {
+        replicationFeedMonitors(c,server.monitors,c->db->id,c->argv,c->argc);
+    }
 }
 
 void execCommand(client *c) {
     int j;
     robj **orig_argv;
+    robj **orig_cmtArgv;
     int orig_argc;
     struct argRewrites *orig_arg_rewrites;
     struct redisCommand *orig_cmd;
@@ -207,6 +236,7 @@ void execCommand(client *c) {
     unwatchAllKeys(c); /* Unwatch ASAP otherwise we'll waste CPU cycles */
 
     server.in_exec = 1;
+    orig_cmtArgv = c->cmtArgv;
 
     orig_argv = c->argv;
     orig_argc = c->argc;
@@ -217,6 +247,8 @@ void execCommand(client *c) {
     for (j = 0; j < c->mstate.count; j++) {
         c->argc = c->mstate.commands[j].argc;
         c->argv = c->mstate.commands[j].argv;
+        if(c->mstate.commands[j].cmtArgv)
+            c->cmtArgv = c->mstate.commands[j].cmtArgv;
         c->swap_arg_rewrites = c->mstate.commands[j].swap_arg_rewrites;
         c->cmd = c->mstate.commands[j].cmd;
         c->swap_cmd = c->mstate.commands[j].swap_cmd;
@@ -257,6 +289,7 @@ void execCommand(client *c) {
         /* Commands may alter argc/argv, restore mstate. */
         c->mstate.commands[j].argc = c->argc;
         c->mstate.commands[j].argv = c->argv;
+        c->mstate.commands[j].cmtArgv = c->cmtArgv;
         c->mstate.commands[j].swap_arg_rewrites = c->swap_arg_rewrites;
         c->mstate.commands[j].cmd = c->cmd;
         c->mstate.commands[j].swap_cmd = c->swap_cmd;
@@ -267,6 +300,7 @@ void execCommand(client *c) {
         c->flags &= ~CLIENT_DENY_BLOCKING;
 
     c->argv = orig_argv;
+    c->cmtArgv = orig_cmtArgv;
     c->argc = orig_argc;
     c->cmd = orig_cmd;
     c->swap_cmd = orig_cmd_trace;
