@@ -1848,8 +1848,14 @@ size_t ClientsPeakMemInput[CLIENTS_PEAK_MEM_USAGE_SLOTS] = {0};
 size_t ClientsPeakMemOutput[CLIENTS_PEAK_MEM_USAGE_SLOTS] = {0};
 
 int clientsCronTrackExpansiveClients(client *c, int time_idx) {
+    size_t agrv_usage;
+    if (c->cmtArgv) {
+        robj** argv = c->argv-1;
+        agrv_usage = zmalloc_size(argv);
+    } else
+        agrv_usage = (c->argv ? zmalloc_size(c->argv) : 0);
     size_t in_usage = sdsZmallocSize(c->querybuf) + c->argv_len_sum +
-	              (c->argv ? zmalloc_size(c->argv) : 0);
+	              agrv_usage;
     size_t out_usage = getClientOutputBufferMemoryUsage(c);
 
     /* Track the biggest values observed so far in this slot. */
@@ -1871,7 +1877,12 @@ int clientsCronTrackClientsMemUsage(client *c) {
     mem += sdsZmallocSize(c->querybuf);
     mem += zmalloc_size(c);
     mem += c->argv_len_sum;
-    if (c->argv) mem += zmalloc_size(c->argv);
+    if(c->cmtArgv) {
+        robj** argv = c->argv-1;
+        mem += zmalloc_size(argv);
+    } else if (c->argv) {
+        mem += zmalloc_size(c->argv);
+    }
     /* Now that we have the memory used by the client, remove the old
      * value from the old category, and add it back. */
     server.stat_clients_type_memory[c->client_cron_last_memory_type] -=

@@ -48,9 +48,11 @@ void freeClientMultiState(client *c) {
         multiCmd *mc = c->mstate.commands+j;
 
         if(mc->cmtArgv) {
+            mc->argv--;
+            serverAssert(mc->argv[0] == mc->cmtArgv);
             for (i = 0; i < mc->argc+1; i++)
-                decrRefCount(mc->cmtArgv[i]);
-            zfree(mc->cmtArgv);
+                decrRefCount(mc->argv[i]);
+            zfree(mc->argv);
             mc->cmtArgv = NULL;
             mc->argv = NULL;
         } else {
@@ -87,11 +89,13 @@ void queueMultiCommand(client *c) {
     mc->swap_arg_rewrites = argRewritesCreate();
 
     if(c->cmtArgv) {
-        mc->cmtArgv = zmalloc(sizeof(robj*)*(c->argc+1));
-        memcpy(mc->cmtArgv,c->cmtArgv,sizeof(robj*)*(c->argc+1));
-        mc->argv = &mc->cmtArgv[1];
+        mc->argv = zmalloc(sizeof(robj*)*(c->argc+1));
+        robj** argv = c->argv-1;
+        memcpy(mc->argv,argv,sizeof(robj*)*(c->argc+1));
         for (j = 0; j < c->argc+1; j++)
-            incrRefCount(mc->cmtArgv[j]);
+            incrRefCount(mc->argv[j]);
+        mc->cmtArgv = mc->argv[0];
+        mc->argv++;
     } else {
         mc->argv = zmalloc(sizeof(robj*)*c->argc);
         memcpy(mc->argv,c->argv,sizeof(robj*)*c->argc);
@@ -181,7 +185,7 @@ void execCommandAbort(client *c, sds error) {
      * EXEC so it is clear that the transaction is over. */
     if(c->cmtArgv) {
         robj *cmtArgv[c->argc+1];
-        cmtArgv[0] = *c->cmtArgv;
+        cmtArgv[0] = c->cmtArgv;
         for(int i=0;i<c->argc;i++)
             cmtArgv[i+1] = c->argv[i];
         replicationFeedMonitors(c,server.monitors,c->db->id,cmtArgv,c->argc+1);
@@ -193,7 +197,7 @@ void execCommandAbort(client *c, sds error) {
 void execCommand(client *c) {
     int j;
     robj **orig_argv;
-    robj **orig_cmtArgv;
+    robj *orig_cmtArgv;
     int orig_argc;
     struct argRewrites *orig_arg_rewrites;
     struct redisCommand *orig_cmd;

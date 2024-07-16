@@ -1232,35 +1232,19 @@ void freeClientOriginalArgv(client *c) {
     c->original_argc = 0;
 }
 
-void splitCommentArgv(client *c, 
-    IN int* argc, IN robj ***argv,
-    OUT robj*** cmtArgv,
-    int isLua) {
-    
-    serverAssert(((isLua & IS_LUA) && c==NULL && argc && argv && cmtArgv) || 
-                ((isLua & NOT_LUA) && c!=NULL && !argc && !argv && !cmtArgv));
-
-    if (isLua & NOT_LUA) {
-        int j;
-        c->cmtArgv = c->argv;
-        serverAssert(&c->argv[1] == c->argv+1);
-        serverAssert(c->cmtArgv == c->argv);
-        c->argv = &c->argv[1];
-        c->argc--;
-    } else {
-        int j;
-        *cmtArgv = *argv;
-        serverAssert(*cmtArgv == *argv);
-        *argv = &((*argv)[1]);
-        *argc = *argc-1;
-    }
+void splitCommentArgv(client *c) {
+    c->cmtArgv = c->argv[0];
+    serverAssert(&c->argv[1] == c->argv+1);
+    serverAssert(c->cmtArgv == c->argv[0]);
+    c->argv++;
+    c->argc--;
 }
 
 int restoreCommentArgv(client *c) {
     if (c->cmtArgv != NULL) {
-        int j;
         c->argc++;
-        c->argv = c->cmtArgv;
+        c->argv--;
+        serverAssert(c->argv[0] == c->cmtArgv);
         c->cmtArgv = NULL;
         return 1;
     }
@@ -1890,18 +1874,8 @@ void unprotectClient(client *c) {
     }
 }
 
-int processComment(client *c, 
-    IN int* argc, IN robj ***argv,
-    OUT robj*** cmtArgv,
-    int isLua) {
-    serverAssert(((isLua & IS_LUA) && c==NULL && argc && argv && cmtArgv) || 
-                ((isLua & NOT_LUA) && c!=NULL && !argc && !argv && !cmtArgv));
-    sds comment;
-    if (isLua & NOT_LUA) {
-        comment = (sds)c->argv[0]->ptr;
-    } else {
-        comment = (sds)((*argv)[0]->ptr);
-    }
+int processComment(client *c) {
+    sds comment = (sds)c->argv[0]->ptr;
     int dis_begin, dis_end;
     dis_begin = dis_end = 0;
     sds begin, end;
@@ -1909,7 +1883,7 @@ int processComment(client *c,
     int isComment = 0;
 
     while ((begin = strstr(begin + dis_begin, "/*")) != NULL) {
-        if(isComment == 1 && begin-comment != 0) goto err;
+        if(!isComment && begin-comment != 0) goto err;
         isComment = 1;
         end = strstr(comment + dis_end, "*/");
         if (end == NULL || end - begin < 0) goto err;
@@ -1920,7 +1894,7 @@ int processComment(client *c,
     if (strstr(comment + dis_end, "*/") != NULL) goto err;
     if (isComment && sdslen(comment) != dis_end) goto err;
 
-    if(isComment) splitCommentArgv(c, argc, argv, cmtArgv, isLua);
+    if(isComment) splitCommentArgv(c);
     return C_OK;
 
 err:
@@ -2365,7 +2339,7 @@ void processInputBuffer(client *c) {
                 break;
             }
 
-            if (processComment(c, NULL, NULL, NULL, NOT_LUA) == C_ERR) {
+            if (processComment(c) == C_ERR) {
                 addReplyError(c,"Protocol error: wrong format comment");
                 setProtocolError("wrong format comment",c);
                 return;

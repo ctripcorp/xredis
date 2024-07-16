@@ -587,22 +587,17 @@ int luaRedisGenericCommand(lua_State *lua, int raise_error) {
         return raise_error ? luaRaiseError(lua) : 1;
     }
 
-    robj** cmtArgv = NULL;
-    if ((strstr(argv[0]->ptr, "/*") != NULL) &&
-         (processComment(NULL, &argc, &argv, &cmtArgv, IS_LUA) != C_OK)) {
+    /* Setup our fake client for command execution */
+    c->argv = argv;
+    c->argc = argc;
+    c->user = server.lua_caller->user;
+
+    if (processComment(c) != C_OK) {
         luaPushError(lua,
             "Lua redis() comment format error");
         inuse--;
         return raise_error ? luaRaiseError(lua) : 1;
-    } else {
-
     }
-
-    /* Setup our fake client for command execution */
-    c->argv = argv;
-    c->cmtArgv = cmtArgv;
-    c->argc = argc;
-    c->user = server.lua_caller->user;
 
     /* Process module hooks */
     moduleCallCommandFilters(c);
