@@ -589,8 +589,8 @@ static inline int swapObjectMetaIsHot(swapObjectMeta *som) {
 /* bitmap marker */
 objectMeta *createBitmapObjectMarker();
 int bitmapObjectMetaIsMarker(objectMeta *object_meta);
-void bitmapSetObjectMarkerIfNeeded(redisDb *db, robj *key);
-void bitmapClearObjectMarkerIfNeeded(redisDb *db, robj *key);
+int bitmapSetObjectMarkerIfNotExist(redisDb *db, robj *key);
+int bitmapClearObjectMarkerIfExist(redisDb *db, robj *key);
 void bitmapMetaTransToMarkerIfNeeded(objectMeta *object_meta);
 void bitmapMarkerTransToMetaIfNeeded(objectMeta *object_meta, robj *value);
 

@@ -1262,18 +1262,22 @@ int bitmapObjectMetaIsMarker(objectMeta *object_meta) {
     return NULL == objectMetaGetPtr(object_meta);
 }
 
-void bitmapSetObjectMarkerIfNeeded(redisDb *db, robj *key) {
+int bitmapSetObjectMarkerIfNotExist(redisDb *db, robj *key) {
     objectMeta *object_meta = lookupMeta(db,key);
     if (object_meta == NULL) {
         dbAddMeta(db,key,createBitmapObjectMarker());
+        return 1;
     }
+    return 0;
 }
 
-void bitmapClearObjectMarkerIfNeeded(redisDb *db, robj *key) {
+int bitmapClearObjectMarkerIfExist(redisDb *db, robj *key) {
     objectMeta *object_meta = lookupMeta(db,key);
     if (object_meta && bitmapObjectMetaIsMarker(object_meta)) {
         dbDeleteMeta(db,key);
+        return 1;
     }
+    return 0;
 }
 
 void bitmapMetaTransToMarkerIfNeeded(objectMeta *object_meta) {
@@ -1308,8 +1312,8 @@ int bitmapBeforeCall(swapData *data, keyRequest *key_request, client *c,
     if (key_request && (key_request->cmd_flags & CMD_SWAP_DATATYPE_STRING ||
         ((key_request->cmd_flags & CMD_SWAP_DATATYPE_SET) && (key_request->cmd_flags & CMD_SWAP_DATATYPE_KEYSPACE)) ||
         ((key_request->cmd_flags & CMD_SWAP_DATATYPE_ZSET) && (key_request->cmd_flags & CMD_SWAP_DATATYPE_KEYSPACE)))) {
-        bitmapClearObjectMarkerIfNeeded(data->db,data->key);
-        if (key_request->cmd_flags & CMD_SWAP_DATATYPE_STRING) {
+        int res = bitmapClearObjectMarkerIfExist(data->db,data->key);
+        if (key_request->cmd_flags & CMD_SWAP_DATATYPE_STRING && res) {
             atomicIncr(server.swap_bitmap_switched_to_string_count, 1);
         }
         return 0;
@@ -2029,6 +2033,8 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
     initServerConfig();
     ACLInit();
     server.hz = 10;
+    server.swap_mode = SWAP_MODE_DISK;
+    server.swap_bitmap_subkeys_enabled = 1;
     initTestRedisServer();
 
     redisDb* db = server.db + 0;
@@ -2360,11 +2366,11 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
 
         dbAdd(db, tmp_key, tmp_value);
 
-        bitmapSetObjectMarkerIfNeeded(db, tmp_key);
+        bitmapSetObjectMarkerIfNotExist(db, tmp_key);
         objectMeta *object_meta = lookupMeta(db,tmp_key);
         test_assert(object_meta->swap_type == SWAP_TYPE_BITMAP);
 
-        bitmapClearObjectMarkerIfNeeded(db, tmp_key);
+        bitmapClearObjectMarkerIfExist(db, tmp_key);
 
         test_assert(lookupMeta(db,tmp_key) == NULL);
 
