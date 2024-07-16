@@ -1,4 +1,13 @@
 ================================================================================
+ror-1.4.1 Released Tue July 16 00:00:00 CST 2024
+================================================================================
+* [new] bitmap supports turn on/off by swap-bitmap-subkeys-enabled.
+* [fix] bitmap self-describing subkey_size.
+* [opt] bitmap supports memory usage.
+* [opt] list crash due to var_arg type not match.
+* [fix] ratelimit not effective.
+
+================================================================================
 ror-1.4.0 Released Fri June 7 00:00:00 CST 2024
 ================================================================================
 * [new] support bitmap.
