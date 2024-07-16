@@ -1820,6 +1820,7 @@ struct redisServer {
     redisAtomic unsigned long long swap_bitmap_switched_to_string_count;
     redisAtomic unsigned long long swap_string_switched_to_bitmap_count;
     int swap_rdb_bitmap_encode_enabled;
+    int swap_bitmap_subkeys_enabled;
 
     /* swap eviction */
     int swap_evict_inprogress_limit;

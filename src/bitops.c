@@ -473,6 +473,31 @@ int getBitfieldTypeFromArgument(client *c, robj *o, int *sign, int *bits) {
     return C_OK;
 }
 
+static robj* ctripCreateBitmap(redisDb *db, robj *key, size_t byte) {
+
+    robj *o = createObject(OBJ_STRING,sdsnewlen(NULL, byte));
+    dbAdd(db,key,o);
+    if (server.swap_mode == SWAP_MODE_DISK && server.swap_bitmap_subkeys_enabled) {
+        /* bitmap is not processed as whole string, 
+        so add meta to distinguish between bitmap and string types. */
+        dbAddMeta(db,key,createBitmapObjectMarker());
+    }
+    return o;
+}
+
+static void ctripGrowBitmap(redisDb *db, robj *key, robj *o, size_t byte) {
+    objectMeta *om = lookupMeta(db,key);
+    metaBitmap meta_bitmap;
+    if (om != NULL) {
+        serverAssert(om->swap_type == SWAP_TYPE_BITMAP);
+        metaBitmapInit(&meta_bitmap, objectMetaGetPtr(om), o);
+    } else {
+        /* bitmap is processed as whole string. */
+        metaBitmapInit(&meta_bitmap, NULL, o);
+    }
+    metaBitmapGrow(&meta_bitmap, byte);
+}
+
 /* This is an helper function for commands implementations that need to write
  * bits to a string object. The command creates or pad with zeroes the string
  * so that the 'maxbit' bit can be addressed. The object is finally
@@ -484,22 +509,10 @@ robj *lookupStringForBitCommand(client *c, uint64_t maxbit) {
     if (checkType(c,o,OBJ_STRING)) return NULL;
 
     if (o == NULL) {
-        o = createObject(OBJ_STRING,sdsnewlen(NULL, byte+1));
-        dbAdd(c->db,c->argv[1],o);
-        dbAddMeta(c->db,c->argv[1],createBitmapObjectMarker()); /* add meta to distinguish between bitmap and string types. */
+        o = ctripCreateBitmap(c->db,c->argv[1],byte+1);
     } else {
         o = dbUnshareStringValue(c->db,c->argv[1],o);
-        objectMeta *om = lookupMeta(c->db,c->argv[1]);
-        metaBitmap meta_bitmap;
-        if (server.swap_mode == SWAP_MODE_DISK) {
-            serverAssert(om->swap_type == SWAP_TYPE_BITMAP);
-            metaBitmapInit(&meta_bitmap, objectMetaGetPtr(om), o);
-        } else {
-            /* maybe it is a empty string object. */
-            /* it is never processed as bitmap in ror. */
-            metaBitmapInit(&meta_bitmap, NULL, o);
-        }
-        metaBitmapGrow(&meta_bitmap, byte+1);
+        ctripGrowBitmap(c->db,c->argv[1],o,byte+1);
     }
     return o;
 }
@@ -779,9 +792,11 @@ void bitopCommand(client *c) {
     /* Store the computed value into the target key */
     if (maxlen) {
         o = createObject(OBJ_STRING,res);
-        bitmapClearObjectMarkerIfNeeded(c->db,targetkey);
+        bitmapClearObjectMarkerIfExist(c->db,targetkey);
         setKey(c,c->db,targetkey,o);
-        bitmapSetObjectMarkerIfNeeded(c->db,targetkey);
+        if (server.swap_mode == SWAP_MODE_DISK && server.swap_bitmap_subkeys_enabled) {
+            bitmapSetObjectMarkerIfNotExist(c->db,targetkey);
+        }
         notifyKeyspaceEventDirty(NOTIFY_STRING,"set",targetkey,c->db->id,o,NULL);
         decrRefCount(o);
         server.dirty++;
@@ -855,13 +870,14 @@ void bitcountCommand(client *c) {
     if ((o = lookupKeyReadOrReply(c,c->argv[1],shared.czero)) == NULL ||
         checkType(c,o,OBJ_STRING)) return;
 
-    objectMeta *om = lookupMeta(c->db,c->argv[1]);
     metaBitmap meta_bitmap;
-    if (server.swap_mode == SWAP_MODE_DISK) {
+
+    objectMeta *om = lookupMeta(c->db,c->argv[1]);
+    if (om != NULL) {
         serverAssert(om->swap_type == SWAP_TYPE_BITMAP);
         metaBitmapInit(&meta_bitmap, objectMetaGetPtr(om), o);
     } else {
-        /* it is never processed as bitmap in ror. */
+        /* bitmap is processed as whole string. */
         metaBitmapInit(&meta_bitmap, NULL, o);
     }
     metaBitmapBitcount(&meta_bitmap, c);
@@ -962,13 +978,13 @@ void bitposCommand(client *c) {
     }
     if (checkType(c,o,OBJ_STRING)) return;
 
-    objectMeta *om = lookupMeta(c->db,c->argv[1]);
     metaBitmap meta_bitmap;
-    if (server.swap_mode == SWAP_MODE_DISK) {
+    objectMeta *om = lookupMeta(c->db,c->argv[1]);
+    if (om != NULL) {
         serverAssert(om->swap_type == SWAP_TYPE_BITMAP);
         metaBitmapInit(&meta_bitmap, objectMetaGetPtr(om), o);
     } else {
-        /* it is never processed as bitmap in ror. */
+        /* bitmap is processed as whole string. */
         metaBitmapInit(&meta_bitmap, NULL, o);
     }
 

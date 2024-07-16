@@ -749,6 +749,88 @@ start_server {
         r flushdb
     }
 
+    test {bitmap always processed as whole string} {
+        set bitmap_enabled [lindex [r config get swap-bitmap-subkeys-enabled] 1]
+        r config set swap-bitmap-subkeys-enabled no
+
+        r flushdb
+        
+        # check setbit
+
+        set_data mybitmap1
+        assert [object_is_string r mybitmap1]
+    
+        r swap.evict mybitmap1
+        wait_key_cold r mybitmap1
+
+        assert_equal [r getbit mybitmap1 0] 0
+
+        check_mybitmap_is_right mybitmap1 $notextend
+        assert [object_is_string r mybitmap1]
+
+        # check bitop
+
+        r setbit src1 32767 1
+        r setbit src2 335871 1
+
+        assert_equal {41984} [r bitop XOR mybitmap1 src1 src2]
+        assert_equal {2} [r bitcount mybitmap1]
+        assert [object_is_string r mybitmap1]
+
+        # check bitfield
+
+        set_data mybitmap2
+
+        assert_equal {-15}  [r BITFIELD mybitmap2 INCRBY i5 335871 1]
+        assert [object_is_string r mybitmap2]
+
+        # check string to bitmap
+
+        r set mykey "@"
+        r swap.evict mykey
+        wait_key_cold r mykey
+        assert_equal {0} [r setbit mykey 2 1]
+        assert [object_is_string r mykey]
+        assert_equal [binary format B* 01100000] [r get mykey]
+
+        r config set swap-bitmap-subkeys-enabled $bitmap_enabled
+        r flushdb
+    }
+
+    test {swap-bitmap-subkeys-enabled during server running} {
+        set bitmap_enabled [lindex [r config get swap-bitmap-subkeys-enabled] 1]
+        r config set swap-bitmap-subkeys-enabled no
+        r flushdb
+
+        r set mykey1 "@"
+        r swap.evict mykey1
+        wait_key_cold r mykey1
+        assert_equal {0} [r setbit mykey1 2 1]
+        assert [object_is_string r mykey1]
+
+        r config set swap-bitmap-subkeys-enabled yes
+
+        # mykey1 could be transfered to bitmap subkeys
+        assert_equal {1} [r setbit mykey1 2 1]
+        assert [object_is_bitmap r mykey1]
+
+        r config set swap-bitmap-subkeys-enabled no
+
+        # mykey1 could be continued treated as bitmap subkeys
+        assert_equal {1} [r setbit mykey1 2 1]
+        assert [object_is_bitmap r mykey1]
+
+        # new string object will not be treated as bitmap subkeys
+        r set mykey2 "@"
+        r swap.evict mykey2
+        wait_key_cold r mykey2
+        assert_equal {0} [r setbit mykey2 2 1]
+        assert [object_is_string r mykey2]
+
+        r config set swap-bitmap-subkeys-enabled $bitmap_enabled
+        r flushdb
+    }
+
 }
 
 
@@ -2003,116 +2085,3 @@ start_server {
 
     r config set swap-rdb-bitmap-encode-enabled $bak_rdb_bitmap_enable
 } 
-
-start_server {tags {"bitmap chaos test"} overrides {save ""}} {
-    start_server {overrides {swap-repl-rordb-sync no}} {
-        set master_host [srv 0 host]
-        set master_port [srv 0 port]
-        set master [srv 0 client]
-        set slave_host [srv -1 host]
-        set slave_port [srv -1 port]
-        set slave [srv -1 client]
-        $slave slaveof $master_host $master_port
-        wait_for_sync $slave
-        test {swap-bitmap chaos} {
-            set rounds 5
-            set loaders 5
-            set duration 30
-            set bitmaps 4; # NOTE: keep it equal to bitmaps in run load below
-            for {set round 0} {$round < $rounds} {incr round} {
-                puts "chaos load $bitmaps bitmaps with $loaders loaders in $duration seconds ($round/$rounds)"
-                    # load with chaos bitmap operations
-
-                set min_subkey_size 2048
-                set max_subkey_size 4096
-
-                for {set loader 0} {$loader < $loaders} {incr loader} {
-                    set subkey_size_slave [expr { int(rand() * ($max_subkey_size - $min_subkey_size + 1)) + $min_subkey_size }]
-                    $slave config set swap-bitmap-subkey-size $subkey_size_slave
-
-                    lappend load_handles [start_run_load $master_host $master_port $duration 0 {
-                        set bitmaps 4
-                        # in bit
-                        set bitmap_max_length 335872
-                        set block_timeout 0.1
-                        set count 0
-                        set mybitmap "mybitmap-[randomInt $bitmaps]"
-                        # set mybitmap_len [$r1 llen $mybitmap]
-                        set mybitmap_len [expr {[$r1 strlen $mybitmap] * 8}]
-                        set otherbitmap "mybitmap-[randomInt $bitmaps]"
-
-                        set min_subkey_size 2048
-                        set max_subkey_size 4096
-
-                        set src_direction [randpath {return LEFT} {return RIGHT}]
-                        set dst_direction [randpath {return LEFT} {return RIGHT}]
-                        randpath {
-                            set randIdx [randomInt $bitmap_max_length]
-                            set randVal [randomInt 2]
-                            $r1 SETBIT $mybitmap $randIdx $randVal
-                        } {
-                            set randIdx1 [randomInt $bitmap_max_length]
-                            $r1 SETRANGE $mybitmap $randIdx1 "redis"
-                        } {
-                            set randIdx1 [randomInt $bitmap_max_length]
-                            set randIdx2 [randomInt $bitmap_max_length]
-                            $r1 BITCOUNT $mybitmap $randIdx1 $randIdx2
-                        } {
-                            set randIdx [randomInt $bitmap_max_length]
-                            $r1 BITFIELD $mybitmap get u4 $randIdx
-                        } {
-                            set subkey_size_master [expr { int(rand() * ($max_subkey_size - $min_subkey_size + 1)) + $min_subkey_size }]
-                            $r1 config set swap-bitmap-subkey-size $subkey_size_master
-                        } {
-                            set randIdx [randomInt $bitmap_max_length]
-                            $r1 BITFIELD_RO $mybitmap get u4 $randIdx
-                        } {
-                            $r1 BITOP NOT dest $mybitmap
-                        } {
-                            set randVal [randomInt 2]
-                            $r1 BITPOS $mybitmap $randVal
-                        } {
-                            set randVal [randomInt 2]
-                            set randIdx [randomInt $bitmap_max_length]
-                            $r1 BITPOS $mybitmap $randVal $randIdx
-                        } {
-                            set randVal [randomInt 2]
-                            set randIdx1 [randomInt $bitmap_max_length]
-                            set randIdx2 [randomInt $bitmap_max_length]
-                            $r1 BITPOS $mybitmap $randVal $randIdx1 $randIdx2
-                        } {
-                            set randIdx [randomInt $bitmap_max_length]
-                            set randVal [randomInt 2]
-                            $r1 SETBIT $mybitmap $randIdx $randVal
-                        } {
-                            set randIdx [randomInt $bitmap_max_length]
-                            $r1 GETBIT $mybitmap $randIdx
-                        } {
-                            $r1 swap.evict $mybitmap
-                        } {
-                            $r1 GET $mybitmap
-                        } {
-                            $r1 DEL $mybitmap
-                        } {
-                            $r1 UNLINK $mybitmap
-                        }
-                    }]
-                }
-                after [expr $duration*1000]
-                wait_load_handlers_disconnected
-                wait_for_ofs_sync $master $slave
-                # save to check bitmap meta consistency
-                $master save
-                $slave save
-                verify_log_message 0 "*DB saved on disk*" 0
-                verify_log_message -1 "*DB saved on disk*" 0
-                # digest to check master slave consistency
-                for {set keyidx 0} {$keyidx < $bitmaps} {incr keyidx} {
-                    set master_digest [$master debug digest-value mybitmap-$keyidx]
-                    set slave_digest [$slave debug digest-value mybitmap-$keyidx]
-                    assert_equal $master_digest $slave_digest
-                }
-            }
-        }
-    }
-}

@@ -269,13 +269,21 @@ void *wholeKeyCreateOrMergeObject(swapData *data, void *decoded, void *datactx) 
     return decoded;
 }
 
+static void tryTransStringToBitmap(redisDb *db, robj *key) {
+    if (server.swap_mode != SWAP_MODE_DISK || !server.swap_bitmap_subkeys_enabled) {
+        return;
+    }
+
+    if (bitmapSetObjectMarkerIfNotExist(db,key) == 1) {
+        atomicIncr(server.swap_string_switched_to_bitmap_count, 1);
+    }
+}
+
 int wholeKeyBeforeCall(swapData *data, keyRequest *key_request,
         client *c, void *datactx)  {
     UNUSED(data), UNUSED(c), UNUSED(datactx);
-    /* Setup bitmap marker if bitmap command touching string */
     if (key_request->cmd_flags & CMD_SWAP_DATATYPE_BITMAP) {
-        bitmapSetObjectMarkerIfNeeded(data->db,data->key);
-        atomicIncr(server.swap_string_switched_to_bitmap_count, 1);
+        tryTransStringToBitmap(data->db,data->key);
     }
     return 0;
 }
