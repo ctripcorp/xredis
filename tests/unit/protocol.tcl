@@ -205,6 +205,11 @@ start_server {tags {"protocol network"}} {
         r write "*3\r\n\$9\r\n/*comment\r\n\$3\r\ndel\r\n\$1\r\nk\r\n"
         r flush
         assert_error "*wrong format comment*" {r read}
+
+        reconnect
+        r write "*3\r\n\$13\r\n /*comment*/ \r\n\$3\r\ndel\r\n\$1\r\nk\r\n"
+        r flush
+        assert_error "*wrong format comment*" {r read}
     }
 
     test "Command Comment Test - Inline" {
@@ -230,17 +235,24 @@ start_server {tags {"protocol network"}} {
         puts $s "/*comment*/ del k\r\n"
         flush $s
         after 100
-        assert_match [read $s] :1\n
+        assert_match [read $s] ":1\n"
 
         puts $s "\"/* comment hello */\" del k\r\n"
         flush $s
         after 100
         assert_match [read $s] :0\n
 
-        puts -nonewline $s "/*comment del k\r\n"
+        puts $s "\" /* comment */ \" del k\r\n"
         flush $s
         after 100
-        assert_match [read -nonewline $s] "-ERR Protocol error: wrong format comment"
+        assert_match [read $s] "-ERR Protocol error: wrong format comment\n"
+
+        set s [socket $redis_host $redis_port]
+        fconfigure $s -blocking 0
+        puts $s "/*comment del k\r\n"
+        flush $s
+        after 100
+        assert_match [read $s] "-ERR Protocol error: wrong format comment\n"
     }
 }
 
