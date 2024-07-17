@@ -24,40 +24,35 @@ start_server {tags {"comment"}} {
         }
         
         test {no txn} {
-            assert_match OK [eval $master "/*comment*/ FLUSHDB"]
-            assert_match OK [eval $master "/*comment*/ SET k v"]
-            assert_match 1 [eval $master "/*comment*/ HSET myhash field1 HELLO"]
-            assert_match HELLO [eval $slave "/*comment*/ HGET myhash field1"]
-            assert_match v [eval $slave "/*comment*/ GET k"]
+            assert_match OK [$master "/*comment*/" FLUSHDB]
+            assert_match OK [$master "/*comment*/" SET k v]
+            assert_match 1 [$master "/*comment*/" HSET myhash field1 HELLO]
+            assert_match HELLO [$slave "/*comment*/" HGET myhash field1]
+            assert_match v [$slave "/*comment*/" GET k]
         }
 
         test {txn} {
-            assert_match OK [eval $master "/*comment*/ FLUSHDB"]
-            assert_match OK [eval $master "/*comment*/ MULTI"]
-            assert_match QUEUED [eval $master "/*comment*/ SET k v"]
-            assert_match QUEUED [eval $master "/*comment*/ HSET myhash field1 HELLO"]
-            assert_match "OK 1" [eval $master "/*comment*/ EXEC"]
-            assert_match HELLO [eval $slave "/*comment*/ HGET myhash field1"]
-            assert_match v [eval $slave "/*comment*/ GET k"]
+            assert_match OK [$master "/*comment*/" FLUSHDB]
+            assert_match OK [$master "/*comment*/" MULTI]
+            assert_match QUEUED [$master "/*comment*/" SET k v]
+            assert_match QUEUED [$master "/*comment*/" HSET myhash field1 HELLO]
+            assert_match "OK 1" [$master "/*comment*/" EXEC]
+            assert_match HELLO [$slave "/*comment*/" HGET myhash field1]
+            assert_match v [$slave "/*comment*/" GET k]
 
-            assert_match OK [eval $master "/*comment*/ FLUSHDB"]
-            assert_match OK [eval $master "/*comment*/ MULTI"]
-            assert_match QUEUED [eval $master "/*comment*/ SET k v"]
-            assert_match QUEUED [eval $master "/*comment*/ HSET myhash field1 HELLO"]
-            assert_match "OK" [eval $master "/*comment*/ discard"]
-            assert_match "" [eval $slave "/*comment*/ HGET myhash field1"]
-            assert_match "" [eval $slave "/*comment*/ GET k"]
+            assert_match OK [$master "/*comment*/" FLUSHDB]
+            assert_match OK [$master "/*comment*/" MULTI]
+            assert_match QUEUED [$master "/*comment*/" SET k v]
+            assert_match QUEUED [$master "/*comment*/" HSET myhash field1 HELLO]
+            assert_match "OK" [$master "/*comment*/" discard]
+            assert_match "" [$slave "/*comment*/" HGET myhash field1]
+            assert_match "" [$slave "/*comment*/" GET k]
         }
 
         test {lua notxn} {
-            assert_match OK [$m_r eval {return redis.call('/*comment*/', KEYS[1])} 1 FLUSHDB]
-            assert_match OK [$m_r eval {return redis.call('/*comment*/', KEYS[1], ARGV[1], ARGV[2])} 1 SET k v]
-            assert_match 1 [$m_r eval {return redis.call('/*comment*/', KEYS[1], ARGV[1], ARGV[2], ARGV[3])} 1 HSET myhash field1 HELLO]
-
-            press_enter_to_continue
-
-            assert_match HELLO [$s_r eval {return redis.call('/*comment*/', KEYS[1], ARGV[1], ARGV[2])} 1 HGET myhash field1]
-            assert_match v [$s_r eval {return redis.call('/*comment*/', KEYS[1], ARGV[1])} 1 GET k]
+            assert_match OK [$m_r eval "return redis.call('/*comment*/', 'FLUSHDB');" 0]
+            assert_equal OK [$m_r eval "return redis.call('/*comment*/', 'set','foo',12345)" 1 foo]
+            assert_equal 12345 [$s_r eval "return redis.call('/*comment*/', 'get','foo')" 1 foo]
         }
     }
 }
