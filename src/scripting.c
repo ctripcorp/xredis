@@ -592,13 +592,6 @@ int luaRedisGenericCommand(lua_State *lua, int raise_error) {
     c->argc = argc;
     c->user = server.lua_caller->user;
 
-    if (processComment(c) != C_OK) {
-        luaPushError(lua,
-            "Lua redis() comment format error");
-        inuse--;
-        return raise_error ? luaRaiseError(lua) : 1;
-    }
-
     /* Process module hooks */
     moduleCallCommandFilters(c);
     argv = c->argv;
@@ -818,7 +811,6 @@ int luaRedisGenericCommand(lua_State *lua, int raise_error) {
     c->reply_bytes = 0;
 
 cleanup:
-    restoreCommentArgv(c);
     /* Clean up. Command code may have changed argv/argc so we use the
      * argv/argc of the client instead of the local variables. */
     for (j = 0; j < c->argc; j++) {

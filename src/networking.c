@@ -147,7 +147,7 @@ client *createClient(connection *conn) {
     c->reqtype = 0;
     c->argc = 0;
     c->argv = NULL;
-    c->cmtArgv = NULL;
+    c->cmd_argv = NULL;
     c->argv_len_sum = 0;
     c->original_argc = 0;
     c->original_argv = NULL;
@@ -1232,27 +1232,8 @@ void freeClientOriginalArgv(client *c) {
     c->original_argc = 0;
 }
 
-void splitCommentArgv(client *c) {
-    c->cmtArgv = c->argv[0];
-    serverAssert(&c->argv[1] == c->argv+1);
-    serverAssert(c->cmtArgv == c->argv[0]);
-    c->argv++;
-    c->argc--;
-}
-
-int restoreCommentArgv(client *c) {
-    if (c->cmtArgv != NULL) {
-        c->argc++;
-        c->argv--;
-        serverAssert(c->argv[0] == c->cmtArgv);
-        c->cmtArgv = NULL;
-        return 1;
-    }
-    return 0;
-}
-
 static void freeClientArgv(client *c) {
-    restoreCommentArgv(c);
+    commentedArgDestroy(c->cmd_argv);
     int j;
     for (j = 0; j < c->argc; j++)
         decrRefCount(c->argv[j]);
@@ -1894,7 +1875,7 @@ int processComment(client *c) {
     if (strstr(comment + dis_end, "*/") != NULL) goto err;
     if (isComment && sdslen(comment) != dis_end) goto err;
 
-    if(isComment) splitCommentArgv(c);
+    if(isComment) commentedArgCreate(c->cmd_argv, c->argc, c->argv);
     return C_OK;
 
 err:
@@ -2069,10 +2050,7 @@ int processMultibulkBuffer(client *c) {
         c->multibulklen = ll;
 
         /* Setup argv array on client structure */
-        if (c->argv) {
-            restoreCommentArgv(c);
-            zfree(c->argv);
-        }
+        if (c->argv) zfree(c->argv);
         c->argv = zmalloc(sizeof(robj*)*c->multibulklen);
         c->argv_len_sum = 0;
     }
@@ -2551,9 +2529,7 @@ sds catClientInfoString(sds s, client *client) {
      * i.e. unused sds space and internal fragmentation, just the string length. but this is enough to
      * spot problematic clients. */
     total_mem += client->argv_len_sum;
-    if (client->cmtArgv)
-        total_mem += zmalloc_size(client->cmtArgv);
-    else
+    if (client->argv)
         total_mem += zmalloc_size(client->argv);
 
     return sdscatfmt(s,
@@ -3358,7 +3334,6 @@ void rewriteClientCommandArgument(client *c, int i, robj *newval) {
     retainOriginalCommandVector(c);
     if (i >= c->argc) {
         c->argv = zrealloc(c->argv,sizeof(robj*)*(i+1));
-        c->cmtArgv = NULL;
         c->argc = i+1;
         c->argv[i] = NULL;
     }

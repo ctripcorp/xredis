@@ -164,6 +164,7 @@ set ::all_tests {
     unit/bitfield
     unit/tracking
     unit/pubsub
+    unit/comment
     integration/logging
     integration/redis-cli
     integration/replication

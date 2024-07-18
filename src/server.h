@@ -781,7 +781,6 @@ typedef struct swapTrace swapTrace;
 /* Client MULTI/EXEC state */
 typedef struct multiCmd {
     robj **argv;
-    robj *cmtArgv;
     int argc;
     struct argRewrites *swap_arg_rewrites;
     struct redisCommand *cmd;
@@ -932,7 +931,7 @@ typedef struct client {
     size_t querybuf_peak;   /* Recent (100ms or more) peak of querybuf size. */
     int argc;               /* Num of arguments of current command. */
     robj **argv;            /* Arguments of current command. */
-    robj *cmtArgv;
+    robj *cmd_argv;
     int original_argc;      /* Num of arguments of original command if arguments were rewritten. */
     robj **original_argv;   /* Arguments of original command if arguments were rewritten. */
     size_t argv_len_sum;    /* Sum of lengths of objects in argv list. */
@@ -1120,7 +1119,6 @@ typedef struct swapBatchLimitsConfig {
  * after the propagation of the executed command. */
 typedef struct redisOp {
     robj **argv;
-    robj *cmtArgv;
     int argc, dbid, target;
     struct redisCommand *cmd;
 } redisOp;
@@ -2151,11 +2149,20 @@ int redisCommunicateSystemd(const char *sd_notify_msg);
 void redisSetCpuAffinity(const char *cpulist);
 
 /* networking.c -- Networking and Client related operations */
+#define commentedArgCreate(cmd_argv, argc, argv) do { \
+    cmd_argv = argv[0]; \
+    for (int i=0; i<argc-1; i++) \
+        argv[i] = argv[i+1]; \
+    argc--; \
+    } while (0)
+#define commentedArgDestroy(cmd_argv) do { \
+    if(cmd_argv) { \
+        decrRefCount(cmd_argv); \
+        cmd_argv = NULL; \
+    } \
+} while (0)
 client *createClient(connection *conn);
-int processComment(client *c);
 void closeTimedoutClients(void);
-void splitCommentArgv(client *c);
-int restoreCommentArgv(client *c);
 void freeClient(client *c);
 void freeClientAsync(client *c);
 void resetClient(client *c);

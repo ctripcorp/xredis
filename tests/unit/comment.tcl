@@ -50,9 +50,8 @@ start_server {tags {"comment"}} {
         }
 
         test {lua notxn} {
-            assert_match OK [$m_r eval "return redis.call('/*comment*/', 'FLUSHDB');" 0]
-            assert_equal OK [$m_r eval "return redis.call('/*comment*/', 'set','foo',12345)" 1 foo]
-            assert_equal 12345 [$s_r eval "return redis.call('/*comment*/', 'get','foo')" 1 foo]
+            catch {[$master eval "return redis.call('/*comment*/', 'set','foo',12345)" 1 foo]} {err}
+            assert_match "*Unknown Redis command called from Lua script*" $err
         }
     }
 }
