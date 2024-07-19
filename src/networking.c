@@ -1862,7 +1862,8 @@ int processComment(client *c) {
     begin = end = comment;
 
     if (strstr(begin, "/*")!=NULL) {
-        if (strstr(begin, "/*")-comment!=0) goto err;
+        if (strstr(begin, "/*")-comment!=0)
+            goto err;
         if (sdslen(comment)!=strstr(comment,"*/")-comment+strlen("*/"))
             goto err;
     }
@@ -1946,13 +1947,7 @@ int processInlineBuffer(client *c) {
     for (c->argc = 0, j = 0; j < argc; j++) {
         if (j == 0) {
             robj* val = createObject(OBJ_STRING,argv[j]);
-            if (c->cmd_argv == NULL && strstr((sds)val->ptr, "/*") != NULL) {
-                c->argv[argc-1] = val;
-                c->cmd_argv = c->argv[argc-1];
-            } else {
-                c->argv[c->argc] = val;
-                c->argc++;
-            }
+            commentedArgCreate(val, c->cmd_argv, c->argc, c->argv, argc);
         } else {
             c->argv[c->argc] = createObject(OBJ_STRING,argv[j]);
             c->argc++;
@@ -2129,14 +2124,8 @@ int processMultibulkBuffer(client *c) {
                 c->bulklen >= PROTO_MBULK_BIG_ARG &&
                 sdslen(c->querybuf) == (size_t)(c->bulklen+2))
             {
-                robj* argv = createObject(OBJ_STRING,c->querybuf);
-                if (c->cmd_argv == NULL && strstr((sds)argv->ptr, "/*") != NULL) {
-                    c->argv[c->multibulklen-1] = argv;
-                    c->cmd_argv = c->argv[c->multibulklen-1];
-                } else {
-                    c->argv[c->argc] = argv;
-                    c->argc++;
-                }
+                robj* val = createObject(OBJ_STRING,c->querybuf);
+                commentedArgCreate(val, c->cmd_argv, c->argc, c->argv, c->multibulklen);
                 c->argv_len_sum += c->bulklen;
                 sdsIncrLen(c->querybuf,-2); /* remove CRLF */
                 /* Assume that if we saw a fat argument we'll see another one
@@ -2144,14 +2133,8 @@ int processMultibulkBuffer(client *c) {
                 c->querybuf = sdsnewlen(SDS_NOINIT,c->bulklen+2);
                 sdsclear(c->querybuf);
             } else {
-                robj* argv = createStringObject(c->querybuf+c->qb_pos,c->bulklen);
-                if (c->cmd_argv == NULL && strstr((sds)argv->ptr, "/*") != NULL) {
-                    c->argv[c->multibulklen-1] = argv;
-                    c->cmd_argv = c->argv[c->multibulklen-1];
-                } else {
-                    c->argv[c->argc] = argv;
-                    c->argc++;
-                }
+                robj* val = createStringObject(c->querybuf+c->qb_pos,c->bulklen);
+                commentedArgCreate(val, c->cmd_argv, c->argc, c->argv, c->multibulklen);
                 c->argv_len_sum += c->bulklen;
                 c->qb_pos += c->bulklen+2;
             }
