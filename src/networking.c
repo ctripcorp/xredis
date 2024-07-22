@@ -1866,8 +1866,7 @@ static inline int commentedArgCreate(robj* val, int* argc, robj** argv, robj** c
             goto err;
         if (sdslen(comment)!=strstr(comment,"*/")-comment+strlen("*/"))
             goto err;
-        argv[len-1] = val;
-        *cmd_argv = argv[len-1];
+        *cmd_argv = val;
     } else {
         argv[*argc] = val;
         (*argc)++;
@@ -1878,8 +1877,8 @@ err:
     return C_ERR;
 }
 
-static inline int processComment(robj* val, client* c) {
-    if(commentedArgCreate(val, &c->argc, c->argv, &c->cmd_argv, c->multibulklen) == C_ERR) {
+static inline int processComment(robj* val, client* c, int len) {
+    if(commentedArgCreate(val, &c->argc, c->argv, &c->cmd_argv, len) == C_ERR) {
         decrRefCount(val);
         addReplyError(c,"Protocol error: wrong format comment");
         setProtocolError("wrong format comment",c);
@@ -1962,7 +1961,7 @@ int processInlineBuffer(client *c) {
     /* Create redis objects for all arguments. */
     for (c->argc = 0, j = 0; j < argc; j++) {
         robj* val = createObject(OBJ_STRING,argv[j]);
-        if (processComment(val, c) == C_ERR) {
+        if (processComment(val, c, argc) == C_ERR) {
             commentError = C_ERR;
         }
         c->argv_len_sum += sdslen(argv[j]);
@@ -2139,7 +2138,7 @@ int processMultibulkBuffer(client *c) {
                 sdslen(c->querybuf) == (size_t)(c->bulklen+2))
             {
                 robj* val = createObject(OBJ_STRING,c->querybuf);
-                if (processComment(val, c) == C_ERR)
+                if (processComment(val, c, c->multibulklen) == C_ERR)
                     return C_ERR;
                 c->argv_len_sum += c->bulklen;
                 sdsIncrLen(c->querybuf,-2); /* remove CRLF */
@@ -2149,7 +2148,7 @@ int processMultibulkBuffer(client *c) {
                 sdsclear(c->querybuf);
             } else {
                 robj* val = createStringObject(c->querybuf+c->qb_pos,c->bulklen);
-                if (processComment(val, c) == C_ERR)
+                if (processComment(val, c, c->multibulklen) == C_ERR)
                     return C_ERR;
                 c->argv_len_sum += c->bulklen;
                 c->qb_pos += c->bulklen+2;
