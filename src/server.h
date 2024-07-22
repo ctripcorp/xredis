@@ -2149,15 +2149,6 @@ int redisCommunicateSystemd(const char *sd_notify_msg);
 void redisSetCpuAffinity(const char *cpulist);
 
 /* networking.c -- Networking and Client related operations */
-#define commentedArgCreate(val, cmd_argv, argc, argv, len) do { \
-    if (cmd_argv == NULL && strstr((sds)val->ptr, "/*") != NULL) { \
-        argv[len-1] = val; \
-        cmd_argv = argv[len-1]; \
-    } else { \
-        argv[argc] = val; \
-        argc++; \
-    } \
-} while (0)
 #define commentedArgDestroy(cmd_argv) do { \
     if(cmd_argv) { \
         decrRefCount(cmd_argv); \

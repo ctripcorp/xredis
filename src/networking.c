@@ -1855,17 +1855,24 @@ void unprotectClient(client *c) {
     }
 }
 
-int processComment(client *c) {
-    if(c->cmd_argv == NULL) return C_OK;
-    sds comment = (sds)c->cmd_argv->ptr;
-    sds begin, end;
-    begin = end = comment;
+static inline int commentedArgCreate(robj* val, client* c, int len) {
+    sds comment = (sds)val->ptr;
 
-    if (strstr(begin, "/*")!=NULL) {
-        if (strstr(begin, "/*")-comment!=0)
-            goto err;
-        if (sdslen(comment)!=strstr(comment,"*/")-comment+strlen("*/"))
-            goto err;
+    if (strstr((sds)val->ptr, "/*") != NULL) {
+        if (c->cmd_argv == NULL) {
+            sds comment = (sds)val->ptr;
+            sds begin, end;
+            begin = end = comment;
+            if (strstr(begin, "/*")-comment!=0)
+                goto err;
+            if (sdslen(comment)!=strstr(comment,"*/")-comment+strlen("*/"))
+                goto err;
+            c->argv[len-1] = val;
+            c->cmd_argv = c->argv[len-1];
+        } else goto err;
+    } else {
+        c->argv[c->argc] = val;
+        c->argc++;
     }
     return C_OK;
 
@@ -1943,18 +1950,27 @@ int processInlineBuffer(client *c) {
         c->argv_len_sum = 0;
     }
 
+    int commentError = C_OK;
     /* Create redis objects for all arguments. */
     for (c->argc = 0, j = 0; j < argc; j++) {
         if (j == 0) {
             robj* val = createObject(OBJ_STRING,argv[j]);
-            commentedArgCreate(val, c->cmd_argv, c->argc, c->argv, argc);
-        } else {
-            c->argv[c->argc] = createObject(OBJ_STRING,argv[j]);
-            c->argc++;
+            if((commentError = commentedArgCreate(val, c, argc)) == C_ERR) {
+                decrRefCount(val);
+            }
+            continue;
         }
-        c->argv_len_sum += sdslen(argv[j]);
+        c->argv[c->argc] = createObject(OBJ_STRING,argv[j]);
+        c->argc++;
     }
     zfree(argv);
+
+    if (commentError == C_ERR) {
+        addReplyError(c,"Protocol error: wrong format comment");
+        setProtocolError("wrong format comment",c);
+        return C_ERR;
+    }
+
     return C_OK;
 }
 
@@ -2125,7 +2141,12 @@ int processMultibulkBuffer(client *c) {
                 sdslen(c->querybuf) == (size_t)(c->bulklen+2))
             {
                 robj* val = createObject(OBJ_STRING,c->querybuf);
-                commentedArgCreate(val, c->cmd_argv, c->argc, c->argv, c->multibulklen);
+                if(commentedArgCreate(val, c, c->multibulklen) == C_ERR) {
+                    decrRefCount(val);
+                    addReplyError(c,"Protocol error: wrong format comment");
+                    setProtocolError("wrong format comment",c);
+                    return C_ERR;
+                }
                 c->argv_len_sum += c->bulklen;
                 sdsIncrLen(c->querybuf,-2); /* remove CRLF */
                 /* Assume that if we saw a fat argument we'll see another one
@@ -2134,7 +2155,12 @@ int processMultibulkBuffer(client *c) {
                 sdsclear(c->querybuf);
             } else {
                 robj* val = createStringObject(c->querybuf+c->qb_pos,c->bulklen);
-                commentedArgCreate(val, c->cmd_argv, c->argc, c->argv, c->multibulklen);
+                if(commentedArgCreate(val, c, c->multibulklen) == C_ERR) {
+                    decrRefCount(val);
+                    addReplyError(c,"Protocol error: wrong format comment");
+                    setProtocolError("wrong format comment",c);
+                    return C_ERR;
+                }
                 c->argv_len_sum += c->bulklen;
                 c->qb_pos += c->bulklen+2;
             }
@@ -2312,12 +2338,6 @@ void processInputBuffer(client *c) {
             if (c->flags & CLIENT_PENDING_READ) {
                 c->flags |= CLIENT_PENDING_COMMAND;
                 break;
-            }
-
-            if (processComment(c) == C_ERR) {
-                addReplyError(c,"Protocol error: wrong format comment");
-                setProtocolError("wrong format comment",c);
-                return;
             }
 
             /* We are finally ready to execute the command. */
