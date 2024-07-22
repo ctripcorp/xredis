@@ -1880,6 +1880,16 @@ err:
     return C_ERR;
 }
 
+static inline int processMultiBulkComment(robj* val, client* c) {
+    if(commentedArgCreate(val, c, c->multibulklen) == C_ERR) {
+        decrRefCount(val);
+        addReplyError(c,"Protocol error: wrong format comment");
+        setProtocolError("wrong format comment",c);
+        return C_ERR;
+    }
+    return C_OK;
+}
+
 /* Like processMultibulkBuffer(), but for the inline protocol instead of RESP,
  * this function consumes the client query buffer and creates a command ready
  * to be executed inside the client structure. Returns C_OK if the command
@@ -1958,10 +1968,12 @@ int processInlineBuffer(client *c) {
             if((commentError = commentedArgCreate(val, c, argc)) == C_ERR) {
                 decrRefCount(val);
             }
+            c->argv_len_sum += sdslen(argv[j]);
             continue;
         }
         c->argv[c->argc] = createObject(OBJ_STRING,argv[j]);
         c->argc++;
+        c->argv_len_sum += sdslen(argv[j]);
     }
     zfree(argv);
 
@@ -2141,12 +2153,8 @@ int processMultibulkBuffer(client *c) {
                 sdslen(c->querybuf) == (size_t)(c->bulklen+2))
             {
                 robj* val = createObject(OBJ_STRING,c->querybuf);
-                if(commentedArgCreate(val, c, c->multibulklen) == C_ERR) {
-                    decrRefCount(val);
-                    addReplyError(c,"Protocol error: wrong format comment");
-                    setProtocolError("wrong format comment",c);
+                if (processMultiBulkComment(val, c) == C_ERR)
                     return C_ERR;
-                }
                 c->argv_len_sum += c->bulklen;
                 sdsIncrLen(c->querybuf,-2); /* remove CRLF */
                 /* Assume that if we saw a fat argument we'll see another one
@@ -2155,12 +2163,8 @@ int processMultibulkBuffer(client *c) {
                 sdsclear(c->querybuf);
             } else {
                 robj* val = createStringObject(c->querybuf+c->qb_pos,c->bulklen);
-                if(commentedArgCreate(val, c, c->multibulklen) == C_ERR) {
-                    decrRefCount(val);
-                    addReplyError(c,"Protocol error: wrong format comment");
-                    setProtocolError("wrong format comment",c);
+                if (processMultiBulkComment(val, c) == C_ERR)
                     return C_ERR;
-                }
                 c->argv_len_sum += c->bulklen;
                 c->qb_pos += c->bulklen+2;
             }
