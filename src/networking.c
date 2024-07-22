@@ -1855,7 +1855,7 @@ void unprotectClient(client *c) {
     }
 }
 
-static inline int commentedArgCreate(robj* val, int* argc, robj** argv, robj** cmd_argv, int len) {
+static inline int commentedArgCreate(robj* val, int* argc, robj** argv, robj** cmd_argv) {
     sds comment = (sds)val->ptr;
 
     if (*cmd_argv == NULL && *argc == 0 && (strstr(val->ptr, "/*") != NULL)) {
@@ -1877,8 +1877,8 @@ err:
     return C_ERR;
 }
 
-static inline int processComment(robj* val, client* c, int len) {
-    if(commentedArgCreate(val, &c->argc, c->argv, &c->cmd_argv, len) == C_ERR) {
+static inline int processComment(robj* val, client* c) {
+    if(commentedArgCreate(val, &c->argc, c->argv, &c->cmd_argv) == C_ERR) {
         decrRefCount(val);
         addReplyError(c,"Protocol error: wrong format comment");
         setProtocolError("wrong format comment",c);
@@ -1961,7 +1961,7 @@ int processInlineBuffer(client *c) {
     /* Create redis objects for all arguments. */
     for (c->argc = 0, j = 0; j < argc; j++) {
         robj* val = createObject(OBJ_STRING,argv[j]);
-        if (processComment(val, c, argc) == C_ERR) {
+        if (processComment(val, c) == C_ERR) {
             commentError = C_ERR;
         }
         c->argv_len_sum += sdslen(argv[j]);
@@ -2138,7 +2138,7 @@ int processMultibulkBuffer(client *c) {
                 sdslen(c->querybuf) == (size_t)(c->bulklen+2))
             {
                 robj* val = createObject(OBJ_STRING,c->querybuf);
-                if (processComment(val, c, c->multibulklen) == C_ERR)
+                if (processComment(val, c) == C_ERR)
                     return C_ERR;
                 c->argv_len_sum += c->bulklen;
                 sdsIncrLen(c->querybuf,-2); /* remove CRLF */
@@ -2148,7 +2148,7 @@ int processMultibulkBuffer(client *c) {
                 sdsclear(c->querybuf);
             } else {
                 robj* val = createStringObject(c->querybuf+c->qb_pos,c->bulklen);
-                if (processComment(val, c, c->multibulklen) == C_ERR)
+                if (processComment(val, c) == C_ERR)
                     return C_ERR;
                 c->argv_len_sum += c->bulklen;
                 c->qb_pos += c->bulklen+2;
