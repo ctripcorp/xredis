@@ -1969,13 +1969,7 @@ int processInlineBuffer(client *c) {
     }
     zfree(argv);
 
-    if (commentError == C_ERR) {
-        addReplyError(c,"Protocol error: wrong format comment");
-        setProtocolError("wrong format comment",c);
-        return C_ERR;
-    }
-
-    return C_OK;
+    return commentError;
 }
 
 /* Helper function. Record protocol erro details in server log,
