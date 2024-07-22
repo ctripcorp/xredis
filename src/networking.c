@@ -1855,24 +1855,22 @@ void unprotectClient(client *c) {
     }
 }
 
-static inline int commentedArgCreate(robj* val, client* c, int len) {
+static inline int commentedArgCreate(robj* val, int* argc, robj** argv, robj** cmd_argv, int len) {
     sds comment = (sds)val->ptr;
 
-    if (strstr((sds)val->ptr, "/*") != NULL) {
-        if (c->cmd_argv == NULL) {
-            sds comment = (sds)val->ptr;
-            sds begin, end;
-            begin = end = comment;
-            if (strstr(begin, "/*")-comment!=0)
-                goto err;
-            if (sdslen(comment)!=strstr(comment,"*/")-comment+strlen("*/"))
-                goto err;
-            c->argv[len-1] = val;
-            c->cmd_argv = c->argv[len-1];
-        } else goto err;
+    if (*cmd_argv == NULL && *argc == 0 && (strstr(val->ptr, "/*") != NULL)) {
+        sds comment = (sds)val->ptr;
+        sds begin, end;
+        begin = end = comment;
+        if (strstr(begin, "/*")-comment!=0)
+            goto err;
+        if (sdslen(comment)!=strstr(comment,"*/")-comment+strlen("*/"))
+            goto err;
+        argv[len-1] = val;
+        *cmd_argv = argv[len-1];
     } else {
-        c->argv[c->argc] = val;
-        c->argc++;
+        argv[*argc] = val;
+        (*argc)++;
     }
     return C_OK;
 
@@ -1881,7 +1879,7 @@ err:
 }
 
 static inline int processMultiBulkComment(robj* val, client* c) {
-    if(commentedArgCreate(val, c, c->multibulklen) == C_ERR) {
+    if(commentedArgCreate(val, &c->argc, c->argv, &c->cmd_argv, c->multibulklen) == C_ERR) {
         decrRefCount(val);
         addReplyError(c,"Protocol error: wrong format comment");
         setProtocolError("wrong format comment",c);
@@ -1963,16 +1961,11 @@ int processInlineBuffer(client *c) {
     int commentError = C_OK;
     /* Create redis objects for all arguments. */
     for (c->argc = 0, j = 0; j < argc; j++) {
-        if (j == 0) {
-            robj* val = createObject(OBJ_STRING,argv[j]);
-            if((commentError = commentedArgCreate(val, c, argc)) == C_ERR) {
-                decrRefCount(val);
-            }
-            c->argv_len_sum += sdslen(argv[j]);
-            continue;
+        robj* val = createObject(OBJ_STRING,argv[j]);
+        if (commentedArgCreate(val, &c->argc, c->argv, &c->cmd_argv, argc) == C_ERR) {
+            decrRefCount(val);
+            commentError = C_ERR;
         }
-        c->argv[c->argc] = createObject(OBJ_STRING,argv[j]);
-        c->argc++;
         c->argv_len_sum += sdslen(argv[j]);
     }
     zfree(argv);
