@@ -1870,6 +1870,25 @@ static inline int commentedArgCheck(robj* val) {
     return NOT_VALID_COMMENT;
 }
 
+static inline void processAndBuildClientArgv(client* c, robj* val, int* commentError) {
+    switch (commentedArgCheck(val)) {
+        case NOT_VALID_COMMENT:
+            decrRefCount(val);
+            *commentError = C_ERR;
+            addReplyError(c,"Protocol error: wrong format comment");
+            setProtocolError("wrong format comment",c);
+            break;
+        case IS_VALID_COMMENT:
+            serverAssert(c->cmd_argv == NULL);
+            c->cmd_argv = val;
+            break;
+        case NOT_COMMENT:
+            c->argv[c->argc] = val;
+            c->argc++;
+            break;
+    }
+}
+
 /* Like processMultibulkBuffer(), but for the inline protocol instead of RESP,
  * this function consumes the client query buffer and creates a command ready
  * to be executed inside the client structure. Returns C_OK if the command
@@ -1944,22 +1963,7 @@ int processInlineBuffer(client *c) {
     /* Create redis objects for all arguments. */
     for (c->argc = 0, j = 0; j < argc; j++) {
         robj* val = createObject(OBJ_STRING,argv[j]);
-        switch (commentedArgCheck(val)) {
-            case NOT_VALID_COMMENT:
-                decrRefCount(val);
-                commentError = C_ERR;
-                addReplyError(c,"Protocol error: wrong format comment");
-                setProtocolError("wrong format comment",c);
-                break;
-            case IS_VALID_COMMENT:
-                serverAssert(c->cmd_argv == NULL);
-                c->cmd_argv = val;
-                break;
-            case NOT_COMMENT:
-                c->argv[c->argc] = val;
-                c->argc++;
-                break;
-        }
+        processAndBuildClientArgv(c, val, &commentError);
         c->argv_len_sum += sdslen(argv[j]);
     }
     zfree(argv);
@@ -2136,22 +2140,7 @@ int processMultibulkBuffer(client *c) {
                 sdslen(c->querybuf) == (size_t)(c->bulklen+2))
             {
                 robj* val = createObject(OBJ_STRING,c->querybuf);
-                switch (commentedArgCheck(val)) {
-                    case NOT_VALID_COMMENT:
-                        decrRefCount(val);
-                        commentError = C_ERR;
-                        addReplyError(c,"Protocol error: wrong format comment");
-                        setProtocolError("wrong format comment",c);
-                        break;
-                    case IS_VALID_COMMENT:
-                        serverAssert(c->cmd_argv == NULL);
-                        c->cmd_argv = val;
-                        break;
-                    case NOT_COMMENT:
-                        c->argv[c->argc] = val;
-                        c->argc++;
-                        break;
-                }
+                processAndBuildClientArgv(c, val, &commentError);
                 c->argv_len_sum += c->bulklen;
                 sdsIncrLen(c->querybuf,-2); /* remove CRLF */
                 /* Assume that if we saw a fat argument we'll see another one
@@ -2160,22 +2149,7 @@ int processMultibulkBuffer(client *c) {
                 sdsclear(c->querybuf);
             } else {
                 robj* val = createStringObject(c->querybuf+c->qb_pos,c->bulklen);
-                switch (commentedArgCheck(val)) {
-                    case NOT_VALID_COMMENT:
-                        decrRefCount(val);
-                        commentError = C_ERR;
-                        addReplyError(c,"Protocol error: wrong format comment");
-                        setProtocolError("wrong format comment",c);
-                        break;
-                    case IS_VALID_COMMENT:
-                        serverAssert(c->cmd_argv == NULL);
-                        c->cmd_argv = val;
-                        break;
-                    case NOT_COMMENT:
-                        c->argv[c->argc] = val;
-                        c->argc++;
-                        break;
-                }
+                processAndBuildClientArgv(c, val, &commentError);
                 c->argv_len_sum += c->bulklen;
                 c->qb_pos += c->bulklen+2;
             }
