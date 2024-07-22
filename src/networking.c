@@ -1855,36 +1855,19 @@ void unprotectClient(client *c) {
     }
 }
 
-static inline int commentedArgCreate(robj* val, int* argc, robj** argv, robj** cmd_argv) {
+#define IS_VALID_COMMENT (1)
+#define NOT_VALID_COMMENT (1)<<1
+#define NOT_COMMENT (1)<<2
+
+static inline int commentedArgCheck(robj* val) {
     sds comment = (sds)val->ptr;
+    sds begin, end;
 
-    if (*cmd_argv == NULL && *argc == 0 && (strstr(val->ptr, "/*") != NULL)) {
-        sds comment = (sds)val->ptr;
-        sds begin, end;
-        begin = end = comment;
-        if (strstr(begin, "/*")-comment!=0)
-            goto err;
-        if (sdslen(comment)!=strstr(comment,"*/")-comment+strlen("*/"))
-            goto err;
-        *cmd_argv = val;
-    } else {
-        argv[*argc] = val;
-        (*argc)++;
-    }
-    return C_OK;
-
-err:
-    return C_ERR;
-}
-
-static inline int processComment(robj* val, client* c) {
-    if(commentedArgCreate(val, &c->argc, c->argv, &c->cmd_argv) == C_ERR) {
-        decrRefCount(val);
-        addReplyError(c,"Protocol error: wrong format comment");
-        setProtocolError("wrong format comment",c);
-        return C_ERR;
-    }
-    return C_OK;
+    begin = strstr(comment, "/*");
+    end = strstr(comment, "*/");
+    if(begin==NULL && end==NULL) return NOT_COMMENT;
+    if(begin-comment==0 && (sdslen(comment)==end-comment+strlen("*/"))) return IS_VALID_COMMENT;
+    return NOT_VALID_COMMENT;
 }
 
 /* Like processMultibulkBuffer(), but for the inline protocol instead of RESP,
@@ -1961,8 +1944,21 @@ int processInlineBuffer(client *c) {
     /* Create redis objects for all arguments. */
     for (c->argc = 0, j = 0; j < argc; j++) {
         robj* val = createObject(OBJ_STRING,argv[j]);
-        if (processComment(val, c) == C_ERR) {
-            commentError = C_ERR;
+        switch (commentedArgCheck(val)) {
+            case NOT_VALID_COMMENT:
+                decrRefCount(val);
+                commentError = C_ERR;
+                addReplyError(c,"Protocol error: wrong format comment");
+                setProtocolError("wrong format comment",c);
+                break;
+            case IS_VALID_COMMENT:
+                serverAssert(c->cmd_argv == NULL);
+                c->cmd_argv = val;
+                break;
+            case NOT_COMMENT:
+                c->argv[c->argc] = val;
+                c->argc++;
+                break;
         }
         c->argv_len_sum += sdslen(argv[j]);
     }
@@ -2065,6 +2061,8 @@ int processMultibulkBuffer(client *c) {
     }
 
     serverAssertWithInfo(c,NULL,c->multibulklen > 0);
+
+    int commentError = C_OK;
     while(c->multibulklen) {
         /* Read bulk length if unknown */
         if (c->bulklen == -1) {
@@ -2138,8 +2136,22 @@ int processMultibulkBuffer(client *c) {
                 sdslen(c->querybuf) == (size_t)(c->bulklen+2))
             {
                 robj* val = createObject(OBJ_STRING,c->querybuf);
-                if (processComment(val, c) == C_ERR)
-                    return C_ERR;
+                switch (commentedArgCheck(val)) {
+                    case NOT_VALID_COMMENT:
+                        decrRefCount(val);
+                        commentError = C_ERR;
+                        addReplyError(c,"Protocol error: wrong format comment");
+                        setProtocolError("wrong format comment",c);
+                        break;
+                    case IS_VALID_COMMENT:
+                        serverAssert(c->cmd_argv == NULL);
+                        c->cmd_argv = val;
+                        break;
+                    case NOT_COMMENT:
+                        c->argv[c->argc] = val;
+                        c->argc++;
+                        break;
+                }
                 c->argv_len_sum += c->bulklen;
                 sdsIncrLen(c->querybuf,-2); /* remove CRLF */
                 /* Assume that if we saw a fat argument we'll see another one
@@ -2148,8 +2160,22 @@ int processMultibulkBuffer(client *c) {
                 sdsclear(c->querybuf);
             } else {
                 robj* val = createStringObject(c->querybuf+c->qb_pos,c->bulklen);
-                if (processComment(val, c) == C_ERR)
-                    return C_ERR;
+                switch (commentedArgCheck(val)) {
+                    case NOT_VALID_COMMENT:
+                        decrRefCount(val);
+                        commentError = C_ERR;
+                        addReplyError(c,"Protocol error: wrong format comment");
+                        setProtocolError("wrong format comment",c);
+                        break;
+                    case IS_VALID_COMMENT:
+                        serverAssert(c->cmd_argv == NULL);
+                        c->cmd_argv = val;
+                        break;
+                    case NOT_COMMENT:
+                        c->argv[c->argc] = val;
+                        c->argc++;
+                        break;
+                }
                 c->argv_len_sum += c->bulklen;
                 c->qb_pos += c->bulklen+2;
             }
@@ -2158,6 +2184,7 @@ int processMultibulkBuffer(client *c) {
         }
     }
 
+    if (commentError == C_ERR) return C_ERR;
     /* We're done when c->multibulk == 0 */
     if (c->multibulklen == 0) return C_OK;
 

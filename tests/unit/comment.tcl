@@ -51,7 +51,7 @@ start_server {tags {"comment"}} {
 
         test {lua notxn} {
             catch {[$master eval "return redis.call('/*comment*/', 'set','foo',12345)" 1 foo]} {err}
-            assert_match "*Unknown Redis command called from Lua script*" $err
+            assert_match "*wrong format comment*" $err
         }
     }
 }
