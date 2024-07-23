@@ -237,6 +237,11 @@ start_server {tags {"protocol network"}} {
         after 100
         assert_match [read $s] ":1\n"
 
+        puts $s "del /*comment*/\r\n"
+        flush $s
+        after 100
+        assert_match [read $s] ":0\n"
+
         puts $s "\"/* comment hello */\" del k\r\n"
         flush $s
         after 100
