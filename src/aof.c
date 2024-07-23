@@ -737,7 +737,10 @@ struct client *createAOFClient(void) {
 }
 
 void freeFakeClientArgv(struct client *c) {
-    commentedArgDestroy(c->cmd_argv);
+    if(c->cmd_argv) {
+        decrRefCount(c->cmd_argv);
+        c->cmd_argv = NULL;
+    }
     int j;
 
     for (j = 0; j < c->argc; j++)

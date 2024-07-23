@@ -1233,10 +1233,13 @@ void freeClientOriginalArgv(client *c) {
 }
 
 static void freeClientArgv(client *c) {
+    if(c->cmd_argv) {
+        decrRefCount(c->cmd_argv);
+        c->cmd_argv = NULL;
+    }
     int j;
     for (j = 0; j < c->argc; j++)
         decrRefCount(c->argv[j]);
-    commentedArgDestroy(c->cmd_argv);
     c->argc = 0;
     c->cmd = NULL;
     c->argv_len_sum = 0;

@@ -2149,12 +2149,6 @@ int redisCommunicateSystemd(const char *sd_notify_msg);
 void redisSetCpuAffinity(const char *cpulist);
 
 /* networking.c -- Networking and Client related operations */
-#define commentedArgDestroy(cmd_argv) do { \
-    if(cmd_argv) { \
-        decrRefCount(cmd_argv); \
-        cmd_argv = NULL; \
-    } \
-} while (0)
 client *createClient(connection *conn);
 void closeTimedoutClients(void);
 void freeClient(client *c);
