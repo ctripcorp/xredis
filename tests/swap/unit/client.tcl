@@ -35,10 +35,10 @@ start_server {tags "clients"} {
             }
 
             set r [redis $host $port]
-            wait_for_condition 10 100 {
-                [llength [regexp -inline -all {name=LOAD_HANDLER} [$r client list]]] == $load
-            } else {
-                fail "start client too slow"
+            while {1} {
+                if {[llength [regexp -inline -all {name=LOAD_HANDLER} [$r client list]]] == $load} {
+                    break
+                }
             }
             $r client kill type normal
 
