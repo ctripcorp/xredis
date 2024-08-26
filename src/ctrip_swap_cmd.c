@@ -1308,6 +1308,36 @@ int getKeyRequestsMemory(int dbid, struct redisCommand *cmd, robj **argv,
     }
 }
 
+/* The swap.info command, propagate system info to slave.
+ * SWAP.INFO <subcommand> [<arg> [value] [opt] ...]
+ *
+ * subcommand supported:
+ * SWAP.INFO SST-AGE-LIMIT <sst age limit> */
+void swapInfoCommand(client *c) {
+    if (c->argc < 2) {
+        addReply(c,shared.ok);
+        return;
+    } else if (c->argc == 2 && !strcasecmp(c->argv[1]->ptr,"help")) {
+        const char *help[] = {
+            "SST-AGE-LIMIT <quantile> <sst age limit>",
+            "    Set sst age limit to launch ttl compact for aged sst files.",
+            NULL};
+        addReplyHelp(c, help);
+        return;
+    } else if (c->argc == 3 && !strcasecmp(c->argv[1]->ptr,"SST-AGE-LIMIT")) {
+        /* SWAP.INFO SST-AGE-LIMIT <sst age limit> */
+        long long sst_age_limit = 0;
+        int res = isObjectRepresentableAsLongLong(c->argv[2], &sst_age_limit);
+        if (res == C_OK) {
+            server.swap_ttl_compact_ctx->expire_stats->sst_age_limit = sst_age_limit;
+        }
+        addReply(c,shared.ok);
+        return;
+    }
+
+    addReply(c,shared.ok);
+}
+
 #ifdef REDIS_TEST
 
 void rewriteResetClientCommandCString(client *c, int argc, ...) {

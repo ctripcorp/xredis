@@ -370,6 +370,7 @@ typedef enum {
 #define SLAVE_CAPA_EOF (1<<0)    /* Can parse the RDB EOF streaming format. */
 #define SLAVE_CAPA_PSYNC2 (1<<1) /* Supports PSYNC2 protocol. */
 #define SLAVE_CAPA_RORDB (1<<2) /* Can parse RORDB format. */
+#define SLAVE_CAPA_SWAP_INFO (1<<3) /* Supports SWAP.INFO cmd. */
 
 /* Synchronous read timeout - slave side */
 #define CONFIG_REPL_SYNCIO_TIMEOUT 5
@@ -1066,7 +1067,7 @@ struct sharedObjectsStruct {
     *time, *pxat, *px, *retrycount, *force, *justid, 
     *lastid, *ping, *setid, *keepttl, *load, *createconsumer,
     *getack, *special_asterick, *special_equals, *default_username, *redacted,
-    *emptystring, *gtid,
+    *emptystring, *gtid, *swap_info, *sst_age_limit,
     *select[PROTO_SHARED_SELECT_CMDS],
     *integers[OBJ_SHARED_INTEGERS],
     *mbulkhdr[OBJ_SHARED_BULKHDR_LEN], /* "*<value>\r\n" */
@@ -1960,6 +1961,17 @@ struct redisServer {
     unsigned long long swap_repl_rordb_max_write_bps;
 
     client *swap_draining_master;
+
+    /* ttl compact, only compact default CF */
+    int swap_ttl_compact_enabled;
+    unsigned int swap_ttl_compact_expire_percentile;
+    unsigned long long swap_ttl_compact_period; /* seconds */
+    unsigned long long swap_sst_age_limit_refresh_period; /* seconds */
+    struct swapTtlCompactCtx *swap_ttl_compact_ctx;
+
+    /* for swap.info command, which propagate system info to replica */
+    int swap_swap_info_supported;
+    unsigned long long swap_swap_info_slave_period;     /* Master send cmd swap.info to the slave every N seconds */
 };
 
 #define MAX_KEYS_BUFFER 256
