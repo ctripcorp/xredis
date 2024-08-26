@@ -69,10 +69,22 @@ proc object_is_cold {r key} {
 
 proc object_is_warm {r key} {
     set str [$r swap object $key]
-    if { [swap_object_property $str value at] != "" && [swap_object_property $str hot_meta swap_type] != ""} {
-        set _ 1
-    } else {
+    if { [swap_object_property $str value at] == ""} {
         set _ 0
+    } else {
+        set sw_type [swap_object_property $str hot_meta swap_type]
+        if {$sw_type == ""} {
+            set _ 0
+        } elseif {$sw_type == 7} {
+            # maybe meta is bitmap marker
+            if {[swap_object_property $str hot_meta pure_cold_subkeys_num] == 0} {
+                set _ 0
+            } else {
+                set _ 1
+            }
+        } else {
+            set _ 1
+        }
     }
 }
 

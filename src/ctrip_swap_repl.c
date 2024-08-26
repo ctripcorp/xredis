@@ -391,3 +391,60 @@ sds genSwapReplInfoString(sds info) {
             listLength(server.repl_swapping_clients));
     return info;
 }
+
+bool isSwapInfoSupported(void) {
+
+    if (server.swap_swap_info_supported == SWAP_INFO_SUPPORTED_YES) return true;
+    if (server.swap_swap_info_supported == SWAP_INFO_SUPPORTED_NO) return false;
+
+    /* SWAP_INFO_SUPPORTED_AUTO */
+    /* depends on capa of all slaves, 
+     * once there is one slave without capa of swap.info, return false. */
+
+    listNode *ln;
+    listIter li;
+
+    listRewind(server.slaves,&li);
+    while((ln = listNext(&li))) {
+        client *slave = ln->value;
+
+        if (!(slave->slave_capa & SLAVE_CAPA_SWAP_INFO)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* SWAP.INFO SST-AGE-LIMIT <sst age limit> */
+void swapBuildSwapInfoSstAgeLimitCmd(robj *argv[3], long long sst_age_limit) {
+
+    argv[0] = shared.swap_info;
+    argv[1] = shared.sst_age_limit;
+    argv[2] = createStringObjectFromLongLong(sst_age_limit);
+}
+
+void swapDestorySwapInfoSstAgeLimitCmd(robj *argv[3]) {
+    decrRefCount(argv[2]);
+}
+
+/* The swap.info command, propagate system info to slave.
+ * SWAP.INFO <subcommand> [<arg> [value] [opt] ...]
+ *
+ * subcommand supported:
+ * SWAP.INFO SST-AGE-LIMIT <sst age limit> */
+void swapPropagateSwapInfo(int argc, robj **argv) {
+
+    if (!isSwapInfoSupported()) return; 
+
+    if (argc < 2) {
+        return;
+    } else if (argc == 3 && !strcasecmp(argv[1]->ptr,"SST-AGE-LIMIT")) {
+        /* SWAP.INFO SST-AGE-LIMIT <sst age limit> */
+        goto propagate;
+    }
+    return;
+
+propagate:
+    replicationFeedSlaves(server.slaves,0,argv,argc);
+    return;
+}
