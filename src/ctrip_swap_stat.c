@@ -350,6 +350,7 @@ sds genSwapInfoString(sds info) {
     info = genSwapRateLimitInfoString(info);
     info = genSwapPersistInfoString(info);
     info = genSwapBitmapStringSwitchedInfoString(info);
+    info = genSwapTtlCompactInfoString(info);
     return info;
 }
 

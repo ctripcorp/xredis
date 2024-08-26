@@ -477,7 +477,7 @@ long long emptyDb(int dbnum, int flags, void(callback)(void*)) {
     }
 
     if (server.swap_mode != SWAP_MODE_MEMORY) {
-        if ((rocksFlushDB(dbnum)))
+        if (rocksFlushDB(dbnum))
             serverLog(LL_WARNING,"[ROCKS] flushd rocks db(%d) failed.",dbnum);
     }
 
@@ -493,6 +493,10 @@ long long emptyDb(int dbnum, int flags, void(callback)(void*)) {
 
     /* Empty redis database structure. */
     removed = emptyDbStructure(server.db, dbnum, async, callback);
+
+    if (server.swap_ttl_compact_ctx) {
+        swapTtlCompactCtxReset(server.swap_ttl_compact_ctx);
+    }
 
     /* Flush slots to keys map if enable cluster, we can flush entire
      * slots to keys map whatever dbnum because only support one DB

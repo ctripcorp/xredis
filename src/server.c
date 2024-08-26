@@ -1184,6 +1184,9 @@ struct redisCommand redisCommandTable[] = {
      "admin random ok-loading ok-stale",
      0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
 
+    {"swap.info", swapInfoCommand, -2,
+     "admin no-script ok-loading fast may-replicate",
+     0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
 };
 
 /*============================ Utility functions ============================ */
@@ -2155,6 +2158,62 @@ void _rdbSaveBackground(client *c, swapCtx *ctx) {
     clientReleaseLocks(c,ctx);
 }
 
+static void ttlCompactRefreshSstAgeLimit() {
+    if (!iAmMaster()) {
+        /* slave get sst age limit in "swap.info" cmd propagated from master. */
+        return;
+    }
+
+    if (server.swap_ttl_compact_enabled) {
+            wtdigest *expire_wt = server.swap_ttl_compact_ctx->expire_stats->expire_wt;
+            swapExpireStatus *expire_stats = server.swap_ttl_compact_ctx->expire_stats;
+            long long keys_num = dbTotalServerKeyCount();
+            long long sampled_size = wtdigestSize(expire_wt);
+
+            if (sampled_size == 0) {
+                expire_stats->sst_age_limit = 0;
+            } else if (wtdigestGetRunnningTime(expire_wt) > wtdigestGetWindow(expire_wt) ||
+                       sampled_size >= keys_num) {
+                double percentile = (double)server.swap_ttl_compact_expire_percentile / 100;
+                double res = wtdigestQuantile(expire_wt, percentile);
+                if (res >= LLONG_MAX || res <= LLONG_MIN) {
+                    /* maybe overflow happened, which is unexpected. */
+                    expire_stats->sst_age_limit = SWAP_TTL_COMPACT_INVALID_EXPIRE;
+                } else {
+                    expire_stats->sst_age_limit = (long long)res;
+                }
+            } else {
+                expire_stats->sst_age_limit = SWAP_TTL_COMPACT_INVALID_EXPIRE;
+            }
+    } else {
+        swapExpireStatusReset(server.swap_ttl_compact_ctx->expire_stats);
+    }
+}
+
+static void ttlCompactProduceTask() {
+    if (server.swap_ttl_compact_enabled && server.swap_ttl_compact_ctx->task == NULL &&
+        (server.swap_ttl_compact_ctx->expire_stats->sst_age_limit != SWAP_TTL_COMPACT_INVALID_EXPIRE)) {
+        cfIndexes *idxes = cfIndexesNew(1);
+        idxes->index[0] = DATA_CF;
+        if (!submitUtilTask(ROCKSDB_COLLECT_CF_META_TASK, idxes, genServerTtlCompactTask, idxes, NULL)) {
+            serverLog(LL_NOTICE, "[rocksdb] collect cf meta task set failed.");
+            cfIndexesFree(idxes);
+        }
+    }
+}
+
+static void ttlCompactConsumeTask() {
+    if (server.swap_ttl_compact_enabled && server.swap_ttl_compact_ctx->task != NULL) {
+        compactTask *task = server.swap_ttl_compact_ctx->task;
+        if (submitUtilTask(ROCKSDB_COMPACT_RANGE_TASK, task, rocksdbCompactRangeTaskDone, task, NULL)) {
+            server.swap_ttl_compact_ctx->task = NULL; /* task move to utilctx */
+            atomicIncr(server.swap_ttl_compact_ctx->stat_request_compact_times, 1);
+        } else {
+            serverLog(LL_NOTICE, "[rocksdb] ttl compact task set failed.");
+        }
+    }
+}
+
 /* This is our timer interrupt, called server.hz times per second.
  * Here is where we do a number of things that need to be done asynchronously.
  * For instance:
@@ -2421,6 +2480,29 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
             if (server.maxmemory_scale_from > server.maxmemory)
                 updateMaxMemoryScaleFrom();
         }
+    }
+
+    run_with_period(1000*(int)server.swap_sst_age_limit_refresh_period) {
+        ttlCompactRefreshSstAgeLimit();
+    }
+
+    run_with_period(1000*(int)server.swap_ttl_compact_period) {
+        /* producing and consuming task are both in swap util thread
+         * so producing should be slower than consuming, otherwise consuming
+         * will be starved to death. */
+        ttlCompactProduceTask();  
+    }
+
+    run_with_period(1000*(int)server.swap_ttl_compact_period / 2) {
+        ttlCompactConsumeTask();   
+    }
+
+    run_with_period(1000*(int)server.swap_swap_info_slave_period) {
+        /* propagate sst age limit */
+        robj *argv[3];
+        swapBuildSwapInfoSstAgeLimitCmd(argv, server.swap_ttl_compact_ctx->expire_stats->sst_age_limit);
+        swapPropagateSwapInfo(3, argv);
+        swapDestorySwapInfoSstAgeLimitCmd(argv);
     }
 
     /* Fire the cron loop modules event. */
@@ -2775,6 +2857,7 @@ void createSharedObjects(void) {
     shared.persist = createStringObject("PERSIST",7);
     shared.set = createStringObject("SET",3);
     shared.eval = createStringObject("EVAL",4);
+    shared.swap_info = createStringObject("swap.info",9);
 
     /* Shared command argument */
     shared.left = createStringObject("left",4);
@@ -2796,6 +2879,7 @@ void createSharedObjects(void) {
     shared.special_asterick = createStringObject("*",1);
     shared.special_equals = createStringObject("=",1);
     shared.redacted = makeObjectShared(createStringObject("(redacted)",10));
+    shared.sst_age_limit = createStringObject("SST-AGE-LIMIT",13);
 
     shared.gtid = createStringObject("GTID",4);
     for (j = 0; j < OBJ_SHARED_INTEGERS; j++) {

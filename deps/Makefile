@@ -39,6 +39,7 @@ distclean:
 	-(cd jemalloc && [ -f Makefile ] && $(MAKE) distclean) > /dev/null || true
 	-(cd hdr_histogram && $(MAKE) clean) > /dev/null || true
 	-(cd xredis-gtid && [ -f Makefile ] && $(MAKE) clean) > /dev/null || true
+	-(cd tdigest && $(MAKE) clean) > /dev/null || true
 	-(rm -f .make-*)
 
 .PHONY: distclean
@@ -64,6 +65,14 @@ hdr_histogram: .make-prerequisites
 	cd hdr_histogram && $(MAKE)
 
 .PHONY: hdr_histogram
+
+TDIGEST_CFLAGS= -I./include -I../../src
+
+tdigest: .make-prerequisites
+	@printf '%b %b\n' $(MAKECOLOR)MAKE$(ENDCOLOR) $(BINCOLOR)$@$(ENDCOLOR)
+	cd tdigest && $(MAKE) CFLAGS="$(TDIGEST_CFLAGS)"
+
+.PHONY: tdigest
 
 ifeq ($(uname_S),SunOS)
 	# Make isinf() available
