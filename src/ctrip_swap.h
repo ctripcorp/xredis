@@ -35,6 +35,7 @@
 #include "ctrip_lru_cache.h"
 #include "ctrip_cuckoo_filter.h"
 #include "ctrip_swap_adlist.h"
+#include "ctrip_wtdigest.h"
 
 #define IN        /* Input parameter */
 #define OUT       /* Output parameter */
@@ -1913,6 +1914,88 @@ typedef struct rocksdbCreateCheckpointResult{
     sds checkpoint_dir;
 } rocksdbCreateCheckpointResult;
 
+/* rocksdb util task: collect cf meta */
+typedef struct cfMetas {
+  uint num;
+  rocksdb_column_family_metadata_t** cf_meta;
+} cfMetas;
+
+cfMetas *cfMetasNew(uint cf_num);
+void cfMetasFree(cfMetas *metas);
+
+typedef struct cfIndexes {
+  uint num;
+  int *index;
+} cfIndexes;
+
+cfIndexes *cfIndexesNew(uint num);
+void cfIndexesFree(cfIndexes *indexes);
+
+/* rocksdb util task: compact */
+typedef struct compactKeyRange {
+  uint cf_index;
+  char *start_key;
+  char *end_key;
+  size_t start_key_size;
+  size_t end_key_size;
+} compactKeyRange;
+
+compactKeyRange *compactKeyRangeNew(uint cf_index, char *start_key, char *end_key, size_t start_key_size, size_t end_key_size);
+void compactKeyRangeFree(compactKeyRange *range);
+
+#define TYPE_TTL_COMPACT 0
+#define TYPE_FULL_COMPACT 1
+typedef struct compactTask {
+  int compact_type;
+  uint count;
+  uint capacity;
+  compactKeyRange **key_range;
+} compactTask;
+
+compactTask *compactTaskNew(int compact_type);
+void compactTaskFree(compactTask *task);
+void compactTaskAppend(compactTask *task, compactKeyRange *key_range);
+
+void rocksdbCompactRangeTaskDone(void *result, void *pd, int errcode);
+void genServerTtlCompactTask(void *result, void *pd, int errcode);
+
+#define SWAP_TTL_COMPACT_INVALID_EXPIRE LLONG_MAX /* expire or pexpire is long long int. */
+#define SWAP_TTL_COMPACT_DEFAULT_EXPIRE_WT_WINDOW 86400000 /* ms, 24h */
+
+typedef struct swapExpireStatus {
+    long long sst_age_limit; /* milliseconds, both in master and slave, sub-slave, master will propagate it to slave */
+    wtdigest *expire_wt; /* only in master, save in milliseconds */
+} swapExpireStatus;
+
+typedef struct swapTtlCompactCtx {
+    compactTask *task; /* move to utilctx during serverCron. */
+    swapExpireStatus *expire_stats;
+    redisAtomic unsigned long long stat_request_compact_times;
+    redisAtomic unsigned long long stat_request_sst_count;
+} swapTtlCompactCtx;
+
+swapTtlCompactCtx *swapTtlCompactCtxNew();
+void swapTtlCompactCtxFree(swapTtlCompactCtx *ctx);
+void swapTtlCompactCtxReset(swapTtlCompactCtx *ctx);
+
+swapExpireStatus *swapExpireStatusNew();
+void swapExpireStatusFree(swapExpireStatus *stats);
+void swapExpireStatusReset(swapExpireStatus *stats);
+
+sds genSwapTtlCompactInfoString(sds info);
+
+/* swap info cmd */
+#define SWAP_INFO_SUPPORTED_YES 0
+#define SWAP_INFO_SUPPORTED_NO 1
+#define SWAP_INFO_SUPPORTED_AUTO 2
+
+void swapInfoCommand(client *c);
+
+void swapBuildSwapInfoSstAgeLimitCmd(robj *argv[3], long long sst_age_limit);
+void swapDestorySwapInfoSstAgeLimitCmd(robj *argv[3]);
+
+void swapPropagateSwapInfo(int argc, robj **argv);
+
 /* Repl */
 int submitReplClientRequests(client *c);
 sds genSwapReplInfoString(sds info);
@@ -2479,6 +2562,7 @@ static inline void clientSwapError(client *c, int swap_errcode) {
 #define ROCKSDB_FLUSH_TASK 2
 #define ROCKSDB_EXCLUSIVE_TASK_COUNT 3
 #define ROCKSDB_CREATE_CHECKPOINT 3
+#define ROCKSDB_COLLECT_CF_META_TASK 4
 
 typedef void (*rocksdbUtilTaskCallback)(void *result, void *pd, int errcode);
 
@@ -2629,6 +2713,7 @@ int swapPersistTest(int argc, char *argv[], int accurate);
 int swapRordbTest(int argc, char *argv[], int accurate);
 int roaringBitmapTest(int argc, char *argv[], int accurate);
 int swapDataBitmapTest(int argc, char **argv, int accurate);
+int wtdigestTest(int argc, char **argv, int accurate);
 
 int swapTest(int argc, char **argv, int accurate);
 

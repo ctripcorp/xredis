@@ -156,6 +156,13 @@ configEnum swap_ratelimit_policy_enum[] = {
     {NULL, 0}
 };
 
+configEnum swap_info_supported_enum[] = {
+    {"yes", SWAP_INFO_SUPPORTED_YES},
+    {"no", SWAP_INFO_SUPPORTED_NO},
+    {"auto", SWAP_INFO_SUPPORTED_AUTO},
+    {NULL, 0}
+};
+
 /* Output buffer limits presets. */
 clientBufferLimitsConfig clientBufferLimitsDefaults[CLIENT_TYPE_OBUF_COUNT] = {
     {0, 0, 0}, /* normal */
@@ -2889,6 +2896,7 @@ standardConfig configs[] = {
     createBoolConfig("swap-repl-rordb-sync", NULL, MODIFIABLE_CONFIG, server.swap_repl_rordb_sync, 1, NULL, NULL),
     createBoolConfig("swap-rdb-bitmap-encode-enabled", NULL, MODIFIABLE_CONFIG, server.swap_rdb_bitmap_encode_enabled, 1, NULL, NULL),
     createBoolConfig("swap-bitmap-subkeys-enabled", NULL, MODIFIABLE_CONFIG, server.swap_bitmap_subkeys_enabled, 1, NULL, NULL),
+    createBoolConfig("swap-ttl-compact-enabled", NULL, MODIFIABLE_CONFIG, server.swap_ttl_compact_enabled, 1, NULL, NULL),
     createBoolConfig("rocksdb.data.cache_index_and_filter_blocks", "rocksdb.cache_index_and_filter_blocks", IMMUTABLE_CONFIG, server.rocksdb_data_cache_index_and_filter_blocks, 0, NULL, NULL),
     createBoolConfig("rocksdb.meta.cache_index_and_filter_blocks", NULL, IMMUTABLE_CONFIG, server.rocksdb_meta_cache_index_and_filter_blocks, 0, NULL, NULL),
     createBoolConfig("rocksdb.enable_pipelined_write", NULL, IMMUTABLE_CONFIG, server.rocksdb_enable_pipelined_write, 0, NULL, NULL),
@@ -2938,6 +2946,7 @@ standardConfig configs[] = {
     createEnumConfig("rocksdb.meta.compression", NULL, MODIFIABLE_CONFIG, rocksdb_compression_enum, server.rocksdb_meta_compression, rocksdb_snappy_compression, NULL, updateRocksdbMetaCompression),
     createEnumConfig("swap-cuckoo-filter-bit-per-key", NULL, IMMUTABLE_CONFIG, cuckoo_filter_bit_type_enum, server.swap_cuckoo_filter_bit_type, CUCKOO_FILTER_BITS_PER_TAG_8, NULL, NULL),
     createEnumConfig("swap-ratelimit-policy", NULL, MODIFIABLE_CONFIG, swap_ratelimit_policy_enum, server.swap_ratelimit_policy, SWAP_RATELIMIT_POLICY_PAUSE, NULL, NULL),
+    createEnumConfig("swap-swap-info-supported", NULL, MODIFIABLE_CONFIG, swap_info_supported_enum, server.swap_swap_info_supported, SWAP_INFO_SUPPORTED_AUTO, NULL, NULL),
 
     /* Integer configs */
     createIntConfig("databases", NULL, IMMUTABLE_CONFIG, 1, INT_MAX, server.dbnum, 16, INTEGER_CONFIG, NULL, NULL),
@@ -3025,6 +3034,7 @@ standardConfig configs[] = {
  
     /* Unsigned int configs */
     createUIntConfig("maxclients", NULL, MODIFIABLE_CONFIG, 1, UINT_MAX, server.maxclients, 10000, INTEGER_CONFIG, NULL, updateMaxclients),
+    createUIntConfig("swap-ttl-compact-expire-percentile", NULL, MODIFIABLE_CONFIG, 1, 100, server.swap_ttl_compact_expire_percentile, 99, INTEGER_CONFIG, NULL, NULL),
 
     /* Unsigned Long configs */
     createULongConfig("active-defrag-max-scan-fields", NULL, MODIFIABLE_CONFIG, 1, LONG_MAX, server.active_defrag_max_scan_fields, 1000, INTEGER_CONFIG, NULL, NULL), /* Default: keys with more than 1000 fields will be processed separately */
@@ -3075,7 +3085,9 @@ standardConfig configs[] = {
     createULongLongConfig("rocksdb.data.blob_file_size", "rocksdb.blob_file_size", MODIFIABLE_CONFIG, 0, ULLONG_MAX, server.rocksdb_data_blob_file_size, 256*1024*1024, MEMORY_CONFIG, NULL, updateRocksdbDataBlobFileSize),
     createULongLongConfig("rocksdb.meta.blob_file_size", NULL, MODIFIABLE_CONFIG, 0, ULLONG_MAX, server.rocksdb_meta_blob_file_size, 256*1024*1024, MEMORY_CONFIG, NULL, updateRocksdbMetaBlobFileSize),
     createULongLongConfig("swap-repl-rordb-max-write-bps", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.swap_repl_rordb_max_write_bps, 200*1024*1024, MEMORY_CONFIG, NULL, NULL),
-
+    createULongLongConfig("swap-ttl-compact-period", NULL, MODIFIABLE_CONFIG, 1, 3600*24, server.swap_ttl_compact_period, 60*8, INTEGER_CONFIG, NULL, NULL),
+    createULongLongConfig("swap-sst-age-limit-refresh-period", NULL, MODIFIABLE_CONFIG, 1, 3600*24, server.swap_sst_age_limit_refresh_period, 60, INTEGER_CONFIG, NULL, NULL),
+    createULongLongConfig("swap-swap-info-slave-period", NULL, MODIFIABLE_CONFIG, 1, 3600*24, server.swap_swap_info_slave_period, 60, INTEGER_CONFIG, NULL, NULL),
 
     /* Size_t configs */
     createSizeTConfig("hash-max-ziplist-entries", NULL, MODIFIABLE_CONFIG, 0, LONG_MAX, server.hash_max_ziplist_entries, 512, INTEGER_CONFIG, NULL, NULL),

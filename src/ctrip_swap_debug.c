@@ -280,7 +280,15 @@ NULL
         addReply(c,shared.ok);
     } else if (!strcasecmp(c->argv[1]->ptr,"compact") && c->argc == 2) {
         sds error = NULL;
-        if (submitUtilTask(ROCKSDB_COMPACT_RANGE_TASK, NULL, NULL, NULL, &error)) {
+        /* no specified compact range, to launch a full compact. */
+        compactTask *task = compactTaskNew(TYPE_FULL_COMPACT);
+
+        for (int i = 0; i < CF_COUNT; i++) {
+            compactKeyRange *key_range = compactKeyRangeNew(i, NULL, NULL, 0, 0);
+            compactTaskAppend(task, key_range);
+        }
+
+        if (submitUtilTask(ROCKSDB_COMPACT_RANGE_TASK, task, rocksdbCompactRangeTaskDone, task, &error)) {
             addReply(c,shared.ok);
         } else {
             addReplyErrorSds(c,error);

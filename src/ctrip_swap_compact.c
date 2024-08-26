@@ -267,6 +267,372 @@ rocksdb_compactionfilterfactory_t* createScoreCfCompactionFilterFactory() {
             createScoreCfCompactionFilter,scoreFilterFactoryName);
 }
 
+/* 
+ * for manual compact task 
+ * 1.ttl compact task
+ * 2.full compact task 
+ */
+
+cfIndexes *cfIndexesNew(uint num) {
+    cfIndexes *idxes = zmalloc(sizeof(cfIndexes));
+    idxes->num = num;
+    idxes->index = zcalloc(sizeof(int) * num);
+    return idxes;
+}
+
+void cfIndexesFree(cfIndexes *idxes) {
+    zfree(idxes->index);
+    zfree(idxes);
+}
+
+compactKeyRange *compactKeyRangeNew(uint cf_index, char *start_key, char *end_key, size_t start_key_size, size_t end_key_size) {
+    serverAssert(cf_index < CF_COUNT);
+    compactKeyRange *range = zcalloc(sizeof(compactKeyRange));
+    range->cf_index = cf_index;
+    range->start_key = start_key;
+    range->end_key = end_key;
+    range->start_key_size = start_key_size;
+    range->end_key_size = end_key_size;
+    return range;
+}
+
+void compactKeyRangeFree(compactKeyRange *range) {
+    if (range->start_key) {
+        zlibc_free(range->start_key);
+    }
+    if (range->end_key) {
+        zlibc_free(range->end_key);
+    }
+    zfree(range);
+}
+
+compactTask *compactTaskNew(int compact_type) {
+    compactTask *task = zcalloc(sizeof(compactTask));
+    task->compact_type = compact_type;
+    task->count = 0;
+    task->capacity = 1;
+    task->key_range = zcalloc(sizeof(compactKeyRange *));
+
+    return task;
+}
+
+void compactTaskFree(compactTask *task) {
+    for (uint i = 0; i < task->count; i++) {
+        if (task->key_range[i]) {
+            compactKeyRangeFree(task->key_range[i]);
+        }
+    }
+    zfree(task->key_range);
+    zfree(task);
+}
+
+void compactTaskAppend(compactTask *task, compactKeyRange *key_range) {
+    serverAssert(task->count <= task->capacity);
+    if (task->count < task->capacity) {
+        task->key_range[task->count] = key_range;
+        task->count++;
+        return;
+    }
+
+    task->capacity = task->capacity * 2;
+
+    compactKeyRange **range_arr = zmalloc(task->capacity * sizeof(compactKeyRange *));
+    memcpy(range_arr, task->key_range, task->count * sizeof(compactKeyRange *));
+    zfree(task->key_range);
+    task->key_range = range_arr;
+
+    task->key_range[task->count] = key_range;
+    task->count++;
+}
+
+static rocksdb_level_metadata_t* getHighestLevelMetaWithSST(rocksdb_column_family_metadata_t *default_meta) {
+
+    size_t level_count = rocksdb_column_family_metadata_get_level_count(default_meta);
+
+    rocksdb_level_metadata_t* level_meta = NULL;
+    size_t highest_level_sst_num = 0;
+
+    for (int i = level_count - 1; i >= 1; i--) {
+        /* from bottom_most level */
+        level_meta = rocksdb_column_family_metadata_get_level_metadata(default_meta, i);
+        if (level_meta == NULL) {
+            continue;
+        }
+
+        highest_level_sst_num = rocksdb_level_metadata_get_file_count(level_meta);
+        if (highest_level_sst_num != 0) {
+            break;
+        }
+
+        rocksdb_level_metadata_destroy(level_meta);
+        level_meta = NULL;
+    }
+    return level_meta;
+}
+
+static int getExpiredSstInfo(rocksdb_level_metadata_t* level_meta, long long sst_age_limit, uint *sst_index_arr, uint64_t *sst_age_arr) {
+
+    size_t level_sst_num = rocksdb_level_metadata_get_file_count(level_meta);
+    int sst_recorded_num = 0;
+
+    for (uint i = 0; i < level_sst_num; i++) {
+        rocksdb_sst_file_metadata_t* sst_meta = rocksdb_level_metadata_get_sst_file_metadata(level_meta, i);
+        if (sst_meta == NULL) {
+            continue;
+        }
+
+        /* seconds */
+        uint64_t create_time = rocksdb_sst_file_metadata_get_file_creation_time(sst_meta); 
+        rocksdb_sst_file_metadata_destroy(sst_meta);
+        long long nowtimestamp = server.mstime;
+        
+        long long exist_time = nowtimestamp - (long long)create_time * 1000;
+        if (exist_time <= sst_age_limit) {
+            continue;
+        }
+
+        sst_index_arr[sst_recorded_num] = i;
+        sst_age_arr[sst_recorded_num] = exist_time;
+
+        sst_recorded_num++;
+    }
+
+    return sst_recorded_num;
+}
+
+/*
+ * sort the sst to get oldest sst range with the continous index(ascending or descending order).
+ */
+static uint sortExpiredSstInfo(uint *sst_index_arr, uint64_t *sst_age_arr, uint sst_recorded_num, bool *is_ascending_order) {
+
+    uint arranged_cursor = 0;
+
+    /* pruning bubble algorithm */
+    /* sort in place */
+    for (uint i = 0; i < sst_recorded_num - 1; i++) {
+        for (uint j = sst_recorded_num - 1; j > i; j--) {
+
+            if (sst_age_arr[j] > sst_age_arr[j - 1]) {
+                uint64_t tmp_exist_time;
+                tmp_exist_time = sst_age_arr[j];
+                sst_age_arr[j] = sst_age_arr[j - 1];
+                sst_age_arr[j - 1] = tmp_exist_time;
+
+                int tmp_sst_idx;
+                tmp_sst_idx = sst_index_arr[j];
+                sst_index_arr[j] = sst_index_arr[j - 1];
+                sst_index_arr[j - 1] = tmp_sst_idx;
+            }
+        }
+
+        if (i == 0) {
+            arranged_cursor = 0;
+            continue;
+        }
+
+        if (i == 1) { /* when there is two oldest sst arranged, order should be decided */
+            if (sst_index_arr[i] == sst_index_arr[i - 1] + 1) {
+                *is_ascending_order = true;
+                arranged_cursor = 1;
+                continue;
+            } else if (sst_index_arr[i] + 1 == sst_index_arr[i - 1]) {
+                *is_ascending_order = false;
+                arranged_cursor = 1;
+                continue;
+            } else {
+                break; /* continuity of sst index has been broken, no need to continue sorting */
+            }
+        }
+
+        /* sort work will continue until the continuity of sst index is broken */
+        /* i > 1 */
+        if (((sst_index_arr[i - 1] + 1 == sst_index_arr[i]) && (*is_ascending_order)) || 
+            ((sst_index_arr[i - 1] == sst_index_arr[i] + 1) && !(*is_ascending_order))) {
+            arranged_cursor = i;
+        } else {
+            break;
+        }
+    }
+
+    return arranged_cursor;
+}
+
+static compactTask *getTtlCompactTask(rocksdb_level_metadata_t *level_meta, uint *sst_index_arr, uint arranged_cursor, bool is_ascending_order) {
+
+    rocksdb_sst_file_metadata_t* smallest_sst_meta;
+    rocksdb_sst_file_metadata_t* largest_sst_meta;
+
+    if (is_ascending_order) {
+        smallest_sst_meta = rocksdb_level_metadata_get_sst_file_metadata(level_meta, sst_index_arr[0]);
+        largest_sst_meta = rocksdb_level_metadata_get_sst_file_metadata(level_meta, sst_index_arr[arranged_cursor]);
+    } else {
+        smallest_sst_meta = rocksdb_level_metadata_get_sst_file_metadata(level_meta, sst_index_arr[arranged_cursor]);
+        largest_sst_meta = rocksdb_level_metadata_get_sst_file_metadata(level_meta, sst_index_arr[0]);
+    }
+
+    serverAssert(smallest_sst_meta != NULL);
+    serverAssert(largest_sst_meta != NULL);
+
+    size_t smallest_key_name_size;
+    size_t largest_key_name_size;
+    char *smallest_key = rocksdb_sst_file_metadata_get_smallestkey(smallest_sst_meta, &smallest_key_name_size);
+    char *largest_key = rocksdb_sst_file_metadata_get_largestkey(largest_sst_meta, &largest_key_name_size);
+
+    rocksdb_sst_file_metadata_destroy(smallest_sst_meta);
+    rocksdb_sst_file_metadata_destroy(largest_sst_meta);
+
+    compactTask *task = compactTaskNew(TYPE_TTL_COMPACT);
+
+    compactKeyRange *data_key_range = compactKeyRangeNew(DATA_CF, smallest_key, largest_key, smallest_key_name_size, largest_key_name_size);
+    compactTaskAppend(task,data_key_range);
+
+    return task;
+}
+
+void genServerTtlCompactTask(void *result, void *pd, int errcode) {
+    UNUSED(errcode);
+    cfIndexesFree(pd);
+    cfMetas *metas = result;
+    serverAssert(metas->num == 1);
+
+    long long sst_age_limit = server.swap_ttl_compact_ctx->expire_stats->sst_age_limit;
+    if (!(sst_age_limit > LONG_LONG_MIN && sst_age_limit < LONG_LONG_MAX)) {
+        /* illegal age limit for sst. */
+        cfMetasFree(metas);
+        return;
+    }
+
+    char *cf_name = rocksdb_column_family_metadata_get_name(metas->cf_meta[0]);
+    serverAssert(strcmp(cf_name, "default") == 0);
+    zlibc_free(cf_name);
+    rocksdb_column_family_metadata_t *default_meta = metas->cf_meta[0];
+    rocksdb_level_metadata_t *level_meta = getHighestLevelMetaWithSST(default_meta);
+    if (level_meta == NULL) {
+        cfMetasFree(metas);
+        return;
+    }
+
+    size_t highest_level_sst_num = rocksdb_level_metadata_get_file_count(level_meta);
+    serverAssert(highest_level_sst_num != 0);
+
+    uint *sst_index_arr = zmalloc(sizeof(int) * highest_level_sst_num);
+    memset(sst_index_arr, -1, sizeof(int) * highest_level_sst_num);
+
+    uint64_t *sst_age_arr = zmalloc(sizeof(uint64_t) * highest_level_sst_num);
+    memset(sst_age_arr, 0, sizeof(uint64_t) * highest_level_sst_num);
+
+    uint sst_recorded_num = getExpiredSstInfo(level_meta, sst_age_limit, sst_index_arr, sst_age_arr);
+    if (sst_recorded_num == 0) {
+        goto end;
+    }
+
+    bool is_ascending_order = true; /* record the order of sst index of compact range. */
+    uint arranged_cursor = sortExpiredSstInfo(sst_index_arr, sst_age_arr, sst_recorded_num, &is_ascending_order);
+
+    if (server.swap_ttl_compact_ctx->task != NULL) {
+        compactTaskFree(server.swap_ttl_compact_ctx->task);
+    }
+    server.swap_ttl_compact_ctx->task = getTtlCompactTask(level_meta, sst_index_arr, arranged_cursor, is_ascending_order);
+    atomicIncr(server.swap_ttl_compact_ctx->stat_request_sst_count, arranged_cursor + 1);
+
+end:
+    zfree(sst_index_arr);
+    zfree(sst_age_arr);
+    rocksdb_level_metadata_destroy(level_meta);
+    cfMetasFree(metas);
+}
+
+long long getServerMstime() {
+    return server.mstime;
+}
+
+swapExpireStatus *swapExpireStatusNew() {
+
+    swapExpireStatus *stats = zmalloc(sizeof(swapExpireStatus));
+    stats->expire_wt = wtdigestCreate(WTD_DEFAULT_NUM_BUCKETS, getServerMstime);
+    wtdigestSetWindow(stats->expire_wt, SWAP_TTL_COMPACT_DEFAULT_EXPIRE_WT_WINDOW);
+
+    stats->sst_age_limit = 0;
+    return stats;
+}
+
+void swapExpireStatusFree(swapExpireStatus *stats) {
+    if (stats->expire_wt) {
+        wtdigestDestroy(stats->expire_wt);
+    }
+    zfree(stats);
+}
+
+void swapExpireStatusReset(swapExpireStatus *stats) {
+    wtdigestReset(stats->expire_wt);
+    stats->sst_age_limit = 0; 
+}
+
+swapTtlCompactCtx *swapTtlCompactCtxNew() {
+    swapTtlCompactCtx *ctx = zcalloc(sizeof(swapTtlCompactCtx));
+
+    ctx->task = NULL;
+    ctx->expire_stats = swapExpireStatusNew();
+    ctx->stat_request_compact_times = 0;
+    ctx->stat_request_sst_count = 0;
+    return ctx;
+}
+
+void swapTtlCompactCtxFree(swapTtlCompactCtx *ctx) {
+    if (ctx->task) {
+        compactTaskFree(ctx->task);
+        ctx->task = NULL;
+    }
+    if (ctx->expire_stats) {
+        swapExpireStatusFree(ctx->expire_stats);
+    }
+    zfree(ctx);
+}
+
+void swapTtlCompactCtxReset(swapTtlCompactCtx *ctx) {
+    if (ctx->task) {
+        compactTaskFree(ctx->task);
+        ctx->task = NULL;
+    }
+    if (ctx->expire_stats) {
+        swapExpireStatusReset(ctx->expire_stats);
+    }
+}
+
+void rocksdbCompactRangeTaskDone(void *result, void *pd, int errcode) {
+    UNUSED(result), UNUSED(errcode);
+
+    compactTask *task = pd;
+    compactTaskFree(task);
+}
+
+cfMetas *cfMetasNew(uint cf_num) {
+    cfMetas *metas = zmalloc(sizeof(cfMetas));
+    metas->num = cf_num;
+    metas->cf_meta = zcalloc(sizeof(rocksdb_column_family_metadata_t*));
+    return metas;
+}
+
+void cfMetasFree(cfMetas *metas) {
+    for (uint i = 0; i < metas->num; i++) {
+        if (metas->cf_meta[i]) {
+            rocksdb_column_family_metadata_destroy(metas->cf_meta[i]);
+        }
+    }
+    zfree(metas->cf_meta);
+    zfree(metas);
+}
+
+sds genSwapTtlCompactInfoString(sds info) {
+    info = sdscatprintf(info,
+            "swap_ttl_compact:times=%llu,request_sst_count=%llu,"
+            "sst_age_limit=%lld\r\n",
+            server.swap_ttl_compact_ctx->stat_request_compact_times,
+            server.swap_ttl_compact_ctx->stat_request_sst_count,
+            server.swap_ttl_compact_ctx->expire_stats->sst_age_limit);
+    return info;
+}
+
 #ifdef REDIS_TEST
 static void rocksdbPut(int cf, sds rawkey, sds rawval, char** err) {
     serverAssert(cf < CF_COUNT);
@@ -288,6 +654,29 @@ static void rocksdbDelete(int cf, sds rawkey, char** err) {
 void initServer(void);
 void initServerConfig(void);
 void InitServerLast();
+
+compactTask *mockFullCompactTask() {
+
+    compactTask *task = compactTaskNew(TYPE_FULL_COMPACT);
+
+    compactKeyRange *meta_key_range = compactKeyRangeNew(META_CF, NULL, NULL, 0, 0);
+    compactKeyRange *data_key_range = compactKeyRangeNew(DATA_CF, NULL, NULL, 0, 0);
+    compactKeyRange *score_key_range = compactKeyRangeNew(SCORE_CF, NULL, NULL, 0, 0);
+    
+    compactTaskAppend(task,meta_key_range);
+    compactTaskAppend(task,data_key_range);
+    compactTaskAppend(task,score_key_range);
+    return task;
+}
+
+compactTask *mockTtlCompactTask() {
+
+    compactTask *task = compactTaskNew(TYPE_TTL_COMPACT);
+    compactKeyRange *data_key_range = compactKeyRangeNew(DATA_CF, NULL, NULL, 0, 0);    
+    compactTaskAppend(task,data_key_range);
+    return task;
+}
+
 int swapFilterTest(int argc, char **argv, int accurate) {
     UNUSED(argc);
     UNUSED(argv);
@@ -665,6 +1054,173 @@ int swapFilterTest(int argc, char **argv, int accurate) {
             test_assert(scan_count == 1);
         }
     }
+
+    TEST("compactTask - new free") {
+        compactTask *task1 = mockFullCompactTask();
+        test_assert(task1->count == 3);
+        test_assert(task1->capacity == 4);
+        compactTaskFree(task1);
+
+        compactTask *task2 = mockTtlCompactTask();
+        test_assert(task2->count == 1);
+        test_assert(task2->capacity == 1);
+        compactTaskFree(task2);
+    }
+
+    TEST("server ttl compact task - during no sst") {
+    
+        server.swap_ttl_compact_ctx = swapTtlCompactCtxNew();
+
+        cfIndexes *idxes = cfIndexesNew(1);
+
+        /* mock result of collect meta task */
+        cfMetas *cf_metas = cfMetasNew(1);
+        cf_metas->cf_meta[0] = rocksdb_get_column_family_metadata_cf(server.rocks->db, server.rocks->cf_handles[DATA_CF]);
+
+        genServerTtlCompactTask(cf_metas, idxes, 0);
+
+        if (server.swap_ttl_compact_ctx->task)
+            compactTaskFree(server.swap_ttl_compact_ctx->task);
+    }
+
+    TEST("swapTtlCompactCtx - new & reset & free") {
+        
+        server.swap_ttl_compact_ctx = swapTtlCompactCtxNew();
+
+        /* mock server operation 
+         * add expire, get sst_age_limit and task */
+        wtdigestAdd(server.swap_ttl_compact_ctx->expire_stats->expire_wt, 10, 1);
+        server.swap_ttl_compact_ctx->expire_stats->sst_age_limit = 10;
+        server.swap_ttl_compact_ctx->task = compactTaskNew(TYPE_TTL_COMPACT);
+
+        swapTtlCompactCtxReset(server.swap_ttl_compact_ctx);
+
+        test_assert(server.swap_ttl_compact_ctx->task == NULL);
+        test_assert(server.swap_ttl_compact_ctx->expire_stats->sst_age_limit == 0);
+        test_assert(wtdigestSize(server.swap_ttl_compact_ctx->expire_stats->expire_wt) == 0);
+
+        swapTtlCompactCtxFree(server.swap_ttl_compact_ctx); 
+        server.swap_ttl_compact_ctx = NULL;
+    }
+
+    TEST("sortExpiredSstInfo - test 0") {
+        
+        /* mock sst info */
+        size_t highest_level_sst_num = 5;
+
+        uint sst_index_arr[5] = {1, 2, 5, 30, 31};
+        uint64_t sst_age_arr[5] = {10, 20, 99, 88, 199};
+
+        bool is_ascending_order = true; /* record the order of sst index of compact range. */
+        uint arranged_cursor = sortExpiredSstInfo(sst_index_arr, sst_age_arr, highest_level_sst_num, &is_ascending_order);
+
+        test_assert(arranged_cursor == 0);
+
+        test_assert(sst_index_arr[0] == 31);
+        test_assert(sst_index_arr[1] == 5);
+
+        test_assert(sst_age_arr[0] == 199);
+        test_assert(sst_age_arr[1] == 99);
+    }
+
+    TEST("sortExpiredSstInfo - test 1") {
+        
+        /* mock sst info */
+        size_t highest_level_sst_num = 5;
+
+        uint sst_index_arr[5] = {1, 2, 30, 31, 50};
+        uint64_t sst_age_arr[5] = {10, 20, 188, 199, 99};
+
+        bool is_ascending_order = true; /* record the order of sst index of compact range. */
+        uint arranged_cursor = sortExpiredSstInfo(sst_index_arr, sst_age_arr, highest_level_sst_num, &is_ascending_order);
+
+        test_assert(arranged_cursor == 1);
+        test_assert(is_ascending_order == false);
+
+        test_assert(sst_index_arr[0] == 31);
+        test_assert(sst_index_arr[1] == 30);
+        test_assert(sst_index_arr[2] == 50);
+
+        test_assert(sst_age_arr[0] == 199);
+        test_assert(sst_age_arr[1] == 188);
+        test_assert(sst_age_arr[2] == 99);
+    }
+
+    TEST("sortExpiredSstInfo - test 2") {
+        
+        /* mock sst info */
+        size_t highest_level_sst_num = 5;
+
+        uint sst_index_arr[5] = {1, 2, 30, 31, 50};
+        uint64_t sst_age_arr[5] = {10, 20, 199, 188, 99};
+
+        bool is_ascending_order = true; /* record the order of sst index of compact range. */
+        uint arranged_cursor = sortExpiredSstInfo(sst_index_arr, sst_age_arr, highest_level_sst_num, &is_ascending_order);
+
+        test_assert(arranged_cursor == 1);
+        test_assert(is_ascending_order == true);
+
+        test_assert(sst_index_arr[0] == 30);
+        test_assert(sst_index_arr[1] == 31);
+        test_assert(sst_index_arr[2] == 50);
+
+        test_assert(sst_age_arr[0] == 199);
+        test_assert(sst_age_arr[1] == 188);
+        test_assert(sst_age_arr[2] == 99);
+    }
+
+    TEST("sortExpiredSstInfo - test 3") {
+        
+        /* mock sst info */
+        size_t highest_level_sst_num = 6;
+
+        uint sst_index_arr[6] = {1, 2, 30, 31, 50, 32};
+        uint64_t sst_age_arr[6] = {10, 20, 188, 199, 99, 299};
+
+        bool is_ascending_order = true; /* record the order of sst index of compact range. */
+        uint arranged_cursor = sortExpiredSstInfo(sst_index_arr, sst_age_arr, highest_level_sst_num, &is_ascending_order);
+
+        test_assert(arranged_cursor == 2);
+        test_assert(is_ascending_order == false);
+
+        test_assert(sst_index_arr[0] == 32);
+        test_assert(sst_index_arr[1] == 31);
+        test_assert(sst_index_arr[2] == 30);
+        test_assert(sst_index_arr[3] == 50);
+
+        test_assert(sst_age_arr[0] == 299);
+        test_assert(sst_age_arr[1] == 199);
+        test_assert(sst_age_arr[2] == 188);
+        test_assert(sst_age_arr[3] == 99);
+
+    }
+
+    TEST("sortExpiredSstInfo - test 4") {
+        
+        /* mock sst info */
+        size_t highest_level_sst_num = 6;
+
+        uint sst_index_arr[6] = {1, 2, 30, 31, 50, 32};
+        uint64_t sst_age_arr[6] = {10, 20, 299, 199, 99, 188};
+
+        bool is_ascending_order = true; /* record the order of sst index of compact range. */
+        uint arranged_cursor = sortExpiredSstInfo(sst_index_arr, sst_age_arr, highest_level_sst_num, &is_ascending_order);
+
+        test_assert(arranged_cursor == 2);
+        test_assert(is_ascending_order == true);
+
+        test_assert(sst_index_arr[0] == 30);
+        test_assert(sst_index_arr[1] == 31);
+        test_assert(sst_index_arr[2] == 32);
+        test_assert(sst_index_arr[3] == 50);
+
+        test_assert(sst_age_arr[0] == 299);
+        test_assert(sst_age_arr[1] == 199);
+        test_assert(sst_age_arr[2] == 188);
+        test_assert(sst_age_arr[3] == 99);
+
+    }
+
     return error;
 
 }

@@ -71,6 +71,8 @@ set ::disk_tests {
     swap/unit/select
     swap/unit/slowlog
     swap/unit/scripting
+    swap/unit/ttl_compact
+    swap/unit/swap_info
     unit/shutdown
     gtid/gtid
     gtid/gtid_seq

@@ -996,6 +996,8 @@ void replconfCommand(client *c) {
                 c->slave_capa |= SLAVE_CAPA_PSYNC2;
             else if (!strcasecmp(c->argv[j+1]->ptr,"rordb"))
                 c->slave_capa |= SLAVE_CAPA_RORDB;
+            else if (!strcasecmp(c->argv[j+1]->ptr,"swap.info"))
+                c->slave_capa |= SLAVE_CAPA_SWAP_INFO;
         } else if (!strcasecmp(c->argv[j]->ptr,"ack")) {
             /* REPLCONF ACK is used by slave to inform the master the amount
              * of replication stream that it processed so far. It is an
@@ -2383,7 +2385,7 @@ void syncWithMaster(connection *conn) {
          *
          * The master will ignore capabilities it does not understand. */
         err = sendCommand(conn,"REPLCONF",
-                "capa","eof","capa","psync2","capa","rordb",NULL);
+                "capa","eof","capa","psync2","capa","rordb","capa","swap.info",NULL);
         if (err) goto write_error;
 
         server.repl_state = REPL_STATE_RECEIVE_AUTH_REPLY;

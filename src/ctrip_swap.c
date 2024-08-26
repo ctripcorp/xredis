@@ -694,6 +694,8 @@ void swapInit() {
         server.swap_persist_ctx = swapPersistCtxNew();
     else
         server.swap_persist_ctx = NULL;
+    
+    server.swap_ttl_compact_ctx = swapTtlCompactCtxNew();
 }
 
 
@@ -772,6 +774,7 @@ int swapTest(int argc, char **argv, int accurate) {
   result += metaScanTest(argc, argv, accurate);
   result += swapExpireTest(argc, argv, accurate);
   result += swapUtilTest(argc, argv, accurate);
+  result += swapPersistTest(argc, argv, accurate);
   result += swapFilterTest(argc, argv, accurate);
   result += swapListMetaTest(argc, argv, accurate);
   result += swapListDataTest(argc, argv, accurate);
@@ -781,10 +784,10 @@ int swapTest(int argc, char **argv, int accurate) {
   result += swapRIOTest(argc, argv, accurate);
   result += swapBatchTest(argc, argv, accurate);
   result += cuckooFilterTest(argc, argv, accurate);
-  result += swapPersistTest(argc, argv, accurate);
   result += roaringBitmapTest(argc, argv, accurate);
   result += swapRordbTest(argc, argv, accurate);
   result += swapDataBitmapTest(argc, argv, accurate);
+  result += wtdigestTest(argc, argv, accurate);
   return result;
 }
 #endif
