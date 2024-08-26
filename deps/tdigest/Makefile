@@ -1,0 +1,19 @@
+STD=
+WARN= -Wall
+OPT= -Os
+
+R_CFLAGS= $(STD) $(WARN) $(OPT) $(DEBUG) $(CFLAGS)
+R_LDFLAGS= $(LDFLAGS)
+DEBUG= -g
+CFLAGS = -I./include
+
+R_CC=$(CC) $(R_CFLAGS)
+R_LD=$(CC) $(R_LDFLAGS)
+
+tdigest.o: tdigest.h tdigest.c td_malloc.h
+
+.c.o:
+	$(R_CC) -c  $< 
+
+clean:
+	rm -f *.o

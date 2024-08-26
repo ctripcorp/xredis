@@ -1960,6 +1960,12 @@ struct redisServer {
     unsigned long long swap_repl_rordb_max_write_bps;
 
     client *swap_draining_master;
+
+    /* ttl compact, only compact default CF */
+    int swap_ttl_compact_enabled;
+    int swap_ttl_compact_expire_percentile;
+    unsigned long long swap_ttl_compact_interval_seconds;
+    struct swapTtlCompactCtx *swap_ttl_compact_ctx;
 };
 
 #define MAX_KEYS_BUFFER 256

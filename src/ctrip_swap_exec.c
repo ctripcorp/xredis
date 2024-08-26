@@ -72,13 +72,20 @@ void swapRequestUpdateStatsSwapInNotFound(swapRequest *req) {
 
 void swapRequestExecuteUtil_CompactRange(swapRequest *req) {
     char dir[ROCKS_DIR_MAX_LEN];
-    UNUSED(req);
     rocks *rocks = serverRocksGetReadLock();
     snprintf(dir, ROCKS_DIR_MAX_LEN, "%s/%d", ROCKS_DATA, rocks->rocksdb_epoch);
     serverLog(LL_WARNING, "[rocksdb compact range before] dir(%s) size(%ld)", dir, get_dir_size(dir));
-    for (int i = 0; i < CF_COUNT; i++) {
-        rocksdb_compact_range_cf(rocks->db, rocks->cf_handles[i] ,NULL, 0, NULL, 0);
+
+    rocksdbUtilTaskCtx *utilctx = req->finish_pd;
+    compactTask *task = (compactTask*)utilctx->argument;
+    serverAssert(task != NULL);
+
+    for (int i = 0; i < task->num_cf; i++) {
+        rocksdb_compact_range_cf(rocks->db, rocks->cf_handles[task->key_range[i].cf_index], 
+            task->key_range[0].start_key, task->key_range[0].start_key_size, task->key_range[0].end_key,
+            task->key_range[0].end_key_size);
     }
+
     serverLog(LL_WARNING, "[rocksdb compact range after] dir(%s) size(%ld)", dir, get_dir_size(dir));
     serverRocksUnlock(rocks);
 }
@@ -215,6 +222,23 @@ void swapRequestExecuteUtil_RocksdbFlush(swapRequest* req) {
     serverRocksUnlock(rocks);
 }
 
+void swapRequestExecuteUtil_CollectCfMeta(swapRequest* req) {
+
+    char *err = NULL;
+    rocks *rocks = serverRocksGetReadLock();
+
+    rocksdbUtilTaskCtx *utilctx = req->finish_pd;
+    cfIndexes *cf_indexes = utilctx->argument;
+    cfMetas *cf_metas = cfMetasNew(cf_indexes->num);
+
+    for (int i = 0; i < cf_metas->num; i++) {
+        cf_metas->cf_meta[i] = rocksdb_get_column_family_metadata_cf(rocks->db, rocks->cf_handles[cf_indexes->index[i]]);
+    }
+
+    utilctx->result = cf_metas;
+    serverRocksUnlock(rocks);
+}
+
 void swapRequestExecuteUtil(swapRequest *req) {
     switch(req->intention_flags) {
     case ROCKSDB_COMPACT_RANGE_TASK:
@@ -225,6 +249,9 @@ void swapRequestExecuteUtil(swapRequest *req) {
         break;
     case ROCKSDB_FLUSH_TASK:
         swapRequestExecuteUtil_RocksdbFlush(req);
+        break;
+    case ROCKSDB_COLLECT_CF_META_TASK:
+        swapRequestExecuteUtil_CollectCfMeta(req);
         break;
     case ROCKSDB_CREATE_CHECKPOINT:
         swapRequestExecuteUtil_CreateCheckpoint(req);

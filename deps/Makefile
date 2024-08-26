@@ -65,6 +65,12 @@ hdr_histogram: .make-prerequisites
 
 .PHONY: hdr_histogram
 
+tdigest: .make-prerequisites
+	@printf '%b %b\n' $(MAKECOLOR)MAKE$(ENDCOLOR) $(BINCOLOR)$@$(ENDCOLOR)
+	cd tdigest && $(MAKE)
+
+.PHONY: tdigest
+
 ifeq ($(uname_S),SunOS)
 	# Make isinf() available
 	LUA_CFLAGS= -D__C99FEATURES__=1

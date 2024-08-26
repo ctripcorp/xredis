@@ -280,7 +280,11 @@ NULL
         addReply(c,shared.ok);
     } else if (!strcasecmp(c->argv[1]->ptr,"compact") && c->argc == 2) {
         sds error = NULL;
-        if (submitUtilTask(ROCKSDB_COMPACT_RANGE_TASK, NULL, NULL, NULL, &error)) {
+        /* no specified compact range, to launch a full compact. */
+        compactTask *task = compactTaskNew();
+        task->num_cf = CF_COUNT;
+        task->key_range = zcalloc(CF_COUNT * sizeof(compactKeyRange));
+        if (submitUtilTask(ROCKSDB_COMPACT_RANGE_TASK, task, rocksdbCompactRangeTaskDone, task, &error)) {
             addReply(c,shared.ok);
         } else {
             addReplyErrorSds(c,error);
