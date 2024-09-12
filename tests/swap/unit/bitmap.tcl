@@ -831,6 +831,20 @@ start_server {
         r flushdb
     }
 
+    test {bug: assert fail when execute GET on expired bitmap key} { 
+
+        r setbit mybit 81919 1
+        r expire mybit 1
+        r swap.evict mybit
+        wait_key_cold r mybit
+        after 1100
+
+        r get mybit
+        assert_equal {0} [r bitcount mybit]
+
+        r flushdb
+    }
+
 }
 
 

@@ -97,6 +97,30 @@ int swapDataKeyRequestFinished(swapData *data) {
     return 0;
 }
 
+static bool isCmdMatchedDataType(swapData *d, struct keyRequest *key_request) {
+    if (key_request->cmd_flags & CMD_SWAP_DATATYPE_KEYSPACE) {
+        return true;
+    }
+
+    int cmd_string_compatible =
+        (key_request->cmd_flags & CMD_SWAP_DATATYPE_STRING) ||
+        (key_request->cmd_flags & CMD_SWAP_DATATYPE_BITMAP);
+    int data_string_compatible =
+        (d->type->cmd_swap_flags & CMD_SWAP_DATATYPE_STRING) ||
+        (d->type->cmd_swap_flags & CMD_SWAP_DATATYPE_BITMAP);
+
+    if (key_request->cmd_flags & d->type->cmd_swap_flags)  {
+        /* cmd type equals swap type: proceed */
+    } else if (cmd_string_compatible && data_string_compatible) {
+        /* cmd type and swap type both string compatible, 
+         * data type will be changed, so we must delete it in rocksdb. */
+        key_request->cmd_intention_flags = SWAP_IN_DEL;
+    } else {
+        return false;
+    }
+    return true;
+}
+
 /* Main/swap-thread: analyze data and command intention & request to decide
  * final swap intention. e.g. command might want SWAP_IN but data not
  * evicted, then intention is decided as NOP. */
@@ -118,24 +142,12 @@ int swapDataAna(swapData *d, int thd, struct keyRequest *key_request,
     }
 
     if (d->type->swapAna) {
-        /* non-keyspace command, need to check if it's compatible */
-        if (!(key_request->cmd_flags & CMD_SWAP_DATATYPE_KEYSPACE)) {
-            int cmd_string_compatible =
-                (key_request->cmd_flags & CMD_SWAP_DATATYPE_STRING) ||
-                (key_request->cmd_flags & CMD_SWAP_DATATYPE_BITMAP);
-            int data_string_compatible =
-                (d->type->cmd_swap_flags & CMD_SWAP_DATATYPE_STRING) ||
-                (d->type->cmd_swap_flags & CMD_SWAP_DATATYPE_BITMAP);
-
-            if (key_request->cmd_flags & d->type->cmd_swap_flags)  {
-                /* cmd type equals swap type: proceed */
-            } else if (cmd_string_compatible && data_string_compatible) {
-                /* cmd type and swap type both string compatible: SWAP_IN_DEL */
-                serverAssert(key_request->cmd_intention == SWAP_IN);
-                key_request->cmd_intention_flags = SWAP_IN_DEL;
-            } else {
-                return SWAP_ERR_DATA_WRONG_TYPE_ERROR;
-            }
+        /* cmd of SWAP_IN is strongly related to data type, 
+         * and the original data type may be changed after current operation,
+         * so we need to check if data type is matched with cmd.
+         * SWAP_OUT, SWAP_DEL will never change original data type. */
+        if (key_request->cmd_intention == SWAP_IN && (!isCmdMatchedDataType(d, key_request))) {
+            return SWAP_ERR_DATA_WRONG_TYPE_ERROR;
         }
 
         retval = d->type->swapAna(d,thd,key_request,intention,
@@ -511,6 +523,28 @@ int swapDataTest(int argc, char *argv[], int accurate) {
         data = createSwapData(db,key1,NULL,NULL);
         test_assert(!swapDataAlreadySetup(data));
         swapDataSetupMeta(data,OBJ_STRING,0/*expired*/,&datactx);
+        test_assert(swapDataAlreadySetup(data));
+        swapDataAna(data,0,key_request,&intention,&intention_flags,datactx);
+        test_assert(intention == SWAP_DEL);
+        test_assert(intention_flags == 0);
+        test_assert(data->propagate_expire == 1);
+
+        swapDataFree(data,datactx);
+    }
+
+    TEST("swapdata - string cmd operate expired bitmap") {
+        keyRequest key_request_, *key_request = &key_request_;
+        key_request->level = REQUEST_LEVEL_KEY;
+        key_request->key = key1;
+        key_request->b.subkeys = NULL;
+        key_request->cmd_intention = SWAP_IN;
+        key_request->cmd_intention_flags = 0;
+        key_request->dbid = 0;
+        key_request->cmd_flags |= CMD_SWAP_DATATYPE_STRING;
+
+        data = createSwapData(db,key1,NULL,NULL);
+        test_assert(!swapDataAlreadySetup(data));
+        swapDataSetupMeta(data,SWAP_TYPE_BITMAP,0/*expired*/,&datactx);
         test_assert(swapDataAlreadySetup(data));
         swapDataAna(data,0,key_request,&intention,&intention_flags,datactx);
         test_assert(intention == SWAP_DEL);
