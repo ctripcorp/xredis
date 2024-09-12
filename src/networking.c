@@ -1426,6 +1426,7 @@ void freeClient(client *c) {
     serverAssert(!(server.swap_draining_master && server.master));
 
     if (c->keyrequests_count) {
+        c->flags &= ~CLIENT_CLOSE_ASAP;
         if (server.master && c->flags & CLIENT_MASTER) {
             serverLog(LL_WARNING, "Connection with master lost (defer start with %d key requests).", c->keyrequests_count);
             server.swap_draining_master = server.master;
