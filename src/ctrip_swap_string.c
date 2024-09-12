@@ -282,7 +282,8 @@ static void tryTransStringToBitmap(redisDb *db, robj *key) {
 int wholeKeyBeforeCall(swapData *data, keyRequest *key_request,
         client *c, void *datactx)  {
     UNUSED(data), UNUSED(c), UNUSED(datactx);
-    if (key_request->cmd_flags & CMD_SWAP_DATATYPE_BITMAP) {
+    robj *o = lookupKey(data->db, data->key, LOOKUP_NOTOUCH);
+    if ((key_request->cmd_flags & CMD_SWAP_DATATYPE_BITMAP) && o) {
         tryTransStringToBitmap(data->db,data->key);
     }
     return 0;
