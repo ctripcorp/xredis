@@ -2155,22 +2155,6 @@ void _rdbSaveBackground(client *c, swapCtx *ctx) {
     clientReleaseLocks(c,ctx);
 }
 
-static void serverExpireWtModifyWindowIfNeed() {
-    if (server.swap_ttl_compact_ctx->sst_age_limit == INVALID_SST_AGE_LIMIT) {
-        /* initial value of the window size of expire_wt */
-        wtdigestSetWindow(server.swap_ttl_compact_ctx->expire_wt, server.rocksdb_data_periodic_compaction_seconds);
-        return;
-    }
-
-    unsigned long long expected_window = ((server.swap_ttl_compact_ctx->sst_age_limit + server.rocksdb_data_periodic_compaction_seconds - 1)
-                                    / server.rocksdb_data_periodic_compaction_seconds) * server.rocksdb_data_periodic_compaction_seconds;
-    unsigned long long now_window = wtdigestGetWindow(server.swap_ttl_compact_ctx->expire_wt);
-    
-    if (now_window != expected_window) {
-        wtdigestSetWindow(server.swap_ttl_compact_ctx->expire_wt, expected_window);
-    }
-}
-
 /* This is our timer interrupt, called server.hz times per second.
  * Here is where we do a number of things that need to be done asynchronously.
  * For instance:
@@ -2439,29 +2423,37 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
         }
     }
 
-    /* ttl compaction, maintain expire_wt */
+    /* ttl compaction, get sst_age_limit */
     // iAmMaster() will be added in release code.
     if (server.swap_ttl_compact_enabled) {
         run_with_period(1000*60) {
-            if (!wtdigestIsRunnning(server.swap_ttl_compact_ctx->expire_wt))
-                wtdigestStart(server.swap_ttl_compact_ctx->expire_wt);
+             wtdigest *expire_wt = server.swap_ttl_compact_ctx->expire_wt;
 
-            double percentile = (double)server.swap_ttl_compact_expire_percentile / 100;
-            int res_status;
-            double res = wtdigestQuantile(server.swap_ttl_compact_ctx->expire_wt, percentile, &res_status);
-            if (res != INVALID_EXPIRE && res_status == OK_WTD) {
-                server.swap_ttl_compact_ctx->sst_age_limit = (unsigned long long)res;
+            unsigned long long keys_num = (unsigned long long)dbTotalServerKeyCount();
+            if (wtdigestGetRunnningTime(expire_wt) > wtdigestGetWindow(expire_wt) ||
+                keys_num < server.swap_ttl_compact_ctx->added_expire_count) {
+                /* percentile of expire_wt is valid */
+                double percentile = (double)server.swap_ttl_compact_expire_percentile / 100;
+                int res_status;
+                double res = wtdigestQuantile(server.swap_ttl_compact_ctx->expire_wt, percentile, &res_status);
+                if (res != INVALID_EXPIRE && res_status == OK_WTD) {
+                    server.swap_ttl_compact_ctx->sst_age_limit = (unsigned long long)res;
+                } else {
+                    server.swap_ttl_compact_ctx->sst_age_limit = INVALID_SST_AGE_LIMIT;
+                }
             } else {
                 server.swap_ttl_compact_ctx->sst_age_limit = INVALID_SST_AGE_LIMIT;
             }
-            serverExpireWtModifyWindowIfNeed();
         }
     } else {
-        wtdigestStop(server.swap_ttl_compact_ctx->expire_wt);
+        wtdigestReset(server.swap_ttl_compact_ctx->expire_wt);
+        server.swap_ttl_compact_ctx->added_expire_count = 0;
+        server.swap_ttl_compact_ctx->scanned_expire_count = 0;
+        server.swap_ttl_compact_ctx->sst_age_limit = INVALID_SST_AGE_LIMIT;
     }
 
-    /* ttl compaction, produce and consume task. */
-    if (server.swap_ttl_compact_enabled && server.swap_ttl_compact_ctx->expire_wt_is_valid) {
+    /* ttl compaction, produce task. */
+    if (server.swap_ttl_compact_enabled && server.swap_ttl_compact_ctx->sst_age_limit != INVALID_SST_AGE_LIMIT) {
         run_with_period(1000*3*60) {    
             cfIndexes *idxes = cfIndexesNew();
             idxes->num = 1;
@@ -2469,11 +2461,14 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
             idxes->index[0] = DATA_CF;
             if (!submitUtilTask(ROCKSDB_COLLECT_CF_META_TASK, idxes, genServerTtlCompactTask, idxes, NULL)) {
                 serverLog(LL_NOTICE, "[rocksdb] collect cf meta task set failed. ");
-                cfMetasFree(idxes);
+                cfIndexesFree(idxes);
             }
         }
+    }
 
-        run_with_period(1000*server.swap_ttl_compact_interval_seconds) {
+    /* ttl compaction, consume task. */
+    if (server.swap_ttl_compact_enabled) {
+            run_with_period(1000*(int)server.swap_ttl_compact_interval_seconds) {
             if (server.swap_ttl_compact_ctx->task != NULL) {
                 compactTask *task = server.swap_ttl_compact_ctx->task;
                 if (submitUtilTask(ROCKSDB_COMPACT_RANGE_TASK, task, rocksdbCompactRangeTaskDone, task, NULL)) {
@@ -3747,6 +3742,8 @@ void InitServerLast() {
     server.swap_draining_master = NULL;
     server.swap_string_switched_to_bitmap_count = 0;
     server.swap_bitmap_switched_to_string_count = 0;
+    server.ttl_compact_high_level_sst_count = 0;
+    server.ttl_compact_times = 0;
     serverRocksInit();
     server.util_task_manager = createRocksdbUtilTaskManager();
     asyncCompleteQueueInit();

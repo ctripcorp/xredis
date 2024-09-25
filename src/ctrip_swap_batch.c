@@ -416,6 +416,33 @@ void swapBatchCtxFeed(swapBatchCtx *batch_ctx, int flush,
 
 #ifdef REDIS_TEST
 
+rocksdbUtilTaskCtx *mockFullCompactUtilCtx() {
+    compactTask *task = compactTaskNew();
+    task->compact_type = TYPE_FULL_COMPACT;
+
+    compactKeyRange *meta_key_range = zcalloc(sizeof(compactKeyRange));
+    meta_key_range->cf_index = META_CF;
+
+    compactKeyRange *data_key_range = zcalloc(sizeof(compactKeyRange));
+    data_key_range->cf_index = DATA_CF;
+
+    compactKeyRange *score_key_range = zcalloc(sizeof(compactKeyRange));
+    score_key_range->cf_index = SCORE_CF;
+    
+    compactTaskAppend(task,meta_key_range);
+    compactTaskAppend(task,data_key_range);
+    compactTaskAppend(task,score_key_range);
+
+    rocksdbUtilTaskCtx *utilctx = zcalloc(sizeof(rocksdbUtilTaskCtx));
+    utilctx->type = ROCKSDB_COMPACT_RANGE_TASK;
+    utilctx->argument = task;
+    utilctx->result = NULL;
+    utilctx->finish_cb = rocksdbCompactRangeTaskDone;
+    utilctx->finish_pd = task;
+
+    return utilctx;
+}
+
 void mockNotifyCallback(swapRequestBatch *reqs, void *pd);
 void initServerConfig(void);
 int swapBatchTest(int argc, char *argv[], int accurate) {
@@ -462,7 +489,10 @@ int swapBatchTest(int argc, char *argv[], int accurate) {
 
     TEST("batch: exec batch ctx") {
         swapExecBatchCtx _exec_ctx, *exec_ctx = &_exec_ctx;
-        swapRequest *utils_req = swapDataRequestNew(SWAP_UTILS,ROCKSDB_COMPACT_RANGE_TASK,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
+
+        rocksdbUtilTaskCtx *utilctx = mockFullCompactUtilCtx();
+
+        swapRequest *utils_req = swapDataRequestNew(SWAP_UTILS,ROCKSDB_COMPACT_RANGE_TASK,NULL,NULL,NULL,NULL,NULL,utilctx,NULL);
         void *wholekey_ctx;
         swapData *data = createWholeKeySwapData(db,key1,val1,(void**)&wholekey_ctx);
         swapRequest *out_req = swapDataRequestNew(SWAP_OUT,0,NULL,data,(void**)&wholekey_ctx,NULL,NULL,NULL,NULL);
@@ -530,7 +560,9 @@ int swapBatchTest(int argc, char *argv[], int accurate) {
         reqs->notify_pd = NULL;
         out_req1 = swapDataRequestNew(SWAP_OUT,0,NULL,data,NULL,NULL,NULL,NULL,NULL);
         out_req2 = swapDataRequestNew(SWAP_OUT,0,NULL,data,NULL,NULL,NULL,NULL,NULL);
-        utils_req = swapDataRequestNew(SWAP_UTILS,ROCKSDB_COMPACT_RANGE_TASK,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
+
+        rocksdbUtilTaskCtx *utilctx = mockFullCompactUtilCtx();
+        utils_req = swapDataRequestNew(SWAP_UTILS,ROCKSDB_COMPACT_RANGE_TASK,NULL,NULL,NULL,NULL,NULL,utilctx,NULL);
         swapRequestBatchAppend(reqs,utils_req);
         swapRequestBatchAppend(reqs,out_req1);
         swapRequestBatchAppend(reqs,out_req2);
@@ -564,7 +596,9 @@ int swapBatchTest(int argc, char *argv[], int accurate) {
         data = createWholeKeySwapData(db,key1,val1,(void**)&wholekey_ctx);
         out_req1 = swapDataRequestNew(SWAP_OUT,0,NULL,data,NULL,NULL,NULL,NULL,NULL);
         out_req2 = swapDataRequestNew(SWAP_OUT,0,NULL,data,NULL,NULL,NULL,NULL,NULL);
-        utils_req = swapDataRequestNew(SWAP_UTILS,ROCKSDB_COMPACT_RANGE_TASK,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
+
+        rocksdbUtilTaskCtx *utilctx = mockFullCompactUtilCtx();
+        utils_req = swapDataRequestNew(SWAP_UTILS,ROCKSDB_COMPACT_RANGE_TASK,NULL,NULL,NULL,NULL,NULL,utilctx,NULL);
 
         swapBatchCtxFeed(batch_ctx,0,utils_req,-1);
         test_assert(batch_ctx->stat.submit_batch_count == 1);

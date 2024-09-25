@@ -6,7 +6,7 @@
 #include <errno.h>
 #include <stdint.h>
 
-#include "td_malloc.h"
+#include "../../src/td_zmalloc.h"
 
 
 #define __td_max(x, y) (((x) > (y)) ? (x) : (y))

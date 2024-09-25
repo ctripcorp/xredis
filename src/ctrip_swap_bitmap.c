@@ -2005,6 +2005,13 @@ sds genSwapBitmapStringSwitchedInfoString(sds info) {
     return info;
 }
 
+sds genSwapTtlCompactInfoString(sds info) {
+    info = sdscatprintf(info,
+            "ttl_compact_info:compact_times=%llu, compact_highest_level_sst_num=%llu\r\n",
+            server.ttl_compact_times,server.ttl_compact_high_level_sst_count);
+    return info;
+}
+
 #ifdef REDIS_TEST
 
 #define BITMAP_SUBKEY_SIZE (server.swap_bitmap_subkey_size) /* default 4KB */

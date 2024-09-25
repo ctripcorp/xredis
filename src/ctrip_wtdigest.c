@@ -39,7 +39,7 @@ struct wtdigest_t {
     unsigned long long last_reset_time;
     uint8_t cur_read_index;
     unsigned long long window_seconds;
-    bool isRunning;
+    unsigned long long begin_time;
 };
 
 wtdigest* wtdigestCreate(uint8_t num_buckets)
@@ -54,12 +54,10 @@ wtdigest* wtdigestCreate(uint8_t num_buckets)
         serverAssert(wt->buckets[i] != NULL);
     }
 
-    time_t now_time;
-    time(&now_time);
-    wt->last_reset_time = now_time;
+    wt->last_reset_time = time(NULL);
     wt->cur_read_index = 0;
     wt->window_seconds = DEFAULT_WINDOW_SECONDS;
-    wt->isRunning = true;
+    wt->begin_time = time(NULL);
 
     return wt;
 }
@@ -87,42 +85,27 @@ unsigned long long wtdigestGetWindow(wtdigest* wt)
     return wt->window_seconds;
 }
 
-bool wtdigestIsRunnning(wtdigest* wt)
+unsigned long long wtdigestGetRunnningTime(wtdigest* wt)
 {
-    return wt->isRunning == true;
+    return time(NULL) - wt->begin_time;
 }
 
-void wtdigestStart(wtdigest* wt)
+void wtdigestReset(wtdigest* wt)
 {
-    if (wt->isRunning) {
-        return;
-    }
-    wt->isRunning = true;
-    time_t now_time;
-    time(&now_time);
-    wt->last_reset_time = now_time;
-    wt->cur_read_index = 0;
-}
-
-void wtdigestStop(wtdigest* wt)
-{
-    if (!wt->isRunning) {
-        return;
-    }
-    for (uint8_t i = 0; i < wt->num_buckets; i++) {
+    for (unsigned long long i = 0; i < wt->num_buckets; i++) {
         td_reset(wt->buckets[i]);
     }
-    wt->isRunning = false;
-    wt->last_reset_time = 0;
+
+    wt->last_reset_time = time(NULL);
     wt->cur_read_index = 0;
+    wt->begin_time = time(NULL);
 }
 
 void resetBucketsIfNeed(wtdigest* wt)
 {
     unsigned long long reset_period = wt->window_seconds / wt->num_buckets;
 
-    time_t now_time;
-    time(&now_time);
+    time_t now_time = time(NULL);
 
     unsigned long long time_passed = now_time - wt->last_reset_time;
 
@@ -144,10 +127,6 @@ void resetBucketsIfNeed(wtdigest* wt)
 
 void wtdigestAdd(wtdigest* wt, double val, unsigned long long weight)
 {
-    if (!wt->isRunning) {
-        return;
-    }
-
     resetBucketsIfNeed(wt);
 
     for (uint8_t i = 0; i < wt->num_buckets; i++) {
@@ -156,15 +135,10 @@ void wtdigestAdd(wtdigest* wt, double val, unsigned long long weight)
             serverLog(LL_DEBUG, "error happened when wtdigest add val, ret: %d, bucket index: %u.", res, i);
         }
     }
-    return 0;
 }
 
 double wtdigestQuantile(wtdigest* wt, double q, int *res_status)
 {
-    if (!wt->isRunning) {
-        *res_status = ERR_WTD;
-        return 0;
-    }
     resetBucketsIfNeed(wt);
     *res_status = OK_WTD;
     return td_quantile(wt->buckets[wt->cur_read_index], q);
@@ -184,22 +158,6 @@ int wtdigestTest(int argc, char *argv[], int accurate) {
 
         TEST("wtdigest: create destroy") {
             wtdigest *wt = wtdigestCreate(WTD_DEFAULT_NUM_BUCKETS);
-            wtdigestDestroy(wt);
-        }
-
-        TEST("wtdigest: start stop") {
-            wtdigest *wt = wtdigestCreate(WTD_DEFAULT_NUM_BUCKETS);
-
-            serverAssert(wtdigestIsRunnning(wt));
-
-            wtdigestStop(wt);
-            wtdigestStop(wt);
-
-            serverAssert(!wtdigestIsRunnning(wt));
-
-            wtdigestStart(wt);
-            wtdigestStart(wt);
-
             wtdigestDestroy(wt);
         }
 
@@ -299,8 +257,7 @@ int wtdigestTest(int argc, char *argv[], int accurate) {
             sleep(3);
 
             int res = 0;
-            int q;
-            q = (int)wtdigestQuantile(wt, 0.5, &res);
+            (void)wtdigestQuantile(wt, 0.5, &res);
             serverAssert(res == OK_WTD);
 
             /* reset and pass 3 buckets */
@@ -309,7 +266,7 @@ int wtdigestTest(int argc, char *argv[], int accurate) {
 
             sleep(4);
 
-            q = (int)wtdigestQuantile(wt, 0.5, &res);
+            (void)wtdigestQuantile(wt, 0.5, &res);
             serverAssert(res == OK_WTD);
 
             uint8_t index3 = wt->cur_read_index;
@@ -331,7 +288,7 @@ int wtdigestTest(int argc, char *argv[], int accurate) {
                 if (j % WTD_DEFAULT_NUM_BUCKETS <= 2) {
                     for (int i = 0; i < 10; i++) {
                         wtdigestAdd(wt, 100, 1);
-                    }
+            }
                 }
 
                 if (j % WTD_DEFAULT_NUM_BUCKETS == 3 || j % WTD_DEFAULT_NUM_BUCKETS == 4) {
@@ -343,7 +300,7 @@ int wtdigestTest(int argc, char *argv[], int accurate) {
                 if (j % WTD_DEFAULT_NUM_BUCKETS == 5) {
                     for (int i = 0; i < 10; i++) {
                         wtdigestAdd(wt, 300, 1);
-                    }
+            }
                 }
 
                 int res = 0;
@@ -359,7 +316,7 @@ int wtdigestTest(int argc, char *argv[], int accurate) {
             wtdigestDestroy(wt);
         }
 
-        TEST("wtdigest: pause then restart") {
+        TEST("wtdigest: reset then add") {
         
             wtdigest *wt = wtdigestCreate(WTD_DEFAULT_NUM_BUCKETS);
         
@@ -369,21 +326,12 @@ int wtdigestTest(int argc, char *argv[], int accurate) {
             wtdigestAdd(wt, 100, 1);
             serverAssert(wt->cur_read_index == 2);
 
-            wtdigestStop(wt);
-
-            /* no effect for add & Quantile */
-            wtdigestAdd(wt, 100, 1);
-            serverAssert(wt->cur_read_index == 0);
-
-            int res = 0;
-            int q = (int)wtdigestQuantile(wt, 0.5, &res);
-            serverAssert(res == ERR_WTD);
+            wtdigestReset(wt);
 
             long long size = td_size(wt->buckets[wt->cur_read_index]);
             serverAssert(size == 0);
 
             /* restart to work */
-            wtdigestStart(wt);
             serverAssert(wt->cur_read_index == 0);
 
             sleep(2);       

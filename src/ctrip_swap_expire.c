@@ -272,17 +272,21 @@ int scanExpireDbCycle(redisDb *db, int type, long long timelimit) {
 
         for (int i = 0; i < metas->num; i++) {
             scanMeta *meta = metas->metas + i;
+
+            double expire_add;
             if (meta->expire != -1) {
                 expireCandidatesAdd(scan_expire->candidates,
                         meta->expire,meta->key);
-                wtdigestAdd(server.swap_ttl_compact_ctx->expire_wt, meta->expire, 1);
+                expire_add = (double)meta->expire;
             } else {
-                wtdigestAdd(server.swap_ttl_compact_ctx->expire_wt, INVALID_EXPIRE, 1);
+                expire_add = INVALID_EXPIRE;
             }
 
-            long long keys_num = dbTotalServerKeyCount();
-            double rate = wtdigestSize(server.swap_ttl_compact_ctx->expire_wt) / keys_num;
-            server.swap_ttl_compact_ctx->expire_wt_is_valid = rate > EXPIRE_WT_RATE_LOWER_LIMIT? true:false;
+            if (server.swap_ttl_compact_ctx->scanned_expire_count % EXPIRE_ADDED_GAP) {
+                wtdigestAdd(server.swap_ttl_compact_ctx->expire_wt, expire_add, 1);
+                server.swap_ttl_compact_ctx->added_expire_count++;
+            }
+            server.swap_ttl_compact_ctx->scanned_expire_count++;
         }
 
         stat_scan_keys += metas->num;

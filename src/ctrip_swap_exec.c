@@ -80,12 +80,18 @@ void swapRequestExecuteUtil_CompactRange(swapRequest *req) {
     compactTask *task = (compactTask*)utilctx->argument;
     serverAssert(task != NULL);
 
-    for (int i = 0; i < task->num_cf; i++) {
-        rocksdb_compact_range_cf(rocks->db, rocks->cf_handles[task->key_range[i].cf_index], 
-            task->key_range[0].start_key, task->key_range[0].start_key_size, task->key_range[0].end_key,
-            task->key_range[0].end_key_size);
+    for (uint i = 0; i < task->num_range; i++) {
+        rocksdb_compact_range_cf(rocks->db, rocks->cf_handles[task->key_range[i]->cf_index], 
+            task->key_range[i]->start_key, task->key_range[i]->start_key_size, task->key_range[i]->end_key,
+            task->key_range[i]->end_key_size);
+        if (task->compact_type == TYPE_TTL_COMPACT) {
+            atomicIncr(server.ttl_compact_high_level_sst_count, task->key_range[i]->sst_num_covered);
+        }
     }
 
+    if (task->compact_type == TYPE_TTL_COMPACT) {
+        atomicIncr(server.ttl_compact_times, 1);
+    }
     serverLog(LL_WARNING, "[rocksdb compact range after] dir(%s) size(%ld)", dir, get_dir_size(dir));
     serverRocksUnlock(rocks);
 }
@@ -224,14 +230,13 @@ void swapRequestExecuteUtil_RocksdbFlush(swapRequest* req) {
 
 void swapRequestExecuteUtil_CollectCfMeta(swapRequest* req) {
 
-    char *err = NULL;
     rocks *rocks = serverRocksGetReadLock();
 
     rocksdbUtilTaskCtx *utilctx = req->finish_pd;
     cfIndexes *cf_indexes = utilctx->argument;
     cfMetas *cf_metas = cfMetasNew(cf_indexes->num);
 
-    for (int i = 0; i < cf_metas->num; i++) {
+    for (uint i = 0; i < cf_metas->num; i++) {
         cf_metas->cf_meta[i] = rocksdb_get_column_family_metadata_cf(rocks->db, rocks->cf_handles[cf_indexes->index[i]]);
     }
 

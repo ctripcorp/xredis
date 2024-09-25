@@ -282,8 +282,21 @@ NULL
         sds error = NULL;
         /* no specified compact range, to launch a full compact. */
         compactTask *task = compactTaskNew();
-        task->num_cf = CF_COUNT;
-        task->key_range = zcalloc(CF_COUNT * sizeof(compactKeyRange));
+        task->compact_type = TYPE_FULL_COMPACT;
+
+        compactKeyRange *meta_key_range = zcalloc(sizeof(compactKeyRange));
+        meta_key_range->cf_index = META_CF;
+
+        compactKeyRange *data_key_range = zcalloc(sizeof(compactKeyRange));
+        data_key_range->cf_index = DATA_CF;
+
+        compactKeyRange *score_key_range = zcalloc(sizeof(compactKeyRange));
+        score_key_range->cf_index = SCORE_CF;
+        
+        compactTaskAppend(task,meta_key_range);
+        compactTaskAppend(task,data_key_range);
+        compactTaskAppend(task,score_key_range);
+
         if (submitUtilTask(ROCKSDB_COMPACT_RANGE_TASK, task, rocksdbCompactRangeTaskDone, task, &error)) {
             addReply(c,shared.ok);
         } else {

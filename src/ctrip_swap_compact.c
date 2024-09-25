@@ -270,18 +270,46 @@ rocksdb_compactionfilterfactory_t* createScoreCfCompactionFilterFactory() {
 /* compact task && ttl compact task in server */
 
 compactTask *compactTaskNew() {
-    return zcalloc(sizeof(compactTask));
+    compactTask *task = zcalloc(sizeof(compactTask));
+    task->compact_type = TYPE_FULL_COMPACT;
+    task->num_range = 0;
+    task->num_range_alloc = 1;
+    task->key_range = zcalloc(sizeof(compactKeyRange *));
+
+    return task;
 }
 
 void compactTaskFree(compactTask *task) {
-    for (int i = 0; i < task->num_cf; i++) {
-        if (task->key_range[i].start_key)
-            free(task->key_range[i].start_key);
-        if (task->key_range[i].end_key)
-            free(task->key_range[i].end_key);
+    for (uint i = 0; i < task->num_range; i++) {
+        if (task->key_range[i]) {
+            if (task->key_range[i]->start_key)
+                zlibc_free(task->key_range[i]->start_key);
+            if (task->key_range[i]->end_key)
+                zlibc_free(task->key_range[i]->end_key);
+            zfree(task->key_range[i]);
+        }
+        
     }
     zfree(task->key_range);
     zfree(task);
+}
+
+void compactTaskAppend(compactTask *task, compactKeyRange *key_range) {
+    serverAssert(task->num_range <= task->num_range_alloc);
+    if (task->num_range < task->num_range_alloc) {
+        task->key_range[task->num_range] = key_range;
+        task->num_range++;
+    }
+
+    task->num_range_alloc = task->num_range_alloc * 2;
+
+    compactKeyRange **range_arr = zmalloc(task->num_range_alloc * sizeof(compactKeyRange *));
+    memcpy(range_arr, task->key_range, task->num_range * sizeof(compactKeyRange *));
+    zfree(task->key_range);
+    task->key_range = range_arr;
+
+    task->key_range[task->num_range] = key_range;
+    task->num_range++;
 }
 
 static rocksdb_level_metadata_t* getHighestLevelMetaWithSST(rocksdb_column_family_metadata_t* default_meta) {
@@ -311,12 +339,12 @@ static rocksdb_level_metadata_t* getHighestLevelMetaWithSST(rocksdb_column_famil
     return level_meta;
 }
 
-static int getExpiredSstInfo(rocksdb_level_metadata_t* level_meta, int *sst_index_arr, uint64_t *sst_age_arr) {
+static int getExpiredSstInfo(rocksdb_level_metadata_t* level_meta, uint *sst_index_arr, uint64_t *sst_age_arr) {
 
     size_t level_sst_num = rocksdb_level_metadata_get_file_count(level_meta);
     int sst_recorded_num = 0;
 
-    for (int i = 0; i < level_sst_num; i++) {
+    for (uint i = 0; i < level_sst_num; i++) {
         rocksdb_sst_file_metadata_t* sst_meta = rocksdb_level_metadata_get_sst_file_metadata(level_meta, i);
         if (sst_meta == NULL) {
             continue;
@@ -343,13 +371,17 @@ static int getExpiredSstInfo(rocksdb_level_metadata_t* level_meta, int *sst_inde
     return sst_recorded_num;
 }
 
-static uint sortExpiredSstInfo(uint *sst_index_arr, uint64_t *sst_age_arr, uint sst_recorded_num, bool *is_increasing_order) {
+/*
+ * sort the sst to get oldest sst range with the continous index(ascending or descending order).
+ */
+static uint sortExpiredSstInfo(uint *sst_index_arr, uint64_t *sst_age_arr, uint sst_recorded_num, bool *is_ascending_order) {
 
     uint arranged_cursor = 0;
 
+    /* pruning bubble algorithm */
     /* sort in place */
-    for (int i = 0; i < sst_recorded_num - 1; i++) {
-        for (int j = sst_recorded_num - 1; j > i; j--) {
+    for (uint i = 0; i < sst_recorded_num - 1; i++) {
+        for (uint j = sst_recorded_num - 1; j > i; j--) {
 
             if (sst_age_arr[j] > sst_age_arr[j - 1]) {
                 uint64_t tmp_exist_time;
@@ -357,11 +389,11 @@ static uint sortExpiredSstInfo(uint *sst_index_arr, uint64_t *sst_age_arr, uint 
                 sst_age_arr[j] = sst_age_arr[j - 1];
                 sst_age_arr[j - 1] = tmp_exist_time;
 
-                int tmp_file_idx;
-                tmp_file_idx = sst_index_arr[j];
+                int tmp_sst_idx;
+                tmp_sst_idx = sst_index_arr[j];
                 sst_index_arr[j] = sst_index_arr[j - 1];
-                sst_index_arr[j - 1] = tmp_file_idx;
-            } 
+                sst_index_arr[j - 1] = tmp_sst_idx;
+            }
         }
 
         if (i == 0) {
@@ -369,24 +401,24 @@ static uint sortExpiredSstInfo(uint *sst_index_arr, uint64_t *sst_age_arr, uint 
             continue;
         }
 
-        if (i == 1) { /* when there is two file arranged, order should be decided */
+        if (i == 1) { /* when there is two oldest sst arranged, order should be decided */
             if (sst_index_arr[i] == sst_index_arr[i - 1] + 1) {
-                *is_increasing_order = true;
+                *is_ascending_order = true;
                 arranged_cursor = 1;
                 continue;
             } else if (sst_index_arr[i] + 1 == sst_index_arr[i - 1]) {
-                *is_increasing_order = false;
+                *is_ascending_order = false;
                 arranged_cursor = 1;
                 continue;
             } else {
-                break; /* continuity of file index has been broken, no need to continue sorting */
+                break; /* continuity of sst index has been broken, no need to continue sorting */
             }
         }
 
-        /* sort work will continue until the continuity of file index is broken */
+        /* sort work will continue until the continuity of sst index is broken */
         /* i > 1 */
-        if (((sst_index_arr[i - 1] + 1 == sst_index_arr[i]) && (*is_increasing_order)) || 
-            ((sst_index_arr[i - 1] == sst_index_arr[i] + 1) && !(*is_increasing_order))) {
+        if (((sst_index_arr[i - 1] + 1 == sst_index_arr[i]) && (*is_ascending_order)) || 
+            ((sst_index_arr[i - 1] == sst_index_arr[i] + 1) && !(*is_ascending_order))) {
             arranged_cursor = i;
         } else {
             break;
@@ -396,12 +428,12 @@ static uint sortExpiredSstInfo(uint *sst_index_arr, uint64_t *sst_age_arr, uint 
     return arranged_cursor;
 }
 
-static compactTask *getTtlCompactTask(rocksdb_level_metadata_t *level_meta, uint *sst_index_arr, uint64_t *sst_age_arr, uint arranged_cursor, bool is_increasing_order) {
+static compactTask *getTtlCompactTask(rocksdb_level_metadata_t *level_meta, uint *sst_index_arr, uint arranged_cursor, bool is_ascending_order) {
 
     rocksdb_sst_file_metadata_t* smallest_sst_meta;
     rocksdb_sst_file_metadata_t* largest_sst_meta;
 
-    if (is_increasing_order) {
+    if (is_ascending_order) {
         smallest_sst_meta = rocksdb_level_metadata_get_sst_file_metadata(level_meta, sst_index_arr[0]);
         largest_sst_meta = rocksdb_level_metadata_get_sst_file_metadata(level_meta, sst_index_arr[arranged_cursor]);
         serverLog(LL_NOTICE, "[rocksdb initiative compact range task] small file:%d, large file:%d, increase, constitute_index_cursor: %d",
@@ -425,14 +457,17 @@ static compactTask *getTtlCompactTask(rocksdb_level_metadata_t *level_meta, uint
     rocksdb_sst_file_metadata_destroy(largest_sst_meta);
 
     compactTask *task = compactTaskNew();
-    task->num_cf = 1;
-    task->key_range = zmalloc(sizeof(compactKeyRange));
-    task->key_range[0].cf_index = DATA_CF;
+    task->compact_type = TYPE_TTL_COMPACT;
 
-    task->key_range[0].start_key = smallest_key;
-    task->key_range[0].end_key = largest_key;
-    task->key_range[0].start_key_size = smallest_key_name_size;
-    task->key_range[0].end_key_size = largest_key_name_size;
+    compactKeyRange *data_key_range = zcalloc(sizeof(compactKeyRange));
+    data_key_range->cf_index = DATA_CF;
+    data_key_range->sst_num_covered = arranged_cursor + 1;
+    data_key_range->start_key = smallest_key;
+    data_key_range->end_key = largest_key;
+    data_key_range->start_key_size = smallest_key_name_size;
+    data_key_range->end_key_size = largest_key_name_size;
+    
+    compactTaskAppend(task,data_key_range);
 
     return task;
 }
@@ -468,21 +503,18 @@ void genServerTtlCompactTask(void *result, void *pd, int errcode) {
 
     uint sst_recorded_num = getExpiredSstInfo(level_meta, sst_index_arr, sst_age_arr);
     if (sst_recorded_num == 0) {
-        zfree(sst_index_arr);
-        zfree(sst_age_arr);
-        rocksdb_level_metadata_destroy(level_meta);
-        cfMetasFree(metas);
-        serverLog(LL_NOTICE, "[rocksdb initiative compact] sst_recorded_num == 0 "); // wait del
-        return;
+        goto end;
     }
 
-    bool is_increasing_order = true; /* record the order of sst index of compact range. */
-    uint arranged_cursor = sortExpiredSstInfo(sst_index_arr, sst_age_arr, sst_recorded_num, &is_increasing_order);
+    bool is_ascending_order = true; /* record the order of sst index of compact range. */
+    uint arranged_cursor = sortExpiredSstInfo(sst_index_arr, sst_age_arr, sst_recorded_num, &is_ascending_order);
 
     if (server.swap_ttl_compact_ctx->task != NULL) {
         compactTaskFree(server.swap_ttl_compact_ctx->task);
     }
-    server.swap_ttl_compact_ctx->task = getTtlCompactTask(level_meta, sst_index_arr, sst_age_arr, arranged_cursor, is_increasing_order);
+    server.swap_ttl_compact_ctx->task = getTtlCompactTask(level_meta, sst_index_arr, arranged_cursor, is_ascending_order);
+
+end:
 
     zfree(sst_index_arr);
     zfree(sst_age_arr);
@@ -494,11 +526,13 @@ swapTtlCompactCtx *swapTtlCompactCtxNew() {
     swapTtlCompactCtx *ctx = zmalloc(sizeof(swapTtlCompactCtx));
 
     ctx->expire_wt = wtdigestCreate(WTD_DEFAULT_NUM_BUCKETS);
-    wtdigestSetWindow(ctx->expire_wt, server.rocksdb_data_periodic_compaction_seconds);
+    wtdigestSetWindow(ctx->expire_wt, DEFAULT_EXPIRE_WT_WINDOW);
 
-    ctx->expire_wt_is_valid = false;
+    ctx->added_expire_count = 0;
+    ctx->scanned_expire_count = 0;
     ctx->sst_age_limit = INVALID_SST_AGE_LIMIT;
     ctx->task = NULL;
+    return ctx;
 }
 
 void swapTtlCompactCtxFree(swapTtlCompactCtx *ctx) {
@@ -525,14 +559,14 @@ cfMetas *cfMetasNew(uint cf_num) {
 }
 
 void cfMetasFree(cfMetas *metas) {
-    for (int i = 0; i < metas->num; i++) {
+    for (uint i = 0; i < metas->num; i++) {
         rocksdb_column_family_metadata_destroy(metas->cf_meta[i]);
     }
     zfree(metas);
 }
 
 cfIndexes *cfIndexesNew() {
-    return zmalloc(sizeof(cfIndexes));
+    return zcalloc(sizeof(cfIndexes));
 }
 
 void cfIndexesFree(cfIndexes *idxes) {

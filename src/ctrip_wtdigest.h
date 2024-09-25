@@ -63,14 +63,9 @@ void wtdigestSetWindow(wtdigest* wt, unsigned long long window_seconds);
 
 unsigned long long wtdigestGetWindow(wtdigest* wt);
 
-bool wtdigestIsRunnning(wtdigest* wt);
+unsigned long long wtdigestGetRunnningTime(wtdigest* wt);
 
-void wtdigestStart(wtdigest* wt);
-
-/*
- * this func will reset all buckets, and change status to not-running
- */
-void wtdigestStop(wtdigest* wt);
+void wtdigestReset(wtdigest* wt);
 
 /**
  * Adds a value to a wtdigest.

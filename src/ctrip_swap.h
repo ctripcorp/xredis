@@ -997,6 +997,8 @@ int swapDataSetupBitmap(swapData *d, void **pdatactx);
 
 sds genSwapBitmapStringSwitchedInfoString(sds info);
 
+sds genSwapTtlCompactInfoString(sds info);
+
 /* Meta bitmap */
 /* meta != NULL, bitmap with hole, which means cold subkey, it is not entire bitmap in memory.
  * meta == NULL,  no hole in bitmap, it is entire bitmap in memory. */
@@ -1935,19 +1937,25 @@ void cfIndexesFree(cfIndexes *indexes);
 /* rocksdb util task: compact */
 typedef struct compactKeyRange {
   uint cf_index;
+  uint sst_num_covered; /* only in highest level */
   char *start_key;
   char *end_key;
   size_t start_key_size;
   size_t end_key_size;
 } compactKeyRange;
 
+#define TYPE_TTL_COMPACT 0
+#define TYPE_FULL_COMPACT 1
 typedef struct compactTask {
-  uint num_cf;
-  compactKeyRange *key_range;
+  int compact_type;
+  uint num_range;
+  uint num_range_alloc;
+  compactKeyRange **key_range;
 } compactTask;
 
 compactTask *compactTaskNew();
 void compactTaskFree(compactTask *task);
+void compactTaskAppend(compactTask *task, compactKeyRange *key_range);
 
 void rocksdbCompactRangeTaskDone(void *result, void *pd, int errcode);
 void genServerTtlCompactTask(void *result, void *pd, int errcode);
@@ -1955,12 +1963,14 @@ void genServerTtlCompactTask(void *result, void *pd, int errcode);
 
 #define INVALID_EXPIRE __DBL_MAX__
 #define INVALID_SST_AGE_LIMIT ULONG_MAX
-#define EXPIRE_WT_RATE_LOWER_LIMIT 0.5  /* percentage of size of expire_wt over total num of keys */
+#define DEFAULT_EXPIRE_WT_WINDOW 86400 /* 24h */
+#define EXPIRE_ADDED_GAP 7
 
 typedef struct swapTtlCompactCtx {
     unsigned long long sst_age_limit; /* master will pass it to slave */
-    bool expire_wt_is_valid; /* it is false when the size of expire_wt is too small */
     wtdigest *expire_wt; /* only in master */
+    unsigned long long added_expire_count;
+    unsigned long long scanned_expire_count;
     compactTask *task; /* move to utilctx during serverCron. */
 } swapTtlCompactCtx;
 

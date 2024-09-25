@@ -12,7 +12,7 @@
  * the include of your alternate allocator if needed (not needed in order
  * to use the default libc allocator). */
 
-#include "../../src/zmalloc.h"
+#include "zmalloc.h"
 
 #ifndef TD_ALLOC_H
 #define TD_ALLOC_H
