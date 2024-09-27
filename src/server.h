@@ -1964,10 +1964,9 @@ struct redisServer {
     /* ttl compact, only compact default CF */
     int swap_ttl_compact_enabled;
     unsigned int swap_ttl_compact_expire_percentile;
+    unsigned int swap_ttl_compact_expire_added_gap; // tmp config, wait del
     unsigned long long swap_ttl_compact_interval_seconds;
     struct swapTtlCompactCtx *swap_ttl_compact_ctx;
-    redisAtomic unsigned long long ttl_compact_times;
-    redisAtomic unsigned long long ttl_compact_high_level_sst_count;
 };
 
 #define MAX_KEYS_BUFFER 256

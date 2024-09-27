@@ -2898,7 +2898,8 @@ standardConfig configs[] = {
     createBoolConfig("swap-repl-rordb-sync", NULL, MODIFIABLE_CONFIG, server.swap_repl_rordb_sync, 1, NULL, NULL),
     createBoolConfig("swap-rdb-bitmap-encode-enabled", NULL, MODIFIABLE_CONFIG, server.swap_rdb_bitmap_encode_enabled, 1, NULL, NULL),
     createBoolConfig("swap-bitmap-subkeys-enabled", NULL, MODIFIABLE_CONFIG, server.swap_bitmap_subkeys_enabled, 1, NULL, NULL),
-    createBoolConfig("swap-ttl-compact-enabled", NULL, MODIFIABLE_CONFIG, server.swap_ttl_compact_enabled, 1, NULL, NULL),
+    // default as 1, wait modify
+    createBoolConfig("swap-ttl-compact-enabled", NULL, MODIFIABLE_CONFIG, server.swap_ttl_compact_enabled, 0, NULL, NULL),
     createBoolConfig("rocksdb.data.cache_index_and_filter_blocks", "rocksdb.cache_index_and_filter_blocks", IMMUTABLE_CONFIG, server.rocksdb_data_cache_index_and_filter_blocks, 0, NULL, NULL),
     createBoolConfig("rocksdb.meta.cache_index_and_filter_blocks", NULL, IMMUTABLE_CONFIG, server.rocksdb_meta_cache_index_and_filter_blocks, 0, NULL, NULL),
     createBoolConfig("rocksdb.enable_pipelined_write", NULL, IMMUTABLE_CONFIG, server.rocksdb_enable_pipelined_write, 0, NULL, NULL),
@@ -3036,6 +3037,9 @@ standardConfig configs[] = {
     /* Unsigned int configs */
     createUIntConfig("maxclients", NULL, MODIFIABLE_CONFIG, 1, UINT_MAX, server.maxclients, 10000, INTEGER_CONFIG, NULL, updateMaxclients),
     createUIntConfig("swap-ttl-compact-expire-percentile", NULL, MODIFIABLE_CONFIG, 1, 100, server.swap_ttl_compact_expire_percentile, 99, INTEGER_CONFIG, NULL, NULL),
+    
+    // tmp config, wait del
+    createUIntConfig("swap-ttl-compact-expire-added-gap", NULL, MODIFIABLE_CONFIG, 1, 10000, server.swap_ttl_compact_expire_added_gap, 7, INTEGER_CONFIG, NULL, NULL),
 
     /* Unsigned Long configs */
     createULongConfig("active-defrag-max-scan-fields", NULL, MODIFIABLE_CONFIG, 1, LONG_MAX, server.active_defrag_max_scan_fields, 1000, INTEGER_CONFIG, NULL, NULL), /* Default: keys with more than 1000 fields will be processed separately */

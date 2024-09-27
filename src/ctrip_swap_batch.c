@@ -417,17 +417,11 @@ void swapBatchCtxFeed(swapBatchCtx *batch_ctx, int flush,
 #ifdef REDIS_TEST
 
 rocksdbUtilTaskCtx *mockFullCompactUtilCtx() {
-    compactTask *task = compactTaskNew();
-    task->compact_type = TYPE_FULL_COMPACT;
+    compactTask *task = compactTaskNew(TYPE_FULL_COMPACT);
 
-    compactKeyRange *meta_key_range = zcalloc(sizeof(compactKeyRange));
-    meta_key_range->cf_index = META_CF;
-
-    compactKeyRange *data_key_range = zcalloc(sizeof(compactKeyRange));
-    data_key_range->cf_index = DATA_CF;
-
-    compactKeyRange *score_key_range = zcalloc(sizeof(compactKeyRange));
-    score_key_range->cf_index = SCORE_CF;
+    compactKeyRange *meta_key_range = compactKeyRangeNew(META_CF, NULL, NULL, 0, 0);
+    compactKeyRange *data_key_range = compactKeyRangeNew(DATA_CF, NULL, NULL, 0, 0);
+    compactKeyRange *score_key_range = compactKeyRangeNew(SCORE_CF, NULL, NULL, 0, 0);
     
     compactTaskAppend(task,meta_key_range);
     compactTaskAppend(task,data_key_range);

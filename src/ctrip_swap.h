@@ -1937,41 +1937,44 @@ void cfIndexesFree(cfIndexes *indexes);
 /* rocksdb util task: compact */
 typedef struct compactKeyRange {
   uint cf_index;
-  uint sst_num_covered; /* only in highest level */
   char *start_key;
   char *end_key;
   size_t start_key_size;
   size_t end_key_size;
 } compactKeyRange;
 
+compactKeyRange *compactKeyRangeNew(uint cf_index, char *start_key, char *end_key, size_t start_key_size, size_t end_key_size);
+void compactKeyRangeFree(compactKeyRange *range);
+
 #define TYPE_TTL_COMPACT 0
 #define TYPE_FULL_COMPACT 1
 typedef struct compactTask {
   int compact_type;
-  uint num_range;
-  uint num_range_alloc;
+  uint count;
+  uint capacity;
   compactKeyRange **key_range;
 } compactTask;
 
-compactTask *compactTaskNew();
+compactTask *compactTaskNew(int compact_type);
 void compactTaskFree(compactTask *task);
 void compactTaskAppend(compactTask *task, compactKeyRange *key_range);
 
 void rocksdbCompactRangeTaskDone(void *result, void *pd, int errcode);
 void genServerTtlCompactTask(void *result, void *pd, int errcode);
 
-
-#define INVALID_EXPIRE __DBL_MAX__
-#define INVALID_SST_AGE_LIMIT ULONG_MAX
-#define DEFAULT_EXPIRE_WT_WINDOW 86400 /* 24h */
-#define EXPIRE_ADDED_GAP 7
+#define SWAP_TTL_COMPACT_INVALID_EXPIRE __DBL_MAX__
+#define SWAP_TTL_COMPACT_INVALID_SST_AGE_LIMIT ULONG_MAX
+#define SWAP_TTL_COMPACT_DEFAULT_EXPIRE_WT_WINDOW 86400 /* 24h */
+#define SWAP_TTL_COMPACT_EXPIRE_ADDED_GAP 7
 
 typedef struct swapTtlCompactCtx {
-    unsigned long long sst_age_limit; /* master will pass it to slave */
+    unsigned long long sst_age_limit; /* second, master will pass it to slave */
     wtdigest *expire_wt; /* only in master */
     unsigned long long added_expire_count;
     unsigned long long scanned_expire_count;
     compactTask *task; /* move to utilctx during serverCron. */
+    redisAtomic unsigned long long stat_compact_times;
+    redisAtomic unsigned long long stat_request_sst_count;
 } swapTtlCompactCtx;
 
 swapTtlCompactCtx *swapTtlCompactCtxNew();

@@ -80,17 +80,10 @@ void swapRequestExecuteUtil_CompactRange(swapRequest *req) {
     compactTask *task = (compactTask*)utilctx->argument;
     serverAssert(task != NULL);
 
-    for (uint i = 0; i < task->num_range; i++) {
+    for (uint i = 0; i < task->count; i++) {
         rocksdb_compact_range_cf(rocks->db, rocks->cf_handles[task->key_range[i]->cf_index], 
             task->key_range[i]->start_key, task->key_range[i]->start_key_size, task->key_range[i]->end_key,
             task->key_range[i]->end_key_size);
-        if (task->compact_type == TYPE_TTL_COMPACT) {
-            atomicIncr(server.ttl_compact_high_level_sst_count, task->key_range[i]->sst_num_covered);
-        }
-    }
-
-    if (task->compact_type == TYPE_TTL_COMPACT) {
-        atomicIncr(server.ttl_compact_times, 1);
     }
     serverLog(LL_WARNING, "[rocksdb compact range after] dir(%s) size(%ld)", dir, get_dir_size(dir));
     serverRocksUnlock(rocks);

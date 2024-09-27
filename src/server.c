@@ -2427,33 +2427,32 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     // iAmMaster() will be added in release code.
     if (server.swap_ttl_compact_enabled) {
         run_with_period(1000*60) {
-             wtdigest *expire_wt = server.swap_ttl_compact_ctx->expire_wt;
+            wtdigest *expire_wt = server.swap_ttl_compact_ctx->expire_wt;
 
             unsigned long long keys_num = (unsigned long long)dbTotalServerKeyCount();
             if (wtdigestGetRunnningTime(expire_wt) > wtdigestGetWindow(expire_wt) ||
                 keys_num < server.swap_ttl_compact_ctx->added_expire_count) {
                 /* percentile of expire_wt is valid */
                 double percentile = (double)server.swap_ttl_compact_expire_percentile / 100;
-                int res_status;
-                double res = wtdigestQuantile(server.swap_ttl_compact_ctx->expire_wt, percentile, &res_status);
-                if (res != INVALID_EXPIRE && res_status == OK_WTD) {
+                double res = wtdigestQuantile(server.swap_ttl_compact_ctx->expire_wt, percentile);
+                if (res != SWAP_TTL_COMPACT_INVALID_EXPIRE) {
                     server.swap_ttl_compact_ctx->sst_age_limit = (unsigned long long)res;
                 } else {
-                    server.swap_ttl_compact_ctx->sst_age_limit = INVALID_SST_AGE_LIMIT;
+                    server.swap_ttl_compact_ctx->sst_age_limit = SWAP_TTL_COMPACT_INVALID_SST_AGE_LIMIT;
                 }
             } else {
-                server.swap_ttl_compact_ctx->sst_age_limit = INVALID_SST_AGE_LIMIT;
+                server.swap_ttl_compact_ctx->sst_age_limit = SWAP_TTL_COMPACT_INVALID_SST_AGE_LIMIT;
             }
         }
     } else {
         wtdigestReset(server.swap_ttl_compact_ctx->expire_wt);
         server.swap_ttl_compact_ctx->added_expire_count = 0;
         server.swap_ttl_compact_ctx->scanned_expire_count = 0;
-        server.swap_ttl_compact_ctx->sst_age_limit = INVALID_SST_AGE_LIMIT;
+        server.swap_ttl_compact_ctx->sst_age_limit = SWAP_TTL_COMPACT_INVALID_SST_AGE_LIMIT;
     }
 
     /* ttl compaction, produce task. */
-    if (server.swap_ttl_compact_enabled && server.swap_ttl_compact_ctx->sst_age_limit != INVALID_SST_AGE_LIMIT) {
+    if (server.swap_ttl_compact_enabled && server.swap_ttl_compact_ctx->sst_age_limit != SWAP_TTL_COMPACT_INVALID_SST_AGE_LIMIT) {
         run_with_period(1000*3*60) {    
             cfIndexes *idxes = cfIndexesNew();
             idxes->num = 1;
@@ -3742,8 +3741,6 @@ void InitServerLast() {
     server.swap_draining_master = NULL;
     server.swap_string_switched_to_bitmap_count = 0;
     server.swap_bitmap_switched_to_string_count = 0;
-    server.ttl_compact_high_level_sst_count = 0;
-    server.ttl_compact_times = 0;
     serverRocksInit();
     server.util_task_manager = createRocksdbUtilTaskManager();
     asyncCompleteQueueInit();

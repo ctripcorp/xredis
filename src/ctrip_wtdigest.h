@@ -31,9 +31,6 @@
 
 #include <stdint.h>
 
-#define ERR_WTD -1
-#define OK_WTD 0
-
 #define WTD_DEFAULT_NUM_BUCKETS 6
 
 /*
@@ -83,7 +80,7 @@ void wtdigestAdd(wtdigest* wt, double val, unsigned long long weight);
  * @return The value x such that cdf(x) == q,（cumulative distribution function，CDF).
  * time complexity : nlog(n)
  */
-double wtdigestQuantile(wtdigest* wt, double q, int *res_status);
+double wtdigestQuantile(wtdigest* wt, double q);
 
 long long wtdigestSize(wtdigest* wt);
 
