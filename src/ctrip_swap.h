@@ -997,8 +997,6 @@ int swapDataSetupBitmap(swapData *d, void **pdatactx);
 
 sds genSwapBitmapStringSwitchedInfoString(sds info);
 
-sds genSwapTtlCompactInfoString(sds info);
-
 /* Meta bitmap */
 /* meta != NULL, bitmap with hole, which means cold subkey, it is not entire bitmap in memory.
  * meta == NULL,  no hole in bitmap, it is entire bitmap in memory. */
@@ -1962,23 +1960,41 @@ void compactTaskAppend(compactTask *task, compactKeyRange *key_range);
 void rocksdbCompactRangeTaskDone(void *result, void *pd, int errcode);
 void genServerTtlCompactTask(void *result, void *pd, int errcode);
 
-#define SWAP_TTL_COMPACT_INVALID_EXPIRE __DBL_MAX__
-#define SWAP_TTL_COMPACT_INVALID_SST_AGE_LIMIT ULONG_MAX
+#define SWAP_TTL_COMPACT_INVALID_EXPIRE LONG_LONG_MAX /* expire or pexpire is long long int. */
 #define SWAP_TTL_COMPACT_DEFAULT_EXPIRE_WT_WINDOW 86400 /* 24h */
-#define SWAP_TTL_COMPACT_EXPIRE_ADDED_GAP 7
+
+typedef struct swapExpireStatus {
+    long long expire_of_quantile; /* milliseconds, master will pass it to slave, both in master and slave, sub-slave */
+    wtdigest *expire_wt; /* only in master, save in milliseconds */
+    redisAtomic unsigned long long expire_wt_error; /* only in master */
+    redisAtomic unsigned long long sampled_expires_count; /* only in master */
+} swapExpireStatus;
 
 typedef struct swapTtlCompactCtx {
-    unsigned long long sst_age_limit; /* second, master will pass it to slave */
-    wtdigest *expire_wt; /* only in master */
-    unsigned long long added_expire_count;
-    unsigned long long scanned_expire_count;
     compactTask *task; /* move to utilctx during serverCron. */
+    swapExpireStatus *expire_stats;
     redisAtomic unsigned long long stat_compact_times;
     redisAtomic unsigned long long stat_request_sst_count;
 } swapTtlCompactCtx;
 
 swapTtlCompactCtx *swapTtlCompactCtxNew();
 void swapTtlCompactCtxFree(swapTtlCompactCtx *ctx);
+
+swapExpireStatus *swapExpireStatusNew();
+void swapExpireStatusFree(swapExpireStatus *stats);
+void swapExpireStatusProcessErr(swapExpireStatus *stats);
+void swapExpireStatusReset(swapExpireStatus *stats);
+
+sds genSwapTtlCompactInfoString(sds info);
+
+/* swap info cmd */
+#define SWAP_INFO_SUPPORTED_YES 0
+#define SWAP_INFO_SUPPORTED_NO 1
+#define SWAP_INFO_SUPPORTED_AUTO 2
+
+void swapInfoCommand(client *c);
+
+void swapPropagateSwapInfo();
 
 /* Repl */
 int submitReplClientRequests(client *c);

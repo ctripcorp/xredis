@@ -125,16 +125,17 @@ void resetBucketsIfNeed(wtdigest* wt)
     return;
 }
 
-void wtdigestAdd(wtdigest* wt, double val, unsigned long long weight)
+int wtdigestAdd(wtdigest* wt, double val, unsigned long long weight)
 {
     resetBucketsIfNeed(wt);
 
     for (uint8_t i = 0; i < wt->num_buckets; i++) {
         int res = td_add(wt->buckets[i], val, weight);
         if (res != 0) {
-            serverLog(LL_DEBUG, "error happened when wtdigest add val, ret: %d, bucket index: %u.", res, i);
+            return res;
         }
     }
+    return 0;
 }
 
 double wtdigestQuantile(wtdigest* wt, double q)

@@ -1308,6 +1308,33 @@ int getKeyRequestsMemory(int dbid, struct redisCommand *cmd, robj **argv,
     }
 }
 
+/* The swap.info command, propagate system info to slave.
+ * SWAP.INFO <subcommand> <args>
+ *
+ * subcommand supported:
+ * SWAP.INFO EXPIRE-QUANTILE <quantile> <expire> */
+void swapInfoCommand(client *c) {
+    if (c->argc < 2) {
+        return;
+    }
+
+    /* SWAP.INFO EXPIRE-QUANTILE <quantile> <expire> */
+    if (c->argc == 4 && !strcasecmp(c->argv[1]->ptr,"EXPIRE-QUANTILE")) {
+        long long quantile = 0;
+        int res = isObjectRepresentableAsLongLong(c->argv[2], &quantile);
+        if (res != C_OK) {
+            return;
+        }
+
+        long long expire = 0;
+        res = isObjectRepresentableAsLongLong(c->argv[3], &expire);
+        if (res == C_OK) {
+            server.swap_ttl_compact_ctx->expire_stats->expire_of_quantile = expire;
+            // serverLog(LL_NOTICE, "I get it !!!  %lld", server.swap_ttl_compact_ctx->expire_stats->expire_of_quantile); // wait del
+        }
+    }
+}
+
 #ifdef REDIS_TEST
 
 void rewriteResetClientCommandCString(client *c, int argc, ...) {

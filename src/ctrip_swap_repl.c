@@ -374,3 +374,57 @@ sds genSwapReplInfoString(sds info) {
             listLength(server.repl_swapping_clients));
     return info;
 }
+
+bool needPropagateExpireQuantile(void) {
+
+    if (server.swap_swap_info_supported == SWAP_INFO_SUPPORTED_YES) return true;
+    if (server.swap_swap_info_supported == SWAP_INFO_SUPPORTED_NO) return false;
+
+    /* SWAP_INFO_SUPPORTED_AUTO */
+    /* depends on capa of all slaves, 
+     * once there is one slave without capa of swap.info, return false. */
+
+    listNode *ln;
+    listIter li;
+
+    listRewind(server.slaves,&li);
+    while((ln = listNext(&li))) {
+        client *slave = ln->value;
+
+        if (!(slave->slave_capa & SLAVE_CAPA_SWAP_INFO)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+ /* SWAP.INFO EXPIRE-QUANTILE <quantile> <expire> */
+static void propagateExpireQuantile() {
+
+    if (!needPropagateExpireQuantile()) return; 
+    
+    robj *quantile_obj = createStringObjectFromLongLong((long long)server.swap_ttl_compact_expire_percentile);
+    robj *expire_obj = createStringObjectFromLongLong(server.swap_ttl_compact_ctx->expire_stats->expire_of_quantile);
+    
+    // if (iAmMaster()) {
+    //     serverLog(LL_NOTICE, "I am a master!!");
+    //     server.swap_ttl_compact_ctx->expire_stats->expire_of_quantile = -server.swap_ttl_compact_ctx->expire_stats->expire_of_quantile;
+    // }
+    // serverLog(LL_NOTICE, "I send expire_of_quantile is %lld", server.swap_ttl_compact_ctx->expire_stats->expire_of_quantile); // for debug, wait del
+
+    robj **argv = zmalloc(sizeof(robj*) * 4);
+    argv[0] = shared.swap_info;
+    argv[1] = shared.expire_quantile;
+    argv[2] = quantile_obj;
+    argv[3] = expire_obj;
+
+    replicationFeedSlaves(server.slaves,0,argv,4);
+    decrRefCount(quantile_obj);
+    decrRefCount(expire_obj);
+    zfree(argv);
+}
+
+ /* SWAP.INFO <subcommand> */
+void swapPropagateSwapInfo() {
+    propagateExpireQuantile();
+}

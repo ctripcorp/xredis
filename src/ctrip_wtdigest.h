@@ -30,8 +30,10 @@
 #define __CTRIP_WTDIGEST_H__
 
 #include <stdint.h>
+#include "math.h"
 
 #define WTD_DEFAULT_NUM_BUCKETS 6
+#define IS_INVALID_QUANTILE(num) (isinf(num) || isnan(num))
 
 /*
   Window Tdigest algorithm is based on tdigest(MergingDigest). There are td_num buckets 
@@ -70,7 +72,7 @@ void wtdigestReset(wtdigest* wt);
  * @param weight The weight of this value, sugggested to set to 1 normally.
  * time complexity : nlog(n)
  */
-void wtdigestAdd(wtdigest* wt, double val, unsigned long long weight);
+int wtdigestAdd(wtdigest* wt, double val, unsigned long long weight);
 
 /**
  * Returns an estimate of the cutoff such that a specified fraction of the value

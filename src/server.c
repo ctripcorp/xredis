@@ -1184,6 +1184,9 @@ struct redisCommand redisCommandTable[] = {
      "admin random ok-loading ok-stale",
      0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
 
+    {"swap.info", swapInfoCommand, -2,
+     "admin no-script ok-loading fast may-replicate",
+     0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
 };
 
 /*============================ Utility functions ============================ */
@@ -2155,6 +2158,55 @@ void _rdbSaveBackground(client *c, swapCtx *ctx) {
     clientReleaseLocks(c,ctx);
 }
 
+static void ttlCompactGetExpireQuantile() {
+    if (server.swap_ttl_compact_enabled) {
+            wtdigest *expire_wt = server.swap_ttl_compact_ctx->expire_stats->expire_wt;
+            swapExpireStatus *expire_stats = server.swap_ttl_compact_ctx->expire_stats;
+
+            unsigned long long keys_num = (unsigned long long)dbTotalServerKeyCount();
+            if (wtdigestGetRunnningTime(expire_wt) > wtdigestGetWindow(expire_wt) ||
+                keys_num < expire_stats->sampled_expires_count) {
+                /* percentile of expire_wt is valid */
+                double percentile = (double)server.swap_ttl_compact_expire_percentile / 100;
+                double res = wtdigestQuantile(expire_wt, percentile);
+                if (IS_INVALID_QUANTILE(res)) {
+                    swapExpireStatusProcessErr(expire_stats);
+                    serverLog(LL_NOTICE, "res is %lf", res);   // for debug, wait del
+                } else {
+                    expire_stats->expire_of_quantile = (long long)res;
+                }
+            } else {
+                expire_stats->expire_of_quantile = SWAP_TTL_COMPACT_INVALID_EXPIRE;
+            }
+    } else {
+        swapExpireStatusReset(server.swap_ttl_compact_ctx->expire_stats);
+    }
+}
+
+static void ttlCompactProduceTask() {
+    if (server.swap_ttl_compact_enabled && (server.swap_ttl_compact_ctx->expire_stats->expire_of_quantile != SWAP_TTL_COMPACT_INVALID_EXPIRE)) {
+        cfIndexes *idxes = cfIndexesNew();
+        idxes->num = 1;
+        idxes->index = zmalloc(sizeof(int));
+        idxes->index[0] = DATA_CF;
+        if (!submitUtilTask(ROCKSDB_COLLECT_CF_META_TASK, idxes, genServerTtlCompactTask, idxes, NULL)) {
+            serverLog(LL_NOTICE, "[rocksdb] collect cf meta task set failed. ");
+            cfIndexesFree(idxes);
+        }
+    }
+}
+
+static void ttlCompactConsumeTask() {
+    if (server.swap_ttl_compact_enabled && server.swap_ttl_compact_ctx->task != NULL) {
+        compactTask *task = server.swap_ttl_compact_ctx->task;
+        if (submitUtilTask(ROCKSDB_COMPACT_RANGE_TASK, task, rocksdbCompactRangeTaskDone, task, NULL)) {
+            server.swap_ttl_compact_ctx->task = NULL; /* task move to utilctx */
+        } else {
+            serverLog(LL_NOTICE, "[rocksdb] ttl compact task set failed. ");
+        }
+    }
+}
+
 /* This is our timer interrupt, called server.hz times per second.
  * Here is where we do a number of things that need to be done asynchronously.
  * For instance:
@@ -2423,60 +2475,20 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
         }
     }
 
-    /* ttl compaction, get sst_age_limit */
-    // iAmMaster() will be added in release code.
-    if (server.swap_ttl_compact_enabled) {
-        run_with_period(1000*60) {
-            wtdigest *expire_wt = server.swap_ttl_compact_ctx->expire_wt;
-
-            unsigned long long keys_num = (unsigned long long)dbTotalServerKeyCount();
-            if (wtdigestGetRunnningTime(expire_wt) > wtdigestGetWindow(expire_wt) ||
-                keys_num < server.swap_ttl_compact_ctx->added_expire_count) {
-                /* percentile of expire_wt is valid */
-                double percentile = (double)server.swap_ttl_compact_expire_percentile / 100;
-                double res = wtdigestQuantile(server.swap_ttl_compact_ctx->expire_wt, percentile);
-                if (res != SWAP_TTL_COMPACT_INVALID_EXPIRE) {
-                    server.swap_ttl_compact_ctx->sst_age_limit = (unsigned long long)res;
-                } else {
-                    server.swap_ttl_compact_ctx->sst_age_limit = SWAP_TTL_COMPACT_INVALID_SST_AGE_LIMIT;
-                }
-            } else {
-                server.swap_ttl_compact_ctx->sst_age_limit = SWAP_TTL_COMPACT_INVALID_SST_AGE_LIMIT;
-            }
+    run_with_period(1000*60) {
+        if (iAmMaster()) {
+            ttlCompactGetExpireQuantile();
         }
-    } else {
-        wtdigestReset(server.swap_ttl_compact_ctx->expire_wt);
-        server.swap_ttl_compact_ctx->added_expire_count = 0;
-        server.swap_ttl_compact_ctx->scanned_expire_count = 0;
-        server.swap_ttl_compact_ctx->sst_age_limit = SWAP_TTL_COMPACT_INVALID_SST_AGE_LIMIT;
+
+        ttlCompactProduceTask();
     }
 
-    /* ttl compaction, produce task. */
-    if (server.swap_ttl_compact_enabled && server.swap_ttl_compact_ctx->sst_age_limit != SWAP_TTL_COMPACT_INVALID_SST_AGE_LIMIT) {
-        run_with_period(1000*3*60) {    
-            cfIndexes *idxes = cfIndexesNew();
-            idxes->num = 1;
-            idxes->index = zmalloc(sizeof(int));
-            idxes->index[0] = DATA_CF;
-            if (!submitUtilTask(ROCKSDB_COLLECT_CF_META_TASK, idxes, genServerTtlCompactTask, idxes, NULL)) {
-                serverLog(LL_NOTICE, "[rocksdb] collect cf meta task set failed. ");
-                cfIndexesFree(idxes);
-            }
-        }
+    run_with_period(1000*(int)server.swap_ttl_compact_interval_seconds) {
+        ttlCompactConsumeTask();   
     }
 
-    /* ttl compaction, consume task. */
-    if (server.swap_ttl_compact_enabled) {
-            run_with_period(1000*(int)server.swap_ttl_compact_interval_seconds) {
-            if (server.swap_ttl_compact_ctx->task != NULL) {
-                compactTask *task = server.swap_ttl_compact_ctx->task;
-                if (submitUtilTask(ROCKSDB_COMPACT_RANGE_TASK, task, rocksdbCompactRangeTaskDone, task, NULL)) {
-                    server.swap_ttl_compact_ctx->task = NULL; /* task move to utilctx */
-                } else {
-                    serverLog(LL_NOTICE, "[rocksdb] ttl compact task set failed. ");
-                }
-            }
-        }
+    run_with_period(1000*server.swap_swap_info_slave_period) {
+        swapPropagateSwapInfo();
     }
 
     /* Fire the cron loop modules event. */
@@ -2831,6 +2843,7 @@ void createSharedObjects(void) {
     shared.persist = createStringObject("PERSIST",7);
     shared.set = createStringObject("SET",3);
     shared.eval = createStringObject("EVAL",4);
+    shared.swap_info = createStringObject("swap.info",9);
 
     /* Shared command argument */
     shared.left = createStringObject("left",4);
@@ -2852,6 +2865,7 @@ void createSharedObjects(void) {
     shared.special_asterick = createStringObject("*",1);
     shared.special_equals = createStringObject("=",1);
     shared.redacted = makeObjectShared(createStringObject("(redacted)",10));
+    shared.expire_quantile = createStringObject("EXPIRE-QUANTILE",15);
 
     shared.gtid = createStringObject("GTID",4);
     for (j = 0; j < OBJ_SHARED_INTEGERS; j++) {
