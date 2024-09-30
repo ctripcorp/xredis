@@ -5,7 +5,6 @@ OPT= -Os
 R_CFLAGS= $(STD) $(WARN) $(OPT) $(DEBUG) $(CFLAGS)
 R_LDFLAGS= $(LDFLAGS)
 DEBUG= -g
-CFLAGS = -I./include -I../../src
 
 R_CC=$(CC) $(R_CFLAGS)
 R_LD=$(CC) $(R_LDFLAGS)

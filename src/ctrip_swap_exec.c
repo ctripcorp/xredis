@@ -87,6 +87,9 @@ void swapRequestExecuteUtil_CompactRange(swapRequest *req) {
     }
     serverLog(LL_WARNING, "[rocksdb compact range after] dir(%s) size(%ld)", dir, get_dir_size(dir));
     serverRocksUnlock(rocks);
+
+    if (task->compact_type == TYPE_TTL_COMPACT)
+        atomicIncr(server.swap_ttl_compact_ctx->stat_compact_times, 1);
 }
 
 void swapRequestExecuteUtil_GetRocksdbStats(swapRequest* req) {

@@ -594,7 +594,7 @@ void cfMetasFree(cfMetas *metas) {
 
 sds genSwapTtlCompactInfoString(sds info) {
     info = sdscatprintf(info,
-            "swap_ttl_compact: times=%llu, request_sst_count=%llu, sst_age_limit=%llu\r\n",
+            "swap_ttl_compact:times=%llu, request_sst_count=%llu, sst_age_limit=%llu\r\n",
             server.swap_ttl_compact_ctx->stat_compact_times,server.swap_ttl_compact_ctx->stat_request_sst_count,server.swap_ttl_compact_ctx->sst_age_limit);
     return info;
 }
