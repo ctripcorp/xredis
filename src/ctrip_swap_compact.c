@@ -338,7 +338,7 @@ void compactTaskAppend(compactTask *task, compactKeyRange *key_range) {
     task->count++;
 }
 
-static rocksdb_level_metadata_t* getHighestLevelMetaWithSST(rocksdb_column_family_metadata_t* default_meta) {
+static rocksdb_level_metadata_t* getHighestLevelMetaWithSST(rocksdb_column_family_metadata_t *default_meta) {
 
     size_t level_count = rocksdb_column_family_metadata_get_level_count(default_meta);
     serverLog(LL_NOTICE, "[rocksdb initiative compact] level_count : %lu", level_count); // wait delete
@@ -361,11 +361,12 @@ static rocksdb_level_metadata_t* getHighestLevelMetaWithSST(rocksdb_column_famil
         }
 
         rocksdb_level_metadata_destroy(level_meta);
+        level_meta = NULL;
     }
     return level_meta;
 }
 
-static int getExpiredSstInfo(rocksdb_level_metadata_t* level_meta, unsigned long long sst_age_limit, uint *sst_index_arr, uint64_t *sst_age_arr) {
+static int getExpiredSstInfo(rocksdb_level_metadata_t* level_meta, long long sst_age_limit, uint *sst_index_arr, uint64_t *sst_age_arr) {
 
     size_t level_sst_num = rocksdb_level_metadata_get_file_count(level_meta);
     int sst_recorded_num = 0;
@@ -383,8 +384,8 @@ static int getExpiredSstInfo(rocksdb_level_metadata_t* level_meta, unsigned long
         time_t nowtimestamp;
         time(&nowtimestamp);
 
-        uint64_t exist_time = nowtimestamp - create_time;
-        if (exist_time <= sst_age_limit) {
+        long long exist_time = nowtimestamp - create_time;
+        if (exist_time * 1000 <= sst_age_limit) {
             continue;
         }
 
@@ -496,7 +497,7 @@ void genServerTtlCompactTask(void *result, void *pd, int errcode) {
     cfMetas *metas = result;
     serverAssert(metas->num == 1);
 
-    unsigned long long sst_age_limit = server.swap_ttl_compact_ctx->sst_age_limit;
+    long long sst_age_limit = server.swap_ttl_compact_ctx->sst_age_limit;
     if (sst_age_limit == SWAP_TTL_COMPACT_INVALID_SST_AGE_LIMIT) {
         /* no need to generate task. */
         cfMetasFree(metas);
@@ -505,12 +506,8 @@ void genServerTtlCompactTask(void *result, void *pd, int errcode) {
 
     char *cf_name = rocksdb_column_family_metadata_get_name(metas->cf_meta[0]);
     serverAssert(strcmp(cf_name, "default") == 0);
-    rocksdb_column_family_metadata_t* default_meta = metas->cf_meta[0];
-
-    size_t level_count = rocksdb_column_family_metadata_get_level_count(default_meta);
-    serverLog(LL_NOTICE, "[rocksdb initiative compact] level_count : %lu", level_count); // wait del
-
-    rocksdb_level_metadata_t* level_meta = getHighestLevelMetaWithSST(default_meta);
+    rocksdb_column_family_metadata_t *default_meta = metas->cf_meta[0];
+    rocksdb_level_metadata_t *level_meta = getHighestLevelMetaWithSST(default_meta);
     if (level_meta == NULL) {
         serverLog(LL_NOTICE, "[rocksdb initiative compact] L1 ~ L6 no sst"); // wait del
         cfMetasFree(metas);
@@ -594,7 +591,7 @@ void cfMetasFree(cfMetas *metas) {
 
 sds genSwapTtlCompactInfoString(sds info) {
     info = sdscatprintf(info,
-            "swap_ttl_compact:times=%llu, request_sst_count=%llu, sst_age_limit=%llu\r\n",
+            "swap_ttl_compact:times=%llu, request_sst_count=%llu, sst_age_limit=%lld\r\n",
             server.swap_ttl_compact_ctx->stat_compact_times,server.swap_ttl_compact_ctx->stat_request_sst_count,server.swap_ttl_compact_ctx->sst_age_limit);
     return info;
 }

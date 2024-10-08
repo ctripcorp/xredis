@@ -2436,7 +2436,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
                 double percentile = (double)server.swap_ttl_compact_expire_percentile / 100;
                 double res = wtdigestQuantile(server.swap_ttl_compact_ctx->expire_wt, percentile);
                 if (res != SWAP_TTL_COMPACT_INVALID_EXPIRE) {
-                    server.swap_ttl_compact_ctx->sst_age_limit = (unsigned long long)res;
+                    server.swap_ttl_compact_ctx->sst_age_limit = (long long)res;
                 } else {
                     server.swap_ttl_compact_ctx->sst_age_limit = SWAP_TTL_COMPACT_INVALID_SST_AGE_LIMIT;
                 }
@@ -2452,8 +2452,8 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     }
 
     /* ttl compaction, produce task. */
-    if (server.swap_ttl_compact_enabled && server.swap_ttl_compact_ctx->sst_age_limit != SWAP_TTL_COMPACT_INVALID_SST_AGE_LIMIT) {
-        run_with_period(1000*3*60) {    
+    if (server.swap_ttl_compact_enabled && (server.swap_ttl_compact_ctx->sst_age_limit != SWAP_TTL_COMPACT_INVALID_SST_AGE_LIMIT)) {
+        run_with_period(1000*60) {
             cfIndexes *idxes = cfIndexesNew();
             idxes->num = 1;
             idxes->index = zmalloc(sizeof(int));
