@@ -2573,6 +2573,9 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
         setFilterState(FILTER_STATE_CLOSE);
         reopen_filter = 1;
     }
+    /* default to psync to keep compatible */
+    resetServerReplMode(REPL_MODE_PSYNC, "rdbload default");
+
     while(1) {
         sds key;
         robj *val = NULL;
@@ -3116,7 +3119,7 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi, swapForkRocksdbCtx *sfrctx, int ror
         client *slave = ln->value;
         if (slave->replstate == SLAVE_STATE_WAIT_BGSAVE_START) {
             server.rdb_pipe_conns[server.rdb_pipe_numconns++] = slave->conn;
-            replicationSetupSlaveForFullResync(slave,getPsyncInitialOffset());
+            ctrip_replicationSetupSlaveForFullResync(slave,getPsyncInitialOffset());
         }
     }
 

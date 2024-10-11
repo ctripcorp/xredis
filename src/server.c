@@ -768,6 +768,10 @@ struct redisCommand redisCommandTable[] = {
      "admin no-script",
      0,NULL,getKeyRequestsGlobal,SWAP_NOP,0,0,0,0,0,0,0},
 
+    {"xsync",syncCommand,-3,
+     "admin no-script",
+     0,NULL,getKeyRequestsGlobal,SWAP_NOP,0,0,0,0,0,0,0},
+
     {"replconf",replconfCommand,-1,
      "admin no-script ok-loading ok-stale",
      0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
@@ -1149,32 +1153,8 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,getKeyRequestsGlobal,SWAP_NOP,0,0,0,0,0,0,0},
 
     {"gtid", gtidCommand, -3,
-     "write use-memory ",
+     "write use-memory no-script",
      0,NULL,getKeyRequestsGtid,SWAP_NOP/*not used*/,0,0,0,0,0,0,0},
-
-    {"gtid.lwm", gtidLwmCommand, 3,
-     "write use-memory ",
-     0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
-
-    {"gtid.auto", gtidAutoCommand, -3,
-     "write use-memory ",
-     0,NULL,getKeyRequestsGtidAuto,SWAP_NOP/*not used*/,0,0,0,0,0,0,0},
-
-    {"ctrip.merge_start", ctripMergeStartCommand, -1,
-     "write use-memory",
-     0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
-
-    {"ctrip.merge", ctripMergeCommand, -4,
-     "write use-memory @swap_keyspace",
-     0,NULL,NULL,SWAP_IN,SWAP_IN_OVERWRITE,1,1,1,0,0,0},
-
-    {"ctrip.merge_end", ctripMergeEndCommand, -2,
-     "write use-memory ",
-     0,NULL,NULL,SWAP_NOP,0,0,0,0,0,0,0},
-
-    {"ctrip.get_robj", gtidGetRobjCommand, 2, 
-     "read-only fast no-script @swap_keyspace", 
-     0, NULL,NULL,SWAP_IN,0,1,1,1,0,0,0},
 
     {"gtidx", gtidxCommand, -2,
      "admin no-script random ok-loading ok-stale",
@@ -2423,6 +2403,12 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
         }
     }
 
+    run_with_period(1000) {
+        if (server.repl_mode->mode == REPL_MODE_XSYNC) {
+            xsyncReplicationCron();
+        }
+    }
+
     /* Fire the cron loop modules event. */
     RedisModuleCronLoopV1 ei = {REDISMODULE_CRON_LOOP_VERSION,server.hz};
     moduleFireServerEvent(REDISMODULE_EVENT_CRON_LOOP,
@@ -2596,7 +2582,7 @@ void beforeSleep(struct aeEventLoop *eventLoop) {
         argv[0] = shared.replconf;
         argv[1] = shared.getack;
         argv[2] = shared.special_asterick; /* Not used argument. */
-        replicationFeedSlaves(server.slaves, server.slaveseldb, argv, 3);
+        ctrip_replicationFeedSlaves(server.slaves, server.slaveseldb, argv, 3, NULL,0,0,0);
         server.get_ack_from_slaves = 0;
     }
 
@@ -2917,6 +2903,10 @@ void initServerConfig(void) {
     server.swap_bgsave_fix_metalen_mismatch = 0;
     server.swap_debug_bgsave_metalen_addition = 0;
 
+    /* gtid related */
+    replModeInit(server.repl_mode);
+    replModeInit(server.prev_repl_mode);
+
     /* Failover related */
     server.failover_end_time = 0;
     server.force_failover = 0;
@@ -2964,10 +2954,6 @@ void initServerConfig(void) {
     server.rpoplpushCommand = lookupCommandByCString("rpoplpush");
     server.lmoveCommand = lookupCommandByCString("lmove");
     server.gtidCommand = lookupCommandByCString("gtid");
-    server.gtidLwmCommand = lookupCommandByCString("gtid.lwm");
-    server.gtidMergeStartCommand = lookupCommandByCString("ctrip.merge_start");
-    server.gtidMergeEndCommand = lookupCommandByCString("ctrip.merge_end");
-    server.gtidAutoCommand = lookupCommandByCString("gtid.auto");
     /* Debugging */
     server.watchdog_period = 0;
 
@@ -2979,7 +2965,7 @@ void initServerConfig(void) {
 
     /* Client Pause related */
     server.client_pause_type = CLIENT_PAUSE_OFF;
-    server.client_pause_end_time = 0;   
+    server.client_pause_end_time = 0;
 
     initConfigValues();
 }
@@ -3454,16 +3440,20 @@ void initServer(void) {
     server.ctrip_ignore_accept = 0;
     server.ctrip_monitorfd = 0;
 
-    server.gtid_last_purge_time = 0;
+    memcpy(server.uuid,server.runid,CONFIG_RUN_ID_SIZE+1);
+    server.uuid_len = CONFIG_RUN_ID_SIZE;
+    memset(server.master_uuid,'0',CONFIG_RUN_ID_SIZE);
+    server.master_uuid[CONFIG_RUN_ID_SIZE] = 0;
+    server.master_uuid_len = CONFIG_RUN_ID_SIZE;
+    server.gtid_executed = gtidSetNew();
+    gtidSetCurrentUuidSetUpdate(server.gtid_executed,server.uuid,server.uuid_len);
+    server.gtid_lost = gtidSetNew();
+    xsyncUuidInterestedInit();
+    server.gtid_xsync_fullresync_indicator = 0;
     server.gtid_executed_cmd_count = 0;
     server.gtid_ignored_cmd_count = 0;
-    server.gtid_purged_gap_count = 0;
-    server.gtid_purged_gno_count = 0;
-    server.gtid_executed = gtidSetNew();
-    gtidSetAdd(server.gtid_executed, server.runid, strlen(server.runid), 0);
-    server.current_uuid = gtidSetFind(server.gtid_executed, server.runid, strlen(server.runid));
+    memset(server.gtid_sync_stat,0,sizeof(server.gtid_sync_stat));
 
-    serverAssert(server.current_uuid != NULL);
     if ((server.tls_port || server.tls_replication || server.tls_cluster)
                 && tlsConfigure(&server.tls_ctx_config) == C_ERR) {
         serverLog(LL_WARNING, "Failed to configure TLS. Check logs for more info.");
@@ -3544,7 +3534,8 @@ void initServer(void) {
     server.cronloops = 0;
     server.in_eval = 0;
     server.in_exec = 0;
-    server.db_at_multi = NULL;
+    server.gtid_dbid_at_multi = -1;
+    server.gtid_offset_at_multi = -1;
     server.propagate_in_transaction = 0;
     server.client_pause_in_transaction = 0;
     server.child_pid = -1;
@@ -3597,6 +3588,13 @@ void initServer(void) {
     server.swap_error_count = 0;
     server.swap_load_paused = 0;
     server.swap_load_err_cnt = 0;
+
+    if (server.masterhost == NULL) {
+        char msg[64];
+        int repl_mode = server.gtid_enabled ? REPL_MODE_XSYNC:REPL_MODE_PSYNC;
+        snprintf(msg,sizeof(msg),"master initialize (gtid %s)", server.gtid_enabled ? "enabled":"disabled");
+        resetServerReplMode(repl_mode, msg);
+    }
 
     /* Create the timer callback, this is our way to process many background
      * operations incrementally, like clients timeout, eviction of unaccessed
@@ -3912,13 +3910,15 @@ void propagate(struct redisCommand *cmd, int dbid, robj **argv, int argc,
      * client pause, otherwise data may be lossed during a failover. */
     serverAssert(!(areClientsPaused() && !server.client_pause_in_transaction));
 
-    if(!(flags & DISABLE_GTID) && execCommandPropagateGtid(cmd, dbid, argv, argc, flags)) {
-        return;
-    }
+    propagateArgs pargs;
+    propagateArgsInit(&pargs,cmd,dbid,argv,argc);
+    propagateArgsPrepareToFeed(&pargs);
     if (server.aof_state != AOF_OFF && flags & PROPAGATE_AOF)
-        feedAppendOnlyFile(cmd,dbid,argv,argc);
+        ctrip_feedAppendOnlyFile(pargs.cmd,pargs.orig_dbid,pargs.argv,pargs.argc);
     if (flags & PROPAGATE_REPL)
-        replicationFeedSlaves(server.slaves,dbid,argv,argc);
+        ctrip_replicationFeedSlaves(server.slaves,pargs.orig_dbid,pargs.argv,
+                pargs.argc,pargs.uuid,pargs.uuid_len,pargs.gno,pargs.offset);
+    propagateArgsDeinit(&pargs);
 }
 
 /* Used inside commands to schedule the propagation of additional commands
@@ -4155,8 +4155,6 @@ void call(client *c, int flags) {
             !(flags & CMD_CALL_PROPAGATE_AOF))
                 propagate_flags &= ~PROPAGATE_AOF;
 
-        if (isGtidInMerge(c)) propagate_flags |= DISABLE_GTID;
-
         /* Call propagate() only if at least one of AOF / replication
          * propagation is needed. Note that modules commands handle replication
          * in an explicit way, so we never replicate them automatically. */
@@ -4200,7 +4198,6 @@ void call(client *c, int flags) {
                 /* Whatever the command wish is, we honor the call() flags. */
                 if (!(flags&CMD_CALL_PROPAGATE_AOF)) target &= ~PROPAGATE_AOF;
                 if (!(flags&CMD_CALL_PROPAGATE_REPL)) target &= ~PROPAGATE_REPL;
-                if (isGtidInMerge(c)) target |= DISABLE_GTID;
                 if (target)
                     propagate(rop->cmd,rop->dbid,rop->argv,rop->argc,target);
             }
@@ -4589,15 +4586,21 @@ int processCommand(client *c) {
         return C_OK;
     }
 
+    if (c->flags & CLIENT_MULTI && c->cmd->proc == gtidCommand &&
+            !isGtidExecCommand(c)) {
+        rejectCommandFormat(c, "gtidCommand not allowed in multi");
+        return C_OK;
+    }
+
     /* If the server is paused, block the client until
      * the pause has ended. Replicas are never paused. */
-    if (!(c->flags & CLIENT_SLAVE) && 
+    if (!(c->flags & CLIENT_SLAVE) &&
         ((server.client_pause_type == CLIENT_PAUSE_ALL) ||
         (server.client_pause_type == CLIENT_PAUSE_WRITE && is_may_replicate_command)))
     {
         c->bpop.timeout = 0;
         blockClient(c,BLOCKED_PAUSE);
-        return C_OK;       
+        return C_OK;
     }
 
     /* Exec the command */
@@ -5486,11 +5489,10 @@ sds genRedisInfoString(const char *section) {
             long long slave_repl_offset = 1;
             long long slave_read_repl_offset = 1;
 
+            slave_repl_offset = ctrip_getSlaveReplOff();
             if (server.master) {
-                slave_repl_offset = server.master->reploff;
                 slave_read_repl_offset = server.master->read_reploff;
             } else if (server.cached_master) {
-                slave_repl_offset = server.cached_master->reploff;
                 slave_read_repl_offset = server.cached_master->read_reploff;
             }
 
@@ -5775,18 +5777,11 @@ sds genRedisInfoString(const char *section) {
                                   sections);
     }
 
-    /**  info gtid (all gtid gap) */
-    if (!strcasecmp(section,"gtid")) {
+    /* Gtid */
+    if (allsections || defsections || !strcasecmp(section,"gtid")) {
         if (sections++) info = sdscat(info,"\r\n");
-        info = sdscatprintf(info, "# Gtid\r\n");
-        info = genGtidGapString(info);
-    }
-
-    /** info gtid (gtid gap summary) */
-    if (allsections || defsections || !strcasecmp(section,"gtid.stat")) {
-        if (sections++) info = sdscat(info,"\r\n");
-        info = sdscat(info,"# Gtid.stat\r\n");
-        info = genGtidStatString(info);
+        info = sdscat(info,"# Gtid\r\n");
+        info = genGtidInfoString(info);
     }
 
     return info;
@@ -6410,8 +6405,10 @@ void loadDataFromDisk(void) {
                 /* If we are a slave, create a cached master from this
                  * information, in order to allow partial resynchronizations
                  * with masters. */
-                replicationCacheMasterUsingMyself();
-                selectDb(server.cached_master,rsi.repl_stream_db);
+                if (server.repl_mode->mode != REPL_MODE_XSYNC) {
+                    replicationCacheMasterUsingMyself();
+                    selectDb(server.cached_master,rsi.repl_stream_db);
+                }
             }
         } else if (errno != ENOENT) {
             serverLog(LL_WARNING,"Fatal error loading the DB: %s. Exiting.",strerror(errno));
@@ -6600,7 +6597,8 @@ struct redisTest {
     {"zmalloc", zmalloc_test},
     {"sds", sdsTest},
     {"dict", dictTest},
-    {"swap", swapTest}
+    {"swap", swapTest},
+    {"gtid", gtidTest}
 };
 redisTestProc *getTestProcByName(const char *name) {
     int numtests = sizeof(redisTests)/sizeof(struct redisTest);

@@ -303,7 +303,6 @@ int getKeyRequestsGeoSearchStore(int dbid, struct redisCommand *cmd, robj **argv
 #define getKeyRequestsGeoPos getKeyRequestsGeoHash
 
 int getKeyRequestsGtid(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
-int getKeyRequestsGtidAuto(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 
 int getKeyRequestsDebug(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
 int getKeyRequestsSetbit(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);

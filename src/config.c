@@ -156,15 +156,6 @@ configEnum swap_ratelimit_policy_enum[] = {
     {NULL, 0}
 };
 
-/*-----------------------------------------------------------------------------
- * Ctrip Config file name-value maps.
- *----------------------------------------------------------------------------*/
-configEnum ctrip_mode_enum[] = {
-    {"normal", CTRIP_MODE_NORMAL},
-    {"gtid", CTRIP_MODE_GTID},
-    {NULL, 0}
-};
-
 /* Output buffer limits presets. */
 clientBufferLimitsConfig clientBufferLimitsDefaults[CLIENT_TYPE_OBUF_COUNT] = {
     {0, 0, 0}, /* normal */
@@ -2387,9 +2378,9 @@ static int updateJemallocBgThread(int val, int prev, const char **err) {
 
 static int updateGtidEnabled(int val, int prev, const char **err) {
     UNUSED(err);
-    if (prev != val) {
-        serverLog(LL_WARNING, "[gtid] gtid-enabled config update from %d to %d, disconnect slave to trigger gtid-enabled config sync.", prev, val);
-        disconnectSlaves();
+    if (prev != val && !server.masterhost) {
+        shiftReplStreamIfNeeded(val ? REPL_MODE_XSYNC:REPL_MODE_PSYNC,
+                GTID_SHIFT_REPL_STREAM_FULL,"master config change");
     }
     return 1;
 }
@@ -2441,7 +2432,7 @@ static int updateReplBacklogSize(long long val, long long prev, const char **err
      * being able to tell when the size changes, so restore prev before calling it. */
     UNUSED(err);
     server.repl_backlog_size = prev;
-    resizeReplicationBacklog(val);
+    ctrip_resizeReplicationBacklog(val);
     return 1;
 }
 
@@ -3075,9 +3066,9 @@ standardConfig configs[] = {
     createULongLongConfig("rocksdb.meta.suggest_compact_sliding_window_size", NULL, IMMUTABLE_CONFIG, 0, ULLONG_MAX, server.rocksdb_meta_suggest_compact_sliding_window_size, 100000, INTEGER_CONFIG, NULL, NULL),
     createULongLongConfig("rocksdb.data.suggest_compact_num_dels_trigger", "rocksdb.suggest_compact_num_dels_trigger", IMMUTABLE_CONFIG, 0, ULLONG_MAX, server.rocksdb_data_suggest_compact_num_dels_trigger, 80000, INTEGER_CONFIG, NULL, NULL),
     createULongLongConfig("rocksdb.meta.suggest_compact_num_dels_trigger", NULL, IMMUTABLE_CONFIG, 0, ULLONG_MAX, server.rocksdb_meta_suggest_compact_num_dels_trigger, 80000, INTEGER_CONFIG, NULL, NULL),
-
     createULongLongConfig("rocksdb.max_total_wal_size", NULL, IMMUTABLE_CONFIG, 0, ULLONG_MAX, server.rocksdb_max_total_wal_size, 512*1024*1024, MEMORY_CONFIG, NULL, NULL),
-    createULongLongConfig("gtid-uuid-gap-max-memory", NULL, MODIFIABLE_CONFIG, 1024, ULLONG_MAX, server.gtid_uuid_gap_max_memory, 1*1024*1024, MEMORY_CONFIG, NULL, NULL),
+
+    createULongLongConfig("gtid-xsync-max-gap", NULL, MODIFIABLE_CONFIG, 0, ULLONG_MAX, server.gtid_xsync_max_gap, 10000, INTEGER_CONFIG, NULL, NULL),
 
     createULongLongConfig("rocksdb.data.min_blob_size", "rocksdb.min_blob_size", MODIFIABLE_CONFIG, 0, ULLONG_MAX, server.rocksdb_data_min_blob_size, 4096, MEMORY_CONFIG, NULL, updateRocksdbDataMinBlobSize),
     createULongLongConfig("rocksdb.meta.min_blob_size", NULL, MODIFIABLE_CONFIG, 0, ULLONG_MAX, server.rocksdb_meta_min_blob_size, 4096, MEMORY_CONFIG, NULL, updateRocksdbMetaMinBlobSize),
@@ -3105,7 +3096,6 @@ standardConfig configs[] = {
 
     /* ctrip configs */
     createBoolConfig("gtid-enabled", NULL, MODIFIABLE_CONFIG, server.gtid_enabled, 0, NULL, updateGtidEnabled),
-    createBoolConfig("gtid-enabled-config-sync-with-master", NULL, MODIFIABLE_CONFIG, server.gtid_enabled_config_sync_with_master, 1, NULL, NULL),
 
 #ifdef USE_OPENSSL
     createIntConfig("tls-port", NULL, MODIFIABLE_CONFIG, 0, 65535, server.tls_port, 0, INTEGER_CONFIG, NULL, updateTLSPort), /* TCP port. */
