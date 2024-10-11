@@ -1163,17 +1163,6 @@ int getKeyRequestsGtid(int dbid, struct redisCommand *cmd, robj **argv,
     return C_OK;
 }
 
-int getKeyRequestsGtidAuto(int dbid, struct redisCommand *cmd, robj **argv,
-        int argc, struct getKeyRequestsResult *result) {
-    UNUSED(cmd);
-    int orig_num = result->num, start_index = 2;
-    struct redisCommand* exec_cmd = lookupCommandByCString(argv[2]->ptr);
-    if (_getSingleCmdKeyRequests(dbid,exec_cmd,argv+start_index,argc-start_index,result))
-        return C_ERR;
-    getKeyRequestsGtidArgRewriteAdjust(result,orig_num,start_index);
-    return C_OK;
-}
-
 int getKeyRequestsDebug(int dbid, struct redisCommand *cmd, robj **argv,
         int argc, struct getKeyRequestsResult *result) {
     robj *key;
@@ -1548,7 +1537,7 @@ int swapCmdTest(int argc, char *argv[], int accurate) {
         queueMultiCommand(c);
         rewriteResetClientCommandCString(c,3,"LINDEX","LIST","3");
         queueMultiCommand(c);
-        rewriteResetClientCommandCString(c,7,"GTID","A:2","2","/*COMMENT*/","MGET","KEY1","KEY2");
+        rewriteResetClientCommandCString(c,6,"GTID","A:2","2","MGET","KEY1","KEY2");
         queueMultiCommand(c);
         rewriteResetClientCommandCString(c,8,"GTID","A:3","3","HDEL","HASH","F1","F2","F3");
         queueMultiCommand(c);
@@ -1556,7 +1545,7 @@ int swapCmdTest(int argc, char *argv[], int accurate) {
         queueMultiCommand(c);
         rewriteResetClientCommandCString(c,4,"GTID","A:5","5","FLUSHDB");
         queueMultiCommand(c);
-        rewriteResetClientCommandCString(c,5,"GTID.AUTO","/*COMMENT*/","LINDEX","LIST","3");
+        rewriteResetClientCommandCString(c,3,"LINDEX","LIST","3");
         queueMultiCommand(c);
         rewriteResetClientCommandCString(c,4,"GTID","A:10","10","EXEC");
 
@@ -1622,7 +1611,7 @@ int swapCmdTest(int argc, char *argv[], int accurate) {
         test_assert(result.key_requests[8].l.num_ranges == 1);
         test_assert(result.key_requests[8].l.ranges[0].start == 3 && result.key_requests[2].l.ranges[0].end == 3);
         test_assert(result.key_requests[8].arg_rewrite[0].mstate_idx == 7);
-        test_assert(result.key_requests[8].arg_rewrite[0].arg_idx == 4);
+        test_assert(result.key_requests[8].arg_rewrite[0].arg_idx == 2);
 
         releaseKeyRequests(&result);
         getKeyRequestsFreeResult(&result);
@@ -1636,7 +1625,7 @@ int swapCmdTest(int argc, char *argv[], int accurate) {
         c->flags |= CLIENT_MULTI;
         rewriteResetClientCommandCString(c,3,"MGET","KEY1","KEY2");
         queueMultiCommand(c);
-        rewriteResetClientCommandCString(c,7,"GTID","A:2","1","/*COMMENT*/","MGET","KEY1","KEY2");
+        rewriteResetClientCommandCString(c,6,"GTID","A:2","1","MGET","KEY1","KEY2");
         queueMultiCommand(c);
         rewriteResetClientCommandCString(c,2,"SELECT","3");
         queueMultiCommand(c);
@@ -1648,9 +1637,9 @@ int swapCmdTest(int argc, char *argv[], int accurate) {
         queueMultiCommand(c);
         rewriteResetClientCommandCString(c,3,"LINDEX","LIST","3");
         queueMultiCommand(c);
-        rewriteResetClientCommandCString(c,7,"GTID","A:2","5","/*COMMENT*/","MGET","KEY1","KEY2");
+        rewriteResetClientCommandCString(c,6,"GTID","A:2","5","MGET","KEY1","KEY2");
         queueMultiCommand(c);
-        rewriteResetClientCommandCString(c,5,"GTID.AUTO","/*COMMENT*/","LINDEX","LIST","3");
+        rewriteResetClientCommandCString(c,3,"LINDEX","LIST","3");
         queueMultiCommand(c);
         rewriteResetClientCommandCString(c,4,"GTID","A:10","10","EXEC");
 
@@ -1690,7 +1679,7 @@ int swapCmdTest(int argc, char *argv[], int accurate) {
         test_assert(!strcmp(result.key_requests[9].key->ptr, "LIST"));
         test_assert(result.key_requests[9].dbid == 4);
         test_assert(result.key_requests[9].arg_rewrite[0].mstate_idx == 8);
-        test_assert(result.key_requests[9].arg_rewrite[0].arg_idx == 4);
+        test_assert(result.key_requests[9].arg_rewrite[0].arg_idx == 2);
 
         releaseKeyRequests(&result);
         getKeyRequestsFreeResult(&result);

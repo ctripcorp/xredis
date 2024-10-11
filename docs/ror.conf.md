@@ -277,8 +277,6 @@
       | Command | Supported version | Grammer | Description | Remark |
       | ---- | ------- | ---- | ---- | ---- |
       | gtid | 1.0.0 | ~ | Internal command | |
-      | gtid.lwm | 1.0.0 | ~ | Internal command | |
-      | gtid.auto | 1.0.0 | ~ | Internal command | |
       | gtidx | 1.0.5 | 1) GTIDX <subcommand> [\<arg\> \[value\] \[opt\] ...]. Subcommands are:<br/>2) LIST [\<uuid\>]<br/>3)     List gtid or uuid(if specified) gaps.<br/>4) STAT [\<uuid\>]<br/>5)     Show gtid or uuid(if specified) stat.<br/>6) REMOVE \<uuid\><br/>7)     Return uuid.<br/>8) HELP<br/>9)     Prints this help. | gtidx function auxiliary command | |
 
 
@@ -385,12 +383,6 @@
        | rocksdb.meta.enable_blob_garbage_collection | 1.2.3 | yes\|no | no | yes | ~ | ~ | ~ | ~ | ~ | Whether to enable blobdb force GC |
        | rocksdb.data.blob_garbage_collection_age_cutoff_percentage | 1.2.3 | 0~100 | 5 | Yes | ~ | ~ | ~ | ~ | ~ | blobdb forces GC selection range (by default, only the oldest 5% of blobs will be selected by GC ) |
 
-   3. GTID related configration
-   
-      | Option name | ROR version | Value range | Default value | ROR production default (domestic) | ROR production default (overseas) | Can it be modified dynamically | trocks option name | trocks domestic | trocks overseas | Description |
-       |------------|---------|-----------------|--------|------------------|------------------|--------------|----------------------------|------------|------------|--------------------------------------------|
-       | gtid-enabled-config-sync-with-master | 1.0.5 | yes\|no | yes | yes | ~ | ~ | ~ | ~ | ~ | Whether the slave's gtid-enabled configuration is consistent with the master |
-       | gtid-uuid-gap-max-memory | 1.0.5 | 1024~ULONG_MAX | 1mb | Yes | ~ | ~ | ~ | ~ | ~ | The maximum amount of memory occupied by each server in gtid set |
 6. ROR INFO information
     1. Redis native INFO
        ROR inherits all native info indicators of Redis, and its meaning remains the same as Redis.

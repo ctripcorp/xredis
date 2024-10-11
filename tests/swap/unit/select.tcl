@@ -129,39 +129,6 @@ start_server {overrides {save ""} tags {"swap" "select"}} {
 
         r flushall
     }
-
-    test {multi-db gtid exec} {
-        r multi
-        r gtid A:11 1 set key6 db1
-        r gtid A:12 0 set key6 db0 
-        r select 0
-        r hmset myhash6 f1 db0 f2 db0
-        r gtid A:13 1 rpush mylist6 db1-1 db1-2 db1-3 db1-4
-        r gtid A:14 0 rpush mylist6 db0-1 db0-2 db0-3 db0-4
-        r select 1
-        r hmset myhash6 f1 db1 f2 db1
-        r gtid A:10 1 exec
-
-        # wait_keyspace_cold r #TODO uncomment when list ready
-        r select 0
-        wait_key_cold r key6
-        wait_key_cold r myhash6
-        r select 1
-        wait_key_cold r key6
-        wait_key_cold r myhash6
-
-        r select 0
-        assert_equal [r get key6] db0
-        assert_equal [r lindex mylist6 2] db0-3
-        assert_equal [r hmget myhash6 f1 f2] {db0 db0}
-
-        r select 1
-        assert_equal [r get key6] db1
-        assert_equal [r lindex mylist6 2] db1-3
-        assert_equal [r hmget myhash6 f1 f2] {db1 db1}
-
-        r flushall
-    }
 }
 
 start_server {overrides {save ""} tags {"swap" "select"}} {
@@ -267,37 +234,6 @@ start_server {overrides {save ""} tags {"swap" "select"}} {
             assert_equal [$slave exec] {OK 4 {{} {}} OK db0 {v1 v2} OK db1}
         }
 
-        test {multi-db gtid exec} {
-            $master multi
-            $master gtid A:11 1 set key6 db1
-            $master gtid A:12 0 set key6 db0 
-            $master select 0
-            $master hmset myhash6 f1 db0 f2 db0
-            $master gtid A:13 1 rpush mylist6 db1-1 db1-2 db1-3 db1-4
-            $master gtid A:14 0 rpush mylist6 db0-1 db0-2 db0-3 db0-4
-            $master select 1
-            $master hmset myhash6 f1 db1 f2 db1
-            $master gtid A:10 1 exec
-
-            wait_for_ofs_sync $master $slave
-            # wait_keyspace_cold $slave #TODO uncomment when list ready
-            $slave select 0
-            wait_key_cold $slave key6
-            wait_key_cold $slave myhash6
-            r select 1
-            wait_key_cold r key6
-            wait_key_cold r myhash6
-
-            $slave select 0
-            assert_equal [$slave get key6] db0
-            assert_equal [$slave lindex mylist6 2] db0-3
-            assert_equal [$slave hmget myhash6 f1 f2] {db0 db0}
-
-            $slave select 1
-            assert_equal [$slave get key6] db1
-            assert_equal [$slave lindex mylist6 2] db1-3
-            assert_equal [$slave hmget myhash6 f1 f2] {db1 db1}
-        }
     }
 }
 

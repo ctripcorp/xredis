@@ -10,7 +10,7 @@ source tests/support/server.tcl
 source tests/support/tmpfile.tcl
 source tests/support/test.tcl
 source tests/support/util.tcl
-source tests/support/ctrip_util.tcl
+source tests/support/gtid.tcl
 source tests/swap/support/util.tcl
 
 set ::disk_tests {
@@ -72,11 +72,12 @@ set ::disk_tests {
     swap/unit/slowlog
     swap/unit/scripting
     unit/shutdown
-    ctrip/gtid_merge
-    ctrip/gtid
-    ctrip/sync-gtid
-    ctrip/replication-psync-gtid
-    ctrip/monitor
+    gtid/gtid
+    gtid/gtid_seq
+    gtid/monitor
+    gtid/replication-psync
+    gtid/sync
+    gtid/xsync
     unit/printver
     unit/dump
     unit/auth
@@ -117,13 +118,13 @@ set ::disk_tests {
     integration/psync2
 }
 
-# ctrip/aof-gtid
 set ::all_tests {
-    ctrip/gtid_merge
-    ctrip/gtid
-    ctrip/sync-gtid
-    ctrip/replication-psync-gtid
-    ctrip/monitor
+    gtid/gtid
+    gtid/gtid_seq
+    gtid/monitor
+    gtid/replication-psync
+    gtid/sync
+    gtid/xsync
     unit/shutdown
     unit/printver
     unit/dump

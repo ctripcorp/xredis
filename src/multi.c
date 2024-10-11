@@ -121,6 +121,7 @@ void beforePropagateMulti() {
     /* Propagating MULTI */
     serverAssert(!server.propagate_in_transaction);
     server.propagate_in_transaction = 1;
+    server.gtid_offset_at_multi = server.master_repl_offset+1;
 }
 
 void afterPropagateExec() {
@@ -133,7 +134,7 @@ void afterPropagateExec() {
  * implementation for more information. */
 void execCommandPropagateMulti(int dbid) {
     beforePropagateMulti();
-    server.db_at_multi = server.db + dbid;
+    server.gtid_dbid_at_multi = dbid;
     propagate(server.multiCommand,dbid,&shared.multi,1,
               PROPAGATE_AOF|PROPAGATE_REPL);
 }
@@ -142,7 +143,6 @@ void execCommandPropagateExec(int dbid) {
     propagate(server.execCommand,dbid,&shared.exec,1,
               PROPAGATE_AOF|PROPAGATE_REPL);
     afterPropagateExec();
-    server.db_at_multi = NULL;
 }
 
 /* Aborts a transaction, with a specific error message.
