@@ -2158,25 +2158,29 @@ void _rdbSaveBackground(client *c, swapCtx *ctx) {
     clientReleaseLocks(c,ctx);
 }
 
-static void ttlCompactGetExpireQuantile() {
+static void ttlCompactRefreshSstAgeLimit() {
+    if (!iAmMaster()) {
+        /* slave get sst age limit in "swap.info" cmd propagated from master. */
+        return;
+    }
+
     if (server.swap_ttl_compact_enabled) {
+
             wtdigest *expire_wt = server.swap_ttl_compact_ctx->expire_stats->expire_wt;
             swapExpireStatus *expire_stats = server.swap_ttl_compact_ctx->expire_stats;
-
             unsigned long long keys_num = (unsigned long long)dbTotalServerKeyCount();
-            if (wtdigestGetRunnningTime(expire_wt) > wtdigestGetWindow(expire_wt) ||
-                keys_num < expire_stats->sampled_expires_count) {
-                /* percentile of expire_wt is valid */
+            long long sampled_size = wtdigestSize(expire_wt);
+
+            if (sampled_size == 0) {
+                expire_stats->sst_age_limit = 0;
+            } else if (wtdigestGetRunnningTime(expire_wt) > wtdigestGetWindow(expire_wt) ||
+                       sampled_size >= keys_num) {
                 double percentile = (double)server.swap_ttl_compact_expire_percentile / 100;
                 double res = wtdigestQuantile(expire_wt, percentile);
-                if (IS_INVALID_QUANTILE(res)) {
-                    swapExpireStatusProcessErr(expire_stats);
-                    serverLog(LL_NOTICE, "res is %lf", res);   // for debug, wait del
-                } else {
-                    expire_stats->expire_of_quantile = (long long)res;
-                }
+                serverAssert(!IS_INVALID_QUANTILE(res));
+                expire_stats->sst_age_limit = (long long)res;
             } else {
-                expire_stats->expire_of_quantile = SWAP_TTL_COMPACT_INVALID_EXPIRE;
+                expire_stats->sst_age_limit = SWAP_TTL_COMPACT_INVALID_EXPIRE;
             }
     } else {
         swapExpireStatusReset(server.swap_ttl_compact_ctx->expire_stats);
@@ -2184,7 +2188,7 @@ static void ttlCompactGetExpireQuantile() {
 }
 
 static void ttlCompactProduceTask() {
-    if (server.swap_ttl_compact_enabled && (server.swap_ttl_compact_ctx->expire_stats->expire_of_quantile != SWAP_TTL_COMPACT_INVALID_EXPIRE)) {
+    if (server.swap_ttl_compact_enabled && (server.swap_ttl_compact_ctx->expire_stats->sst_age_limit != SWAP_TTL_COMPACT_INVALID_EXPIRE)) {
         cfIndexes *idxes = cfIndexesNew();
         idxes->num = 1;
         idxes->index = zmalloc(sizeof(int));
@@ -2475,20 +2479,27 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
         }
     }
 
-    run_with_period(1000*60) {
-        if (iAmMaster()) {
-            ttlCompactGetExpireQuantile();
-        }
-
-        ttlCompactProduceTask();
+    run_with_period(1000*server.swap_sst_age_limit_refresh_period) {
+        ttlCompactRefreshSstAgeLimit();
     }
 
-    run_with_period(1000*(int)server.swap_ttl_compact_interval_seconds) {
+    run_with_period(1000*server.swap_ttl_compact_period) {
+        /* producing and consuming task are both in swap util thread
+         * so producing should be slower than consuming, otherwise consuming
+         * will be starved to death. */
+        ttlCompactProduceTask();  
+    }
+
+    run_with_period(1000*server.swap_ttl_compact_period / 2) {
         ttlCompactConsumeTask();   
     }
 
     run_with_period(1000*server.swap_swap_info_slave_period) {
-        swapPropagateSwapInfo();
+        /* propagate sst age limit */
+        int argc = 0;
+        robj **argv = swapBuildSwapInfoSstAgeLimitCmd(&argc);
+        swapPropagateSwapInfo(argc, argv);
+        swapDestorySwapInfoSstAgeLimitCmd(argc, argv);
     }
 
     /* Fire the cron loop modules event. */
@@ -2865,7 +2876,7 @@ void createSharedObjects(void) {
     shared.special_asterick = createStringObject("*",1);
     shared.special_equals = createStringObject("=",1);
     shared.redacted = makeObjectShared(createStringObject("(redacted)",10));
-    shared.expire_quantile = createStringObject("EXPIRE-QUANTILE",15);
+    shared.sst_age_limit = createStringObject("SST-AGE-LIMIT",13);
 
     shared.gtid = createStringObject("GTID",4);
     for (j = 0; j < OBJ_SHARED_INTEGERS; j++) {

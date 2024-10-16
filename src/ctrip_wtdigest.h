@@ -37,10 +37,10 @@
 
 /*
   Window Tdigest algorithm is based on tdigest(MergingDigest). There are td_num buckets 
-  (tdigest structs) in one window tdigest. And, caller need to specify the time of window(window_seconds).
+  (tdigest structs) in one window tdigest. And, caller need to specify the time of window(window_ms).
   Window tdigest will save values in each bucket inside, and reset the oldest bucket 
-  when it exists longer than window_seconds. So the returned value of wtdigestQuantile 
-  is guaranteed to be within the window_seconds.
+  when it exists longer than window_ms. So the returned value of wtdigestQuantile 
+  is guaranteed to be within the window_ms.
  */
 
 typedef struct wtdigest_t wtdigest;
@@ -56,9 +56,9 @@ wtdigest* wtdigestCreate(uint8_t num_buckets);
 void wtdigestDestroy(wtdigest* wt);
 
 /** 
- * @param window_seconds, default as 3600s. 
+ * @param window_ms, default as 3600000ms. 
  */
-void wtdigestSetWindow(wtdigest* wt, unsigned long long window_seconds);
+void wtdigestSetWindow(wtdigest* wt, unsigned long long window_ms);
 
 unsigned long long wtdigestGetWindow(wtdigest* wt);
 

@@ -1309,30 +1309,41 @@ int getKeyRequestsMemory(int dbid, struct redisCommand *cmd, robj **argv,
 }
 
 /* The swap.info command, propagate system info to slave.
- * SWAP.INFO <subcommand> <args>
+ * SWAP.INFO <subcommand> [<arg> [value] [opt] ...]
  *
  * subcommand supported:
- * SWAP.INFO EXPIRE-QUANTILE <quantile> <expire> */
+ * SWAP.INFO SST-AGE-LIMIT <quantile> <sst age limit> */
 void swapInfoCommand(client *c) {
     if (c->argc < 2) {
+        addReply(c,shared.ok);
         return;
-    }
-
-    /* SWAP.INFO EXPIRE-QUANTILE <quantile> <expire> */
-    if (c->argc == 4 && !strcasecmp(c->argv[1]->ptr,"EXPIRE-QUANTILE")) {
+    } else if (c->argc == 2 && !strcasecmp(c->argv[1]->ptr,"help")) {
+        const char *help[] = {
+            "SST-AGE-LIMIT <quantile> <sst age limit>",
+            "    Set sst age limit to launch ttl compact for aged sst files.",
+            NULL};
+        addReplyHelp(c, help);
+        return;
+    } else if (c->argc == 4 && !strcasecmp(c->argv[1]->ptr,"SST-AGE-LIMIT")) {
+        /* SWAP.INFO SST-AGE-LIMIT <quantile> <sst age limit> */
         long long quantile = 0;
         int res = isObjectRepresentableAsLongLong(c->argv[2], &quantile);
         if (res != C_OK) {
+            addReply(c,shared.ok);
             return;
         }
 
-        long long expire = 0;
-        res = isObjectRepresentableAsLongLong(c->argv[3], &expire);
+        long long sst_age_limit = 0;
+        res = isObjectRepresentableAsLongLong(c->argv[3], &sst_age_limit);
         if (res == C_OK) {
-            server.swap_ttl_compact_ctx->expire_stats->expire_of_quantile = expire;
-            // serverLog(LL_NOTICE, "I get it !!!  %lld", server.swap_ttl_compact_ctx->expire_stats->expire_of_quantile); // wait del
+            server.swap_ttl_compact_ctx->expire_stats->sst_age_limit = sst_age_limit;
+            // serverLog(LL_NOTICE, "I get it !!!  %lld", server.swap_ttl_compact_ctx->expire_stats->sst_age_limit); // wait del
         }
+        addReply(c,shared.ok);
+        return;
     }
+
+    addReply(c,shared.ok);
 }
 
 #ifdef REDIS_TEST

@@ -273,9 +273,7 @@ int scanExpireDbCycle(redisDb *db, int type, long long timelimit) {
         for (int i = 0; i < metas->num; i++) {
             scanMeta *meta = metas->metas + i;
 
-            struct timeval tv;
-            gettimeofday(&tv, NULL);
-            long long nowtime = tv.tv_sec * 1000 + tv.tv_usec / 1000;
+            long long nowtime = mstime();
 
             long long expire_add;
             if (meta->expire != -1) {
@@ -288,10 +286,7 @@ int scanExpireDbCycle(redisDb *db, int type, long long timelimit) {
 
             if (server.swap_ttl_compact_enabled) {
                 int res = wtdigestAdd(server.swap_ttl_compact_ctx->expire_stats->expire_wt, (double)expire_add, 1);
-                if (res != 0) {
-                    swapExpireStatusProcessErr(server.swap_ttl_compact_ctx->expire_stats);
-                }
-                atomicIncr(server.swap_ttl_compact_ctx->expire_stats->sampled_expires_count, 1);  
+                serverAssert(res == 0);
             }
         }
 

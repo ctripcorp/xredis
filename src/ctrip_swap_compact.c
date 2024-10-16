@@ -279,6 +279,7 @@ void cfIndexesFree(cfIndexes *idxes) {
 }
 
 compactKeyRange *compactKeyRangeNew(uint cf_index, char *start_key, char *end_key, size_t start_key_size, size_t end_key_size) {
+    serverAssert(cf_index < CF_COUNT);
     compactKeyRange *range = zcalloc(sizeof(compactKeyRange));
     range->cf_index = cf_index;
     range->start_key = start_key;
@@ -313,7 +314,6 @@ void compactTaskFree(compactTask *task) {
         if (task->key_range[i]) {
             compactKeyRangeFree(task->key_range[i]);
         }
-        
     }
     zfree(task->key_range);
     zfree(task);
@@ -366,7 +366,7 @@ static rocksdb_level_metadata_t* getHighestLevelMetaWithSST(rocksdb_column_famil
     return level_meta;
 }
 
-static int getExpiredSstInfo(rocksdb_level_metadata_t* level_meta, double sst_age_limit, uint *sst_index_arr, uint64_t *sst_age_arr) {
+static int getExpiredSstInfo(rocksdb_level_metadata_t* level_meta, long long sst_age_limit, uint *sst_index_arr, uint64_t *sst_age_arr) {
 
     size_t level_sst_num = rocksdb_level_metadata_get_file_count(level_meta);
     int sst_recorded_num = 0;
@@ -378,13 +378,13 @@ static int getExpiredSstInfo(rocksdb_level_metadata_t* level_meta, double sst_ag
         }
 
         /* seconds */
-        uint64_t create_time = rocksdb_sst_file_metadata_get_create_time(sst_meta); 
+        uint64_t create_time = rocksdb_sst_file_metadata_get_file_creation_time(sst_meta); 
         rocksdb_sst_file_metadata_destroy(sst_meta);
 
         time_t nowtimestamp;
         time(&nowtimestamp);
 
-        double exist_time = (double)(nowtimestamp - create_time);
+        long long exist_time = nowtimestamp - create_time;
         if (exist_time * 1000 <= sst_age_limit) {
             continue;
         }
@@ -497,7 +497,7 @@ void genServerTtlCompactTask(void *result, void *pd, int errcode) {
     cfMetas *metas = result;
     serverAssert(metas->num == 1);
 
-    double sst_age_limit = server.swap_ttl_compact_ctx->expire_stats->expire_of_quantile;
+    long long sst_age_limit = server.swap_ttl_compact_ctx->expire_stats->sst_age_limit;
     if (sst_age_limit == SWAP_TTL_COMPACT_INVALID_EXPIRE) {
         /* no need to generate task. */
         cfMetasFree(metas);
@@ -551,9 +551,7 @@ swapExpireStatus *swapExpireStatusNew() {
     stats->expire_wt = wtdigestCreate(WTD_DEFAULT_NUM_BUCKETS);
     wtdigestSetWindow(stats->expire_wt, SWAP_TTL_COMPACT_DEFAULT_EXPIRE_WT_WINDOW);
 
-    stats->sampled_expires_count = 0;
-    stats->expire_of_quantile = SWAP_TTL_COMPACT_INVALID_EXPIRE;
-    stats->expire_wt_error = 0;
+    stats->sst_age_limit = SWAP_TTL_COMPACT_INVALID_EXPIRE;
     return stats;
 }
 
@@ -564,16 +562,9 @@ void swapExpireStatusFree(swapExpireStatus *stats) {
     zfree(stats);
 }
 
-void swapExpireStatusProcessErr(swapExpireStatus *stats) {
-    atomicIncr(stats->expire_wt_error, 1);
-    stats->expire_of_quantile = SWAP_TTL_COMPACT_INVALID_EXPIRE;
-}
-
 void swapExpireStatusReset(swapExpireStatus *stats) {
-    stats->expire_wt_error = 0;
     wtdigestReset(stats->expire_wt);
-    stats->sampled_expires_count = 0;
-    stats->expire_of_quantile = SWAP_TTL_COMPACT_INVALID_EXPIRE; 
+    stats->sst_age_limit = SWAP_TTL_COMPACT_INVALID_EXPIRE; 
 }
 
 swapTtlCompactCtx *swapTtlCompactCtxNew() {
@@ -597,9 +588,24 @@ void swapTtlCompactCtxFree(swapTtlCompactCtx *ctx) {
     zfree(ctx);
 }
 
+void swapTtlCompactCtxReset(swapTtlCompactCtx *ctx) {
+    if (ctx->task) {
+        compactTaskFree(ctx->task);
+        ctx->task = NULL;
+    }
+    if (ctx->expire_stats) {
+        swapExpireStatusReset(ctx->expire_stats);
+    }
+}
+
 void rocksdbCompactRangeTaskDone(void *result, void *pd, int errcode) {
     UNUSED(result), UNUSED(errcode);
-    compactTaskFree(pd); /* compactTask */
+
+    compactTask *task = pd;
+    if (task->compact_type == TYPE_TTL_COMPACT) {
+        atomicIncr(server.swap_ttl_compact_ctx->stat_compact_times, 1);
+    }
+    compactTaskFree(task); /* compactTask */
 }
 
 cfMetas *cfMetasNew(uint cf_num) {
@@ -611,7 +617,9 @@ cfMetas *cfMetasNew(uint cf_num) {
 
 void cfMetasFree(cfMetas *metas) {
     for (uint i = 0; i < metas->num; i++) {
-        rocksdb_column_family_metadata_destroy(metas->cf_meta[i]);
+        if (metas->cf_meta[i]) {
+            rocksdb_column_family_metadata_destroy(metas->cf_meta[i]);
+        }
     }
     zfree(metas->cf_meta);
     zfree(metas);
@@ -619,13 +627,11 @@ void cfMetasFree(cfMetas *metas) {
 
 sds genSwapTtlCompactInfoString(sds info) {
     info = sdscatprintf(info,
-            "swap_ttl_compact:times=%llu, request_sst_count=%llu, expire_wt_error=%llu,"
-            "expire_of_quantile=%lld, sampled_expires_count=%llu\r\n",
+            "swap_ttl_compact:times=%llu, request_sst_count=%llu,"
+            "sst_age_limit=%lld\r\n",
             server.swap_ttl_compact_ctx->stat_compact_times,
             server.swap_ttl_compact_ctx->stat_request_sst_count,
-            server.swap_ttl_compact_ctx->expire_stats->expire_wt_error,
-            server.swap_ttl_compact_ctx->expire_stats->expire_of_quantile,
-            server.swap_ttl_compact_ctx->expire_stats->sampled_expires_count);
+            server.swap_ttl_compact_ctx->expire_stats->sst_age_limit);
     return info;
 }
 
@@ -1062,6 +1068,19 @@ compactTask *mockTtlCompactTask() {
         test_assert(task2->count == 1);
         test_assert(task2->capacity == 1);
         compactTaskFree(task2);
+    }
+
+    TEST("swapTtlCompactCtxNew new reset free") {
+
+        swapTtlCompactCtx *ttl_compact_ctx = swapTtlCompactCtxNew();
+
+        wtdigestAdd(ttl_compact_ctx->expire_stats->expire_wt, 10, 1);
+        test_assert(wtdigestSize(ttl_compact_ctx->expire_stats->expire_wt) == 1);
+
+        swapTtlCompactCtxReset(ttl_compact_ctx);
+
+        test_assert(wtdigestSize(ttl_compact_ctx->expire_stats->expire_wt) == 0);
+        swapTtlCompactCtxFree(ttl_compact_ctx); 
     }
 
     TEST("generate server ttl compact task - no sst") {

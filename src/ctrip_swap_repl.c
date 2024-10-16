@@ -375,7 +375,7 @@ sds genSwapReplInfoString(sds info) {
     return info;
 }
 
-bool needPropagateExpireQuantile(void) {
+bool isSwapInfoSupported(void) {
 
     if (server.swap_swap_info_supported == SWAP_INFO_SUPPORTED_YES) return true;
     if (server.swap_swap_info_supported == SWAP_INFO_SUPPORTED_NO) return false;
@@ -398,33 +398,57 @@ bool needPropagateExpireQuantile(void) {
     return true;
 }
 
- /* SWAP.INFO EXPIRE-QUANTILE <quantile> <expire> */
-static void propagateExpireQuantile() {
+/* SWAP.INFO SST-AGE-LIMIT <quantile> <sst age limit> */
+robj **swapBuildSwapInfoSstAgeLimitCmd(int *argc) {
 
-    if (!needPropagateExpireQuantile()) return; 
-    
-    robj *quantile_obj = createStringObjectFromLongLong((long long)server.swap_ttl_compact_expire_percentile);
-    robj *expire_obj = createStringObjectFromLongLong(server.swap_ttl_compact_ctx->expire_stats->expire_of_quantile);
-    
     // if (iAmMaster()) {
     //     serverLog(LL_NOTICE, "I am a master!!");
-    //     server.swap_ttl_compact_ctx->expire_stats->expire_of_quantile = -server.swap_ttl_compact_ctx->expire_stats->expire_of_quantile;
+    //     server.swap_ttl_compact_ctx->expire_stats->sst_age_limit = -server.swap_ttl_compact_ctx->expire_stats->sst_age_limit;
     // }
-    // serverLog(LL_NOTICE, "I send expire_of_quantile is %lld", server.swap_ttl_compact_ctx->expire_stats->expire_of_quantile); // for debug, wait del
+    // serverLog(LL_NOTICE, "I send sst_age_limit is %lld", server.swap_ttl_compact_ctx->expire_stats->sst_age_limit); // for debug, wait del
 
-    robj **argv = zmalloc(sizeof(robj*) * 4);
+    *argc = 4;
+
+    robj **argv = zmalloc(4 * sizeof(robj *));
+
+    robj *quantile = createStringObjectFromLongLong((long long)server.swap_ttl_compact_expire_percentile);
+    robj *sst_age_limit = createStringObjectFromLongLong(server.swap_ttl_compact_ctx->expire_stats->sst_age_limit);
+
     argv[0] = shared.swap_info;
-    argv[1] = shared.expire_quantile;
-    argv[2] = quantile_obj;
-    argv[3] = expire_obj;
+    argv[1] = shared.sst_age_limit;
+    argv[2] = quantile;
+    argv[3] = sst_age_limit;
 
-    replicationFeedSlaves(server.slaves,0,argv,4);
-    decrRefCount(quantile_obj);
-    decrRefCount(expire_obj);
+    return argv;
+}
+
+void swapDestorySwapInfoSstAgeLimitCmd(int argc, robj **argv) {
+
+    serverAssert(argc == 4);
+
+    decrRefCount(argv[2]);
+    decrRefCount(argv[3]);
     zfree(argv);
 }
 
- /* SWAP.INFO <subcommand> */
-void swapPropagateSwapInfo() {
-    propagateExpireQuantile();
+/* The swap.info command, propagate system info to slave.
+ * SWAP.INFO <subcommand> [<arg> [value] [opt] ...]
+ *
+ * subcommand supported:
+ * SWAP.INFO SST-AGE-LIMIT <quantile> <sst age limit> */
+void swapPropagateSwapInfo(int argc, robj **argv) {
+
+    if (!isSwapInfoSupported()) return; 
+
+    if (argc < 2) {
+        return;
+    } else if (argc == 4 && !strcasecmp(argv[1]->ptr,"SST-AGE-LIMIT")) {
+        /* SWAP.INFO SST-AGE-LIMIT <quantile> <sst age limit> */
+        goto propagate;
+    }
+    return;
+
+propagate:
+    replicationFeedSlaves(server.slaves,0,argv,argc);
+    return;
 }

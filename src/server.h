@@ -1067,7 +1067,7 @@ struct sharedObjectsStruct {
     *time, *pxat, *px, *retrycount, *force, *justid, 
     *lastid, *ping, *setid, *keepttl, *load, *createconsumer,
     *getack, *special_asterick, *special_equals, *default_username, *redacted,
-    *emptystring, *gtid, *expire_quantile, *swap_info,
+    *emptystring, *gtid, *swap_info, *sst_age_limit,
     *select[PROTO_SHARED_SELECT_CMDS],
     *integers[OBJ_SHARED_INTEGERS],
     *mbulkhdr[OBJ_SHARED_BULKHDR_LEN], /* "*<value>\r\n" */
@@ -1965,12 +1965,13 @@ struct redisServer {
     /* ttl compact, only compact default CF */
     int swap_ttl_compact_enabled;
     unsigned int swap_ttl_compact_expire_percentile;
-    unsigned long long swap_ttl_compact_interval_seconds;
+    unsigned long long swap_ttl_compact_period; /* seconds */
+    unsigned long long swap_sst_age_limit_refresh_period; /* seconds */
     struct swapTtlCompactCtx *swap_ttl_compact_ctx;
 
-    /* for swap.info command, which send system info to replica */
+    /* for swap.info command, which propagate system info to replica */
     int swap_swap_info_supported;
-    unsigned int swap_swap_info_slave_period;     /* Master send cmd swap.info to the slave every N seconds */
+    unsigned long long swap_swap_info_slave_period;     /* Master send cmd swap.info to the slave every N seconds */
 };
 
 #define MAX_KEYS_BUFFER 256
