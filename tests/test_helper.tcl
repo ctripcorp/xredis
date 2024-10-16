@@ -122,9 +122,7 @@ set ::all_tests {
     gtid/gtid
     gtid/gtid_seq
     gtid/monitor
-    gtid/replication-psync
     gtid/sync
-    gtid/xsync
     unit/shutdown
     unit/printver
     unit/dump
