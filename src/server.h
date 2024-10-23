@@ -597,6 +597,14 @@ typedef enum {
 
 #define SWAP_MODE_MEMORY 0
 #define SWAP_MODE_DISK 1
+#define SWAP_MODE_TYPES 2
+static inline const char *swapModeName(int mode) {
+  const char *name = "?";
+  const char *modes[] = {"memory", "disk"};
+  if (mode >= 0 && mode < SWAP_MODE_TYPES)
+    name = modes[mode];
+  return name;
+}
 
 /* Bit flags for moduleTypeAuxSaveFunc */
 #define REDISMODULE_AUX_BEFORE_RDB (1<<0)

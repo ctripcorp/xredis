@@ -5144,6 +5144,7 @@ sds genRedisInfoString(const char *section) {
             "# Server\r\n"
             "redis_version:%s\r\n"
             "xredis_version:%s\r\n"
+            "swap_mode:%s\r\n"
             "swap_version:%s\r\n"
             "rocksdb_version:%s\r\n"
             "redis_git_sha1:%s\r\n"
@@ -5170,6 +5171,7 @@ sds genRedisInfoString(const char *section) {
             "io_threads_active:%i\r\n",
             REDIS_VERSION,
             XREDIS_VERSION,
+            swapModeName(server.swap_mode),
             SWAP_VERSION,
             rocksdbVersion(),
             redisGitSHA1(),
