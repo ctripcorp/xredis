@@ -107,7 +107,7 @@ jobs:
     - name: test
       run: |
         sudo apt-get install tcl8.6 tclx -y
-        ./runtest --swap-mode disk --accurate --verbose --dump-logs
+        ./runtest --swap-mode disk --tags -nosanitizer --accurate --verbose --dump-logs
     - name: unittest
       run: ./src/redis-server test all
 
@@ -138,7 +138,7 @@ jobs:
     - name: test
       run: |
         sudo apt-get install tcl8.6 tclx -y
-        ./runtest --swap-mode disk --accurate --verbose --dump-logs
+        ./runtest --swap-mode disk --tags -nosanitizer --accurate --verbose --dump-logs
     - name: unittest
       run: ./src/redis-server test all
 

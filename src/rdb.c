@@ -1494,7 +1494,11 @@ werr:
 int rdbSaveBackground(char *filename, rdbSaveInfo *rsi, struct swapForkRocksdbCtx *sfrctx, int rordb) {
     pid_t childpid;
 
-    if (hasActiveChildProcess()) return C_ERR;
+    if (hasActiveChildProcess()) {
+        swapForkRocksdbCtxRelease(sfrctx);
+        return C_ERR;
+    }
+
 
     server.dirty_before_bgsave = server.dirty;
     server.lastbgsave_try = time(NULL);
@@ -1515,9 +1519,8 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi, struct swapForkRocksdbCt
 
         if (server.swap_mode != SWAP_MODE_MEMORY) {
             if (swapForkRocksdbAfterChild(sfrctx)) {
-                exit(1);
-            } else {
                 swapForkRocksdbCtxRelease(sfrctx);
+                exit(1);
             }
         }
 
@@ -1527,23 +1530,25 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi, struct swapForkRocksdbCt
                 sendChildInfo(CHILD_INFO_TYPE_SWAP_RDB_SIZE, 0, server.swap_rdb_size, "RDB");
             sendChildCowInfo(CHILD_INFO_TYPE_RDB_COW_SIZE, "RDB");
         }
+        swapForkRocksdbCtxRelease(sfrctx);
         exitFromChild((retval == C_OK) ? 0 : 1);
     } else {
         /* Parent */
         if (server.swap_mode != SWAP_MODE_MEMORY) {
             swapForkRocksdbAfterParent(sfrctx,childpid);
-            swapForkRocksdbCtxRelease(sfrctx);
         }
 
         if (childpid == -1) {
             server.lastbgsave_status = C_ERR;
             serverLog(LL_WARNING,"Can't save in background: fork: %s",
                 strerror(errno));
+            swapForkRocksdbCtxRelease(sfrctx);
             return C_ERR;
         }
         serverLog(LL_NOTICE,"Background saving started by pid %ld",(long) childpid);
         server.rdb_save_time_start = time(NULL);
         server.rdb_child_type = RDB_CHILD_TYPE_DISK;
+        swapForkRocksdbCtxRelease(sfrctx);
         return C_OK;
     }
     return C_OK; /* unreached */

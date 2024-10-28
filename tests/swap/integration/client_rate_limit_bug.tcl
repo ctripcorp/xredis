@@ -15,8 +15,7 @@ proc format_command {args} {
     }
     set _ $cmd
 }
-start_server [list overrides [list save ""] ] {
-    
+start_server [list overrides [list save ""] tags {"nosanitizer"}] {
     set master [srv 0 client]
     $master config set swap-ratelimit-maxmemory-percentage 100
     $master config set maxmemory-policy allkeys-lru
@@ -38,7 +37,7 @@ start_server [list overrides [list save ""] ] {
     } else {
         fail "Fail to full sync"
     }
-    
+
     for {set j 0} {$j < 20} {incr j} {
        set ele [lindex $load_handles $j]
        stop_bg_complex_data $ele
