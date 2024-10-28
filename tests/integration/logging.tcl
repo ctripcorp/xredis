@@ -35,9 +35,10 @@ if {$system_supported} {
     }
 
     # Valgrind will complain that the process terminated by a signal, skip it.
+    # Sanitizer will cause unknown crash, which seems a problem of gcc or sanitizer, skip it.
     if {!$::valgrind} {
         set server_path [tmpdir server1.log]
-        start_server [list overrides [list dir $server_path]] {
+        start_server [list overrides [list dir $server_path] tags {"nosanitizer"}] {
             test "Crash report generated on SIGABRT" {
                 set pid [s process_id]
                 exec kill -SIGABRT $pid

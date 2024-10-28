@@ -1,0 +1,5 @@
+leak:hashTypeConvertZiplist
+leak:^listMetaCreate$
+leak:^bitmapMetaCreate$
+leak:^bitmapMetaDecode$
+leak:^bitmapMetaDup$

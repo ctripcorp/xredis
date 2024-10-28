@@ -158,6 +158,20 @@ int keyIsHot(objectMeta *object_meta, robj *value) {
     return swapObjectMetaIsHot(&som);
 }
 
+int keyIsPureHot(objectMeta *object_meta, robj *value) {
+    if (value == NULL) {
+        return 0;
+    } else {
+        if (object_meta == NULL) {
+            return 1;
+        } else if (object_meta->swap_type == SWAP_TYPE_BITMAP && bitmapObjectMetaIsMarker(object_meta)) {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+}
+
 struct listMeta;
 sds listMetaDump(sds result, struct listMeta *lm);
 
