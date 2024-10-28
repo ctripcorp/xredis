@@ -110,7 +110,7 @@ jobs:
       run: |
           sudo apt-get update
           sudo apt-get -y install libsnappy-dev zlib1g-dev libstdc++6
-          make SANTIZER=address -j8
+          make SANITIZER=address -j8
     - name: make test
       run: make test-disk
 

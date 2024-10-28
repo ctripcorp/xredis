@@ -291,6 +291,7 @@ NULL
         if (submitUtilTask(ROCKSDB_COMPACT_RANGE_TASK, task, rocksdbCompactRangeTaskDone, task, &error)) {
             addReply(c,shared.ok);
         } else {
+            compactTaskFree(task);
             addReplyErrorSds(c,error);
         }
     } else if (!strcasecmp(c->argv[1]->ptr,"flush") && c->argc >= 2) {

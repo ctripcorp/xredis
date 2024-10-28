@@ -541,6 +541,7 @@ void freeObjectMeta(objectMeta *object_meta);
 sds objectMetaEncode(struct objectMeta *object_meta, int meta_enc_mode);
 int objectMetaDecode(struct objectMeta *object_meta, const char *extend, size_t extlen);
 int keyIsHot(objectMeta *object_meta, robj *value);
+int keyIsPureHot(redisDb *db, robj *key);
 sds dumpObjectMeta(objectMeta *object_meta);
 int objectMetaEqual(struct objectMeta *oma, struct objectMeta *omb);
 int objectMetaRebuildFeed(struct objectMeta *rebuild_meta, uint64_t version, const char *subkey, size_t sublen, robj *subval);
