@@ -2206,6 +2206,7 @@ start_server {tags {"bitmap chaos test"} overrides {save ""}} {
                     assert_equal $master_digest $slave_digest
                 }
             }
+            # $master flushdb
         }
     }
 }
