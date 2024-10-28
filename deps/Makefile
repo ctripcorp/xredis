@@ -107,16 +107,36 @@ jemalloc: .make-prerequisites
 # -Wno-error: meaning do not report error when meeting warnings
 CFLAGS += -Wno-unused-but-set-variable -Wno-error
 ROCKSDB_CFLAGS = $(CFLAGS)
+ROCKSDB_BUILD_FLAGS=ROCKSDB_DISABLE_BZIP=1 ROCKSDB_DISABLE_LZ4=1 ROCKSDB_DISABLE_ZSTD=1 ROCKSDB_DISABLE_MALLOC_USABLE_SIZE=1 ROCKSDB_DISABLE_MEMKIND=1 PORTABLE=1 ROCKSDB_USE_IO_URING=0 DISABLE_WARNING_AS_ERROR=1
+
+ifdef SANITIZER
+ifeq ($(SANITIZER),address)
+    ROCKSDB_BUILD_FLAGS+=COMPILE_WITH_ASAN=1
+else
+ifeq ($(SANITIZER),undefined)
+    ROCKSDB_BUILD_FLAGS+=COMPILE_WITH_UBSAN=1
+else
+ifeq ($(SANITIZER),thread)
+    ROCKSDB_BUILD_FLAGS+=COMPILE_WITH_TSAN=1
+else
+    $(error "unknown sanitizer=${SANITIZER}")
+endif
+endif
+endif
+endif
 
 rocksdb: .make-prerequisites
 	@printf '%b %b\n' $(MAKECOLOR)MAKE$(ENDCOLOR) $(BINCOLOR)$@$(ENDCOLOR)
-	cd rocksdb && ROCKSDB_DISABLE_BZIP=1 ROCKSDB_DISABLE_LZ4=1 ROCKSDB_DISABLE_ZSTD=1 ROCKSDB_DISABLE_MALLOC_USABLE_SIZE=1 ROCKSDB_DISABLE_MEMKIND=1 PORTABLE=1 ROCKSDB_USE_IO_URING=0 $(MAKE) CFLAGS="$(ROCKSDB_CFLAGS)" static_lib
+	cd rocksdb && $(ROCKSDB_BUILD_FLAGS) $(MAKE) CFLAGS="$(ROCKSDB_CFLAGS)" static_lib
 
 .PHONY: rocksdb
 
-
-XREDIS_GTID_CFLAGS= -std=gnu99 -Wall -pipe -g3 -O3 -funroll-loops $(CFLAGS) -I../../src -DUSE_JEMALLOC -I../jemalloc/include -DGTID_MALLOC_INCLUDE=\<gtid_zmalloc.h\> 
+XREDIS_GTID_CFLAGS= -std=gnu99 -Wall -pipe -g3 -O3 -funroll-loops $(CFLAGS)
 XREDIS_GTID_LDFLAGS= $(LDFLAGS)
+
+ifndef SANITIZER
+    XREDIS_GTID_CFLAGS+=-I../../src -DUSE_JEMALLOC -I../jemalloc/include -DGTID_MALLOC_INCLUDE=\<gtid_zmalloc.h\>
+endif
 
 xredis-gtid: jemalloc .make-prerequisites
 	@printf '%b %b\n' $(MAKECOLOR)MAKE$(ENDCOLOR) $(BINCOLOR)$@$(ENDCOLOR)

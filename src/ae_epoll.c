@@ -106,6 +106,7 @@ static void aeApiDelEvent(aeEventLoop *eventLoop, int fd, int delmask) {
     }
 }
 
+REDIS_NO_SANITIZE("address")
 static int aeApiPoll(aeEventLoop *eventLoop, struct timeval *tvp) {
     aeApiState *state = eventLoop->apidata;
     int retval, numevents = 0;

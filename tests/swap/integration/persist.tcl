@@ -130,6 +130,7 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         assert_equal {1} [r bitcount mybitmap0]
         r config set swap-evict-step-max-subkeys $bak_evict_step
     }
+    r flushdb
 }
 
 start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subkeys-enabled yes}} {
@@ -406,7 +407,7 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
 
         r config set swap-bitmap-subkey-size $bak_bitmap_subkey_size
     }
-
+    r flushdb
 }
 
 start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subkeys-enabled yes}} {
@@ -434,6 +435,7 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         wait_key_cold r mybitmap0
         r bitcount mybitmap0
     }
+    r flushdb
 }
 
 start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subkeys-enabled yes}} {
@@ -452,5 +454,6 @@ start_server {tags {persist} overrides {swap-persist-enabled yes swap-dirty-subk
         after 1500
         assert_equal [llength [r swap rio-scan meta {}]] 0
     }
+    r flushdb
 }
 

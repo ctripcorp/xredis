@@ -178,7 +178,6 @@ start_server {tags {"ttl compact 4"}
         r config set swap-sst-age-limit-refresh-period 3600
 
         r flushdb
-
         set sst_age_limit [get_info_property r Swap swap_ttl_compact sst_age_limit]
         assert_equal $sst_age_limit 0
     }

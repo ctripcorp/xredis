@@ -520,11 +520,11 @@ typedef struct objectMetaType {
 } objectMetaType;
 
 typedef struct objectMeta {
-  uint64_t version;
+  uint64_t version:60;
   unsigned swap_type:4;
   union {
-    long long len:60;
-    unsigned long long ptr:60;
+    long long len;
+    unsigned long long ptr;
   };
 } objectMeta;
 
@@ -542,12 +542,13 @@ void freeObjectMeta(objectMeta *object_meta);
 sds objectMetaEncode(struct objectMeta *object_meta, int meta_enc_mode);
 int objectMetaDecode(struct objectMeta *object_meta, const char *extend, size_t extlen);
 int keyIsHot(objectMeta *object_meta, robj *value);
+int keyIsPureHot(objectMeta *object_meta, robj *value);
 sds dumpObjectMeta(objectMeta *object_meta);
 int objectMetaEqual(struct objectMeta *oma, struct objectMeta *omb);
 int objectMetaRebuildFeed(struct objectMeta *rebuild_meta, uint64_t version, const char *subkey, size_t sublen, robj *subval);
 
 static inline void *objectMetaGetPtr(objectMeta *object_meta) {
-  return (void*)(long)object_meta->ptr;
+  return (void*)(unsigned long long)object_meta->ptr;
 }
 static inline void objectMetaSetPtr(objectMeta *object_meta, void *ptr) {
   object_meta->ptr = (unsigned long long)ptr;
