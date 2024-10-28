@@ -291,6 +291,7 @@ NULL
         if (submitUtilTask(ROCKSDB_COMPACT_RANGE_TASK, task, rocksdbCompactRangeTaskDone, task, &error)) {
             addReply(c,shared.ok);
         } else {
+            compactTaskFree(task);
             addReplyErrorSds(c,error);
         }
     } else if (!strcasecmp(c->argv[1]->ptr,"flush") && c->argc >= 2) {
@@ -365,6 +366,7 @@ NULL
             if (rdbSaveBackground(server.rdb_filename,rsiptr,sfrctx,1) == C_OK) {
                 addReplyStatus(c,"Background saving started(rordb mode)");
             } else {
+                swapForkRocksdbCtxRelease(sfrctx);
                 addReplyErrorObject(c,shared.err);
             }
         } else if (!strcasecmp(c->argv[2]->ptr,"reload")) {

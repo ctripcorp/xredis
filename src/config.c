@@ -3085,7 +3085,7 @@ standardConfig configs[] = {
     createULongLongConfig("rocksdb.data.blob_file_size", "rocksdb.blob_file_size", MODIFIABLE_CONFIG, 0, ULLONG_MAX, server.rocksdb_data_blob_file_size, 256*1024*1024, MEMORY_CONFIG, NULL, updateRocksdbDataBlobFileSize),
     createULongLongConfig("rocksdb.meta.blob_file_size", NULL, MODIFIABLE_CONFIG, 0, ULLONG_MAX, server.rocksdb_meta_blob_file_size, 256*1024*1024, MEMORY_CONFIG, NULL, updateRocksdbMetaBlobFileSize),
     createULongLongConfig("swap-repl-rordb-max-write-bps", NULL, MODIFIABLE_CONFIG, 0, LLONG_MAX, server.swap_repl_rordb_max_write_bps, 200*1024*1024, MEMORY_CONFIG, NULL, NULL),
-    createULongLongConfig("swap-ttl-compact-period", NULL, MODIFIABLE_CONFIG, 1, 3600*24, server.swap_ttl_compact_period, 60*8, INTEGER_CONFIG, NULL, NULL),
+    createULongLongConfig("swap-ttl-compact-period", NULL, MODIFIABLE_CONFIG, 1, 3600*24, server.swap_ttl_compact_period, 60, INTEGER_CONFIG, NULL, NULL),
     createULongLongConfig("swap-sst-age-limit-refresh-period", NULL, MODIFIABLE_CONFIG, 1, 3600*24, server.swap_sst_age_limit_refresh_period, 60, INTEGER_CONFIG, NULL, NULL),
     createULongLongConfig("swap-swap-info-slave-period", NULL, MODIFIABLE_CONFIG, 1, 3600*24, server.swap_swap_info_slave_period, 60, INTEGER_CONFIG, NULL, NULL),
 

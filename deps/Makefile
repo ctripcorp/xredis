@@ -105,18 +105,23 @@ jemalloc: .make-prerequisites
 
 # -Wno-unused-but-set-variable: meaning do not report warning when meeting unused but set variable
 # -Wno-error: meaning do not report error when meeting warnings
+# In ubuntu 24.04, do not compile rocksdb with sanitizer, which will cause sanitizer internal crash.
 CFLAGS += -Wno-unused-but-set-variable -Wno-error
 ROCKSDB_CFLAGS = $(CFLAGS)
+ROCKSDB_BUILD_FLAGS=ROCKSDB_DISABLE_BZIP=1 ROCKSDB_DISABLE_LZ4=1 ROCKSDB_DISABLE_ZSTD=1 ROCKSDB_DISABLE_MALLOC_USABLE_SIZE=1 ROCKSDB_DISABLE_MEMKIND=1 PORTABLE=1 ROCKSDB_USE_IO_URING=0
 
 rocksdb: .make-prerequisites
 	@printf '%b %b\n' $(MAKECOLOR)MAKE$(ENDCOLOR) $(BINCOLOR)$@$(ENDCOLOR)
-	cd rocksdb && ROCKSDB_DISABLE_BZIP=1 ROCKSDB_DISABLE_LZ4=1 ROCKSDB_DISABLE_ZSTD=1 ROCKSDB_DISABLE_MALLOC_USABLE_SIZE=1 ROCKSDB_DISABLE_MEMKIND=1 PORTABLE=1 ROCKSDB_USE_IO_URING=0 $(MAKE) CFLAGS="$(ROCKSDB_CFLAGS)" static_lib
+	cd rocksdb && $(ROCKSDB_BUILD_FLAGS) $(MAKE) CFLAGS="$(ROCKSDB_CFLAGS)" static_lib
 
 .PHONY: rocksdb
 
-
-XREDIS_GTID_CFLAGS= -std=gnu99 -Wall -pipe -g3 -O3 -funroll-loops $(CFLAGS) -I../../src -DUSE_JEMALLOC -I../jemalloc/include -DGTID_MALLOC_INCLUDE=\<gtid_zmalloc.h\> 
+XREDIS_GTID_CFLAGS= -std=gnu99 -Wall -pipe -g3 -O3 -funroll-loops $(CFLAGS)
 XREDIS_GTID_LDFLAGS= $(LDFLAGS)
+
+ifndef SANITIZER
+    XREDIS_GTID_CFLAGS+=-I../../src -DUSE_JEMALLOC -I../jemalloc/include -DGTID_MALLOC_INCLUDE=\<gtid_zmalloc.h\>
+endif
 
 xredis-gtid: jemalloc .make-prerequisites
 	@printf '%b %b\n' $(MAKECOLOR)MAKE$(ENDCOLOR) $(BINCOLOR)$@$(ENDCOLOR)

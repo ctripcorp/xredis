@@ -1,4 +1,4 @@
-start_server {tags "clients"} {
+start_server {tags {"clients" "nosanitizer"}} {
     r config set swap-debug-rio-delay-micro 1000000
     set host [srv 0 host]
     set port [srv 0 port]
@@ -20,7 +20,7 @@ start_server {tags "clients"} {
     }
 }
 
-start_server {tags "clients"} {
+start_server {tags {"clients" "nosanitizer"}} {
     set host [srv 0 host]
     set port [srv 0 port]
 

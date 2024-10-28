@@ -51,7 +51,7 @@ start_server {tags {"repl network"}} {
     }
 }
 
-start_server {tags {"repl"}} {
+start_server {tags {"repl" "nosanitizer"}} {
     set A [srv 0 client]
     set A_host [srv 0 host]
     set A_port [srv 0 port]
@@ -194,7 +194,7 @@ start_server {tags {"repl"}} {
     }
 }
 
-start_server {tags {"repl"}} {
+start_server {tags {"repl" "nosanitizer"}} {
     r set mykey foo
 
     start_server {} {
@@ -259,7 +259,7 @@ start_server {tags {"repl"}} {
 
 foreach mdl {no yes} {
     foreach sdl {disabled swapdb} {
-        start_server {tags {"repl"}} {
+        start_server {tags {"repl" "nosanitizer"}} {
             set master [srv 0 client]
             $master config set repl-diskless-sync $mdl
             $master config set repl-diskless-sync-delay 1
@@ -601,7 +601,7 @@ proc compute_cpu_usage {start end} {
 
 
 # test diskless rdb pipe with multiple replicas, which may drop half way
-start_server {tags {"repl"}} {
+start_server {tags {"repl" "nosanitizer"}} {
     set master [srv 0 client]
     $master config set repl-diskless-sync yes
     $master config set repl-diskless-sync-delay 1
@@ -797,7 +797,7 @@ test "diskless replication read pipe cleanup" {
     # When we close this pipe (fd), the read handler also needs to be removed from the event loop (if it still registered).
     # Otherwise, next time we will use the same fd, the registration will be fail (panic), because
     # we will use EPOLL_CTL_MOD (the fd still register in the event loop), on fd that already removed from epoll_ctl
-    start_server {tags {"repl"}} {
+    start_server {tags {"repl" "nosanitizer"}} {
         set master [srv 0 client]
         set master_host [srv 0 host]
         set master_port [srv 0 port]
@@ -885,7 +885,7 @@ test {replicaof right after disconnection} {
 }
 
 test {Kill rdb child process if its dumping RDB is not useful} {
-    start_server {tags {"repl"}} {
+    start_server {tags {"repl" "nosanitizer"}} {
         set slave1 [srv 0 client]
         start_server {} {
             set slave2 [srv 0 client]
