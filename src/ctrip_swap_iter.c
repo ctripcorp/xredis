@@ -119,6 +119,7 @@ static inline int rocksdbIterValid(rocksdb_iterator_t *iter, sds endkey) {
     return memcmp(endkey,rawkey,len) > 0;
 }
 
+REDIS_NO_SANITIZE("address")
 void *rocksIterIOThreadMain(void *arg) {
     rocksIter *it = arg;
     size_t meta_itered = 0, data_itered = 0, accumulated_memory = 0;

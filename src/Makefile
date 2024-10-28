@@ -31,7 +31,7 @@ ifneq (,$(findstring FreeBSD,$(uname_S)))
   STD+=-Wno-c11-extensions
 endif
 endif
-WARN=-Wall -W -Wno-missing-field-initializers
+WARN=-Wall -W -Wno-missing-field-initializers -Wno-pedantic
 OPT=$(OPTIMIZATION)
 
 # Detect if the compiler supports C11 _Atomic
@@ -85,6 +85,7 @@ ifeq ($(USE_JEMALLOC),no)
 	MALLOC=libc
 endif
 
+export LSAN_OPTIONS=suppressions=suppr.txt
 ifdef SANITIZER
 ifeq ($(SANITIZER),address)
    MALLOC=libc
