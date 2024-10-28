@@ -31,7 +31,7 @@ ifneq (,$(findstring FreeBSD,$(uname_S)))
   STD+=-Wno-c11-extensions
 endif
 endif
-WARN=-Wall -W -Wno-missing-field-initializers
+WARN=-Wall -W -Wno-missing-field-initializers -Wno-pedantic
 OPT=$(OPTIMIZATION)
 
 # Detect if the compiler supports C11 _Atomic
@@ -84,6 +84,8 @@ endif
 ifeq ($(USE_JEMALLOC),no)
 	MALLOC=libc
 endif
+
+export LSAN_OPTIONS=suppressions=suppr.txt
 
 ifdef SANITIZER
 ifeq ($(SANITIZER),address)
@@ -426,6 +428,9 @@ test: $(REDIS_SERVER_NAME) $(REDIS_CHECK_AOF_NAME) $(REDIS_CLI_NAME) $(REDIS_BEN
 
 test-disk: $(REDIS_SERVER_NAME) $(REDIS_CHECK_AOF_NAME) $(REDIS_CLI_NAME) $(REDIS_BENCHMARK_NAME)
 	@(cd ..; ./runtest --swap-mode disk)
+
+test-asan-disk: $(REDIS_SERVER_NAME) $(REDIS_CHECK_AOF_NAME) $(REDIS_CLI_NAME) $(REDIS_BENCHMARK_NAME)
+	@(cd ..; ./runtest --swap-mode disk --tags -nosanitizer)
 
 test-modules: $(REDIS_SERVER_NAME)
 	@(cd ..; ./runtest-moduleapi)
