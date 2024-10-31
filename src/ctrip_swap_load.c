@@ -73,7 +73,7 @@ int tryLoadKey(redisDb *db, robj *key, int oom_sensitive) {
     client *load_client = server.load_clients[db->id];
 
     /* skip pure hot key */
-    if (lookupKey(db, key, LOOKUP_NOTOUCH) != NULL && lookupMeta(db, key) == NULL) {
+    if (keyIsPureHot(db, key)) {
         return 0;
     }
 
@@ -166,9 +166,7 @@ int readSwapChildErr(swapRdbSaveErrType *err_type, int *db_id, sds *key) {
         if (server.swap_child_err_nread == buf_len) {
             /* read swapRdbSaveErr done, make room for key reading */
             server.swap_child_err_nread = 0;
-            key_buffer = sdsempty();
-            key_buffer = sdsMakeRoomForExact(key_buffer, buffer.klen);
-            sdssetlen(key_buffer, buffer.klen);
+            key_buffer = sdsnewlen(SDS_NOINIT, buffer.klen);
         }
     }
 
