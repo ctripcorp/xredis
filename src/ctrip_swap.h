@@ -520,11 +520,11 @@ typedef struct objectMetaType {
 
 typedef struct objectMeta {
   uint64_t version;
-  unsigned swap_type:4;
   union {
-    long long len:60;
-    unsigned long long ptr:60;
+    long long len;
+    unsigned long long ptr;
   };
+  int swap_type;
 } objectMeta;
 
 extern objectMetaType lenObjectMetaType;
@@ -547,7 +547,7 @@ int objectMetaEqual(struct objectMeta *oma, struct objectMeta *omb);
 int objectMetaRebuildFeed(struct objectMeta *rebuild_meta, uint64_t version, const char *subkey, size_t sublen, robj *subval);
 
 static inline void *objectMetaGetPtr(objectMeta *object_meta) {
-  return (void*)(long)object_meta->ptr;
+  return (void*)(unsigned long long)object_meta->ptr;
 }
 static inline void objectMetaSetPtr(objectMeta *object_meta, void *ptr) {
   object_meta->ptr = (unsigned long long)ptr;

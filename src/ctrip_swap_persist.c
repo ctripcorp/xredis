@@ -564,7 +564,7 @@ static inline void keyLoadFixFeed(struct keyLoadFixData *fix, decodedData *d) {
         fix->feed_ok++;
     }
     if (subval != NULL) 
-        freeStringObject(subval);
+        decrRefCount(subval);
 }
 
 #define FIX_NONE 0
