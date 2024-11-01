@@ -366,6 +366,7 @@ NULL
             if (rdbSaveBackground(server.rdb_filename,rsiptr,sfrctx,1) == C_OK) {
                 addReplyStatus(c,"Background saving started(rordb mode)");
             } else {
+                swapForkRocksdbCtxRelease(sfrctx);
                 addReplyErrorObject(c,shared.err);
             }
         } else if (!strcasecmp(c->argv[2]->ptr,"reload")) {
