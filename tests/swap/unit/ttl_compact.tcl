@@ -53,7 +53,6 @@ start_server {tags {"ttl compact 1"}
         set compact_times [get_info_property r Swap swap_ttl_compact times]
         assert_equal $compact_times 0
     }
-    r flushdb
 }
 
 start_server {tags {"ttl compact 2"} 
@@ -88,7 +87,6 @@ start_server {tags {"ttl compact 2"}
         set sst_age_limit [get_info_property r Swap swap_ttl_compact sst_age_limit]
         assert_range $sst_age_limit 900000 1000000
     }
-    r flushdb
 }
 
 start_server {tags {"ttl compact 3"} 
@@ -150,7 +148,6 @@ start_server {tags {"ttl compact 3"}
         set compact_times [get_info_property r Swap swap_ttl_compact times]
         assert_range $compact_times 0 3
     }
-    r flushdb
 }
 
 start_server {tags {"ttl compact 4"} 
@@ -180,12 +177,9 @@ start_server {tags {"ttl compact 4"}
         # stop sst-age-limit refresh
         r config set swap-sst-age-limit-refresh-period 3600
 
-        r flushdb
-
         set sst_age_limit [get_info_property r Swap swap_ttl_compact sst_age_limit]
         assert_equal $sst_age_limit 0
     }
-    r flushdb
 }
 
 start_server {tags {"ttl compact 5"} 
@@ -228,7 +222,6 @@ start_server {tags {"ttl compact 5"}
         set compact_times [get_info_property r Swap swap_ttl_compact times]
         assert_equal $compact_times 0
     }
-    r flushdb
 }
 
 start_server {tags {"master propagate expire test"} overrides {save ""}} {
@@ -261,5 +254,4 @@ start_server {tags {"master propagate expire test"} overrides {save ""}} {
             assert_equal $sst_age_limit1 $sst_age_limit2
         }
     }
-    r flushdb
 }

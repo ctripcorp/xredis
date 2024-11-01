@@ -555,5 +555,4 @@ start_server {tags {"repl"}} {
             
         }
     }
-    r flushdb
 }

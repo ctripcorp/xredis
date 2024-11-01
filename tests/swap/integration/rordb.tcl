@@ -134,7 +134,6 @@ start_server {tags {"rordb replication"} overrides {}} {
             assert_equal [$slave bitcount mybitmap2] {5}
 
             assert_equal [object_meta_pure_cold_subkeys_num $slave mybitmap3] 6
-            $master flushdb
 
         }
 
