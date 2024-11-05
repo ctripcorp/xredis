@@ -13,6 +13,7 @@ start_server {tags {"keyspace"}} {
         list [r del foo1 foo2 foo3 foo4] [r mget foo1 foo2 foo3]
     } {3 {{} {} {}}}
 
+    tags {memonly} {
     test {KEYS with pattern} {
         foreach key {key_x key_y key_z foo_a foo_b foo_c} {
             r set $key hello
@@ -33,6 +34,7 @@ start_server {tags {"keyspace"}} {
         foreach key [r keys *] {r del $key}
         r dbsize
     } {0}
+    }
 
     test "DEL against expired key" {
         r debug set-active-expire 0
@@ -153,6 +155,7 @@ start_server {tags {"keyspace"}} {
         r ttl mykey2
     } {-1}
 
+    tags {memonly} {
     test {DEL all keys again (DB 0)} {
         foreach key [r keys *] {
             r del $key
@@ -213,6 +216,7 @@ start_server {tags {"keyspace"}} {
         r select 9
         format $res
     } [list foobar hoge foobar]
+    }
 
     test {COPY for string does not copy data to no-integer DB} {
         r set mykey foobar
@@ -235,6 +239,7 @@ start_server {tags {"keyspace"}} {
         assert {[r get mynewkey] eq "foobar"}
     }
 
+    tags {memonly} {
     test {COPY basic usage for list} {
         r del mylist mynewlist
         r lpush mylist a b c d
@@ -303,6 +308,7 @@ start_server {tags {"keyspace"}} {
         assert_equal $digest [r debug digest-value newzset2]
         r config set zset-max-ziplist-entries $original_max
     }
+    }
 
     test {COPY basic usage for ziplist hash} {
         r del hash1 newhash1
@@ -335,6 +341,7 @@ start_server {tags {"keyspace"}} {
         r config set hash-max-ziplist-entries $original_max
     }
 
+    tags {memonly} {
     test {COPY basic usage for stream} {
         r del mystream mynewstream
         for {set i 0} {$i < 1000} {incr i} {
@@ -443,7 +450,7 @@ start_server {tags {"keyspace"}} {
         r select 9
         format $res
     } {hello world foo bared}
-
+    }
     test {RANDOMKEY} {
         r flushdb
         r set foo x
@@ -474,10 +481,12 @@ start_server {tags {"keyspace"}} {
         r randomkey
     } {}
 
+    tags {memonly} {
     test {KEYS * two times with long key, Github issue #1208} {
         r flushdb
         r set dlskeriewrioeuwqoirueioqwrueoqwrueqw test
         r keys *
         r keys *
     } {dlskeriewrioeuwqoirueioqwrueoqwrueqw}
+    }
 }

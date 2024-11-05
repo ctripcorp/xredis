@@ -71,6 +71,7 @@ start_server {tags {"repl"}} {
         r -1 config set min-slaves-to-write 0
         r flushall
 
+        tags {memonly} {
         test {MASTER and SLAVE dataset should be identical after complex ops} {
             createComplexDataset r 10000
             after 500
@@ -87,6 +88,7 @@ start_server {tags {"repl"}} {
                 puts "Run diff -u against /tmp/repldump*.txt for more info"
             }
             assert_equal [r debug digest] [r -1 debug digest]
+        }
         }
     }
 }

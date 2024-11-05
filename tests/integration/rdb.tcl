@@ -5,7 +5,7 @@ set server_path [tmpdir "server.rdb-encoding-test"]
 # Copy RDB with different encodings in server path
 exec cp tests/assets/encodings.rdb $server_path
 
-start_server [list overrides [list "dir" $server_path "dbfilename" "encodings.rdb"]] {
+start_server [list tags {memonly} overrides [list "dir" $server_path "dbfilename" "encodings.rdb"]] {
   test "RDB encoding loading test" {
     r select 0
     csvdump r
@@ -129,13 +129,13 @@ start_server_and_kill_it [list "dir" $server_path] {
 }
 
 start_server {} {
+    tags {memonly} {
     test {Test FLUSHALL aborts bgsave} {
         # 1000 keys with 1ms sleep per key shuld take 1 second
         r config set rdb-key-save-delay 1000
         r debug populate 1000
         r bgsave
         assert_equal [s rdb_bgsave_in_progress] 1
-        after 200
         r flushall
         # wait half a second max
         wait_for_condition 5 100 {
@@ -146,7 +146,8 @@ start_server {} {
         # veirfy that bgsave failed, by checking that the change counter is still high
         assert_lessthan 999 [s rdb_changes_since_last_save]
         # make sure the server is still writable
-        catch {r set x xx}
+        r set x xx
+    }
     }
 
     test {bgsave resets the change counter} {

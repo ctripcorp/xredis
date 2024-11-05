@@ -338,7 +338,7 @@ proc start_server {options {code undefined}} {
             dict set srv "port" $::port
             set client [redis $::host $::port 0 $::tls]
             dict set srv "client" $client
-            if {$::swap_mode != disk} {$client select 9}
+            if {!$::swap} {$client select 9}
 
             set config {}
             dict set config "port" $::port
@@ -368,8 +368,8 @@ proc start_server {options {code undefined}} {
 
     set data [split [exec cat "tests/assets/$baseconfig"] "\n"]
     set config {}
-    if {$::swap_mode == "disk"} {
-        dict set config "swap-mode" $::swap_mode 
+    if {$::swap} {
+        dict set config "swap-mode" disk
         dict set config "appendonly" no
     }
     if {$::tls} {
@@ -420,8 +420,8 @@ proc start_server {options {code undefined}} {
         dict unset config $directive
     }
 
-    if {$::swap && $::swap_debug_evict_keys != 0} {
-        dict set config "swap-debug-evict-keys" $::swap_debug_evict_keys
+    if {$::swap} {
+        dict set config "swap-debug-evict-keys" -1
     }
 
     # write new configuration to temporary file

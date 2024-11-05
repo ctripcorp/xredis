@@ -70,15 +70,13 @@ start_server {tags {"repl"}} {
             }
         }
 
+        tags {memonly} {
         test {INCRBYFLOAT replication, should not remove expire} {
             r set test 1 EX 100
             r incrbyfloat test 0.1
             after 1000
-            if {!$::swap_debug_evict_keys} {
-                assert_equal [$A debug digest] [$B debug digest]
-            } else {
-                assert_equal [$A ttl test] [$B ttl test]
-            }
+            assert_equal [$A debug digest] [$B debug digest]
+        }
         }
 
         test {GETSET replication} {
@@ -116,6 +114,7 @@ start_server {tags {"repl"}} {
             assert_match {} [cmdrstat lmove $A]
         }
 
+        tags {memonly} {
         test {BRPOPLPUSH replication, list exists} {
             $A config resetstat
             set rd [redis_deferring_client]
@@ -158,6 +157,7 @@ start_server {tags {"repl"}} {
                     assert_match {} [cmdrstat rpoplpush $A]
                 }
             }
+        }
         }
 
         test {BLPOP followed by role change, issue #2473} {
@@ -254,6 +254,7 @@ start_server {tags {"repl"}} {
     }
 }
 
+tags {memonly} {
 foreach mdl {no yes} {
     foreach sdl {disabled swapdb} {
         start_server {tags {"repl"}} {
@@ -272,8 +273,8 @@ foreach mdl {no yes} {
                         test "Connect multiple replicas at the same time (issue #141), master diskless=$mdl, replica diskless=$sdl" {
                             # start load handles only inside the test, so that the test can be skipped
                             set load_handle0 [start_bg_complex_data $master_host $master_port 9 100000000]
-                            set load_handle1 [start_bg_complex_data $master_host $master_port 9 100000000]
-                            set load_handle2 [start_bg_complex_data $master_host $master_port 9 100000000]
+                            set load_handle1 [start_bg_complex_data $master_host $master_port 10 100000000]
+                            set load_handle2 [start_bg_complex_data $master_host $master_port 11 100000000]
                             set load_handle3 [start_write_load $master_host $master_port 8]
                             set load_handle4 [start_write_load $master_host $master_port 4]
                             after 5000 ;# wait for some data to accumulate so that we have RDB part for the fork
@@ -344,8 +345,9 @@ foreach mdl {no yes} {
         }
     }
 }
+}
 
-start_server {tags {"repl"}} {
+start_server {tags {"repl" "memonly"}} {
     set master [srv 0 client]
     set master_host [srv 0 host]
     set master_port [srv 0 port]
@@ -379,25 +381,17 @@ start_server {tags {"repl"}} {
             stop_write_load $load_handle0
 
             # number of keys
-            if {$::swap_debug_evict_keys} {
-                wait_for_condition 500 100 {
-                    [$master debug digest-keys] eq [$slave debug digest-keys]
-                } else {
-                    fail "Different datasets between replica and master"
-                }
+            wait_for_condition 50 100 {
+                [$master debug digest] eq [$slave debug digest]
             } else {
-                wait_for_condition 500 100 {
-                    [$master debug digest] eq [$slave debug digest]
-                } else {
-                    fail "Different datasets between replica and master"
-                }
+                fail "Different datasets between replica and master"
             }
         }
     }
 }
 
 test {slave fails full sync and diskless load swapdb recovers it} {
-    start_server {tags {"repl"}} {
+    start_server {tags {"repl" "memonly"}} {
         set slave [srv 0 client]
         set slave_host [srv 0 host]
         set slave_port [srv 0 port]
@@ -410,8 +404,8 @@ test {slave fails full sync and diskless load swapdb recovers it} {
             # Put different data sets on the master and slave
             # we need to put large keys on the master since the slave replies to info only once in 2mb
             $slave debug populate 2000 slave 10
-            $master config set rdbcompression no
             $master debug populate 200 master 100000
+            $master config set rdbcompression no
 
             # Set master and slave to use diskless replication
             $master config set repl-diskless-sync yes
@@ -426,7 +420,7 @@ test {slave fails full sync and diskless load swapdb recovers it} {
             $slave slaveof $master_host $master_port
 
             # wait for the slave to start reading the rdb
-            wait_for_condition 500 100 {
+            wait_for_condition 50 100 {
                 [s -1 loading] eq 1
             } else {
                 fail "Replica didn't get into loading mode"
@@ -594,7 +588,7 @@ proc compute_cpu_usage {start end} {
 
 
 # test diskless rdb pipe with multiple replicas, which may drop half way
-start_server {tags {"repl"}} {
+start_server {tags {"repl" "memonly"}} {
     set master [srv 0 client]
     $master config set repl-diskless-sync yes
     $master config set repl-diskless-sync-delay 1
@@ -604,8 +598,8 @@ start_server {tags {"repl"}} {
     # put enough data in the db that the rdb file will be bigger than the socket buffers
     # and since we'll have key-load-delay of 100, 20000 keys will take at least 2 seconds
     # we also need the replica to process requests during transfer (which it does only once in 2mb)
-    $master config set rdbcompression no
     $master debug populate 20000 test 10000
+    $master config set rdbcompression no
     # If running on Linux, we also measure utime/stime to detect possible I/O handling issues
     set os [catch {exec uname}]
     set measure_time [expr {$os == "Linux"} ? 1 : 0]
@@ -732,13 +726,8 @@ start_server {tags {"repl"}} {
                         }
 
                         # Check digests
-                        if {$::swap_debug_evict_keys} {
-                            set digest [$master debug digest-keys]
-                            set digest0 [$replica debug digest-keys]
-                        } else {
-                            set digest [$master debug digest]
-                            set digest0 [$replica debug digest]
-                        }
+                        set digest [$master debug digest]
+                        set digest0 [$replica debug digest]
                         assert {$digest ne 0000000000000000000000000000000000000000}
                         assert {$digest eq $digest0}
                     }
@@ -752,7 +741,7 @@ test "diskless replication child being killed is collected" {
     # when diskless master is waiting for the replica to become writable
     # it removes the read event from the rdb pipe so if the child gets killed
     # the replica will hung. and the master may not collect the pid with waitpid
-    start_server {tags {"repl"}} {
+    start_server {tags {"repl" "memonly"}} {
         set master [srv 0 client]
         set master_host [srv 0 host]
         set master_port [srv 0 port]
@@ -794,7 +783,7 @@ test "diskless replication read pipe cleanup" {
     # When we close this pipe (fd), the read handler also needs to be removed from the event loop (if it still registered).
     # Otherwise, next time we will use the same fd, the registration will be fail (panic), because
     # we will use EPOLL_CTL_MOD (the fd still register in the event loop), on fd that already removed from epoll_ctl
-    start_server {tags {"repl"}} {
+    start_server {tags {"repl" "memonly"}} {
         set master [srv 0 client]
         set master_host [srv 0 host]
         set master_port [srv 0 port]
@@ -804,8 +793,8 @@ test "diskless replication read pipe cleanup" {
 
         # put enough data in the db, and slowdown the save, to keep the parent busy at the read process
         $master config set rdb-key-save-delay 100000
-        $master config set rdbcompression no
         $master debug populate 20000 test 10000
+        $master config set rdbcompression no
         start_server {} {
             set replica [srv 0 client]
             set loglines [count_log_lines 0]
@@ -881,7 +870,7 @@ test {replicaof right after disconnection} {
 }
 
 test {Kill rdb child process if its dumping RDB is not useful} {
-    start_server {tags {"repl"}} {
+    start_server {tags {"repl" "memonly"}} {
         set slave1 [srv 0 client]
         start_server {} {
             set slave2 [srv 0 client]

@@ -1,5 +1,3 @@
-## case from integration/replication-3 (redis 6.2.6)
-
 start_server {tags {"repl"}} {
     start_server {} {
         test {First server should have role slave after SLAVEOF} {
@@ -44,7 +42,7 @@ start_server {tags {"repl"}} {
         }
 
         test {Slave is able to evict keys created in writable slaves} {
-            # wait createComplexDataset 
+            # wait createComplexDataset
             wait_for_condition 500 100 {
                 [r dbsize] == [r -1 dbsize]
             } else {
@@ -56,17 +54,10 @@ start_server {tags {"repl"}} {
             # r -1 select 5
             # assert {[r -1 dbsize] == 0}
             # r -1 config set slave-read-only no
-            
+
             r -1 set key1 1 ex 5
             r -1 set key2 2 ex 5
             r -1 set key3 3 ex 5
-            if {$::swap_debug_evict_keys} {
-                wait_for_condition 100 20 {
-                    [r -1 dbsize] == 3
-                } else {
-                    fail "wait evict fail"
-                }
-            }
             assert {[r -1 dbsize] == 3}
             after 6000
             r -1 dbsize

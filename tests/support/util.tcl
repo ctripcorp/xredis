@@ -110,27 +110,8 @@ proc waitForBgrewriteaof r {
     }
 }
 
-proc wait_slave_online {master maxtries delay elsescript} {
-    set retry $maxtries
-    while {$retry} {
-        set info [$master info]
-        if {[string match {*slave0:*state=online*} $info]} {
-            break
-        } else {
-            incr retry -1
-            after $delay
-        }
-    }
-    if {$retry == 0} {
-        # https://github.com/google/sanitizers/issues/774 for more detail.
-        puts "wait slave online timeout, that's may ok on ASan open. For ASan may hang fork child process."
-        set errcode [catch [uplevel 1 $elsescript] result]
-        return -code $errcode $result
-    }
-}
-
 proc wait_for_sync r {
-    wait_for_condition 50 300 {
+    wait_for_condition 50 100 {
         [status $r master_link_status] eq "up"
     } else {
         fail "replica didn't sync in time"
@@ -138,8 +119,7 @@ proc wait_for_sync r {
 }
 
 proc wait_for_ofs_sync {r1 r2} {
-    if {$::swap_debug_evict_keys} {set retry 500} else {set retry 150}
-    wait_for_condition $retry 100 {
+    wait_for_condition 50 100 {
         [status $r1 master_repl_offset] eq [status $r2 master_repl_offset]
     } else {
         fail "replica didn't sync in time"
@@ -292,7 +272,6 @@ proc findKeyWithType {r type} {
 
 proc createComplexDataset {r ops {opt {}}} {
     for {set j 0} {$j < $ops} {incr j} {
-        # if {$j % 100 == 0} { puts "$j: [$r dbsize]" }
         set k [randomKey]
         set k2 [randomKey]
         set f [randomValue]
@@ -300,11 +279,7 @@ proc createComplexDataset {r ops {opt {}}} {
 
         if {[lsearch -exact $opt useexpire] != -1} {
             if {rand() < 0.1} {
-                if {$::swap} {
-                    {*}$r expire [randomKey] [expr 1+[randomInt 2]]
-                } else {
-                    {*}$r expire [randomKey] [randomInt 2]
-                }
+				{*}$r expire [randomKey] [randomInt 2]
             }
         }
 
@@ -544,11 +519,6 @@ proc find_valgrind_errors {stderr on_termination} {
 proc start_write_load {host port seconds} {
     set tclsh [info nameofexecutable]
     exec $tclsh tests/helpers/gen_write_load.tcl $host $port $seconds $::tls $::target_db &
-}
-
-proc start_write_load_ignore_err {host port seconds} {
-    set tclsh [info nameofexecutable]
-    exec $tclsh tests/helpers/gen_write_load.tcl $host $port $seconds $::tls $::target_db 2> /dev/null &
 }
 
 # Stop a process generating write load executed with start_write_load.
