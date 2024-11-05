@@ -13,21 +13,6 @@ source tests/support/util.tcl
 source tests/support/gtid.tcl
 
 set ::disk_tests {
-	swap/integration/rordb
-	swap/integration/client_rate_limit_bug
-	swap/integration/type_error
-	swap/integration/zset
-	swap/integration/info_rocksdb_stats
-	swap/integration/concurrency
-	swap/integration/multi_bighash
-	swap/integration/concurrent
-	swap/integration/pipeline
-	swap/integration/overwrite
-	swap/integration/bgsave
-	swap/integration/compact_range
-	swap/integration/expire_evict
-	swap/integration/swap_load
-	swap/integration/persist
 	swap/ported/integration/replication-psync
 	swap/ported/integration/replication
 	swap/ported/integration/replication-3
@@ -44,6 +29,21 @@ set ::disk_tests {
 	swap/ported/unit/introspection-2
 	swap/ported/unit/expire
 	swap/ported/unit/other
+	swap/integration/rordb
+	swap/integration/client_rate_limit_bug
+	swap/integration/type_error
+	swap/integration/zset
+	swap/integration/info_rocksdb_stats
+	swap/integration/concurrency
+	swap/integration/multi_bighash
+	swap/integration/concurrent
+	swap/integration/pipeline
+	swap/integration/overwrite
+	swap/integration/bgsave
+	swap/integration/compact_range
+	swap/integration/expire_evict
+	swap/integration/swap_load
+	swap/integration/persist
 	swap/unit/swap_mode
 	swap/unit/absent_cache
 	swap/unit/dbsize
@@ -749,7 +749,7 @@ for {set j 0} {$j < [llength $argv]} {incr j} {
     } elseif {$opt eq {--swap-mode}} {
         if {$::arg == "disk"} {
 			set ::swap 1
-            set ::all_tests [lappend $::disk_tests $::all_tests]
+            set ::all_tests [concat $::disk_tests $::all_tests]
             set ::target_db 0
             lappend ::denytags {memonly}
         }

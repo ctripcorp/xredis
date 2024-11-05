@@ -217,12 +217,12 @@ start_server {tags {"repl"} overrides {repl-backlog-size 10mb}} {
 }
 
 test {slave fails full sync and diskless load swapdb recovers it} {
-    start_server {tags {"repl"} overrides {swap-repl-rordb-sync no}} {
+    start_server {tags {"repl"}} {
         set slave [srv 0 client]
         set slave_host [srv 0 host]
         set slave_port [srv 0 port]
         set slave_log [srv 0 stdout]
-        start_server {} {
+        start_server {overrides {swap-repl-rordb-sync no}} {
             set master [srv 0 client]
             set master_host [srv 0 host]
             set master_port [srv 0 port]
