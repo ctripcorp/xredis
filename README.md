@@ -49,21 +49,35 @@ Redis can be the slave of ror by directly executing the slaveof command. ROR rep
     * libstdc++
 
 3. Compilation Process
-    * 3.1 Get the source code
+    * 3.1 Install Library
+    ```bash
+    # GCC versions among (gcc-9, gcc-10, gcc-11, gcc-13) are well supported.
+    # WARNING: gcc-12 is not supported, for bug: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=115824
+
+    # for Ubuntu/Debian
+    sudo apt update
+    sudo apt install -y build-essential libsnappy-dev libsnappy1v5 pkg-config zlib1g zlib1g-dev
+
+    # for CentOS/RHEL
+    sudo yum install -y zlib-devel-1.2.11 snappy-devel-1.1.8 jemalloc-5.2.1 procps-ng-3.3.17
+
+    # for Mac
+    # Ensure Homebrew is installed
+    # /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    # Install required packages
+    brew install libsnappy pkg-config zlib
+    ```
+    * 3.2 Get the source code
     ```bash
     git clone https://github.com/ctripcorp/Redis-On-Rocks/
     ```
-    * 3.2 Switch to the latest release version
+    * 3.3 Switch to the latest release version
     ```bash
     git tag          # Check the latest release tag (e.g., ror-1.2.4)
     git checkout TAG # Switch to the latest version (e.g., git checkout ror-1.2.4)
     ```
-    * 3.3 Execute compilation
+    * 3.4 Execute compilation
     ```bash
-    yum install -y zlib-devel-1.2.11  \
-        snappy-devel-1.1.8  \
-        jemalloc-5.2.1  \
-        procps-ng-3.3.17
     cd Redis-On-Rocks
     git submodule update --init --recursive
     make
