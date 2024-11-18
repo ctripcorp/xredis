@@ -1972,6 +1972,8 @@ typedef struct swapTtlCompactCtx {
     swapExpireStatus *expire_stats;
     redisAtomic unsigned long long stat_request_compact_times;
     redisAtomic unsigned long long stat_request_sst_count;
+    redisAtomic unsigned long long stat_expired_sst_count;
+    redisAtomic unsigned long long stat_compacted_data_size;
 } swapTtlCompactCtx;
 
 swapTtlCompactCtx *swapTtlCompactCtxNew();
