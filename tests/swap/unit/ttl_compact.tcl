@@ -19,6 +19,12 @@ start_server {tags {"ttl compact 0"}
 
         set sst_age_limit [get_info_property r Swap swap_ttl_compact sst_age_limit]
         assert_equal $sst_age_limit 0
+
+        set expired_sst_count [get_info_property r Swap swap_ttl_compact expired_sst_count]
+        assert_equal $expired_sst_count 0
+
+        set compacted_data_size [get_info_property r Swap swap_ttl_compact compacted_data_size]
+        assert_equal $compacted_data_size 0
     }
 }
 
@@ -52,6 +58,12 @@ start_server {tags {"ttl compact 1"}
 
         set compact_times [get_info_property r Swap swap_ttl_compact times]
         assert_equal $compact_times 0
+
+        set expired_sst_count [get_info_property r Swap swap_ttl_compact expired_sst_count]
+        assert_equal $expired_sst_count 0
+
+        set compacted_data_size [get_info_property r Swap swap_ttl_compact compacted_data_size]
+        assert_equal $compacted_data_size 0
     }
 }
 
@@ -86,6 +98,12 @@ start_server {tags {"ttl compact 2"}
 
         set sst_age_limit [get_info_property r Swap swap_ttl_compact sst_age_limit]
         assert_range $sst_age_limit 900000 1000000
+
+        set expired_sst_count [get_info_property r Swap swap_ttl_compact expired_sst_count]
+        assert_equal $expired_sst_count 0
+
+        set compacted_data_size [get_info_property r Swap swap_ttl_compact compacted_data_size]
+        assert_equal $compacted_data_size 0
     }
 }
 
@@ -122,6 +140,12 @@ start_server {tags {"ttl compact 3"}
         set request_sst_count [get_info_property r Swap swap_ttl_compact request_sst_count]
         assert_range $request_sst_count 0 2
 
+        set expired_sst_count [get_info_property r Swap swap_ttl_compact expired_sst_count]
+        assert_range $expired_sst_count 0 2
+
+        set compacted_data_size [get_info_property r Swap swap_ttl_compact compacted_data_size]
+        assert_morethan_equal $compacted_data_size 0
+
         # set new keys again, check info
         for {set j 100} { $j < 200} {incr j} {
             set mybitmap "mybitmap-$j"
@@ -147,6 +171,12 @@ start_server {tags {"ttl compact 3"}
 
         set compact_times [get_info_property r Swap swap_ttl_compact times]
         assert_range $compact_times 0 3
+
+        set expired_sst_count [get_info_property r Swap swap_ttl_compact expired_sst_count]
+        assert_range $expired_sst_count 1 3
+
+        set compacted_data_size [get_info_property r Swap swap_ttl_compact compacted_data_size]
+        assert_morethan_equal $compacted_data_size 0
     }
 }
 
@@ -223,6 +253,12 @@ start_server {tags {"ttl compact 5"}
 
         set compact_times [get_info_property r Swap swap_ttl_compact times]
         assert_equal $compact_times 0
+
+        set expired_sst_count [get_info_property r Swap swap_ttl_compact expired_sst_count]
+        assert_equal $expired_sst_count 0
+
+        set compacted_data_size [get_info_property r Swap swap_ttl_compact compacted_data_size]
+        assert_equal $compacted_data_size 0
     }
 }
 
