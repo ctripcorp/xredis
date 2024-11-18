@@ -74,7 +74,9 @@ void swapRequestExecuteUtil_CompactRange(swapRequest *req) {
     char dir[ROCKS_DIR_MAX_LEN];
     rocks *rocks = serverRocksGetReadLock();
     snprintf(dir, ROCKS_DIR_MAX_LEN, "%s/%d", ROCKS_DATA, rocks->rocksdb_epoch);
-    serverLog(LL_WARNING, "[rocksdb compact range before] dir(%s) size(%ld)", dir, get_dir_size(dir));
+
+    long size_before = get_dir_size(dir);
+    serverLog(LL_WARNING, "[rocksdb compact range before] dir(%s) size(%ld)", dir, size_before);
 
     rocksdbUtilTaskCtx *utilctx = req->finish_pd;
     compactTask *task = (compactTask*)utilctx->argument;
@@ -85,7 +87,13 @@ void swapRequestExecuteUtil_CompactRange(swapRequest *req) {
             task->key_range[i]->start_key, task->key_range[i]->start_key_size, task->key_range[i]->end_key,
             task->key_range[i]->end_key_size);
     }
-    serverLog(LL_WARNING, "[rocksdb compact range after] dir(%s) size(%ld)", dir, get_dir_size(dir));
+
+    long size_after = get_dir_size(dir);
+    serverLog(LL_WARNING, "[rocksdb compact range after] dir(%s) size(%ld)", dir, size_after);
+
+    if (server.swap_ttl_compact_ctx && task->compact_type == TYPE_TTL_COMPACT) {
+        atomicIncr(server.swap_ttl_compact_ctx->stat_compacted_data_size, size_after - size_before);
+    }
     serverRocksUnlock(rocks);
 }
 

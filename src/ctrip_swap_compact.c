@@ -403,14 +403,14 @@ static int getExpiredSstInfo(rocksdb_level_metadata_t* level_meta, long long sst
 /*
  * sort the sst to get oldest sst range with the continous index(ascending or descending order).
  */
-static uint sortExpiredSstInfo(uint *sst_index_arr, uint64_t *sst_age_arr, uint sst_recorded_num, bool *is_ascending_order) {
+static uint sortExpiredSstInfo(uint *sst_index_arr, uint64_t *sst_age_arr, uint expired_sst_num, bool *is_ascending_order) {
 
     uint arranged_cursor = 0;
 
     /* pruning bubble algorithm */
     /* sort in place */
-    for (uint i = 0; i < sst_recorded_num - 1; i++) {
-        for (uint j = sst_recorded_num - 1; j > i; j--) {
+    for (uint i = 0; i < expired_sst_num - 1; i++) {
+        for (uint j = expired_sst_num - 1; j > i; j--) {
 
             if (sst_age_arr[j] > sst_age_arr[j - 1]) {
                 uint64_t tmp_exist_time;
@@ -521,13 +521,15 @@ void genServerTtlCompactTask(void *result, void *pd, int errcode) {
     uint64_t *sst_age_arr = zmalloc(sizeof(uint64_t) * highest_level_sst_num);
     memset(sst_age_arr, 0, sizeof(uint64_t) * highest_level_sst_num);
 
-    uint sst_recorded_num = getExpiredSstInfo(level_meta, sst_age_limit, sst_index_arr, sst_age_arr);
-    if (sst_recorded_num == 0) {
+    uint expired_sst_num = getExpiredSstInfo(level_meta, sst_age_limit, sst_index_arr, sst_age_arr);
+    if (expired_sst_num == 0) {
         goto end;
     }
 
+    atomicSet(server.swap_ttl_compact_ctx->stat_expired_sst_count, expired_sst_num);
+
     bool is_ascending_order = true; /* record the order of sst index of compact range. */
-    uint arranged_cursor = sortExpiredSstInfo(sst_index_arr, sst_age_arr, sst_recorded_num, &is_ascending_order);
+    uint arranged_cursor = sortExpiredSstInfo(sst_index_arr, sst_age_arr, expired_sst_num, &is_ascending_order);
 
     if (server.swap_ttl_compact_ctx->task != NULL) {
         compactTaskFree(server.swap_ttl_compact_ctx->task);
@@ -552,7 +554,7 @@ swapExpireStatus *swapExpireStatusNew() {
     stats->expire_wt = wtdigestCreate(WTD_DEFAULT_NUM_BUCKETS, getServerMstime);
     wtdigestSetWindow(stats->expire_wt, SWAP_TTL_COMPACT_DEFAULT_EXPIRE_WT_WINDOW);
 
-    stats->sst_age_limit = 0;
+    stats->sst_age_limit = SWAP_TTL_COMPACT_INVALID_EXPIRE;
     return stats;
 }
 
@@ -565,7 +567,7 @@ void swapExpireStatusFree(swapExpireStatus *stats) {
 
 void swapExpireStatusReset(swapExpireStatus *stats) {
     wtdigestReset(stats->expire_wt);
-    stats->sst_age_limit = 0; 
+    stats->sst_age_limit = SWAP_TTL_COMPACT_INVALID_EXPIRE; 
 }
 
 swapTtlCompactCtx *swapTtlCompactCtxNew() {
@@ -575,6 +577,8 @@ swapTtlCompactCtx *swapTtlCompactCtxNew() {
     ctx->expire_stats = swapExpireStatusNew();
     ctx->stat_request_compact_times = 0;
     ctx->stat_request_sst_count = 0;
+    ctx->stat_expired_sst_count = 0;
+    ctx->stat_compacted_data_size = 0;
     return ctx;
 }
 
@@ -626,9 +630,12 @@ void cfMetasFree(cfMetas *metas) {
 sds genSwapTtlCompactInfoString(sds info) {
     info = sdscatprintf(info,
             "swap_ttl_compact:times=%llu,request_sst_count=%llu,"
+            "expired_sst_count=%llu,compacted_data_size=%llu,"
             "sst_age_limit=%lld\r\n",
             server.swap_ttl_compact_ctx->stat_request_compact_times,
             server.swap_ttl_compact_ctx->stat_request_sst_count,
+            server.swap_ttl_compact_ctx->stat_expired_sst_count,
+            server.swap_ttl_compact_ctx->stat_compacted_data_size,
             server.swap_ttl_compact_ctx->expire_stats->sst_age_limit);
     return info;
 }
@@ -1096,7 +1103,7 @@ int swapFilterTest(int argc, char **argv, int accurate) {
         swapTtlCompactCtxReset(server.swap_ttl_compact_ctx);
 
         test_assert(server.swap_ttl_compact_ctx->task == NULL);
-        test_assert(server.swap_ttl_compact_ctx->expire_stats->sst_age_limit == 0);
+        test_assert(server.swap_ttl_compact_ctx->expire_stats->sst_age_limit == SWAP_TTL_COMPACT_INVALID_EXPIRE);
         test_assert(wtdigestSize(server.swap_ttl_compact_ctx->expire_stats->expire_wt) == 0);
 
         swapTtlCompactCtxFree(server.swap_ttl_compact_ctx); 
