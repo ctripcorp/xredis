@@ -376,7 +376,11 @@ int getMaxmemoryState(size_t *total, size_t *logical, size_t *tofree, float *lev
 
     /* Check if we are over the memory usage limit. If we are not, no need
      * to subtract the slaves output buffers. We can just return ASAP. */
+#ifdef ENABLE_SWAP
     mem_reported = ctrip_getUsedMemory();
+#else
+    mem_reported = zmalloc_used_memory();
+#endif
     if (total) *total = mem_reported;
 
     /* We may return ASAP if there is no need to compute the level. */
@@ -404,7 +408,11 @@ int getMaxmemoryState(size_t *total, size_t *logical, size_t *tofree, float *lev
     if (mem_used <= server.maxmemory) return C_OK;
 
     /* Compute how much memory we need to free. */
+#ifdef ENABLE_SWAP
     mem_tofree = ctrip_getMemoryToFree(mem_used);
+#else
+    mem_tofree = mem_used - server.maxmemory;
+#endif
 
     if (logical) *logical = mem_used;
     if (tofree) *tofree = mem_tofree;
@@ -438,8 +446,11 @@ static int evictionTimeProc(
     UNUSED(id);
     UNUSED(clientData);
 
-    if (performEvictions() == EVICT_RUNNING)
-        return ctrip_evictionTimeProcGetDelayMillis();  /* keep evicting */
+#ifdef ENABLE_SWAP
+    if (performEvictions() == EVICT_RUNNING) return ctrip_evictionTimeProcGetDelayMillis();  /* keep evicting */
+#else
+    if (performEvictions() == EVICT_RUNNING) return 0;  /* keep evicting */
+#endif
 
     /* For EVICT_OK - things are good, no need to keep evicting.
      * For EVICT_FAIL - there is nothing left to evict.  */
@@ -447,13 +458,14 @@ static int evictionTimeProc(
     return AE_NOMORE;
 }
 
+#ifdef ENABLE_SWAP
 void ctrip_startEvictionTimeProc() {
     if (!isEvictionProcRunning) {
         isEvictionProcRunning = 1;
         aeCreateTimeEvent(server.el, 0, evictionTimeProc, NULL, NULL);
     }
 }
-
+#endif
 /* Check if it's safe to perform evictions.
  *   Returns 1 if evictions can be performed
  *   Returns 0 if eviction processing should be skipped
@@ -476,7 +488,11 @@ static int isSafeToPerformEvictions(void) {
 }
 
 /* Algorithm for converting tenacity (0-100) to a time limit.  */
+#ifdef ENABLE_SWAP
 unsigned long evictionTimeLimitUs() {
+#else
+static unsigned long evictionTimeLimitUs() {
+#endif
     serverAssert(server.maxmemory_eviction_tenacity >= 0);
     serverAssert(server.maxmemory_eviction_tenacity <= 100);
 
@@ -521,17 +537,23 @@ int performEvictions(void) {
     if (!isSafeToPerformEvictions()) return EVICT_OK;
 
     int keys_freed = 0;
-    size_t mem_reported, mem_used, mem_tofree;
+    size_t mem_reported, mem_tofree;
     long long mem_freed; /* May be negative */
     mstime_t latency, eviction_latency;
     long long delta;
     int slaves = listLength(server.slaves);
     int result = EVICT_FAIL;
 
+#ifdef ENABLE_SWAP
+    size_t mem_used;
     int over_maxmemory = getMaxmemoryState(&mem_reported,&mem_used,&mem_tofree,NULL) == C_ERR;
     swapEvictKeysCtx sectx = {server.swap_mode,mem_used,mem_tofree,0,0};
     ctrip_performEvictionStart(&sectx);
     if (!over_maxmemory) return EVICT_OK;
+#else
+    if (getMaxmemoryState(&mem_reported,NULL,&mem_tofree,NULL) == C_OK)
+        return EVICT_OK;
+#endif
 
     if (server.maxmemory_policy == MAXMEMORY_NO_EVICTION)
         return EVICT_FAIL;  /* We need to free memory, but policy forbids. */
@@ -554,8 +576,9 @@ int performEvictions(void) {
         dict *dict;
         dictEntry *de;
 
+#ifdef ENABLE_SWAP
         if (ctrip_performEvictionLoopStartShouldBreak(&sectx)) break;
-
+#endif
         if (server.maxmemory_policy & (MAXMEMORY_FLAG_LRU|MAXMEMORY_FLAG_LFU) ||
             server.maxmemory_policy == MAXMEMORY_VOLATILE_TTL)
         {
@@ -635,9 +658,11 @@ int performEvictions(void) {
             db = server.db+bestdbid;
             robj *keyobj = createStringObject(bestkey,sdslen(bestkey));
 
+#ifdef ENABLE_SWAP
             if (server.swap_mode != SWAP_MODE_MEMORY) {
               mem_freed += performEvictionSwapSelectedKey(&sectx,db,keyobj);
             } else {
+#endif
             propagateExpire(db,keyobj,server.lazyfree_lazy_eviction);
             /* We compute the amount of memory freed by db*Delete() alone.
              * It is possible that actually the memory needed to propagate
@@ -663,11 +688,17 @@ int performEvictions(void) {
             signalModifiedKey(NULL,db,keyobj);
             notifyKeyspaceEvent(NOTIFY_EVICTED, "evicted",
                 keyobj, db->id);
+#ifdef ENABLE_SWAP
             }
+#endif
             decrRefCount(keyobj);
             keys_freed++;
 
+#ifdef ENABLE_SWAP
             if (ctrip_performEvictionLoopCheckInterval(keys_freed)) {
+#else
+            if (keys_freed % 16 == 0) {
+#endif
                 /* When the memory to free starts to be big enough, we may
                  * start spending so much time here that is impossible to
                  * deliver data to the replicas fast enough, so we force the
@@ -700,7 +731,9 @@ int performEvictions(void) {
                     break;
                 }
             }
+#ifdef ENABLE_SWAP
             if (ctrip_performEvictionLoopCheckShouldBreak(&sectx)) break;
+#endif
         } else {
             goto cant_free; /* nothing to free... */
         }
@@ -708,12 +741,13 @@ int performEvictions(void) {
     /* at this point, the memory is OK, or we have reached the time limit */
     result = (isEvictionProcRunning) ? EVICT_RUNNING : EVICT_OK;
 
+#ifdef ENABLE_SWAP
     ctrip_performEvictionEnd(&sectx);
-
+#endif
 cant_free:
-
+#ifdef ENABLE_SWAP
     ctrip_performEvictionEnd(&sectx); /* idempotent */
-
+#endif
     if (result == EVICT_FAIL) {
         /* At this point, we have run out of evictable items.  It's possible
          * that some items are being freed in the lazyfree thread.  Perform a

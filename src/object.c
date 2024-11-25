@@ -44,10 +44,12 @@ robj *createObject(int type, void *ptr) {
     o->encoding = OBJ_ENCODING_RAW;
     o->ptr = ptr;
     o->refcount = 1;
+#ifdef ENABLE_SWAP
     o->dirty_meta = 1;
     o->dirty_data = 1;
     o->persistent = 0;
     o->persist_keep = 0;
+#endif
 
     /* Set the LRU to the current lruclock (minutes resolution), or
      * alternatively the LFU counter. */
@@ -93,10 +95,12 @@ robj *createEmbeddedStringObject(const char *ptr, size_t len) {
     o->encoding = OBJ_ENCODING_EMBSTR;
     o->ptr = sh+1;
     o->refcount = 1;
+#ifdef ENABLE_SWAP
     o->dirty_meta = 1;
     o->dirty_data = 1;
     o->persistent = 0;
     o->persist_keep = 0;
+#endif
 
     if (server.maxmemory_policy & MAXMEMORY_FLAG_LFU) {
         o->lru = (LFUGetTimeInMinutes()<<8) | LFU_INIT_VAL;
@@ -362,7 +366,11 @@ void freeHashObject(robj *o) {
 
 void freeModuleObject(robj *o) {
     moduleValue *mv = o->ptr;
+#ifdef ENABLE_SWAP
     if (mv->value) mv->type->free(mv->value);
+#else
+    mv->type->free(mv->value);
+#endif
     zfree(mv);
 }
 
@@ -384,15 +392,27 @@ void incrRefCount(robj *o) {
 
 void decrRefCount(robj *o) {
     if (o->refcount == 1) {
+#ifdef ENABLE_SWAP
         o->refcount--;
+#endif
         switch(o->type) {
-        case OBJ_STRING: if (o->ptr) freeStringObject(o);break;
+#ifdef ENABLE_SWAP
+        case OBJ_STRING: if (o->ptr) freeStringObject(o); break;
         case OBJ_LIST: if (o->ptr) freeListObject(o); break;
         case OBJ_SET: if (o->ptr) freeSetObject(o); break;
         case OBJ_ZSET: if (o->ptr) freeZsetObject(o); break;
         case OBJ_HASH: if (o->ptr) freeHashObject(o); break;
         case OBJ_MODULE: if (o->ptr) freeModuleObject(o); break;
         case OBJ_STREAM: if (o->ptr) freeStreamObject(o); break;
+#else
+        case OBJ_STRING: freeStringObject(o); break;
+        case OBJ_LIST: freeListObject(o); break;
+        case OBJ_SET: freeSetObject(o); break;
+        case OBJ_ZSET: freeZsetObject(o); break;
+        case OBJ_HASH: freeHashObject(o); break;
+        case OBJ_MODULE: freeModuleObject(o); break;
+        case OBJ_STREAM: freeStreamObject(o); break;
+#endif
         default: serverPanic("Unknown object type"); break;
         }
         zfree(o);
@@ -981,7 +1001,9 @@ size_t objectComputeSize(robj *o, size_t sample_size) {
 
 /* Release data obtained with getMemoryOverheadData(). */
 void freeMemoryOverheadData(struct redisMemOverhead *mh) {
+#ifdef ENABLE_SWAP
     rocksFreeMemoryOverhead(mh->rocks);
+#endif
     zfree(mh->db);
     zfree(mh);
 }
@@ -1074,8 +1096,9 @@ struct redisMemOverhead *getMemoryOverheadData(void) {
         mh->db[mh->num_dbs].overhead_ht_expires = mem;
         mem_total+=mem;
 
+#ifdef ENABLE_SWAP
         mem = dictSize(db->meta) * sizeof(dictEntry)  +
-            dictSlots(db->meta) * sizeof(dictEntry*) + 
+            dictSlots(db->meta) * sizeof(dictEntry*) +
             dictSize(db->meta) * sizeof(objectMeta);
         mh->db[mh->num_dbs].overhead_ht_meta = mem;
         mem_total+=mem;
@@ -1085,10 +1108,11 @@ struct redisMemOverhead *getMemoryOverheadData(void) {
             dictSize(db->dirty_subkeys) * sizeof(robj);
         mh->db[mh->num_dbs].overhead_ht_dirty_subkeys = mem;
         mem_total+=mem;
-
+#endif
         mh->num_dbs++;
     }
 
+#ifdef ENABLE_SWAP
     /* rocksdb memory & rectified fragmentation */
     rocks *rocks = serverRocksGetReadLock();
     mh->rocks = rocksGetMemoryOverhead(rocks);
@@ -1104,7 +1128,9 @@ struct redisMemOverhead *getMemoryOverheadData(void) {
         mh->rectified_frag = mh->total_frag;
         mh->rectified_frag_bytes = mh->total_frag_bytes;
     }
-
+#else
+    mh->overhead_total = mem_total;
+#endif
     mh->dataset = zmalloc_used - mem_total;
     mh->peak_perc = (float)zmalloc_used*100/mh->peak_allocated;
 
@@ -1343,7 +1369,9 @@ NULL
     }
 }
 
+#ifdef ENABLE_SWAP
 size_t ctrip_objectComputeSize(robj *val, int samples, objectMeta *object_meta);
+#endif
 /* The memory command will eventually be a complete interface for the
  * memory introspection capabilities of Redis.
  *
@@ -1389,15 +1417,23 @@ NULL
             addReplyNull(c);
             return;
         }
+#ifdef ENABLE_SWAP
         objectMeta *object_meta = lookupMeta(c->db,c->argv[2]);
         size_t usage = ctrip_objectComputeSize(dictGetVal(de),samples,object_meta);
+#else
+        size_t usage = objectComputeSize(dictGetVal(de),samples);
+#endif
         usage += sdsZmallocSize(dictGetKey(de));
         usage += sizeof(dictEntry);
         addReplyLongLong(c,usage);
     } else if (!strcasecmp(c->argv[1]->ptr,"stats") && c->argc == 2) {
         struct redisMemOverhead *mh = getMemoryOverheadData();
 
+#ifdef ENABLE_SWAP
         addReplyMapLen(c,32+mh->num_dbs);
+#else
+        addReplyMapLen(c,25+mh->num_dbs);
+#endif
 
         addReplyBulkCString(c,"peak.allocated");
         addReplyLongLong(c,mh->peak_allocated);
@@ -1427,19 +1463,24 @@ NULL
             char dbname[32];
             snprintf(dbname,sizeof(dbname),"db.%zd",mh->db[j].dbid);
             addReplyBulkCString(c,dbname);
+#ifdef ENABLE_SWAP
             addReplyMapLen(c,4);
+#else
+            addReplyMapLen(c,2);
+#endif
 
             addReplyBulkCString(c,"overhead.hashtable.main");
             addReplyLongLong(c,mh->db[j].overhead_ht_main);
 
             addReplyBulkCString(c,"overhead.hashtable.expires");
             addReplyLongLong(c,mh->db[j].overhead_ht_expires);
-
+#ifdef ENABLE_SWAP
             addReplyBulkCString(c,"overhead.hashtable.meta");
             addReplyLongLong(c,mh->db[j].overhead_ht_meta);
 
             addReplyBulkCString(c,"overhead.hashtable.dirty_subkeys");
             addReplyLongLong(c,mh->db[j].overhead_ht_dirty_subkeys);
+#endif
         }
 
         addReplyBulkCString(c,"overhead.total");
@@ -1492,7 +1533,7 @@ NULL
 
         addReplyBulkCString(c,"fragmentation.bytes");
         addReplyLongLong(c,mh->total_frag_bytes);
-
+#ifdef ENABLE_SWAP
         addReplyBulkCString(c,"rocksdb.total");
         addReplyLongLong(c,mh->rocks->total);
 
@@ -1513,7 +1554,7 @@ NULL
 
         addReplyBulkCString(c,"rectified-fragmentaion.bytes");
         addReplyLongLong(c,mh->rectified_frag_bytes);
-
+#endif
         freeMemoryOverheadData(mh);
     } else if (!strcasecmp(c->argv[1]->ptr,"malloc-stats") && c->argc == 2) {
 #if defined(USE_JEMALLOC)

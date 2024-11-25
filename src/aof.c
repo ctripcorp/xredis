@@ -1525,7 +1525,11 @@ int rewriteAppendOnlyFileRio(rio *aof) {
             if ((key_count++ & 1023) == 0) {
                 long long now = mstime();
                 if (now - updated_time >= 1000) {
+#ifdef ENABLE_SWAP
                     sendChildInfo(CHILD_INFO_TYPE_CURRENT_INFO, key_count, 0, "AOF rewrite");
+#else
+                    sendChildInfo(CHILD_INFO_TYPE_CURRENT_INFO, key_count, "AOF rewrite");
+#endif
                     updated_time = now;
                 }
             }
@@ -1572,7 +1576,11 @@ int rewriteAppendOnlyFile(char *filename) {
 
     if (server.aof_use_rdb_preamble) {
         int error;
+#ifdef ENABLE_SWAP
         if (rdbSaveRio(&aof,&error,RDBFLAGS_AOF_PREAMBLE,NULL,0) == C_ERR) {
+#else
+        if (rdbSaveRio(&aof,&error,RDBFLAGS_AOF_PREAMBLE,NULL) == C_ERR) {
+#endif
             errno = error;
             goto werr;
         }
@@ -1643,7 +1651,11 @@ int rewriteAppendOnlyFile(char *filename) {
         /* Update COW info */
         long long now = mstime();
         if (now - cow_updated_time >= 1000) {
+#ifdef ENABLE_SWAP
             sendChildInfo(CHILD_INFO_TYPE_CURRENT_INFO, key_count, 0, "AOF rewrite");
+#else
+            sendChildInfo(CHILD_INFO_TYPE_CURRENT_INFO, key_count, "AOF rewrite");
+#endif
             cow_updated_time = now;
         }
     }
@@ -1766,11 +1778,11 @@ void aofClosePipes(void) {
  */
 int rewriteAppendOnlyFileBackground(void) {
     pid_t childpid;
-    swapForkRocksdbCtx *sfrctx = NULL;
 
     if (hasActiveChildProcess()) return C_ERR;
     if (aofCreatePipes() != C_OK) return C_ERR;
-
+#ifdef ENABLE_SWAP
+    swapForkRocksdbCtx *sfrctx = NULL;
     if (server.swap_mode != SWAP_MODE_MEMORY) {
         sfrctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_SNAPSHOT);
         if (swapForkRocksdbBefore(sfrctx)) {
@@ -1778,10 +1790,10 @@ int rewriteAppendOnlyFileBackground(void) {
             return C_ERR;
         }
     }
-
+#endif
     if ((childpid = redisFork(CHILD_TYPE_AOF)) == 0) {
         char tmpfile[256];
-
+#ifdef ENABLE_SWAP
         if (server.swap_mode != SWAP_MODE_MEMORY) {
             if (swapForkRocksdbAfterChild(sfrctx)) {
                 exit(1);
@@ -1789,7 +1801,7 @@ int rewriteAppendOnlyFileBackground(void) {
                 swapForkRocksdbCtxRelease(sfrctx);
             }
         }
-
+#endif
         /* Child */
         redisSetProcTitle("redis-aof-rewrite");
         redisSetCpuAffinity(server.aof_rewrite_cpulist);
@@ -1801,12 +1813,13 @@ int rewriteAppendOnlyFileBackground(void) {
             exitFromChild(1);
         }
     } else {
+#ifdef ENABLE_SWAP
         /* Parent */
         if (server.swap_mode != SWAP_MODE_MEMORY) {
             swapForkRocksdbAfterParent(sfrctx,childpid);
             swapForkRocksdbCtxRelease(sfrctx);
         }
-
+#endif
         if (childpid == -1) {
             serverLog(LL_WARNING,
                 "Can't rewrite append only file in background: fork: %s",

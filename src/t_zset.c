@@ -516,7 +516,11 @@ zskiplistNode* zslGetElementByRank(zskiplist *zsl, unsigned long rank) {
 }
 
 /* Populate the rangespec according to the objects min and max. */
+#ifdef ENABLE_SWAP
 int zslParseRange(robj *min, robj *max, zrangespec *spec) {
+#else
+static int zslParseRange(robj *min, robj *max, zrangespec *spec) {
+#endif
     char *eptr;
     spec->minex = spec->maxex = 0;
 
@@ -1191,7 +1195,9 @@ void zsetConvert(robj *zobj, int encoding) {
         zs->dict = dictCreate(&zsetDictType,NULL);
         zs->zsl = zslCreate();
 
+#ifdef ENABLE_SWAP
         if (zsetLength(zobj) == 0) { goto ziplist_scan_end;}
+#endif
         eptr = ziplistIndex(zl,0);
         serverAssertWithInfo(NULL,zobj,eptr != NULL);
         sptr = ziplistNext(zl,eptr);
@@ -1210,7 +1216,9 @@ void zsetConvert(robj *zobj, int encoding) {
             zzlNext(zl,&eptr,&sptr);
         }
 
+#ifdef ENABLE_SWAP
 ziplist_scan_end:
+#endif
         zfree(zobj->ptr);
         zobj->ptr = zs;
         zobj->encoding = OBJ_ENCODING_SKIPLIST;
@@ -1785,10 +1793,10 @@ void zaddGenericCommand(client *c, int flags) {
             "INCR option supports a single increment-element pair");
         return;
     }
-
+#ifdef ENABLE_SWAP
     sds *dirty_subkeys = zmalloc(sizeof(sds)*elements);
     size_t *dirty_sublens = zmalloc(sizeof(size_t)*elements);
-
+#endif
     /* Start parsing all the scores, we need to emit any syntax error
      * before executing additions to the sorted set, as the command should
      * either execute fully or nothing at all. */
@@ -1819,8 +1827,10 @@ void zaddGenericCommand(client *c, int flags) {
         int retflags = 0;
 
         ele = c->argv[scoreidx+1+j*2]->ptr;
+#ifdef ENABLE_SWAP
         dirty_subkeys[j] = ele;
         dirty_sublens[j] = sdslen(ele) + sizeof(double);
+#endif
         int retval = zsetAdd(zobj, score, ele, flags, &retflags, &newscore);
         if (retval == 0) {
             addReplyError(c,nanerr);
@@ -1847,12 +1857,19 @@ cleanup:
     zfree(scores);
     if (added || updated) {
         signalModifiedKey(c,c->db,key);
+#ifdef ENABLE_SWAP
         notifyKeyspaceEventDirtySubkeys(NOTIFY_ZSET,
             incr ? "zincr" : "zadd", key, c->db->id,zobj,elements,
             dirty_subkeys,dirty_sublens);
+#else
+        notifyKeyspaceEvent(NOTIFY_ZSET,
+            incr ? "zincr" : "zadd", key, c->db->id);
+#endif
     }
+#ifdef ENABLE_SWAP
     zfree(dirty_subkeys);
     zfree(dirty_sublens);
+#endif
 }
 
 void zaddCommand(client *c) {
@@ -1863,11 +1880,12 @@ void zincrbyCommand(client *c) {
     zaddGenericCommand(c,ZADD_IN_INCR);
 }
 
-size_t _zsetLength_(redisDb *db, robj *key, robj* zobj) {
+#ifdef ENABLE_SWAP
+size_t swap_zsetLengthLookup(redisDb *db, robj *key, robj* zobj) {
     objectMeta *m = lookupMeta(db, key);
     return (m ? m->len : 0) + zsetLength(zobj);
 }
-
+#endif
 void zremCommand(client *c) {
     robj *key = c->argv[1];
     robj *zobj;
@@ -1878,7 +1896,11 @@ void zremCommand(client *c) {
 
     for (j = 2; j < c->argc; j++) {
         if (zsetDel(zobj,c->argv[j]->ptr)) deleted++;
-        if (_zsetLength_(c->db, key, zobj) == 0) {
+#ifdef ENABLE_SWAP
+        if (swap_zsetLengthLookup(c->db, key, zobj) == 0) {
+#else
+        if (zsetLength(zobj) == 0) {
+#endif
             dbDelete(c->db,key);
             keyremoved = 1;
             break;
@@ -1886,12 +1908,18 @@ void zremCommand(client *c) {
     }
 
     if (deleted) {
+#ifdef ENABLE_SWAP
         if (keyremoved) {
             notifyKeyspaceEvent(NOTIFY_ZSET,"zrem",key,c->db->id);
             notifyKeyspaceEvent(NOTIFY_GENERIC,"del",key,c->db->id);
         } else {
             notifyKeyspaceEventDirtyMeta(NOTIFY_ZSET,"zrem",key,c->db->id,zobj);
         }
+#else
+        notifyKeyspaceEvent(NOTIFY_ZSET,"zrem",key,c->db->id);
+        if (keyremoved)
+            notifyKeyspaceEvent(NOTIFY_GENERIC,"del",key,c->db->id);
+#endif
         signalModifiedKey(c,c->db,key);
         server.dirty += deleted;
     }
@@ -1972,7 +2000,11 @@ void zremrangeGenericCommand(client *c, zrange_type rangetype) {
             zobj->ptr = zzlDeleteRangeByLex(zobj->ptr,&lexrange,&deleted);
             break;
         }
-        if (_zsetLength_(c->db, key, zobj) == 0) {
+#ifdef ENABLE_SWAP
+        if (swap_zsetLengthLookup(c->db, key, zobj) == 0) {
+#else
+        if (zzlLength(zobj->ptr) == 0) {
+#endif
             dbDelete(c->db,key);
             keyremoved = 1;
         }
@@ -1991,7 +2023,11 @@ void zremrangeGenericCommand(client *c, zrange_type rangetype) {
             break;
         }
         if (htNeedsResize(zs->dict)) dictResize(zs->dict);
-        if (_zsetLength_(c->db, key, zobj) == 0) {
+#ifdef ENABLE_SWAP
+        if (swap_zsetLengthLookup(c->db, key, zobj) == 0) {
+#else
+        if (dictSize(zs->dict) == 0) {
+#endif
             dbDelete(c->db,key);
             keyremoved = 1;
         }
@@ -2002,6 +2038,7 @@ void zremrangeGenericCommand(client *c, zrange_type rangetype) {
     /* Step 4: Notifications and reply. */
     if (deleted) {
         signalModifiedKey(c,c->db,key);
+#ifdef ENABLE_SWAP
         if (keyremoved) {
             notifyKeyspaceEvent(NOTIFY_ZSET,notify_type,key,c->db->id);
             notifyKeyspaceEvent(NOTIFY_GENERIC,"del",key,c->db->id);
@@ -2009,6 +2046,11 @@ void zremrangeGenericCommand(client *c, zrange_type rangetype) {
             notifyKeyspaceEventDirty(NOTIFY_ZSET,notify_type,key,c->db->id,
                     zobj,NULL);
         }
+#else
+        notifyKeyspaceEvent(NOTIFY_ZSET,notify_type,key,c->db->id);
+        if (keyremoved)
+            notifyKeyspaceEvent(NOTIFY_GENERIC,"del",key,c->db->id);
+#endif
     }
     server.dirty += deleted;
     addReplyLongLong(c,deleted);
@@ -2819,10 +2861,17 @@ void zunionInterDiffGenericCommand(client *c, robj *dstkey, int numkeysIndex, in
             zsetConvertToZiplistIfNeeded(dstobj, maxelelen, totelelen);
             setKey(c, c->db, dstkey, dstobj);
             addReplyLongLong(c, zsetLength(dstobj));
+#ifdef ENABLE_SWAP
             notifyKeyspaceEventDirty(NOTIFY_ZSET,
                                 (op == SET_OP_UNION) ? "zunionstore" :
                                     (op == SET_OP_INTER ? "zinterstore" : "zdiffstore"),
                                 dstkey, c->db->id, dstobj, NULL);
+#else
+            notifyKeyspaceEvent(NOTIFY_ZSET,
+                                (op == SET_OP_UNION) ? "zunionstore" :
+                                    (op == SET_OP_INTER ? "zinterstore" : "zdiffstore"),
+                                dstkey, c->db->id);
+#endif
             server.dirty++;
         } else {
             addReply(c, shared.czero);
@@ -2999,8 +3048,12 @@ static void zrangeResultFinalizeStore(zrange_result_handler *handler, size_t res
     if (result_count) {
         setKey(handler->client, handler->client->db, handler->dstkey, handler->dstobj);
         addReplyLongLong(handler->client, result_count);
+#ifdef ENABLE_SWAP
         notifyKeyspaceEventDirty(NOTIFY_ZSET, "zrangestore", handler->dstkey,
                 handler->client->db->id, handler->dstobj, NULL);
+#else
+        notifyKeyspaceEvent(NOTIFY_ZSET, "zrangestore", handler->dstkey, handler->client->db->id);
+#endif
         server.dirty++;
     } else {
         addReply(handler->client, shared.czero);
@@ -3918,7 +3971,11 @@ void genericZpopCommand(client *c, robj **keyv, int keyc, int where, int emitkey
 
         if (result_count == 0) { /* Do this only for the first iteration. */
             char *events[2] = {"zpopmin","zpopmax"};
+#ifdef ENABLE_SWAP
             notifyKeyspaceEventDirtyMeta(NOTIFY_ZSET,events[where],key,c->db->id,zobj);
+#else
+            notifyKeyspaceEvent(NOTIFY_ZSET,events[where],key,c->db->id);
+#endif
             signalModifiedKey(c,c->db,key);
         }
 
@@ -3931,7 +3988,11 @@ void genericZpopCommand(client *c, robj **keyv, int keyc, int where, int emitkey
         ++result_count;
 
         /* Remove the key, if indeed needed. */
-        if (_zsetLength_(c->db, key, zobj) == 0) {
+#ifdef ENABLE_SWAP
+        if (swap_zsetLengthLookup(c->db, key, zobj) == 0) {
+#else
+        if (zsetLength(zobj) == 0) {
+#endif
             dbDelete(c->db,key);
             notifyKeyspaceEvent(NOTIFY_GENERIC,"del",key,c->db->id);
             break;

@@ -50,8 +50,10 @@ void freeClientMultiState(client *c) {
         for (i = 0; i < mc->argc; i++)
             decrRefCount(mc->argv[i]);
         zfree(mc->argv);
+#ifdef ENABLE_SWAP
         argRewritesFree(mc->swap_arg_rewrites);
         if (mc->swap_cmd) swapCmdTraceFree(mc->swap_cmd);
+#endif
     }
     zfree(c->mstate.commands);
 }
@@ -72,10 +74,12 @@ void queueMultiCommand(client *c) {
             sizeof(multiCmd)*(c->mstate.count+1));
     mc = c->mstate.commands+c->mstate.count;
     mc->cmd = c->cmd;
+#ifdef ENABLE_SWAP
     mc->swap_cmd = NULL;
+    mc->swap_arg_rewrites = argRewritesCreate();
+#endif
     mc->argc = c->argc;
     mc->argv = zmalloc(sizeof(robj*)*c->argc);
-    mc->swap_arg_rewrites = argRewritesCreate();
     memcpy(mc->argv,c->argv,sizeof(robj*)*c->argc);
     for (j = 0; j < c->argc; j++)
         incrRefCount(mc->argv[j]);
@@ -166,9 +170,11 @@ void execCommand(client *c) {
     int j;
     robj **orig_argv;
     int orig_argc;
-    struct argRewrites *orig_arg_rewrites;
     struct redisCommand *orig_cmd;
+#ifdef ENABLE_SWAP
+    struct argRewrites *orig_arg_rewrites;
     swapCmdTrace *orig_cmd_trace;
+#endif
     int was_master = server.masterhost == NULL;
 
     if (!(c->flags & CLIENT_MULTI)) {
@@ -211,16 +217,20 @@ void execCommand(client *c) {
     orig_argv = c->argv;
     orig_argc = c->argc;
     orig_cmd = c->cmd;
+#ifdef ENABLE_SWAP
     orig_cmd_trace = c->swap_cmd;
     orig_arg_rewrites = c->swap_arg_rewrites;
+#endif
     addReplyArrayLen(c,c->mstate.count);
     for (j = 0; j < c->mstate.count; j++) {
         c->argc = c->mstate.commands[j].argc;
         c->argv = c->mstate.commands[j].argv;
-        c->swap_arg_rewrites = c->mstate.commands[j].swap_arg_rewrites;
         c->cmd = c->mstate.commands[j].cmd;
+#ifdef ENABLE_SWAP
+        c->swap_arg_rewrites = c->mstate.commands[j].swap_arg_rewrites;
         c->swap_cmd = c->mstate.commands[j].swap_cmd;
         if (c->swap_cmd) c->swap_cmd->swap_submitted_time = orig_cmd_trace->swap_submitted_time;
+#endif
 
         /* ACL permissions are also checked at the time of execution in case
          * they were changed after the commands were queued. */
@@ -257,9 +267,11 @@ void execCommand(client *c) {
         /* Commands may alter argc/argv, restore mstate. */
         c->mstate.commands[j].argc = c->argc;
         c->mstate.commands[j].argv = c->argv;
-        c->mstate.commands[j].swap_arg_rewrites = c->swap_arg_rewrites;
         c->mstate.commands[j].cmd = c->cmd;
+#ifdef ENABLE_SWAP
+        c->mstate.commands[j].swap_arg_rewrites = c->swap_arg_rewrites;
         c->mstate.commands[j].swap_cmd = c->swap_cmd;
+#endif
     }
 
     // restore old DENY_BLOCKING value
@@ -269,8 +281,10 @@ void execCommand(client *c) {
     c->argv = orig_argv;
     c->argc = orig_argc;
     c->cmd = orig_cmd;
+#ifdef ENABLE_SWAP
     c->swap_cmd = orig_cmd_trace;
     c->swap_arg_rewrites = orig_arg_rewrites;
+#endif
     discardTransaction(c);
 
     /* Make sure the EXEC command will be propagated as well if MULTI
@@ -289,6 +303,7 @@ void execCommand(client *c) {
         }
         afterPropagateExec();
     }
+
     server.in_exec = 0;
 }
 
@@ -420,21 +435,24 @@ void touchAllWatchedKeysInDb(redisDb *emptied, redisDb *replaced_with) {
 
     dictIterator *di = dictGetSafeIterator(emptied->watched_keys);
     while((de = dictNext(di)) != NULL) {
-        /* robj *key = dictGetKey(de); */
-        UNUSED(replaced_with);
+#ifndef ENABLE_SWAP
+        robj *key = dictGetKey(de);
+#endif
         list *clients = dictGetVal(de);
         if (!clients) continue;
         listRewind(clients,&li);
         while((ln = listNext(&li))) {
-            robj *key = dictGetKey(de);
             client *c = listNodeValue(ln);
+#ifdef ENABLE_SWAP
+            robj *key = dictGetKey(de);
             if (server.swap_mode != SWAP_MODE_MEMORY) {
                 c->flags |= CLIENT_DIRTY_CAS;
                 continue;
             }
+#endif
             if (dictFind(emptied->dict, key->ptr)) {
                 c->flags |= CLIENT_DIRTY_CAS;
-            } else if (replaced_with && (dictFind(replaced_with->dict, key->ptr))) {
+            } else if (replaced_with && dictFind(replaced_with->dict, key->ptr)) {
                 c->flags |= CLIENT_DIRTY_CAS;
             }
         }

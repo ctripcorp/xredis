@@ -2176,7 +2176,7 @@ void listLoadStartWithValue(struct rdbKeyLoadData *load, rio *rdb, int *cf,
     size_t llen;
     sds extend;
 
-    load->value = rdbLoadObject(load->rdbtype,rdb,load->key,error,0);
+    load->value = rdbLoadObject(load->rdbtype,rdb,load->key,error);
     if (load->value == NULL) return;
 
     if (load->value->type != OBJ_LIST) {
