@@ -117,6 +117,7 @@ void findSwapBlockedListKeyChain(redisDb* db, robj* key, dict* key_sets) {
 
 }
 
+void serveClientsBlockedOnListKey(robj *o, readyList *rl, list* swap_wrong_type_error_keys);
 void handleBlockedOnListKey(redisDb* db, robj* key, list* swap_wrong_type_keys) {
     robj *o = lookupKeyWrite(db, key);
     if (o == NULL || o->type != OBJ_LIST) {

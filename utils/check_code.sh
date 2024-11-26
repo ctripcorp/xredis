@@ -43,7 +43,7 @@ while read -r source_file; do
         ((match_file_count++))
         echo "[√] $source_file"
     fi
-done <<< "$(git ls-tree --name-only ${BASELINE_COMMIT} ../src/*.c)"
+done <<< "$(git ls-tree --name-only ${BASELINE_COMMIT} ../src/*.h ../src/*.c)"
 
 if [[ $single_file == "" ]]; then rm -f tmp.c orig_cpped.c now_cpped.c; fi
 

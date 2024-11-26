@@ -13,6 +13,5 @@
 
 void xslaveofCommand(client *c);
 void refullsyncCommand(client *c);
-void debugSwapOutCommand(client *c);
 
 #endif /* SRC_CTRIP_H_ */

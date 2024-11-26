@@ -2403,7 +2403,6 @@ static int updateJemallocBgThread(int val, int prev, const char **err) {
     return 1;
 }
 
-#ifdef ENABLE_SWAP
 static int updateGtidEnabled(int val, int prev, const char **err) {
     UNUSED(err);
     if (prev != val && !server.masterhost) {
@@ -2413,6 +2412,7 @@ static int updateGtidEnabled(int val, int prev, const char **err) {
     return 1;
 }
 
+#ifdef ENABLE_SWAP
 static int updateSwapCuckooFilterEnabled(int val, int prev, const char **err) {
     UNUSED(err);
     if (prev != val) {

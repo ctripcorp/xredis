@@ -988,6 +988,7 @@ typedef enum {
     ZRANGE_LEX,
 } zrange_type;
 
+int zslParseRange(robj *min, robj *max, zrangespec *spec);
 int getKeyRequestsZrangeGeneric(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result, zrange_type rangetype, zrange_direction direction) {
     if (argc < 4) return C_ERR;
     robj *minobj ,*maxobj;

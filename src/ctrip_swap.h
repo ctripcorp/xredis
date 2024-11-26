@@ -149,6 +149,9 @@ static inline int isMetaScanRequest(uint32_t intention_flag) {
 
 #define MAX_KEYREQUESTS_BUFFER 8
 
+typedef struct swapCmdTrace swapCmdTrace;
+typedef struct swapTrace swapTrace;
+
 typedef void (*freefunc)(void *);
 
 static inline const char *requestLevelName(int level) {

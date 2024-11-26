@@ -409,6 +409,9 @@ int debugGetKeys(struct redisCommand *cmd, robj **argv, int argc, getKeysResult 
 #endif
 
 
+#ifdef ENABLE_SWAP
+void debugSwapOutCommand(client *c);
+#endif
 void debugCommand(client *c) {
     if (c->argc == 2 && !strcasecmp(c->argv[1]->ptr,"help")) {
         const char *help[] = {

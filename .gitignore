@@ -50,3 +50,8 @@ repack/*
 tests/tmp.tcl
 
 src/data.rocks/*
+now.c
+orig.c
+utils/orig_cpped.c
+utils/now_cpped.c
+utils/tmp.c

@@ -778,7 +778,7 @@ void hashLoadStartZip(struct rdbKeyLoadData *load, rio *rdb, int *cf,
         sds *rawkey, sds *rawval, int *error) {
     sds extend = NULL;
 
-    load->value = rdbLoadObject(load->rdbtype,rdb,load->key,error);
+    load->value = rdbLoadObject(load->rdbtype,rdb,load->key,error,0);
     if (load->value == NULL) return;
 
     if (load->value->type != OBJ_HASH) {

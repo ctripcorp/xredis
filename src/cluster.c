@@ -5177,7 +5177,11 @@ void restoreCommand(client *c) {
 
     rioInitWithBuffer(&payload,c->argv[3]->ptr);
     if (((type = rdbLoadObjectType(&payload)) == -1) ||
+#ifdef ENABLE_SWAP
+        ((obj = rdbLoadObject(type,&payload,key->ptr,NULL,0)) == NULL))
+#else
         ((obj = rdbLoadObject(type,&payload,key->ptr,NULL)) == NULL))
+#endif
     {
         addReplyError(c,"Bad data format");
         return;

@@ -7880,7 +7880,11 @@ int RM_Fork(RedisModuleForkDoneHandler cb, void *user_data) {
  * reported in INFO.
  * The `progress` argument should between 0 and 1, or -1 when not available. */
 void RM_SendChildHeartbeat(double progress) {
+#ifdef ENABLE_SWAP
+    sendChildInfoGeneric(CHILD_INFO_TYPE_CURRENT_INFO, 0, progress, 0, "Module fork");
+#else
     sendChildInfoGeneric(CHILD_INFO_TYPE_CURRENT_INFO, 0, progress, "Module fork");
+#endif
 }
 
 /* Call from the child process when you want to terminate it.
