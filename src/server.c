@@ -2499,10 +2499,12 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
 
     run_with_period(1000*(int)server.swap_swap_info_slave_period) {
         /* propagate sst age limit */
-        robj *argv[3];
-        swapBuildSwapInfoSstAgeLimitCmd(argv, server.swap_ttl_compact_ctx->expire_stats->sst_age_limit);
-        swapPropagateSwapInfo(3, argv);
-        swapDestorySwapInfoSstAgeLimitCmd(argv);
+        if (server.swap_ttl_compact_enabled) {
+            robj *argv[3];
+            swapBuildSwapInfoSstAgeLimitCmd(argv, server.swap_ttl_compact_ctx->expire_stats->sst_age_limit);
+            swapPropagateSwapInfo(3, argv);
+            swapDestorySwapInfoSstAgeLimitCmd(argv);
+        }
     }
 
     /* Fire the cron loop modules event. */

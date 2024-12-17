@@ -496,8 +496,6 @@ long long emptyDb(int dbnum, int flags, void(callback)(void*)) {
 
     if (server.swap_ttl_compact_ctx) {
         swapTtlCompactCtxReset(server.swap_ttl_compact_ctx);
-        /* after flushdb, all sst in data CF is supposed to be deleted. */
-        server.swap_ttl_compact_ctx->expire_stats->sst_age_limit = 0;
     }
 
     /* Flush slots to keys map if enable cluster, we can flush entire
