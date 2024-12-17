@@ -1319,7 +1319,7 @@ void swapInfoCommand(client *c) {
         return;
     } else if (c->argc == 2 && !strcasecmp(c->argv[1]->ptr,"help")) {
         const char *help[] = {
-            "SST-AGE-LIMIT <quantile> <sst age limit>",
+            "SST-AGE-LIMIT <sst age limit>",
             "    Set sst age limit to launch ttl compact for aged sst files.",
             NULL};
         addReplyHelp(c, help);
