@@ -1995,10 +1995,18 @@ sds genSwapTtlCompactInfoString(sds info);
 
 void swapInfoCommand(client *c);
 
+/* swap info propagate mode */
+#define SWAP_INFO_PROPAGATE_BY_PING 0
+#define SWAP_INFO_PROPAGATE_BY_SWAP_INFO 1
+
 void swapBuildSwapInfoSstAgeLimitCmd(robj *argv[3], long long sst_age_limit);
 void swapDestorySwapInfoSstAgeLimitCmd(robj *argv[3]);
 
-void swapPropagateSwapInfo(int argc, robj **argv);
+void swapPropagateSwapInfoCmd(int argc, robj **argv);
+
+sds swapEncodeSwapInfo(int swap_info_argc, sds *swap_info_argv);
+sds *swapDecodeSwapInfo(sds argv, int *swap_info_argc);
+void swapApplySwapInfo(int swap_info_argc, sds *swap_info_argv);
 
 /* Repl */
 int submitReplClientRequests(client *c);
@@ -2718,6 +2726,7 @@ int swapRordbTest(int argc, char *argv[], int accurate);
 int roaringBitmapTest(int argc, char *argv[], int accurate);
 int swapDataBitmapTest(int argc, char **argv, int accurate);
 int wtdigestTest(int argc, char **argv, int accurate);
+int swapReplTest(int argc, char **argv, int accurate);
 
 int swapTest(int argc, char **argv, int accurate);
 

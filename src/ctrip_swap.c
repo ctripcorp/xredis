@@ -788,6 +788,7 @@ int swapTest(int argc, char **argv, int accurate) {
   result += swapRordbTest(argc, argv, accurate);
   result += swapDataBitmapTest(argc, argv, accurate);
   result += wtdigestTest(argc, argv, accurate);
+  result += swapReplTest(argc, argv, accurate);
   return result;
 }
 #endif

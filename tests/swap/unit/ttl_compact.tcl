@@ -264,7 +264,8 @@ start_server {tags {"ttl-compact master propagate"} overrides {save ""}} {
 
     start_server {overrides {swap-repl-rordb-sync {no} 
                              swap-debug-evict-keys {0}
-                             swap-ttl-compact-enabled {no} }} {
+                             swap-ttl-compact-enabled {no}
+                             swap-swap-info-propagate-mode {ping} }} {
 
         set master_host [srv 0 host]
         set master_port [srv 0 port]
@@ -312,6 +313,14 @@ start_server {tags {"ttl-compact master propagate"} overrides {save ""}} {
 
             set sst_age_limit2 [get_info_property $slave Swap swap_ttl_compact sst_age_limit]
             assert_equal $sst_age_limit1 $sst_age_limit2
+
+            $master config set swap-swap-info-propagate-mode swap.info
+            $master swap.info SST-AGE-LIMIT 2222
+
+            after 1200
+
+            set sst_age_limit2 [get_info_property $slave Swap swap_ttl_compact sst_age_limit]
+            assert_equal $sst_age_limit2 2222
         }
     }
 }

@@ -163,6 +163,12 @@ configEnum swap_info_supported_enum[] = {
     {NULL, 0}
 };
 
+configEnum swap_info_propagate_mode_enum[] = {
+ {"ping", SWAP_INFO_PROPAGATE_BY_PING},
+ {"swap.info", SWAP_INFO_PROPAGATE_BY_SWAP_INFO},
+ {NULL, 0}
+};
+
 /*-----------------------------------------------------------------------------
  * Ctrip Config file name-value maps.
  *----------------------------------------------------------------------------*/
@@ -2956,6 +2962,7 @@ standardConfig configs[] = {
     createEnumConfig("swap-cuckoo-filter-bit-per-key", NULL, IMMUTABLE_CONFIG, cuckoo_filter_bit_type_enum, server.swap_cuckoo_filter_bit_type, CUCKOO_FILTER_BITS_PER_TAG_8, NULL, NULL),
     createEnumConfig("swap-ratelimit-policy", NULL, MODIFIABLE_CONFIG, swap_ratelimit_policy_enum, server.swap_ratelimit_policy, SWAP_RATELIMIT_POLICY_PAUSE, NULL, NULL),
     createEnumConfig("swap-swap-info-supported", NULL, MODIFIABLE_CONFIG, swap_info_supported_enum, server.swap_swap_info_supported, SWAP_INFO_SUPPORTED_AUTO, NULL, NULL),
+    createEnumConfig("swap-swap-info-propagate-mode", NULL, MODIFIABLE_CONFIG, swap_info_propagate_mode_enum, server.swap_swap_info_propagate_mode, SWAP_INFO_PROPAGATE_BY_PING, NULL, NULL),
 
     /* Integer configs */
     createIntConfig("databases", NULL, IMMUTABLE_CONFIG, 1, INT_MAX, server.dbnum, 16, INTEGER_CONFIG, NULL, NULL),
