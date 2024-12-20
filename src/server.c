@@ -2488,9 +2488,10 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
         if (server.swap_ttl_compact_enabled) {
             robj *argv[3];
             swapBuildSwapInfoSstAgeLimitCmd(argv, server.swap_ttl_compact_ctx->expire_stats->sst_age_limit);
-            swapPropagateSwapInfo(3, argv);
+            swapPropagateSwapInfoCmd(3, argv);
             swapDestorySwapInfoSstAgeLimitCmd(argv);
         }
+
     }
 
     /* Fire the cron loop modules event. */
@@ -4900,10 +4901,19 @@ void pingCommand(client *c) {
         else
             addReplyBulk(c,c->argv[1]);
     } else {
-        if (c->argc == 1)
+        if (c->argc == 1) {
             addReply(c,shared.pong);
-        else
+        } else {
+            /* extend ping argv for swap.info */
+            if (!strncasecmp(c->argv[1]->ptr, "swap.info", 9)) {
+                int swap_info_argc = 0;
+                sds *swap_info_argv = swapDecodeSwapInfo(c->argv[1]->ptr, &swap_info_argc);
+                swapApplySwapInfo(swap_info_argc, swap_info_argv);
+                sdsfreesplitres(swap_info_argv, swap_info_argc);
+            }
+
             addReplyBulk(c,c->argv[1]);
+        }
     }
 }
 
