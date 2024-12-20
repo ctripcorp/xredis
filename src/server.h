@@ -1971,6 +1971,7 @@ struct redisServer {
 
     /* for swap.info command, which propagate system info to replica */
     int swap_swap_info_supported;
+    int swap_swap_info_propagate_mode;
     unsigned long long swap_swap_info_slave_period;     /* Master send cmd swap.info to the slave every N seconds */
 };
 

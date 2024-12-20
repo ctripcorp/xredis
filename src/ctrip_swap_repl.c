@@ -398,36 +398,106 @@ bool isSwapInfoSupported(void) {
     return true;
 }
 
-/* SWAP.INFO SST-AGE-LIMIT <sst age limit> */
+/* The swap.info command, propagate system info to slave.
+ * SWAP.INFO <subcommand> [<arg> [value] [opt] ...]
+ *
+ * subcommand supported:
+ * SWAP.INFO SST-AGE-LIMIT <sst age limit> */
 void swapBuildSwapInfoSstAgeLimitCmd(robj *argv[3], long long sst_age_limit) {
-
     argv[0] = shared.swap_info;
     argv[1] = shared.sst_age_limit;
-    argv[2] = createStringObjectFromLongLong(sst_age_limit);
+    argv[2] = createObject(OBJ_STRING, sdsfromlonglong(sst_age_limit));
 }
 
 void swapDestorySwapInfoSstAgeLimitCmd(robj *argv[3]) {
     decrRefCount(argv[2]);
 }
 
-/* The swap.info command, propagate system info to slave.
- * SWAP.INFO <subcommand> [<arg> [value] [opt] ...]
- *
- * subcommand supported:
- * SWAP.INFO SST-AGE-LIMIT <sst age limit> */
-void swapPropagateSwapInfo(int argc, robj **argv) {
+void swapPropagateSwapInfoCmd(int argc, robj **argv) {
 
-    if (!isSwapInfoSupported()) return; 
-
-    if (argc < 2) {
+    if (server.swap_swap_info_propagate_mode == SWAP_INFO_PROPAGATE_BY_SWAP_INFO) {
+        if (!isSwapInfoSupported()) return;
+        replicationFeedSlaves(server.slaves, 0, argv, argc);
         return;
-    } else if (argc == 3 && !strcasecmp(argv[1]->ptr,"SST-AGE-LIMIT")) {
-        /* SWAP.INFO SST-AGE-LIMIT <sst age limit> */
-        goto propagate;
     }
-    return;
 
-propagate:
-    replicationFeedSlaves(server.slaves,0,argv,argc);
+    /* SWAP_INFO_PROPAGATE_BY_PING */
+    sds *argv_str = zmalloc(sizeof(sds) * argc);
+    for (int i = 0; i < argc; i++) {
+        argv_str[i] = argv[i]->ptr;
+    }
+
+    sds ping_argv_str = swapEncodeSwapInfo(argc, argv_str);
+
+    robj *ping_argv[2];
+    ping_argv[0] = shared.ping;
+    ping_argv[1] = createObject(OBJ_STRING, ping_argv_str);
+
+    replicationFeedSlaves(server.slaves,0,ping_argv,2);
+    decrRefCount(ping_argv[1]);
+    zfree(argv_str);
     return;
 }
+
+sds swapEncodeSwapInfo(int swap_info_argc, sds *swap_info_argv) {
+    return sdsjoinsds(swap_info_argv, swap_info_argc, " ", 1);
+}
+
+sds *swapDecodeSwapInfo(sds argv, int *swap_info_argc) {
+    return sdssplitlen(argv, sdslen(argv), " ", 1, swap_info_argc);
+}
+
+void swapApplySwapInfo(int swap_info_argc, sds *swap_info_argv) {
+    
+    if (strcasecmp(swap_info_argv[0],"swap.info")) {
+        return;
+    }
+
+    if (swap_info_argc == 3 && !strcasecmp(swap_info_argv[1],"SST-AGE-LIMIT")) {
+        /* SWAP.INFO SST-AGE-LIMIT <sst age limit> */
+        long long sst_age_limit = 0;
+        if (isSdsRepresentableAsLongLong(swap_info_argv[2],&sst_age_limit) == C_OK) {
+            server.swap_ttl_compact_ctx->expire_stats->sst_age_limit = sst_age_limit;
+        }
+        return;
+    }
+}
+
+#ifdef REDIS_TEST
+
+int swapReplTest(int argc, char *argv[], int accurate) {
+    UNUSED(argc);
+    UNUSED(argv);
+    UNUSED(accurate);
+
+    int error = 0;
+
+    TEST("swap info: sst-limit-age encode decode") {
+        sds *swap_info_argv = zmalloc(sizeof(sds) * 3);
+        swap_info_argv[0] = sdsnew("SWAP.INFO");
+        swap_info_argv[1] = sdsnew("SST-AGE-LIMIT");
+        swap_info_argv[2] = sdsfromlonglong(1111);
+        sds swap_info = swapEncodeSwapInfo(3, swap_info_argv);
+
+        int argc = 0;
+        sds *argv = swapDecodeSwapInfo(swap_info, &argc);
+
+        test_assert(argc == 3);
+        test_assert(!sdscmp(argv[2], swap_info_argv[2]));
+        test_assert(!sdscmp(argv[1], swap_info_argv[1]));
+        test_assert(!sdscmp(argv[0], swap_info_argv[0]));
+
+        sdsfree(swap_info_argv[0]);
+        sdsfree(swap_info_argv[1]);
+        sdsfree(swap_info_argv[2]);
+        zfree(swap_info_argv);
+
+        sdsfree(swap_info);
+
+        sdsfreesplitres(argv, argc);
+    }
+
+    return error;
+}
+
+#endif
