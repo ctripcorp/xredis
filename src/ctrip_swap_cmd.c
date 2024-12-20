@@ -1313,15 +1313,13 @@ void swapInfoCommand(client *c) {
             NULL};
         addReplyHelp(c, help);
         return;
-    } else if (c->argc == 3 && !strcasecmp(c->argv[1]->ptr,"SST-AGE-LIMIT")) {
-        /* SWAP.INFO SST-AGE-LIMIT <sst age limit> */
-        long long sst_age_limit = 0;
-        int res = isObjectRepresentableAsLongLong(c->argv[2], &sst_age_limit);
-        if (res == C_OK) {
-            server.swap_ttl_compact_ctx->expire_stats->sst_age_limit = sst_age_limit;
+    } else {
+        sds *swap_info_argv = (sds*)zmalloc(sizeof(sds)*c->argc);
+        for (int i = 0; i < c->argc; i++) {
+            swap_info_argv[i] = c->argv[i]->ptr;
         }
-        addReply(c,shared.ok);
-        return;
+        swapApplySwapInfo(c->argc, swap_info_argv);
+        zfree(swap_info_argv);
     }
 
     addReply(c,shared.ok);
