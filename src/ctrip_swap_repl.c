@@ -392,59 +392,51 @@ sds genSwapReplInfoString(sds info) {
     return info;
 }
 
-bool isSwapInfoSupported(void) {
+/* SWAP.INFO SST-AGE-LIMIT <sst-age-limit> */
+void swapBuildSwapInfoSstAgeLimitCmd(sds *argv[3], long long sst_age_limit) {
 
-    if (server.swap_swap_info_supported == SWAP_INFO_SUPPORTED_YES) return true;
-    if (server.swap_swap_info_supported == SWAP_INFO_SUPPORTED_NO) return false;
-
-    /* SWAP_INFO_SUPPORTED_AUTO */
-    /* depends on capa of all slaves, 
-     * once there is one slave without capa of swap.info, return false. */
-
-    listNode *ln;
-    listIter li;
-
-    listRewind(server.slaves,&li);
-    while((ln = listNext(&li))) {
-        client *slave = ln->value;
-
-        if (!(slave->slave_capa & SLAVE_CAPA_SWAP_INFO)) {
-            return false;
-        }
-    }
-    return true;
+    argv[0] = shared.swap_info->ptr;
+    argv[1] = shared.sst_age_limit->ptr;
+    argv[2] = sdsfromlonglong(sst_age_limit);
 }
 
-/* SWAP.INFO SST-AGE-LIMIT <sst age limit> */
-void swapBuildSwapInfoSstAgeLimitCmd(robj *argv[3], long long sst_age_limit) {
-
-    argv[0] = shared.swap_info;
-    argv[1] = shared.sst_age_limit;
-    argv[2] = createStringObjectFromLongLong(sst_age_limit);
+void swapDestorySwapInfoSstAgeLimitCmd(sds *argv[3]) {
+    sdsfree(argv[2]);
 }
 
-void swapDestorySwapInfoSstAgeLimitCmd(robj *argv[3]) {
-    decrRefCount(argv[2]);
-}
-
-/* The swap.info command, propagate system info to slave.
+/* The swap.info argv, propagate system info to slave with ping command.
  * SWAP.INFO <subcommand> [<arg> [value] [opt] ...]
  *
  * subcommand supported:
- * SWAP.INFO SST-AGE-LIMIT <sst age limit> */
-void swapPropagateSwapInfo(int argc, robj **argv) {
+ * SWAP.INFO SST-AGE-LIMIT <sst-age-limit> */
+sds swapEncodeSwapInfo(int argc, sds *argv) {
 
-    if (!isSwapInfoSupported()) return; 
+    sds ping_argv = sdsempty();
 
-    if (argc < 2) {
-        return;
-    } else if (argc == 3 && !strcasecmp(argv[1]->ptr,"SST-AGE-LIMIT")) {
-        /* SWAP.INFO SST-AGE-LIMIT <sst age limit> */
-        goto propagate;
+
+    for (int i = 0; i< argc; i++) {
+        ping_argv = sdscat(ping_argv, argv);
+        ping_argv = sdscat(ping_argv, " "); /* spilt by space */
     }
-    return;
 
-propagate:
-    replicationFeedSlaves(server.slaves,0,argv,argc);
+    return ping_argv;
+}
+
+sds *swapDecodeSwapInfo(sds argv) {
+
+
+    /* SWAP.INFO SST-AGE-LIMIT <sst-age-limit> */
+
+    return NULL ;
+}
+
+void swapPropagateSwapInfo(sds ping_argv) {
+
+    robj *argv[2];
+
+    argv[0] = shared.ping;
+    argv[1] = createStringObject(ping_argv, sdslen(ping_argv));
+    
+    replicationFeedSlaves(server.slaves,0,argv,2);
     return;
 }

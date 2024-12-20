@@ -1997,7 +1997,9 @@ void swapInfoCommand(client *c);
 void swapBuildSwapInfoSstAgeLimitCmd(robj *argv[3], long long sst_age_limit);
 void swapDestorySwapInfoSstAgeLimitCmd(robj *argv[3]);
 
-void swapPropagateSwapInfo(int argc, robj **argv);
+void swapPropagateSwapInfo(sds ping_argv);
+sds swapEncodeSwapInfo(int argc, sds *argv);
+sds *swapDecodeSwapInfo(sds argv);
 
 /* Repl */
 int submitReplClientRequests(client *c);
