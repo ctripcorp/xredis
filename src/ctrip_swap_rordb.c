@@ -204,7 +204,7 @@ static int rordbLoadSSTFile(rio *rdb, char* path) {
     FILE *fp = NULL;
     char *filepath = NULL, *buffer = NULL;
     size_t buflen = RORDB_SST_READ_BUF_LEN, readlen = 0,
-           filesize, toread, fplen;
+           filesize, toread, fplen, fsynclen = 0;
 
     filename = rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL);
     if (filename == NULL) {
@@ -242,6 +242,24 @@ static int rordbLoadSSTFile(rio *rdb, char* path) {
             serverLog(LL_WARNING, "[rordb] write sst to file error: %s(%d)",
                     strerror(errno),errno);
             goto err;
+        }
+
+        if (server.swap_rordb_load_incremental_fsync &&
+                readlen - fsynclen >= REDIS_AUTOSYNC_BYTES) {
+            fflush(fp);
+            if (redis_fsync(fileno(fp)) == -1) {
+                serverLog(LL_WARNING,"[rordb] fsync file failed: %s(%d)",
+                        strerror(errno),errno);
+            }
+            fsynclen = readlen;
+        }
+    }
+
+    if (server.swap_rordb_load_incremental_fsync) {
+        fflush(fp);
+        if (redis_fsync(fileno(fp)) == -1) {
+            serverLog(LL_WARNING,"[rordb] fsync file failed: %s(%d)",
+                    strerror(errno),errno);
         }
     }
 

@@ -1825,6 +1825,7 @@ struct redisServer {
     int swap_debug_bgsave_metalen_addition;
     int swap_debug_compaction_filter_delay_micro;
     int swap_debug_rdb_key_save_delay_micro;
+    int swap_rordb_load_incremental_fsync;
 
     /* repl swap */
     int repl_workers;   /* num of repl worker clients */

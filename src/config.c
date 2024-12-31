@@ -2893,6 +2893,7 @@ standardConfig configs[] = {
     createBoolConfig("replica-announced", NULL, MODIFIABLE_CONFIG, server.replica_announced, 1, NULL, NULL),
     createBoolConfig("slave-repl-all", NULL, MODIFIABLE_CONFIG, server.repl_slave_repl_all, 0, NULL, NULL),
     createBoolConfig("swap-debug-trace-latency", NULL, MODIFIABLE_CONFIG, server.swap_debug_trace_latency, 0, NULL, NULL),
+    createBoolConfig("swap-rordb-load-incremental-fsync", NULL, MODIFIABLE_CONFIG, server.swap_rordb_load_incremental_fsync, 1, NULL, NULL),
     createBoolConfig("swap-cuckoo-filter-enabled", NULL, MODIFIABLE_CONFIG, server.swap_cuckoo_filter_enabled, 1, NULL, updateSwapCuckooFilterEnabled),
     createBoolConfig("swap-absent-cache-enabled", NULL, MODIFIABLE_CONFIG, server.swap_absent_cache_enabled, 1, NULL, updateSwapAbsentCacheEnabled),
     createBoolConfig("swap-absent-cache-include-subkey", NULL, MODIFIABLE_CONFIG, server.swap_absent_cache_include_subkey, 1, NULL, NULL),
