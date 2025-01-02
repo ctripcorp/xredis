@@ -2098,6 +2098,14 @@ struct redisCommand redisCommandTable[] = {
      "admin no-script",
      0,NULL,0,0,0,0,0,0},
 
+    {"gtid", gtidCommand, -3,
+     "write use-memory no-script",
+     0,NULL,0,0,0,0,0,0,0},
+
+    {"gtidx", gtidxCommand, -2,
+     "admin no-script random ok-loading ok-stale",
+     0,NULL,0,0,0,0,0,0},
+
     {"xslaveof",xslaveofCommand,3,
      "admin no-script ok-stale",
      0,NULL,0,0,0,0,0,0},
@@ -4467,6 +4475,7 @@ void initServer(void) {
     server.clients_to_free = listCreate();
     server.ctrip_ignore_accept = 0;
     server.ctrip_monitorfd = 0;
+#endif
     memcpy(server.uuid,server.runid,CONFIG_RUN_ID_SIZE+1);
     server.uuid_len = CONFIG_RUN_ID_SIZE;
     memset(server.master_uuid,'0',CONFIG_RUN_ID_SIZE);
@@ -4480,7 +4489,6 @@ void initServer(void) {
     server.gtid_executed_cmd_count = 0;
     server.gtid_ignored_cmd_count = 0;
     memset(server.gtid_sync_stat,0,sizeof(server.gtid_sync_stat));
-#endif
 
     if ((server.tls_port || server.tls_replication || server.tls_cluster)
                 && tlsConfigure(&server.tls_ctx_config) == C_ERR) {
@@ -4622,6 +4630,7 @@ void initServer(void) {
     server.swap_error_count = 0;
     server.swap_load_paused = 0;
     server.swap_load_err_cnt = 0;
+#endif
 
     if (server.masterhost == NULL) {
         char msg[64];
@@ -4629,7 +4638,6 @@ void initServer(void) {
         snprintf(msg,sizeof(msg),"master initialize (gtid %s)", server.gtid_enabled ? "enabled":"disabled");
         resetServerReplMode(repl_mode, msg);
     }
-#endif
 
     /* Create the timer callback, this is our way to process many background
      * operations incrementally, like clients timeout, eviction of unaccessed
@@ -6571,18 +6579,10 @@ sds genRedisInfoString(const char *section) {
             long long slave_repl_offset = 1;
             long long slave_read_repl_offset = 1;
 
-#ifdef ENABLE_SWAP
             slave_repl_offset = ctrip_getSlaveReplOff();
-#endif
             if (server.master) {
-#ifndef ENABLE_SWAP
-                slave_repl_offset = server.master->reploff;
-#endif
                 slave_read_repl_offset = server.master->read_reploff;
             } else if (server.cached_master) {
-#ifndef ENABLE_SWAP
-                slave_repl_offset = server.cached_master->reploff;
-#endif
                 slave_read_repl_offset = server.cached_master->read_reploff;
             }
 

@@ -12,79 +12,15 @@ source tests/support/test.tcl
 source tests/support/util.tcl
 source tests/support/gtid.tcl
 
-set ::disk_tests {
-	swap/ported/integration/replication-psync
-	swap/ported/integration/replication
-	swap/ported/integration/replication-3
-	swap/ported/integration/rdb
-	swap/ported/integration/block-repl
-	swap/ported/integration/replication-2
-	swap/ported/integration/replication-4
-	swap/ported/integration/psync2-reg
-	swap/ported/unit/multi
-	swap/ported/unit/type/list
-	swap/ported/unit/type/string
-	swap/ported/unit/pubsub
-	swap/ported/unit/keyspace
-	swap/ported/unit/introspection-2
-	swap/ported/unit/expire
-	swap/ported/unit/other
-	swap/integration/rordb
-	swap/integration/client_rate_limit_bug
-	swap/integration/type_error
-	swap/integration/zset
-	swap/integration/info_rocksdb_stats
-	swap/integration/concurrency
-	swap/integration/multi_bighash
-	swap/integration/concurrent
-	swap/integration/pipeline
-	swap/integration/overwrite
-	swap/integration/bgsave
-	swap/integration/compact_range
-	swap/integration/expire_evict
-	swap/integration/swap_load
-	swap/integration/persist
-	swap/unit/swap_mode
-	swap/unit/absent_cache
-	swap/unit/dbsize
-	swap/unit/lock
-	swap/unit/list
-	swap/unit/dirty
-	swap/unit/expire
-	swap/unit/rdb
-	swap/unit/del
-	swap/unit/load_rdb
-	swap/unit/save_rdb
-	swap/unit/swap_out+del
-	swap/unit/swap_out+in
-	swap/unit/hash
-	swap/unit/zset
-	swap/unit/bitmap
-	swap/unit/geo
-	swap/unit/big_hash
-	swap/unit/big_set
-	swap/unit/lazydel
-	swap/unit/swap_error
-	swap/unit/multi
-	swap/unit/info
-	swap/unit/client
-	swap/unit/debug
-	swap/unit/select
-	swap/unit/slowlog
-	swap/unit/scripting
+set ::gtid_tests {
 	gtid/gtid
 	gtid/gtid_seq
-	gtid/monitor
 	gtid/replication-psync
 	gtid/sync
 	gtid/xsync
 }
 
 set ::all_tests {
-	gtid/gtid
-	gtid/gtid_seq
-	gtid/monitor
-	gtid/sync
 	unit/printver
 	unit/dump
 	unit/auth
@@ -150,6 +86,71 @@ set ::all_tests {
 	unit/shutdown
 	unit/networking
 }
+
+set ::disk_tests {
+	swap/ported/integration/replication-psync
+	swap/ported/integration/replication
+	swap/ported/integration/replication-3
+	swap/ported/integration/rdb
+	swap/ported/integration/block-repl
+	swap/ported/integration/replication-2
+	swap/ported/integration/replication-4
+	swap/ported/integration/psync2-reg
+	swap/ported/unit/multi
+	swap/ported/unit/type/list
+	swap/ported/unit/type/string
+	swap/ported/unit/pubsub
+	swap/ported/unit/keyspace
+	swap/ported/unit/introspection-2
+	swap/ported/unit/expire
+	swap/ported/unit/other
+	swap/integration/rordb
+	swap/integration/client_rate_limit_bug
+	swap/integration/type_error
+	swap/integration/zset
+	swap/integration/info_rocksdb_stats
+	swap/integration/concurrency
+	swap/integration/multi_bighash
+	swap/integration/concurrent
+	swap/integration/pipeline
+	swap/integration/overwrite
+	swap/integration/bgsave
+	swap/integration/compact_range
+	swap/integration/expire_evict
+	swap/integration/swap_load
+	swap/integration/persist
+	swap/unit/swap_mode
+	swap/unit/absent_cache
+	swap/unit/dbsize
+	swap/unit/lock
+	swap/unit/list
+	swap/unit/dirty
+	swap/unit/expire
+	swap/unit/rdb
+	swap/unit/del
+	swap/unit/load_rdb
+	swap/unit/save_rdb
+	swap/unit/swap_out+del
+	swap/unit/swap_out+in
+	swap/unit/hash
+	swap/unit/zset
+	swap/unit/bitmap
+	swap/unit/geo
+	swap/unit/big_hash
+	swap/unit/big_set
+	swap/unit/lazydel
+	swap/unit/swap_error
+	swap/unit/multi
+	swap/unit/info
+	swap/unit/client
+	swap/unit/debug
+	swap/unit/select
+	swap/unit/slowlog
+	swap/unit/scripting
+	swap/unit/monitor
+}
+
+set ::all_tests [concat $::gtid_tests $::all_tests]
 
 # Index to the next test to run in the ::all_tests list.
 set ::next_test 0

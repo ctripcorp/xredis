@@ -371,6 +371,8 @@ proc start_server {options {code undefined}} {
     if {$::swap} {
         dict set config "swap-mode" disk
         dict set config "appendonly" no
+        dict set config "ctrip-monitor-port" $monitor_port
+        dict set config "swap-debug-evict-keys" -1
     }
     if {$::tls} {
         dict set config "tls-cert-file" [format "%s/tests/tls/server.crt" [pwd]]
@@ -399,12 +401,10 @@ proc start_server {options {code undefined}} {
     if {$::tls} {
         dict set config "port" 0
         dict set config "tls-port" $port
-        dict set config "ctrip-monitor-port" $monitor_port
         dict set config "tls-cluster" "yes"
         dict set config "tls-replication" "yes"
     } else {
         dict set config port $port
-        dict set config "ctrip-monitor-port" $monitor_port
     }
 
     set unixsocket [file normalize [format "%s/%s" [dict get $config "dir"] "socket"]]
@@ -418,10 +418,6 @@ proc start_server {options {code undefined}} {
     # remove directives that are marked to be omitted
     foreach directive $omit {
         dict unset config $directive
-    }
-
-    if {$::swap} {
-        dict set config "swap-debug-evict-keys" -1
     }
 
     # write new configuration to temporary file
