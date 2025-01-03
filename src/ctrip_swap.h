@@ -1696,7 +1696,6 @@ sds genSwapEvictionInfoString(sds info);
 int swapEvictAsap(void);
 
 typedef struct swapEvictKeysCtx {
-    int swap_mode;
     size_t mem_used;
     size_t mem_tofree;
     long long keys_scanned;
@@ -1712,17 +1711,7 @@ size_t performEvictionSwapSelectedKey(swapEvictKeysCtx *sectx, redisDb *db, robj
 int ctrip_performEvictionLoopCheckShouldBreak(swapEvictKeysCtx *sectx);
 void ctrip_performEvictionEnd(swapEvictKeysCtx *sectx);
 static inline int ctrip_performEvictionLoopCheckInterval(int keys_freed) {
-  if (server.swap_mode == SWAP_MODE_MEMORY)
-    return keys_freed % 16 == 0;
-  else
     return keys_freed % server.swap_evict_loop_check_interval == 0;
-}
-unsigned long evictionTimeLimitUs(void);
-static inline unsigned long ctirp_evictionTimeLimitUs(void) {
-  if (server.swap_mode == SWAP_MODE_MEMORY)
-    return evictionTimeLimitUs();
-  else
-    return 50uL * server.maxmemory_eviction_tenacity;
 }
 /* used memory in disk swap mode */
 size_t coldFiltersUsedMemory(void); /* cuckoo filter not counted in maxmemory */
@@ -1733,9 +1722,8 @@ static inline size_t ctrip_getUsedMemory(void) {
       coldFiltersUsedMemory() - swapPersistCtxUsedMemory(server.swap_persist_ctx);
 }
 static inline int ctrip_evictionTimeProcGetDelayMillis(void) {
-  if (server.swap_mode == SWAP_MODE_MEMORY) return 0;
   if (swapEvictionReachedInprogressLimit()) return 1;
-  return 0;
+  else return 0;
 }
 
 #define SWAP_RATELIMIT_POLICY_PAUSE 0
@@ -2676,19 +2664,8 @@ void swapThreadCpuUsageFree(swapThreadCpuUsage *cpu_usage);
 struct swapThreadCpuUsage *swapThreadCpuUsageNew(void);
 sds genRedisThreadCpuUsageInfoString(sds info, swapThreadCpuUsage *cpu_usage);
 #endif
+
 #ifdef REDIS_TEST
-
-#define TEST(name) printf("test — %s\n", name);
-#define TEST_DESC(name, ...) printf("test — " name "\n", __VA_ARGS__);
-#define test_assert(e) do {							\
-	if (!(e)) {				\
-		printf(						\
-		    "%s:%d: Failed assertion: \"%s\"\n",	\
-		    __FILE__, __LINE__, #e);				\
-		error++;						\
-	}								\
-} while (0)
-
 int initTestRedisDb(void);
 int initTestRedisServer(void);
 void initServerConfig4Test(void);

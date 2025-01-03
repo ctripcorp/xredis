@@ -58,25 +58,20 @@ int activeExpireCycleTryExpire(redisDb *db, dictEntry *de, long long now) {
         robj *keyobj = createStringObject(key,sdslen(key));
 #ifdef ENABLE_SWAP
         int expired = 0;
-        if (server.swap_mode == SWAP_MODE_MEMORY) {
-            deleteExpiredKeyAndPropagate(db,keyobj);
-            expired = 1;
+        if (lockWouldBlock(server.swap_txid++,db,keyobj)) {
+            /* If there are preceeding request on the key we are about
+             * to expire, most likely it's the in-progress expire request.
+             * on which case, we don't try to expire the key, otherwise
+             * the same we might submit expire request continuesly on the
+             * same key. */
+            expired = 0;
         } else {
-            if (lockWouldBlock(server.swap_txid++,db,keyobj)) {
-                /* If there are preceeding request on the key we are about
-                 * to expire, most likely it's the in-progress expire request.
-                 * on which case, we don't try to expire the key, otherwise
-                 * the same we might submit expire request continuesly on the
-                 * same key. */
-                expired = 0;
-            } else {
-                client *c = server.expire_clients[db->id];
-                int force = server.masterhost ? 1 : 0;
-                /* We assume that slave try expire key is to force expire
-                 * keys generated in writeable slave. */
-                submitExpireClientRequest(c,keyobj,force);
-                expired = 1;
-            }
+            client *c = server.expire_clients[db->id];
+            int force = server.masterhost ? 1 : 0;
+            /* We assume that slave try expire key is to force expire
+             * keys generated in writeable slave. */
+            submitExpireClientRequest(c,keyobj,force);
+            expired = 1;
         }
         decrRefCount(keyobj);
         return expired;

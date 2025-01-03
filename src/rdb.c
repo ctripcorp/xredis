@@ -1634,11 +1634,9 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
     server.lastbgsave_try = time(NULL);
 
 #ifdef ENABLE_SWAP
-    if (server.swap_mode != SWAP_MODE_MEMORY) {
-        if (swapForkRocksdbBefore(sfrctx)) {
-            swapForkRocksdbCtxRelease(sfrctx);
-            return C_ERR;
-        }
+    if (swapForkRocksdbBefore(sfrctx)) {
+        swapForkRocksdbCtxRelease(sfrctx);
+        return C_ERR;
     }
 #endif
     if ((childpid = redisFork(CHILD_TYPE_RDB)) == 0) {
@@ -1649,11 +1647,9 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
         redisSetCpuAffinity(server.bgsave_cpulist);
 
 #ifdef ENABLE_SWAP
-        if (server.swap_mode != SWAP_MODE_MEMORY) {
-            if (swapForkRocksdbAfterChild(sfrctx)) {
-                swapForkRocksdbCtxRelease(sfrctx);
-                exit(1);
-            }
+        if (swapForkRocksdbAfterChild(sfrctx)) {
+            swapForkRocksdbCtxRelease(sfrctx);
+            exit(1);
         }
 #endif
 #ifdef ENABLE_SWAP
@@ -1668,26 +1664,30 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
 #endif
             sendChildCowInfo(CHILD_INFO_TYPE_RDB_COW_SIZE, "RDB");
         }
+#if ENABLE_SWAP
         swapForkRocksdbCtxRelease(sfrctx);
+#endif
         exitFromChild((retval == C_OK) ? 0 : 1);
     } else {
         /* Parent */
 #ifdef ENABLE_SWAP
-        if (server.swap_mode != SWAP_MODE_MEMORY) {
-            swapForkRocksdbAfterParent(sfrctx,childpid);
-        }
+        swapForkRocksdbAfterParent(sfrctx,childpid);
 #endif
         if (childpid == -1) {
             server.lastbgsave_status = C_ERR;
             serverLog(LL_WARNING,"Can't save in background: fork: %s",
                 strerror(errno));
+#ifdef ENABLE_SWAP
             swapForkRocksdbCtxRelease(sfrctx);
+#endif
             return C_ERR;
         }
         serverLog(LL_NOTICE,"Background saving started by pid %ld",(long) childpid);
         server.rdb_save_time_start = time(NULL);
         server.rdb_child_type = RDB_CHILD_TYPE_DISK;
+#ifdef ENABLE_SWAP
         swapForkRocksdbCtxRelease(sfrctx);
+#endif
         return C_OK;
     }
     return C_OK; /* unreached */
@@ -2646,10 +2646,8 @@ void startLoading(size_t size, int rdbflags) {
      * be sumitted and processed. if there are async RIO in-flight(e.g.
      * fullresync happend if we are slave and there are clients swapping-in
      * evictted keys), server might crash. */
-    if (server.swap_mode != SWAP_MODE_MEMORY) {
-        asyncCompleteQueueDrain(-1);
-        evictStartLoading();
-    }
+    asyncCompleteQueueDrain(-1);
+    evictStartLoading();
 #endif
     /* Fire the loading modules start event. */
     int subevent;
@@ -2687,8 +2685,7 @@ void stopLoading(int success) {
     rdbFileBeingLoaded = NULL;
 
 #ifdef ENABLE_SWAP
-    if (server.swap_mode != SWAP_MODE_MEMORY)
-        evictStopLoading(success);
+    evictStopLoading(success);
 #endif
     /* Fire the loading modules end event. */
     moduleFireServerEvent(REDISMODULE_EVENT_LOADING,
@@ -2781,7 +2778,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
 #ifdef ENABLE_SWAP
     long long rordb_object_flags = -1;
 
-    if (server.swap_mode != SWAP_MODE_MEMORY && getFilterState() == FILTER_STATE_OPEN) {
+    if (getFilterState() == FILTER_STATE_OPEN) {
         setFilterState(FILTER_STATE_CLOSE);
         reopen_filter = 1;
     }
@@ -2828,7 +2825,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
         } else if (type == RDB_OPCODE_EOF) {
             /* EOF: End of file, exit the main loop. */
 #ifdef ENABLE_SWAP
-            if (server.swap_mode != SWAP_MODE_MEMORY && rordb && !sstloaded) {
+            if (rordb && !sstloaded) {
                 if (rordbLoadSSTFinished(rdb)) goto eoferr;
                 sstloaded = 1;
             }
@@ -2913,7 +2910,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
             } else if (LoadGtidInfoAuxFields(auxkey, auxval)) {
                 /* Load gtid info AUX field. */
 #ifdef ENABLE_SWAP
-            } else if (server.swap_mode != SWAP_MODE_MEMORY && rordbLoadAuxFields(auxkey, auxval)) {
+            } else if (rordbLoadAuxFields(auxkey, auxval)) {
                 rordb = 1;
                 if (rordbLoadSSTStart(rdb)) goto eoferr;
                 serverLog(LL_NOTICE, "[rordb] loading in rordb mode.");
@@ -2982,7 +2979,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
                 continue; /* Read next opcode. */
             }
 #ifdef ENABLE_SWAP
-        } else if (server.swap_mode != SWAP_MODE_MEMORY && rordb && rordbOpcodeIsValid(type)) {
+        } else if (rordb && rordbOpcodeIsValid(type)) {
             if (rordbOpcodeIsSSTType(type)) {
                 if (rordbLoadSSTType(rdb,type)) goto eoferr;
             } else if (rordbOpcodeIsDbType(type)) {
@@ -2998,7 +2995,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
         }
 
 #ifdef ENABLE_SWAP
-        if (server.swap_mode != SWAP_MODE_MEMORY && rordb && !sstloaded) {
+        if (rordb && !sstloaded) {
             if (rordbLoadSSTFinished(rdb)) goto eoferr;
             sstloaded = 1;
         }
@@ -3009,7 +3006,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
         /* Read value */
 #ifdef ENABLE_SWAP
         int swap_unsupported = 0;
-        if (server.swap_mode != SWAP_MODE_MEMORY && !rordb) {
+        if (!rordb) {
             rdbKeyLoadData _keydata = {0}, *keydata = &_keydata;
             int swap_load_error = ctripRdbLoadObject(type,rdb,db,key,
                     expiretime,now,keydata);
@@ -3030,7 +3027,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
             rdbKeyLoadDataDeinit(keydata);
         }
 
-        if (server.swap_mode == SWAP_MODE_MEMORY || swap_unsupported || rordb) {
+        if (swap_unsupported || rordb) {
             val = rdbLoadObject(type,rdb,key,&error,rordb);
         }
 #else
@@ -3062,11 +3059,11 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
                 goto eoferr;
             }
 #ifdef ENABLE_SWAP
-        } else if (server.swap_mode != SWAP_MODE_MEMORY && !swap_unsupported && !rordb) {
+        } else if (!swap_unsupported && !rordb) {
             robj keyobj;
-            /* swap_mode does not:
-             * a) handle expired keys, because expired keys handled later.
-             * b) add key to db.dict, because keys are loaded as cold. */
+            /* when swap enabled, ror does not:
+             * a) handle expired keys: expired keys handled later.
+             * b) add key to db.dict: keys are loaded as cold. */
             initStaticStringObject(keyobj,key);
             moduleNotifyKeyspaceEvent(NOTIFY_LOADED, "loaded", &keyobj, db->id);
             sdsfree(key);
@@ -3340,15 +3337,13 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
     server.rdb_child_exit_pipe = pipefds[1]; /* write end */
 
 #ifdef ENABLE_SWAP
-    if (server.swap_mode != SWAP_MODE_MEMORY) {
-        if (swapForkRocksdbBefore(sfrctx)) {
-            swapForkRocksdbCtxRelease(sfrctx);
-            close(rdb_pipe_write);
-            close(server.rdb_pipe_read);
-            close(safe_to_exit_pipe);
-            close(server.rdb_child_exit_pipe);
-            return C_ERR;
-        }
+    if (swapForkRocksdbBefore(sfrctx)) {
+        swapForkRocksdbCtxRelease(sfrctx);
+        close(rdb_pipe_write);
+        close(server.rdb_pipe_read);
+        close(safe_to_exit_pipe);
+        close(server.rdb_child_exit_pipe);
+        return C_ERR;
     }
 #endif
     /* Collect the connections of the replicas we want to transfer
@@ -3372,12 +3367,10 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
         rio rdb;
 
 #ifdef ENABLE_SWAP
-        if (server.swap_mode != SWAP_MODE_MEMORY) {
-            if (swapForkRocksdbAfterChild(sfrctx)) {
-                exit(1);
-            } else {
-                swapForkRocksdbCtxRelease(sfrctx);
-            }
+        if (swapForkRocksdbAfterChild(sfrctx)) {
+            exit(1);
+        } else {
+            swapForkRocksdbCtxRelease(sfrctx);
         }
 #endif
         rioInitWithFd(&rdb,rdb_pipe_write);
@@ -3413,10 +3406,8 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
     } else {
         /* Parent */
 #ifdef ENABLE_SWAP
-        if (server.swap_mode != SWAP_MODE_MEMORY) {
-            swapForkRocksdbAfterParent(sfrctx,childpid);
-            swapForkRocksdbCtxRelease(sfrctx);
-        }
+        swapForkRocksdbAfterParent(sfrctx,childpid);
+        swapForkRocksdbCtxRelease(sfrctx);
 #endif
         close(safe_to_exit_pipe);
         if (childpid == -1) {
@@ -3505,8 +3496,7 @@ void bgsaveCommand(client *c) {
 #ifdef ENABLE_SWAP
     } else {
         swapForkRocksdbCtx *sfrctx = NULL;
-        if (server.swap_mode != SWAP_MODE_MEMORY)
-            sfrctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_SNAPSHOT);
+        sfrctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_SNAPSHOT);
         if (rdbSaveBackground(server.rdb_filename,rsiptr,sfrctx,0) == C_OK) {
             addReplyStatus(c,"Background saving started");
         } else {

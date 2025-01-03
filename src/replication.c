@@ -664,15 +664,13 @@ int startBgsaveForReplication(int mincapa) {
 #ifdef ENABLE_SWAP
     swapForkRocksdbCtx *sfrctx = NULL;
     int rordb = 0;
-    if (server.swap_mode != SWAP_MODE_MEMORY) {
-        if (server.swap_repl_rordb_sync && (mincapa & SLAVE_CAPA_RORDB)) {
-            rordb = 1;
-            sfrctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_CHECKPOINT);
-            serverLog(LL_NOTICE, "start replcation sync in rordb mode.");
-        } else {
-            sfrctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_SNAPSHOT);
-            serverLog(LL_NOTICE, "start replcation sync in rdb mode.");
-        }
+    if (server.swap_repl_rordb_sync && (mincapa & SLAVE_CAPA_RORDB)) {
+        rordb = 1;
+        sfrctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_CHECKPOINT);
+        serverLog(LL_NOTICE, "start replcation sync in rordb mode.");
+    } else {
+        sfrctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_SNAPSHOT);
+        serverLog(LL_NOTICE, "start replcation sync in rdb mode.");
     }
 #endif
     /* Only do rdbSave* when rsiptr is not NULL,
@@ -2934,12 +2932,9 @@ void replicaofCommand(client *c) {
 
 end:
 #ifdef ENABLE_SWAP
-    if (server.swap_mode != SWAP_MODE_MEMORY) {
-        endSwapRewind();
-    }
-#else
-    return;
+    endSwapRewind();
 #endif
+    return;
 }
 
 /* ROLE command: provide information about the role of the instance
@@ -3678,29 +3673,25 @@ void ctrip_replicationStartPendingFork(void) {
             (!server.repl_diskless_sync ||
              max_idle >= server.repl_diskless_sync_delay))
         {
-            if (server.swap_mode == SWAP_MODE_MEMORY) {
-                startBgsaveForReplication(mincapa);
-            } else {
-                if (mincapa & SLAVE_CAPA_RORDB) {
-                    sds error;
-                    rocks *rocks = serverRocksGetReadLock();
-                    swapData4RocksdbFlush *data = rocksdbFlushTaskArgCreate(rocks,NULL);
-                    serverRocksUnlock(rocks);
-                    /* we can save rordb only when rocksdb fork mode is
-                     * checkpoint (sst files in snapshot mode might contain
-                     * more write).
-                     * so we flush memtable asynchronously to reduce latency
-                     * when taking checkpoint before fork. */
-                    if (!submitUtilTask(ROCKSDB_FLUSH_TASK,data,rocksdbFlushForCheckpointTaskDone,data,&error)) {
-                        serverLog(LL_WARNING,"Submit rocksdb flush before checkpoint task failed: %s", error);
-                        rocksdbFlushTaskArgRelease(data);
-                        if (error) sdsfree(error);
-                    } else {
-                        serverLog(LL_NOTICE,"rocksdb flush before checkpoint started.");
-                    }
+            if (mincapa & SLAVE_CAPA_RORDB) {
+                sds error;
+                rocks *rocks = serverRocksGetReadLock();
+                swapData4RocksdbFlush *data = rocksdbFlushTaskArgCreate(rocks,NULL);
+                serverRocksUnlock(rocks);
+                /* we can save rordb only when rocksdb fork mode is
+                 * checkpoint (sst files in snapshot mode might contain
+                 * more write).
+                 * so we flush memtable asynchronously to reduce latency
+                 * when taking checkpoint before fork. */
+                if (!submitUtilTask(ROCKSDB_FLUSH_TASK,data,rocksdbFlushForCheckpointTaskDone,data,&error)) {
+                    serverLog(LL_WARNING,"Submit rocksdb flush before checkpoint task failed: %s", error);
+                    rocksdbFlushTaskArgRelease(data);
+                    if (error) sdsfree(error);
                 } else {
-                    lockGlobalAndExec(_replicationStartPendingFork, REQ_SUBMITTED_REPL_START);
+                    serverLog(LL_NOTICE,"rocksdb flush before checkpoint started.");
                 }
+            } else {
+                lockGlobalAndExec(_replicationStartPendingFork, REQ_SUBMITTED_REPL_START);
             }
         }
     }

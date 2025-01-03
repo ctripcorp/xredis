@@ -270,10 +270,7 @@ void *wholeKeyCreateOrMergeObject(swapData *data, void *decoded, void *datactx) 
 }
 
 static void tryTransStringToBitmap(redisDb *db, robj *key) {
-    if (server.swap_mode != SWAP_MODE_DISK || !server.swap_bitmap_subkeys_enabled) {
-        return;
-    }
-
+    if (!server.swap_bitmap_subkeys_enabled) return;
     if (bitmapSetObjectMarkerIfNotExist(db,key) == 1) {
         atomicIncr(server.swap_string_switched_to_bitmap_count, 1);
     }

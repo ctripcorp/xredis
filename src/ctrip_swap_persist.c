@@ -866,10 +866,7 @@ static int keyspaceIsEmpty() {
 }
 
 void ctripLoadDataFromDisk(void) {
-    if (server.swap_mode != SWAP_MODE_MEMORY &&
-            server.swap_persist_enabled) {
-        loadDataFromRocksdb();
-    }
+    if (server.swap_persist_enabled) loadDataFromRocksdb();
     setFilterState(FILTER_STATE_OPEN);
     if (keyspaceIsEmpty()) loadDataFromDisk();
 }

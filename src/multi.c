@@ -445,10 +445,8 @@ void touchAllWatchedKeysInDb(redisDb *emptied, redisDb *replaced_with) {
             client *c = listNodeValue(ln);
 #ifdef ENABLE_SWAP
             robj *key = dictGetKey(de);
-            if (server.swap_mode != SWAP_MODE_MEMORY) {
-                c->flags |= CLIENT_DIRTY_CAS;
-                continue;
-            }
+            c->flags |= CLIENT_DIRTY_CAS;
+            continue;
 #endif
             if (dictFind(emptied->dict, key->ptr)) {
                 c->flags |= CLIENT_DIRTY_CAS;

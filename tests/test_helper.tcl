@@ -640,7 +640,6 @@ proc print_help_screen {} {
         "--port <port>      TCP port to use against external host."
         "--baseport <port>  Initial port number for spawned redis servers."
         "--portcount <num>  Port range for spawned redis servers."
-        "--swap-mode <mode> Select swap mode, could be memory(default) or disk.
         "--help             Print this help screen."
     } "\n"]
 }
@@ -747,14 +746,6 @@ for {set j 0} {$j < [llength $argv]} {incr j} {
     } elseif {$opt eq {--timeout}} {
         set ::timeout $arg
         incr j
-    } elseif {$opt eq {--swap-mode}} {
-        if {$::arg == "disk"} {
-			set ::swap 1
-            set ::all_tests [concat $::disk_tests $::all_tests]
-            set ::target_db 0
-            lappend ::denytags {memonly}
-        }
-        incr j
     } elseif {$opt eq {--help}} {
         print_help_screen
         exit 0
@@ -764,7 +755,19 @@ for {set j 0} {$j < [llength $argv]} {incr j} {
     }
 }
 
-if {$::swap} {
+proc is_swap_enabled {} {
+    if {[string match {*swap=*} [exec src/redis-server --version]]} {
+        set _ 1
+    } else {
+        set _ 0
+    }
+}
+
+if {[is_swap_enabled]} {
+    set ::swap 1
+    set ::target_db 0
+    lappend ::denytags {memonly}
+    set ::all_tests [concat $::disk_tests $::all_tests]
 	source tests/swap/support/util.tcl
 }
 

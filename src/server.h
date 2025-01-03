@@ -603,18 +603,6 @@ typedef enum {
 #define REDISMODULE_TYPE_ENCVER(id) (id & REDISMODULE_TYPE_ENCVER_MASK)
 #define REDISMODULE_TYPE_SIGN(id) ((id & ~((uint64_t)REDISMODULE_TYPE_ENCVER_MASK)) >>REDISMODULE_TYPE_ENCVER_BITS)
 
-#ifdef ENABLE_SWAP
-#define SWAP_MODE_MEMORY 0
-#define SWAP_MODE_DISK 1
-#define SWAP_MODE_TYPES 2
-static inline const char *swapModeName(int mode) {
-  const char *name = "?";
-  const char *modes[] = {"memory", "disk"};
-  if (mode >= 0 && mode < SWAP_MODE_TYPES)
-    name = modes[mode];
-  return name;
-}
-#endif
 /* Bit flags for moduleTypeAuxSaveFunc */
 #define REDISMODULE_AUX_BEFORE_RDB (1<<0)
 #define REDISMODULE_AUX_AFTER_RDB (1<<1)
@@ -1820,7 +1808,6 @@ struct redisServer {
     int ctrip_monitor_port;
     int ctrip_monitorfd;
 
-    int swap_mode;      /* Swap mode: memory/swap/disk */
 		/* rocksdb engine */
     int rocksdb_disk_error;
     int rocksdb_disk_error_since;

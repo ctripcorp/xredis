@@ -545,9 +545,10 @@ int performEvictions(void) {
     int result = EVICT_FAIL;
 
 #ifdef ENABLE_SWAP
+    UNUSED(delta), UNUSED(eviction_latency);
     size_t mem_used;
     int over_maxmemory = getMaxmemoryState(&mem_reported,&mem_used,&mem_tofree,NULL) == C_ERR;
-    swapEvictKeysCtx sectx = {server.swap_mode,mem_used,mem_tofree,0,0};
+    swapEvictKeysCtx sectx = {mem_used,mem_tofree,0,0,0};
     ctrip_performEvictionStart(&sectx);
     if (!over_maxmemory) return EVICT_OK;
 #else
@@ -659,10 +660,8 @@ int performEvictions(void) {
             robj *keyobj = createStringObject(bestkey,sdslen(bestkey));
 
 #ifdef ENABLE_SWAP
-            if (server.swap_mode != SWAP_MODE_MEMORY) {
-              mem_freed += performEvictionSwapSelectedKey(&sectx,db,keyobj);
-            } else {
-#endif
+            mem_freed += performEvictionSwapSelectedKey(&sectx,db,keyobj);
+#else
             propagateExpire(db,keyobj,server.lazyfree_lazy_eviction);
             /* We compute the amount of memory freed by db*Delete() alone.
              * It is possible that actually the memory needed to propagate
@@ -688,8 +687,6 @@ int performEvictions(void) {
             signalModifiedKey(NULL,db,keyobj);
             notifyKeyspaceEvent(NOTIFY_EVICTED, "evicted",
                 keyobj, db->id);
-#ifdef ENABLE_SWAP
-            }
 #endif
             decrRefCount(keyobj);
             keys_freed++;

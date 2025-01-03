@@ -478,7 +478,7 @@ static robj* ctripCreateBitmap(redisDb *db, robj *key, size_t byte) {
 
     robj *o = createObject(OBJ_STRING,sdsnewlen(NULL, byte));
     dbAdd(db,key,o);
-    if (server.swap_mode == SWAP_MODE_DISK && server.swap_bitmap_subkeys_enabled) {
+    if (server.swap_bitmap_subkeys_enabled) {
         /* bitmap is not processed as whole string, 
         so add meta to distinguish between bitmap and string types. */
         dbAddMeta(db,key,createBitmapObjectMarker());
@@ -812,7 +812,7 @@ void bitopCommand(client *c) {
 #endif
         setKey(c,c->db,targetkey,o);
 #ifdef ENABLE_SWAP
-        if (server.swap_mode == SWAP_MODE_DISK && server.swap_bitmap_subkeys_enabled) {
+        if (server.swap_bitmap_subkeys_enabled) {
             bitmapSetObjectMarkerIfNotExist(c->db,targetkey);
         }
         notifyKeyspaceEventDirty(NOTIFY_STRING,"set",targetkey,c->db->id,o,NULL);

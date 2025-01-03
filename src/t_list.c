@@ -323,8 +323,7 @@ void linsertCommand(client *c) {
      * value matches request) and update index cascade, since all elements
      * are hot, we just delete list meta and make it a pure hot key so that
      * there's no need to update list meta. */
-    if (server.swap_mode != SWAP_MODE_MEMORY)
-        serverAssert(lookupMeta(c->db,c->argv[1]) == NULL);
+    serverAssert(lookupMeta(c->db,c->argv[1]) == NULL);
 #endif
     /* Seek pivot from head to tail */
     iter = listTypeInitIterator(subject,0,LIST_TAIL);
@@ -790,8 +789,7 @@ void lremCommand(client *c) {
      * value matches request) and update index cascade, since all elements
      * are hot, we just delete list meta and make it a pure hot key so that
      * there's no need to update list meta. */
-    if (server.swap_mode != SWAP_MODE_MEMORY)
-        serverAssert(lookupMeta(c->db,c->argv[1]) == NULL);
+    serverAssert(lookupMeta(c->db,c->argv[1]) == NULL);
 #endif
     listTypeIterator *li;
     if (toremove < 0) {

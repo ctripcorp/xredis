@@ -273,10 +273,6 @@ void submitSwapBlockedClientRequest(client* c, readyList *rl, dict* key_sets) {
  * when there may be clients blocked on a list key, and there may be new
  * data to fetch (the key is ready). */
 void swapServeClientsBlockedOnListKey(robj *o, readyList *rl) {
-    if (server.swap_mode == SWAP_MODE_MEMORY) {
-        serveClientsBlockedOnListKey(o, rl, NULL);
-        return;
-    }
     /* We serve clients in the same order they blocked for
      * this key, from the first blocked to the last. */
     if (!serveClientsBlockedOnListKeyWithoutTargetKey(o, rl)) return;

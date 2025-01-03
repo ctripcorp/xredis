@@ -126,12 +126,6 @@ configEnum sanitize_dump_payload_enum[] = {
     {NULL, 0}
 };
 #ifdef ENABLE_SWAP
-configEnum swap_mode_enum[] = {
-    {"memory", SWAP_MODE_MEMORY},
-    {"disk", SWAP_MODE_DISK},
-    {NULL, 0}
-};
-
 configEnum rocksdb_compression_enum[] = {
     {"optimized_for_compaction", -1},
     {"no", rocksdb_no_compression},
@@ -2717,20 +2711,13 @@ static int updateRocksdbMetaMaxBytesForLevelBase(long long val, long long prev, 
     return updateRocksdbCFOptionNumber(META_CF, "max_bytes_for_level_base", val, err);
 }
 
-static int isValidAppendonly(int val, const char **err) {
-    if (val && server.swap_mode != SWAP_MODE_MEMORY) {
-        *err = "swap mode is non memory mode, can't open aof";
+static int appendonlyNotValidWhenSwapEnabled(int val, const char **err) {
+    if (val) {
+        *err = "can't open aof when swap enabled";
         return 0;
+    } else {
+        return 1;
     }
-    return 1;
-}
-
-static int isValidSwapMode(int val, const char **err) {
-    if (val != SWAP_MODE_MEMORY && server.aof_enabled) {
-        *err = "Failed to set current non memory mode, Check aof state.";
-        return 0;
-    }
-    return 1;
 }
 #endif
 static int updateGoodSlaves(long long val, long long prev, const char **err) {
@@ -2902,7 +2889,7 @@ standardConfig configs[] = {
     createBoolConfig("syslog-enabled", NULL, IMMUTABLE_CONFIG, server.syslog_enabled, 0, NULL, NULL),
     createBoolConfig("cluster-enabled", NULL, IMMUTABLE_CONFIG, server.cluster_enabled, 0, NULL, NULL),
 #ifdef ENABLE_SWAP
-    createBoolConfig("appendonly", NULL, MODIFIABLE_CONFIG, server.aof_enabled, 0, isValidAppendonly, updateAppendonly),
+    createBoolConfig("appendonly", NULL, MODIFIABLE_CONFIG, server.aof_enabled, 0, appendonlyNotValidWhenSwapEnabled, updateAppendonly),
 #else
     createBoolConfig("appendonly", NULL, MODIFIABLE_CONFIG, server.aof_enabled, 0, NULL, updateAppendonly),
 #endif
@@ -2972,7 +2959,6 @@ standardConfig configs[] = {
     createEnumConfig("acl-pubsub-default", NULL, MODIFIABLE_CONFIG, acl_pubsub_default_enum, server.acl_pubsub_default, USER_FLAG_ALLCHANNELS, NULL, NULL),
     createEnumConfig("sanitize-dump-payload", NULL, MODIFIABLE_CONFIG, sanitize_dump_payload_enum, server.sanitize_dump_payload, SANITIZE_DUMP_NO, NULL, NULL),
 #ifdef ENABLE_SWAP
-    createEnumConfig("swap-mode", NULL, IMMUTABLE_CONFIG, swap_mode_enum, server.swap_mode, SWAP_MODE_MEMORY, isValidSwapMode, NULL),
     createEnumConfig("rocksdb.data.compression","rocksdb.compression", MODIFIABLE_CONFIG, rocksdb_compression_enum, server.rocksdb_data_compression, rocksdb_snappy_compression, NULL, updateRocksdbDataCompression),
     createEnumConfig("rocksdb.meta.compression", NULL, MODIFIABLE_CONFIG, rocksdb_compression_enum, server.rocksdb_meta_compression, rocksdb_snappy_compression, NULL, updateRocksdbMetaCompression),
     createEnumConfig("swap-cuckoo-filter-bit-per-key", NULL, IMMUTABLE_CONFIG, cuckoo_filter_bit_type_enum, server.swap_cuckoo_filter_bit_type, CUCKOO_FILTER_BITS_PER_TAG_8, NULL, NULL),

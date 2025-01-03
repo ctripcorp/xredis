@@ -368,12 +368,6 @@ proc start_server {options {code undefined}} {
 
     set data [split [exec cat "tests/assets/$baseconfig"] "\n"]
     set config {}
-    if {$::swap} {
-        dict set config "swap-mode" disk
-        dict set config "appendonly" no
-        dict set config "ctrip-monitor-port" $monitor_port
-        dict set config "swap-debug-evict-keys" -1
-    }
     if {$::tls} {
         dict set config "tls-cert-file" [format "%s/tests/tls/server.crt" [pwd]]
         dict set config "tls-key-file" [format "%s/tests/tls/server.key" [pwd]]
@@ -397,7 +391,14 @@ proc start_server {options {code undefined}} {
 
     # start every server on a different port
     set port [find_available_port $::baseport $::portcount]
-    set monitor_port [find_available_port $::baseport $::portcount]
+
+    if {$::swap} {
+        set monitor_port [find_available_port $::baseport $::portcount]
+        dict set config "appendonly" no
+        dict set config "ctrip-monitor-port" $monitor_port
+        dict set config "swap-debug-evict-keys" -1
+    }
+
     if {$::tls} {
         dict set config "port" 0
         dict set config "tls-port" $port

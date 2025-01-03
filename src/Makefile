@@ -428,10 +428,7 @@ distclean: clean
 .PHONY: distclean
 
 test: $(REDIS_SERVER_NAME) $(REDIS_CHECK_AOF_NAME) $(REDIS_CLI_NAME) $(REDIS_BENCHMARK_NAME)
-	@(cd ..; ./runtest --swap-mode memory)
-
-test-disk: $(REDIS_SERVER_NAME) $(REDIS_CHECK_AOF_NAME) $(REDIS_CLI_NAME) $(REDIS_BENCHMARK_NAME)
-	@(cd ..; ./runtest --swap-mode disk)
+	@(cd ..; ./runtest)
 
 test-asan-disk: $(REDIS_SERVER_NAME) $(REDIS_CHECK_AOF_NAME) $(REDIS_CLI_NAME) $(REDIS_BENCHMARK_NAME)
 	@(cd ..; ./runtest --swap-mode disk --tags -nosanitizer)
@@ -483,7 +480,9 @@ helgrind:
 unit-test:
 	$(MAKE) CFLAGS="-DREDIS_TEST" OPTIMIZATION="-O0"
 	@(./$(REDIS_SERVER_NAME) test gtid)
+ifdef SWAP
 	@(./$(REDIS_SERVER_NAME) test swap)
+endif
 
 src/help.h:
 	@../utils/generate-command-help.rb > help.h

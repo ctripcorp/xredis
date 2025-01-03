@@ -1,10 +1,10 @@
 name: CI
 
-on: 
+on:
   push:
-    branches: [ xredis_2_ror,xredis_2_ror_v1 ]
+    branches: [ xredis_2_ror ]
   pull_request:
-    branches: [ xredis_2_ror,xredis_2_ror_v1 ]
+    branches: [ xredis_2_ror ]
 
 jobs:
    unit:
@@ -33,7 +33,7 @@ jobs:
       run: |
           sudo apt-get update
           sudo apt-get -y install libsnappy-dev zlib1g-dev libstdc++6
-          make unit-test -j8
+          make SWAP=1 unit-test -j8
    mem:
     strategy:
       matrix:
@@ -89,9 +89,9 @@ jobs:
       run: |
           sudo apt-get update
           sudo apt-get -y install libsnappy-dev zlib1g-dev libstdc++6
-          make -j8
+          make SWAP=1 -j8
     - name: make test
-      run: make test-disk
+      run: make SWAP=1 test
    swap-asan:
     strategy:
       matrix:
@@ -118,8 +118,8 @@ jobs:
       run: |
           sudo apt-get update
           sudo apt-get -y install libsnappy-dev zlib1g-dev libstdc++6
-          make SANITIZER=address -j8
+          make SWAP=1 SANTIZER=address -j8
     - name: make test
-      run: make test-asan-disk
+      run: make SWAP=1 test
 
 

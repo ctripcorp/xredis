@@ -1783,23 +1783,19 @@ int rewriteAppendOnlyFileBackground(void) {
     if (aofCreatePipes() != C_OK) return C_ERR;
 #ifdef ENABLE_SWAP
     swapForkRocksdbCtx *sfrctx = NULL;
-    if (server.swap_mode != SWAP_MODE_MEMORY) {
-        sfrctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_SNAPSHOT);
-        if (swapForkRocksdbBefore(sfrctx)) {
-            swapForkRocksdbCtxRelease(sfrctx);
-            return C_ERR;
-        }
+    sfrctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_SNAPSHOT);
+    if (swapForkRocksdbBefore(sfrctx)) {
+        swapForkRocksdbCtxRelease(sfrctx);
+        return C_ERR;
     }
 #endif
     if ((childpid = redisFork(CHILD_TYPE_AOF)) == 0) {
         char tmpfile[256];
 #ifdef ENABLE_SWAP
-        if (server.swap_mode != SWAP_MODE_MEMORY) {
-            if (swapForkRocksdbAfterChild(sfrctx)) {
-                exit(1);
-            } else {
-                swapForkRocksdbCtxRelease(sfrctx);
-            }
+        if (swapForkRocksdbAfterChild(sfrctx)) {
+            exit(1);
+        } else {
+            swapForkRocksdbCtxRelease(sfrctx);
         }
 #endif
         /* Child */
@@ -1815,10 +1811,8 @@ int rewriteAppendOnlyFileBackground(void) {
     } else {
 #ifdef ENABLE_SWAP
         /* Parent */
-        if (server.swap_mode != SWAP_MODE_MEMORY) {
-            swapForkRocksdbAfterParent(sfrctx,childpid);
-            swapForkRocksdbCtxRelease(sfrctx);
-        }
+        swapForkRocksdbAfterParent(sfrctx,childpid);
+        swapForkRocksdbCtxRelease(sfrctx);
 #endif
         if (childpid == -1) {
             serverLog(LL_WARNING,

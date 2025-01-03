@@ -237,11 +237,9 @@ void dbOverwrite(redisDb *db, robj *key, robj *val) {
         val->lru = old->lru;
     }
 #ifdef ENABLE_SWAP
-    if (server.swap_mode != SWAP_MODE_MEMORY) {
-        /* new val inherit flag_persistent from old val,
-         * since rocksdb persist data for the same key */
-        val->persistent = old->persistent; // todo, dirty_meta,  dirty_data ... ...
-    }
+    /* new val inherit flag_persistent from old val,
+     * since rocksdb persist data for the same key */
+    val->persistent = old->persistent; // todo, dirty_meta,  dirty_data ... ...
 #endif
     /* Although the key is not really deleted from the database, we regard 
     overwrite as two steps of unlink+add, so we still need to call the unlink 
@@ -502,10 +500,8 @@ long long emptyDb(int dbnum, int flags, void(callback)(void*)) {
     }
 
 #ifdef ENABLE_SWAP
-    if (server.swap_mode != SWAP_MODE_MEMORY) {
-        if (rocksFlushDB(dbnum))
-            serverLog(LL_WARNING,"[ROCKS] flushd rocks db(%d) failed.",dbnum);
-    }
+    if ((rocksFlushDB(dbnum)))
+        serverLog(LL_WARNING,"[ROCKS] flushd rocks db(%d) failed.",dbnum);
 #endif
     /* Fire the flushdb modules event. */
     moduleFireServerEvent(REDISMODULE_EVENT_FLUSHDB,
@@ -837,7 +833,7 @@ void selectCommand(client *c) {
     }
 
 #ifdef ENABLE_SWAP
-    if (server.swap_mode != SWAP_MODE_MEMORY && (c->flags & CLIENT_LUA)) {
+    if (c->flags & CLIENT_LUA) {
         /* dbid is determined when parsing command in swap mode, currently
          * command parsing cant understand lua script, so select command
          * within eval script is disabled for now. */
@@ -1026,8 +1022,7 @@ void scanGenericCommand(client *c, robj *o, unsigned long cursor) {
     ht = NULL;
     if (o == NULL) {
 #ifdef ENABLE_SWAP
-        if (server.swap_mode == SWAP_MODE_MEMORY ||
-                cursorIsHot(outer_cursor)) {
+        if (cursorIsHot(outer_cursor)) {
             ht = c->db->dict;
         } else {
             metascan = 1;
@@ -1206,7 +1201,7 @@ void scanGenericCommand(client *c, robj *o, unsigned long cursor) {
     if (o == NULL) {
         if (cursor == 0) {
             /* continue with cold data in disk swap mode */
-            if (cursorIsHot(outer_cursor) && server.swap_mode != SWAP_MODE_MEMORY) {
+            if (cursorIsHot(outer_cursor)) {
                 swapScanSession *session;
                 session = swapScanSessionsAssign(server.swap_scan_sessions);
                 if (session == NULL) {
@@ -1805,10 +1800,7 @@ int expireIfNeeded(redisDb *db, robj *key) {
     if (checkClientPauseTimeoutAndReturnIfPaused()) return 1;
 
     /* Delete the key */
-#ifdef ENABLE_SWAP
-    if (server.swap_mode == SWAP_MODE_MEMORY)
-        deleteExpiredKeyAndPropagate(db,key);
-#else
+#ifndef ENABLE_SWAP
     deleteExpiredKeyAndPropagate(db,key);
 #endif
     return 1;

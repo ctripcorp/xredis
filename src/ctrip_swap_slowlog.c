@@ -30,11 +30,6 @@
 #include "slowlog.h"
 
 void swapSlowlogCommand(client *c) {
-    if (server.swap_mode == SWAP_MODE_MEMORY) {
-        slowlogCommand(c);
-        return;
-    }
-
     if (c->argc == 2 && !strcasecmp(c->argv[1]->ptr,"help")) {
         const char *help[] = {
 "GET [<count>]",

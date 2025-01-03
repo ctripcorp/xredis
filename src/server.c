@@ -3062,7 +3062,6 @@ void cronUpdateMemoryStats() {
 void _rdbSaveBackground(client *c, swapCtx *ctx) {
     rdbSaveInfo rsi, *rsiptr;
     swapForkRocksdbCtx *sfrctx = swapForkRocksdbCtxCreate(SWAP_FORK_ROCKSDB_TYPE_SNAPSHOT);
-    serverAssert(server.swap_mode != SWAP_MODE_MEMORY);
     rsiptr = rdbPopulateSaveInfo(&rsi);
     rdbSaveBackground(server.rdb_filename,rsiptr,sfrctx,0);
     server.req_submitted &= ~REQ_SUBMITTED_BGSAVE;
@@ -3390,12 +3389,10 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
 
 #ifdef ENABLE_SWAP
     run_with_period(1000) {
-        if (server.swap_mode != SWAP_MODE_MEMORY) {
-            serverRocksCron();
+        serverRocksCron();
 
-            if (server.maxmemory_scale_from > server.maxmemory)
-                updateMaxMemoryScaleFrom();
-        }
+        if (server.maxmemory_scale_from > server.maxmemory)
+            updateMaxMemoryScaleFrom();
     }
 #endif
     run_with_period(1000) {
@@ -3534,7 +3531,7 @@ void beforeSleep(struct aeEventLoop *eventLoop) {
     if (ProcessingEventsWhileBlocked) {
         uint64_t processed = 0;
 #ifdef ENABLE_SWAP
-        if (server.swap_mode != SWAP_MODE_MEMORY) swapEvictionFreedInrowReset(server.swap_eviction_ctx);
+        swapEvictionFreedInrowReset(server.swap_eviction_ctx);
         processed += swapBatchCtxFlush(server.swap_batch_ctx,SWAP_BATCH_FLUSH_BEFORE_SLEEP);
 #endif
         processed += handleClientsWithPendingReadsUsingThreads();
@@ -3547,10 +3544,10 @@ void beforeSleep(struct aeEventLoop *eventLoop) {
 
 #ifdef ENABLE_SWAP
     /* persist keys if swap persist enabled. */
-    if (server.swap_mode != SWAP_MODE_MEMORY && server.swap_persist_enabled)
+    if (server.swap_persist_enabled)
         swapPersistCtxPersistKeys(server.swap_persist_ctx);
 
-    if (server.swap_mode != SWAP_MODE_MEMORY) swapEvictionFreedInrowReset(server.swap_eviction_ctx);
+    swapEvictionFreedInrowReset(server.swap_eviction_ctx);
 
     /* submit buffered swap request in current batch */
     swapBatchCtxFlush(server.swap_batch_ctx,SWAP_BATCH_FLUSH_BEFORE_SLEEP);
@@ -5106,8 +5103,7 @@ void call(client *c, int flags) {
 #ifdef ENABLE_SWAP
     const long swap_duration = c->swap_cmd ? c->swap_cmd->swap_finished_time - c->swap_cmd->swap_submitted_time : 0L;
     c->swap_duration = swap_duration;
-    if (server.swap_mode != SWAP_MODE_MEMORY)
-        clientArgRewritesRestore(c);
+    clientArgRewritesRestore(c);
 #endif
 
     /* Update failed command calls if required.
@@ -5290,7 +5286,7 @@ void call(client *c, int flags) {
         server.stat_peak_memory = zmalloc_used;
 #ifdef ENABLE_SWAP
     /* persist keys if swap persist enabled. */
-    if (server.swap_mode != SWAP_MODE_MEMORY && server.swap_persist_enabled)
+    if (server.swap_persist_enabled)
         swapPersistCtxPersistKeys(server.swap_persist_ctx);
 #endif
 }
@@ -5524,8 +5520,7 @@ int processCommand(client *c) {
     }
 
 #ifdef ENABLE_SWAP
-    if ((server.swap_mode != SWAP_MODE_MEMORY) &&
-         server.rocksdb_disk_error &&
+    if (server.rocksdb_disk_error &&
          (is_write_command || c->cmd->proc == pingCommand)) {
         rejectCommand(c, shared.rocksdbdiskerr);
         return C_OK;
@@ -6119,7 +6114,6 @@ sds genRedisInfoString(const char *section) {
             "redis_version:%s\r\n"
             "xredis_version:%s\r\n"
 #ifdef ENABLE_SWAP
-            "swap_mode:%s\r\n"
             "swap_version:%s\r\n"
             "rocksdb_version:%s\r\n"
 #endif
@@ -6148,7 +6142,6 @@ sds genRedisInfoString(const char *section) {
             REDIS_VERSION,
             XREDIS_VERSION,
 #ifdef ENABLE_SWAP
-            swapModeName(server.swap_mode),
             SWAP_VERSION,
             rocksdbVersion(),
 #endif
@@ -6857,8 +6850,7 @@ sds genRedisInfoString(const char *section) {
     }
 
     /* Rocksdb */
-    if ((allsections || defsections || !strcasecmp(section,"rocksdb")) &&
-            server.swap_mode != SWAP_MODE_MEMORY) {
+    if ((allsections || defsections || !strcasecmp(section,"rocksdb"))) {
         if (sections++) info = sdscat(info,"\r\n");
         info = sdscatprintf(info, "# Rocksdb\r\n");
         info = genRocksdbInfoString(info);
@@ -6866,8 +6858,7 @@ sds genRedisInfoString(const char *section) {
 
     /* Rocksdb.stats */
     if (!strncasecmp(section,rocksdb_stats_section, rocksdb_stats_section_len) && 
-        (strlen(section) == rocksdb_stats_section_len || section[rocksdb_stats_section_len] == '.') &&
-        server.swap_mode != SWAP_MODE_MEMORY) {
+        (strlen(section) == rocksdb_stats_section_len || section[rocksdb_stats_section_len] == '.')) {
         if (sections++) info = sdscat(info,"\r\n");
         sds section_dup = sdsnew(section);
         info = genRocksdbStatsString(section_dup, info);
@@ -7132,13 +7123,22 @@ void daemonize(void) {
 }
 
 void version(void) {
-    printf("Redis server v=%s sha=%s:%d malloc=%s bits=%d build=%llx\n",
+#ifdef ENABLE_SWAP
+    printf("Redis server v=%s sha=%s:%d malloc=%s bits=%d build=%llx xredis=%s swap=%s\n",
+#else
+    printf("Redis server v=%s sha=%s:%d malloc=%s bits=%d build=%llx xredis=%s\n",
+#endif
         REDIS_VERSION,
         redisGitSHA1(),
         atoi(redisGitDirty()) > 0,
         ZMALLOC_LIB,
         sizeof(long) == 4 ? 32 : 64,
-        (unsigned long long) redisBuildId());
+        (unsigned long long) redisBuildId(),
+        XREDIS_VERSION
+#ifdef ENABLE_SWAP
+        ,SWAP_VERSION
+#endif
+        );
     exit(0);
 }
 
