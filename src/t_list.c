@@ -248,7 +248,7 @@ void pushGenericCommand(client *c, int where, int xx) {
     }
 
     for (j = 2; j < c->argc; j++) {
-#ifdef  ENABLE_SWAP
+#ifdef ENABLE_SWAP
         ctripListTypePush(lobj,c->argv[j],where,c->db,c->argv[1]);
 #else
         listTypePush(lobj,c->argv[j],where);

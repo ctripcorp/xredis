@@ -197,7 +197,7 @@ void dbAdd(redisDb *db, robj *key, robj *val) {
     serverAssertWithInfo(NULL,key,retval == DICT_OK);
     signalKeyAsReady(db, key, val->type);
     if (server.cluster_enabled) slotToKeyAdd(key->ptr);
-#ifdef  ENABLE_SWAP
+#ifdef ENABLE_SWAP
     /* Newly added key are scheduled to evict asap to reduce cow. */
     if (hasActiveChildProcess()) tryEvictKeyAsapLater(db, key);
     if (objectIsDirty(val)) schedulePersistIfNeeded(db->id,key);

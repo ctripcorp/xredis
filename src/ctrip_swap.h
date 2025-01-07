@@ -149,6 +149,9 @@ static inline int isMetaScanRequest(uint32_t intention_flag) {
 
 #define MAX_KEYREQUESTS_BUFFER 8
 
+#define SWAP_CMD_COUNT 238
+extern struct redisCommand redisCommandTable[SWAP_CMD_COUNT];
+
 typedef struct swapCmdTrace swapCmdTrace;
 typedef struct swapTrace swapTrace;
 
@@ -1977,6 +1980,10 @@ void swapExpireStatusFree(swapExpireStatus *stats);
 void swapExpireStatusReset(swapExpireStatus *stats);
 
 sds genSwapTtlCompactInfoString(sds info);
+
+void ttlCompactRefreshSstAgeLimit(void);
+void ttlCompactProduceTask(void);
+void ttlCompactConsumeTask(void);
 
 /* swap info cmd */
 #define SWAP_INFO_SUPPORTED_YES 0
