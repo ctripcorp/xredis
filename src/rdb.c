@@ -1625,7 +1625,9 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
     pid_t childpid;
 
     if (hasActiveChildProcess()) {
+#ifdef ENABLE_SWAP
         swapForkRocksdbCtxRelease(sfrctx);
+#endif
         return C_ERR;
     }
 

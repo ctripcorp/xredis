@@ -3394,13 +3394,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
         if (server.maxmemory_scale_from > server.maxmemory)
             updateMaxMemoryScaleFrom();
     }
-#endif
-    run_with_period(1000) {
-        if (server.repl_mode->mode == REPL_MODE_XSYNC) {
-            xsyncReplicationCron();
-        }
-    }
-    
+
     run_with_period(1000*(int)server.swap_sst_age_limit_refresh_period) {
         ttlCompactRefreshSstAgeLimit();
     }
@@ -3409,11 +3403,11 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
         /* producing and consuming task are both in swap util thread
          * so producing should be slower than consuming, otherwise consuming
          * will be starved to death. */
-        ttlCompactProduceTask();  
+        ttlCompactProduceTask();
     }
 
     run_with_period(1000*(int)server.swap_ttl_compact_period / 2) {
-        ttlCompactConsumeTask();   
+        ttlCompactConsumeTask();
     }
 
     run_with_period(1000*(int)server.swap_swap_info_slave_period) {
@@ -3424,7 +3418,12 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
             swapPropagateSwapInfoCmd(3, argv);
             swapDestorySwapInfoSstAgeLimitCmd(argv);
         }
-
+    }
+#endif
+    run_with_period(1000) {
+        if (server.repl_mode->mode == REPL_MODE_XSYNC) {
+            xsyncReplicationCron();
+        }
     }
 
     /* Fire the cron loop modules event. */
@@ -3788,7 +3787,9 @@ void createSharedObjects(void) {
     shared.persist = createStringObject("PERSIST",7);
     shared.set = createStringObject("SET",3);
     shared.eval = createStringObject("EVAL",4);
+#ifdef ENABLE_SWAP
     shared.swap_info = createStringObject("swap.info",9);
+#endif
 
     /* Shared command argument */
     shared.left = createStringObject("left",4);
@@ -3810,7 +3811,9 @@ void createSharedObjects(void) {
     shared.special_asterick = createStringObject("*",1);
     shared.special_equals = createStringObject("=",1);
     shared.redacted = makeObjectShared(createStringObject("(redacted)",10));
+#ifdef ENABLE_SWAP
     shared.sst_age_limit = createStringObject("SST-AGE-LIMIT",13);
+#endif
 
     shared.gtid = createStringObject("GTID",4);
 
@@ -5873,6 +5876,7 @@ void pingCommand(client *c) {
         if (c->argc == 1) {
             addReply(c,shared.pong);
         } else {
+#ifdef ENABLE_SWAP
             /* extend ping argv for swap.info */
             if (!strncasecmp(c->argv[1]->ptr, "swap.info", 9)) {
                 int swap_info_argc = 0;
@@ -5880,7 +5884,7 @@ void pingCommand(client *c) {
                 swapApplySwapInfo(swap_info_argc, swap_info_argv);
                 sdsfreesplitres(swap_info_argv, swap_info_argc);
             }
-
+#endif
             addReplyBulk(c,c->argv[1]);
         }
     }
