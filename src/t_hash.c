@@ -651,11 +651,14 @@ void hsetnxCommand(client *c) {
         hashTypeSet(o,c->argv[2]->ptr,c->argv[3]->ptr,HASH_SET_COPY);
         addReply(c, shared.cone);
         signalModifiedKey(c,c->db,c->argv[1]);
-
+#ifdef ENABLE_SWAP
         sds dirty_subkeys[1] = {(sds)c->argv[2]->ptr};
         size_t dirty_sublens[1] = {sdslen(c->argv[3]->ptr)};
         notifyKeyspaceEventDirtySubkeys(NOTIFY_HASH,"hset",c->argv[1],
                 c->db->id,o,1,dirty_subkeys, dirty_sublens);
+#else
+        notifyKeyspaceEvent(NOTIFY_HASH,"hset",c->argv[1],c->db->id);
+#endif
         server.dirty++;
     }
 }
@@ -671,16 +674,21 @@ void hsetCommand(client *c) {
 
     if ((o = hashTypeLookupWriteOrCreate(c,c->argv[1])) == NULL) return;
     hashTypeTryConversion(o,c->argv,2,c->argc-1);
-
+#ifdef ENABLE_SWAP
     size_t ndss = (c->argc-2)/2;
     sds *dirty_subkeys = zmalloc(sizeof(sds)*ndss);
     size_t *dirty_sublens = zmalloc(sizeof(size_t)*ndss);
-
-    for (i = 2; i < c->argc; i += 2) {
+#endif
+    for (i = 2; i < c->argc; i += 2)
+#ifdef ENABLE_SWAP
+    {
         created += !hashTypeSet(o,c->argv[i]->ptr,c->argv[i+1]->ptr,HASH_SET_COPY);
         dirty_subkeys[(i-2)/2] = (sds)c->argv[i]->ptr;
         dirty_sublens[(i-2)/2] = sdslen(c->argv[i+1]->ptr);
     }
+#else
+        created += !hashTypeSet(o,c->argv[i]->ptr,c->argv[i+1]->ptr,HASH_SET_COPY);
+#endif
 
     /* HMSET (deprecated) and HSET return value is different. */
     char *cmdname = c->argv[0]->ptr;
@@ -692,12 +700,14 @@ void hsetCommand(client *c) {
         addReply(c, shared.ok);
     }
     signalModifiedKey(c,c->db,c->argv[1]);
-
+#ifdef ENABLE_SWAP
     notifyKeyspaceEventDirtySubkeys(NOTIFY_HASH,"hset",c->argv[1],
             c->db->id,o,ndss,dirty_subkeys,dirty_sublens);
     zfree(dirty_subkeys);
     zfree(dirty_sublens);
-
+#else
+    notifyKeyspaceEvent(NOTIFY_HASH,"hset",c->argv[1],c->db->id);
+#endif
     server.dirty += (c->argc - 2)/2;
 }
 
@@ -732,10 +742,14 @@ void hincrbyCommand(client *c) {
     hashTypeSet(o,c->argv[2]->ptr,new,HASH_SET_TAKE_VALUE);
     addReplyLongLong(c,value);
     signalModifiedKey(c,c->db,c->argv[1]);
+#ifdef ENABLE_SWAP
     sds dirty_subkeys[1] = {(sds)c->argv[2]->ptr};
     size_t dirty_sublens[1] = {sizeof(long long)};
     notifyKeyspaceEventDirtySubkeys(NOTIFY_HASH,"hincrby",c->argv[1],
             c->db->id,o,1,dirty_subkeys,dirty_sublens);
+#else
+    notifyKeyspaceEvent(NOTIFY_HASH,"hincrby",c->argv[1],c->db->id);
+#endif
     server.dirty++;
 }
 
@@ -774,10 +788,14 @@ void hincrbyfloatCommand(client *c) {
     hashTypeSet(o,c->argv[2]->ptr,new,HASH_SET_TAKE_VALUE);
     addReplyBulkCBuffer(c,buf,len);
     signalModifiedKey(c,c->db,c->argv[1]);
+#ifdef ENABLE_SWAP
     sds dirty_subkeys[1] = {(sds)c->argv[2]->ptr};
     size_t dirty_sublens[1] = {sizeof(long double)};
     notifyKeyspaceEventDirtySubkeys(NOTIFY_HASH,"hincrbyfloat",c->argv[1],
             c->db->id,o,1,dirty_subkeys,dirty_sublens);
+#else
+    notifyKeyspaceEvent(NOTIFY_HASH,"hincrbyfloat",c->argv[1],c->db->id);
+#endif
     server.dirty++;
 
     /* Always replicate HINCRBYFLOAT as an HSET command with the final value
@@ -849,11 +867,12 @@ void hmgetCommand(client *c) {
     }
 }
 
+#ifdef ENABLE_SWAP
 size_t hashMetaLength(redisDb *db, robj *key) {
     objectMeta *om = lookupMeta(db, key);
     return om ? om->len : 0;
 }
-
+#endif
 void hdelCommand(client *c) {
     robj *o;
     int j, deleted = 0, keyremoved = 0;
@@ -864,8 +883,12 @@ void hdelCommand(client *c) {
     for (j = 2; j < c->argc; j++) {
         if (hashTypeDelete(o,c->argv[j]->ptr)) {
             deleted++;
-            if (hashTypeLength(o) == 0 && 
-                    hashMetaLength(c->db,c->argv[1]) == 0) {
+#ifdef ENABLE_SWAP
+            if (hashTypeLength(o) == 0
+                    && hashMetaLength(c->db,c->argv[1]) == 0) {
+#else
+            if (hashTypeLength(o) == 0) {
+#endif
                 dbDelete(c->db,c->argv[1]);
                 keyremoved = 1;
                 break;
@@ -874,6 +897,7 @@ void hdelCommand(client *c) {
     }
     if (deleted) {
         signalModifiedKey(c,c->db,c->argv[1]);
+#ifdef ENABLE_SWAP
         if (keyremoved) {
             notifyKeyspaceEvent(NOTIFY_HASH,"hdel",c->argv[1],c->db->id);
             notifyKeyspaceEvent(NOTIFY_GENERIC,"del",c->argv[1],c->db->id);
@@ -881,6 +905,12 @@ void hdelCommand(client *c) {
             notifyKeyspaceEventDirtyMeta(NOTIFY_HASH,"hdel",c->argv[1],
                     c->db->id,o);
         }
+#else
+        notifyKeyspaceEvent(NOTIFY_HASH,"hdel",c->argv[1],c->db->id);
+        if (keyremoved)
+            notifyKeyspaceEvent(NOTIFY_GENERIC,"del",c->argv[1],
+                                c->db->id);
+#endif
         server.dirty += deleted;
     }
     addReplyLongLong(c,deleted);
@@ -888,6 +918,8 @@ void hdelCommand(client *c) {
 
 void hlenCommand(client *c) {
     robj *o;
+
+#ifdef ENABLE_SWAP
     objectMeta *om = lookupMeta(c->db,c->argv[1]);
     if (om != NULL) {
         size_t hash_len = om->len;
@@ -896,7 +928,7 @@ void hlenCommand(client *c) {
         addReplyLongLong(c,hash_len);
         return;
     }
-
+#endif
     if ((o = lookupKeyReadOrReply(c,c->argv[1],shared.czero)) == NULL ||
         checkType(c,o,OBJ_HASH)) return;
 

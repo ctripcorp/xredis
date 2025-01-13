@@ -163,7 +163,9 @@ void xorObjectDigest(redisDb *db, robj *keyobj, unsigned char *digest, robj *o) 
         unsigned char eledigest[20];
 
         if (o->encoding == OBJ_ENCODING_ZIPLIST) {
+#ifdef ENABLE_SWAP
             if(zsetLength(o) == 0) goto end;
+#endif
             unsigned char *zl = o->ptr;
             unsigned char *eptr, *sptr;
             unsigned char *vstr;
@@ -262,7 +264,9 @@ void xorObjectDigest(redisDb *db, robj *keyobj, unsigned char *digest, robj *o) 
         serverPanic("Unknown object type");
     }
     /* If the key has an expire, add it to the mix */
+#ifdef ENABLE_SWAP
 end:
+#endif
     if (expiretime != -1) xorDigest(digest,"!!expire!!",10);
 }
 
@@ -384,6 +388,7 @@ void mallctl_string(client *c, robj **argv, int argc) {
 }
 #endif
 
+#ifdef ENABLE_SWAP
 int debugGetKeys(struct redisCommand *cmd, robj **argv, int argc, getKeysResult *result) {
     int *keys = NULL;
     UNUSED(cmd);
@@ -401,8 +406,12 @@ int debugGetKeys(struct redisCommand *cmd, robj **argv, int argc, getKeysResult 
     }
     return result->numkeys;
 }
+#endif
 
 
+#ifdef ENABLE_SWAP
+void debugSwapOutCommand(client *c);
+#endif
 void debugCommand(client *c) {
     if (c->argc == 2 && !strcasecmp(c->argv[1]->ptr,"help")) {
         const char *help[] = {
@@ -542,6 +551,7 @@ NULL
             }
         }
 
+#ifdef ENABLE_SWAP
         /* debug reload is executed without global lock, there might be
          * inprogress request which could result in in keys not save
          * consistent. e.g. if hot hash swap out in flight, hash object
@@ -549,14 +559,17 @@ NULL
          * db.meta) not yet modified, then hash will be considered hot
          * and saved as hot (empty hash). */
         asyncCompleteQueueDrain(-1);
-
+#endif
         /* The default behavior is to save the RDB file before loading
          * it back. */
         if (save) {
             rdbSaveInfo rsi, *rsiptr;
-
             rsiptr = rdbPopulateSaveInfo(&rsi);
+#ifdef ENABLE_SWAP
             if (rdbSave(server.rdb_filename,rsiptr,0) != C_OK) {
+#else
+            if (rdbSave(server.rdb_filename,rsiptr) != C_OK) {
+#endif
                 addReplyErrorObject(c,shared.err);
                 return;
             }
@@ -713,16 +726,14 @@ NULL
             decrRefCount(key);
         }
         addReply(c,shared.ok);
-    } else if (!strcasecmp(c->argv[1]->ptr,"swapout")) {
-        debugSwapOutCommand(c);
     } else if (!strcasecmp(c->argv[1]->ptr,"digest") && c->argc == 2) {
         /* DEBUG DIGEST (form without keys specified) */
         unsigned char digest[20];
         sds d = sdsempty();
-
+#ifdef ENABLE_SWAP
         /* wait untill keyspace stable */
         asyncCompleteQueueDrain(-1);
-
+#endif
         computeDatasetDigest(digest);
         for (int i = 0; i < 20; i++) d = sdscatprintf(d, "%02x",digest[i]);
         addReplyStatus(c,d);
@@ -868,11 +879,11 @@ NULL
         stats = sdscatprintf(stats,"[Expires HT]\n");
         dictGetStats(buf,sizeof(buf),server.db[dbid].expires);
         stats = sdscat(stats,buf);
-
+#ifdef ENABLE_SWAP
         stats = sdscatprintf(stats,"[Meta HT]\n");
         dictGetStats(buf,sizeof(buf),server.db[dbid].meta);
         stats = sdscat(stats,buf);
-
+#endif
         addReplyVerbatim(c,stats,sdslen(stats),"txt");
         sdsfree(stats);
     } else if (!strcasecmp(c->argv[1]->ptr,"htstats-key") && c->argc == 3) {
@@ -926,6 +937,9 @@ NULL
         mallctl_string(c, c->argv+2, c->argc-2);
         return;
 #endif
+#ifdef ENABLE_SWAP
+    } else if (!strcasecmp(c->argv[1]->ptr,"swapout")) {
+        debugSwapOutCommand(c);
     } else if (!strcasecmp(c->argv[1]->ptr,"set-swap-debug-rio-delay-micro") && c->argc == 3) {
         server.swap_debug_rio_delay_micro = atoi(c->argv[2]->ptr);
         addReply(c,shared.ok);
@@ -935,6 +949,7 @@ NULL
             return;
         server.swap_txid = value;
         addReply(c,shared.ok);
+#endif
     } else {
         addReplySubcommandSyntaxError(c);
         return;

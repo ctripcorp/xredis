@@ -196,6 +196,7 @@ client *createClient(connection *conn) {
     c->auth_callback = NULL;
     c->auth_callback_privdata = NULL;
     c->auth_module = NULL;
+#ifdef ENABLE_SWAP
     c->keyrequests_count = 0;
     c->swap_cmd = NULL;
     c->swap_result = 0;
@@ -210,6 +211,7 @@ client *createClient(connection *conn) {
     c->swap_arg_rewrites = argRewritesCreate();
     c->rate_limit_event_id = -1;
     c->duration = 0;
+#endif
     listSetFreeMethod(c->pubsub_patterns,decrRefCountVoid);
     listSetMatchMethod(c->pubsub_patterns,listMatchObjects);
     if (conn) linkClient(c);
@@ -1063,7 +1065,11 @@ void clientAcceptHandler(connection *conn) {
 }
 
 #define MAX_ACCEPTS_PER_CALL 1000
+#ifdef ENABLE_SWAP
 static void acceptCommonHandler(connection *conn, uint64_t flags, char *ip) {
+#else
+static void acceptCommonHandler(connection *conn, int flags, char *ip) {
+#endif
     client *c;
     char conninfo[100];
     UNUSED(ip);
@@ -1082,8 +1088,13 @@ static void acceptCommonHandler(connection *conn, uint64_t flags, char *ip) {
      * Admission control will happen before a client is created and connAccept()
      * called, because we don't want to even start transport-level negotiation
      * if rejected. */
+#ifdef ENABLE_SWAP
     if (!(flags & CLIENT_CTRIP_MONITOR) && listLength(server.clients) + getClusterConnectionsCount()
         >= server.maxclients)
+#else
+    if (listLength(server.clients) + getClusterConnectionsCount()
+        >= server.maxclients)
+#endif
     {
         char *err;
         if (server.cluster_enabled)
@@ -1100,7 +1111,9 @@ static void acceptCommonHandler(connection *conn, uint64_t flags, char *ip) {
         }
         server.stat_rejected_conn++;
         connClose(conn);
+#ifdef ENABLE_SWAP
         ctrip_ignoreAcceptEvent();
+#endif
         return;
     }
 
@@ -1198,6 +1211,7 @@ void acceptUnixHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     }
 }
 
+#ifdef ENABLE_SWAP
 void acceptMonitorHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     int cport, cfd, max = MAX_ACCEPTS_PER_CALL;
     char cip[NET_IP_STR_LEN];
@@ -1218,7 +1232,7 @@ void acceptMonitorHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
         acceptCommonHandler(connCreateAcceptedSocket(cfd),CLIENT_CTRIP_MONITOR,cip);
     }
 }
-
+#endif
 void freeClientOriginalArgv(client *c) {
     /* We didn't rewrite this client */
     if (!c->original_argv) return;
@@ -1346,13 +1360,15 @@ void unlinkClient(client *c) {
 
     /* Clear the tracking status. */
     if (c->flags & CLIENT_TRACKING) disableTracking(c);
-
+#ifdef ENABLE_SWAP
     if (c->rate_limit_event_id != -1) {
         aeDeleteTimeEvent(server.el, c->rate_limit_event_id);
         c->rate_limit_event_id = -1;
     }
+#endif
 }
 
+#ifdef ENABLE_SWAP
 static void deferFreeClient(client *c) {
     sds client_desc;
     serverAssert(c->keyrequests_count);
@@ -1388,16 +1404,21 @@ void freeClientsInDeferedQueue(void) {
 }
 
 void shiftReplicationId(void);
-
+#endif
 void freeClient(client *c) {
     listNode *ln;
 
+#ifdef ENABLE_SWAP
     /* Unlinked repl client from server.repl_swapping_clients. */
     replClientDiscardSwappingState(c);
-
+#endif
     /* If a client is protected, yet we need to free it right now, make sure
      * to at least use asynchronous freeing. */
+#ifdef ENABLE_SWAP
     if (c->flags & CLIENT_PROTECTED || c->flags & CLIENT_SWAP_UNLOCKING) {
+#else
+    if (c->flags & CLIENT_PROTECTED) {
+#endif
         freeClientAsync(c);
         return;
     }
@@ -1422,6 +1443,7 @@ void freeClient(client *c) {
         listDelNode(server.clients_to_close,ln);
     }
 
+#ifdef ENABLE_SWAP
     serverAssert(!(server.swap_draining_master && server.master));
 
     if (c->keyrequests_count) {
@@ -1457,7 +1479,7 @@ void freeClient(client *c) {
             server.swap_draining_master = NULL;
         }
     }
-
+#endif
     /* If it is our master that's being disconnected we should make sure
      * to cache the state to try a partial resynchronization later.
      *
@@ -1549,12 +1571,16 @@ void freeClient(client *c) {
 
     /* Master/slave cleanup Case 2:
      * we lost the connection with the master. */
+#ifdef ENABLE_SWAP
     if (c->flags & CLIENT_MASTER) {
         if (c->flags & CLIENT_SWAP_DONT_RECONNECT_MASTER)
             replicationHandleMasterDisconnectionWithoutReconnect();
         else
             replicationHandleMasterDisconnection();
     }
+#else
+    if (c->flags & CLIENT_MASTER) replicationHandleMasterDisconnection();
+#endif
 
    /* Remove the contribution that this client gave to our
      * incrementally computed memory usage. */
@@ -1570,12 +1596,14 @@ void freeClient(client *c) {
     sdsfree(c->peerid);
     sdsfree(c->sockname);
     sdsfree(c->slave_addr);
+#ifdef ENABLE_SWAP
     listRelease(c->swap_locks);
     if (c->swap_metas) {
         freeScanMetaResult(c->swap_metas);
         c->swap_metas = NULL;
     }
     argRewritesFree(c->swap_arg_rewrites);
+#endif
     zfree(c);
 }
 
@@ -1798,10 +1826,12 @@ void resetClient(client *c) {
     c->reqtype = 0;
     c->multibulklen = 0;
     c->bulklen = -1;
+#ifdef ENABLE_SWAP
     if (c->swap_cmd) {
         swapCmdTraceFree(c->swap_cmd);
         c->swap_cmd = NULL;
     }
+#endif
 
     /* We clear the ASKING flag as well if we are not inside a MULTI, and
      * if what we just executed is not the ASKING command itself. */
@@ -2132,19 +2162,8 @@ int processMultibulkBuffer(client *c) {
  * 1. The client is reset unless there are reasons to avoid doing it.
  * 2. In the case of master clients, the replication offset is updated.
  * 3. Propagate commands we got from our master to replicas down the line. */
+#ifdef ENABLE_SWAP
 void commandProcessed(client *c) {
-    robj *gtid_repr = NULL;
-
-    serverLog(LL_DEBUG, "> commandProcessed client(id=%ld,cmd=%s,key=%s)",
-        c->id,c->cmd ? c->cmd->name: "",c->argc <= 1 ? "": (sds)c->argv[1]->ptr);
-
-    if (server.swap_mode == SWAP_MODE_MEMORY && c->flags & CLIENT_MASTER) {
-        if (c->cmd == server.gtidCommand) {
-            gtid_repr = c->argv[1];
-            incrRefCount(gtid_repr);
-        }
-    }
-
     /* If client is blocked(including paused), just return avoid reset and replicate.
      *
      * 1. Don't reset the client structure for blocked clients, so that the reply
@@ -2159,41 +2178,59 @@ void commandProcessed(client *c) {
     /* To reuse test cases with extensive swap actions, we try to evict
      * configured num of key after executing command. */
     if (server.swap_debug_evict_keys && !server.loading) swapDebugEvictKeys();
+}
+#else
+void commandProcessed(client *c) {
+    /* If client is blocked(including paused), just return avoid reset and replicate.
+     *
+     * 1. Don't reset the client structure for blocked clients, so that the reply
+     *    callback will still be able to access the client argv and argc fields.
+     *    The client will be reset in unblockClient().
+     * 2. Don't update replication offset or propagate commands to replicas,
+     *    since we have not applied the command. */
+    if (c->flags & CLIENT_BLOCKED) return;
 
-    serverLog(LL_DEBUG, "< commandProcessed");
-    if (server.swap_mode == SWAP_MODE_MEMORY) {
-        long long prev_offset = c->reploff;
-        if (c->flags & CLIENT_MASTER && !(c->flags & CLIENT_MULTI)) {
-            /* Update the applied replication offset of our master. */
-            c->reploff = c->read_reploff - sdslen(c->querybuf) + c->qb_pos;
-        }
+    robj *gtid_repr = NULL;
 
-        /* If the client is a master we need to compute the difference
-        * between the applied offset before and after processing the buffer,
-        * to understand how much of the replication stream was actually
-        * applied to the master state: this quantity, and its corresponding
-        * part of the replication stream, will be propagated to the
-        * sub-replicas and to the replication backlog. */
-        if (c->flags & CLIENT_MASTER) {
-            long long applied = c->reploff - prev_offset;
-            if (applied) {
-                gno_t gno = 0;
-                char *uuid = NULL;
-                size_t uuid_len = 0;
-                if (gtid_repr) {
-                    sds repr = gtid_repr->ptr;
-                    uuid = uuidGnoDecode(repr,sdslen(repr),&gno,&uuid_len);
-                }
-                ctrip_replicationFeedSlavesFromMasterStream(server.slaves,
-                        c->pending_querybuf, applied, uuid,uuid_len,gno,
-                        server.master_repl_offset+1);
-                sdsrange(c->pending_querybuf,applied,-1);
+    if (c->flags & CLIENT_MASTER && c->cmd == server.gtidCommand) {
+        gtid_repr = c->argv[1];
+        incrRefCount(gtid_repr);
+    }
+
+    resetClient(c);
+
+    long long prev_offset = c->reploff;
+    if (c->flags & CLIENT_MASTER && !(c->flags & CLIENT_MULTI)) {
+        /* Update the applied replication offset of our master. */
+        c->reploff = c->read_reploff - sdslen(c->querybuf) + c->qb_pos;
+    }
+
+    /* If the client is a master we need to compute the difference
+     * between the applied offset before and after processing the buffer,
+     * to understand how much of the replication stream was actually
+     * applied to the master state: this quantity, and its corresponding
+     * part of the replication stream, will be propagated to the
+     * sub-replicas and to the replication backlog. */
+    if (c->flags & CLIENT_MASTER) {
+        long long applied = c->reploff - prev_offset;
+        if (applied) {
+            gno_t gno = 0;
+            char *uuid = NULL;
+            size_t uuid_len = 0;
+            if (gtid_repr) {
+                sds repr = gtid_repr->ptr;
+                uuid = uuidGnoDecode(repr,sdslen(repr),&gno,&uuid_len);
             }
+            ctrip_replicationFeedSlavesFromMasterStream(server.slaves,
+                    c->pending_querybuf, applied, uuid,uuid_len,gno,
+                    server.master_repl_offset+1);
+            sdsrange(c->pending_querybuf,applied,-1);
         }
     }
 
     if (gtid_repr) decrRefCount(gtid_repr);
 }
+#endif
 
 /* This function calls processCommand(), but also performs a few sub tasks
  * for the client that are useful in that context:
@@ -2245,13 +2282,14 @@ int processPendingCommandsAndResetClient(client *c) {
  * pending query buffer, already representing a full command, to process. */
 void processInputBuffer(client *c) {
     /* Keep processing while there is something in the input buffer */
-    while (c->qb_pos < sdslen(c->querybuf)) {
+    while(c->qb_pos < sdslen(c->querybuf)) {
         /* Immediately abort if the client is in the middle of something. */
         if (c->flags & CLIENT_BLOCKED) break;
 
+#ifdef ENABLE_SWAP
         /* Also abort if the client is swapping. */
         if (c->flags&CLIENT_SWAPPING || c->flags&CLIENT_SWAP_REWINDING) break;
-
+#endif
         /* Don't process more buffers from clients that have already pending
          * commands to execute in c->argv. */
         if (c->flags & CLIENT_PENDING_COMMAND) break;
@@ -2336,8 +2374,9 @@ void readQueryFromClient(connection *conn) {
      * the event loop. This is the case if threaded I/O is enabled. */
     if (postponeClientRead(c)) return;
 
+#ifdef ENABLE_SWAP
     if (c->flags&CLIENT_SWAPPING || c->flags&CLIENT_SWAP_REWINDING) return;
-
+#endif
     /* Update total number of reads on server */
     atomicIncr(server.stat_total_reads_processed, 1);
 
@@ -2384,9 +2423,7 @@ void readQueryFromClient(connection *conn) {
 
     sdsIncrLen(c->querybuf,nread);
     c->lastinteraction = server.unixtime;
-    if (c->flags & CLIENT_MASTER) {
-        c->read_reploff += nread;
-    }
+    if (c->flags & CLIENT_MASTER) c->read_reploff += nread;
     atomicIncr(server.stat_net_input_bytes, nread);
     if (sdslen(c->querybuf) > server.client_max_querybuf_len) {
         sds ci = catClientInfoString(sdsempty(),c), bytes = sdsempty();

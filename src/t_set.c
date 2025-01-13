@@ -232,18 +232,17 @@ unsigned long setTypeSize(const robj *subject) {
     }
 }
 
-// count up members in memory and in disk
-unsigned long setTypeSizeDiskAndMem(const objectMeta *meta, const robj *subject) {
+#ifdef ENABLE_SWAP
+unsigned long swap_setTypeSize(const objectMeta *meta, const robj *o) {
     unsigned long disksize = meta ? meta->len : 0;
-    unsigned long memsize = subject ? setTypeSize(subject) : 0;
+    unsigned long memsize = o ? setTypeSize(o) : 0;
     return memsize + disksize;
 }
 
-
-unsigned long ctrip_setTypeSize(redisDb *db, robj *key, const robj *subject) {
-    return setTypeSizeDiskAndMem(lookupMeta(db, key), subject);
+unsigned long swap_setTypeSizeLookup(redisDb *db, robj *key, const robj *o) {
+    return swap_setTypeSize(lookupMeta(db, key), o);
 }
-
+#endif
 /* Convert the set to specified encoding. The resulting dict (when converting
  * to a hash table) is presized to hold the number of elements in the original
  * set. */
@@ -318,31 +317,39 @@ void saddCommand(client *c) {
 
     set = lookupKeyWrite(c->db,c->argv[1]);
     if (checkType(c,set,OBJ_SET)) return;
-
+#ifdef ENABLE_SWAP
     sds *dirty_subkeys = zmalloc(sizeof(sds)*c->argc-2);
     size_t *dirty_sublens = zmalloc(sizeof(size_t)*c->argc-2);
-
+#endif
     if (set == NULL) {
         set = setTypeCreate(c->argv[2]->ptr);
         dbAdd(c->db,c->argv[1],set);
     }
 
     for (j = 2; j < c->argc; j++) {
+#ifdef ENABLE_SWAP
         if (setTypeAdd(set,c->argv[j]->ptr)) {
             dirty_subkeys[added] = c->argv[j]->ptr;
             dirty_sublens[added] = sdslen(c->argv[j]->ptr);
             added++;
         }
+#else
+        if (setTypeAdd(set,c->argv[j]->ptr)) added++;
+#endif
     }
     if (added) {
         signalModifiedKey(c,c->db,c->argv[1]);
+#ifdef ENABLE_SWAP
         notifyKeyspaceEventDirtySubkeys(NOTIFY_SET,"sadd",c->argv[1],
                 c->db->id,set,added,dirty_subkeys,dirty_sublens);
+#else
+        notifyKeyspaceEvent(NOTIFY_SET,"sadd",c->argv[1],c->db->id);
+#endif
     }
-
+#ifdef ENABLE_SWAP
     zfree(dirty_subkeys);
     zfree(dirty_sublens);
-
+#endif
     server.dirty += added;
     addReplyLongLong(c,added);
 }
@@ -357,7 +364,11 @@ void sremCommand(client *c) {
     for (j = 2; j < c->argc; j++) {
         if (setTypeRemove(set,c->argv[j]->ptr)) {
             deleted++;
-            if (ctrip_setTypeSize(c->db, c->argv[1], set) == 0) {
+#ifdef ENABLE_SWAP
+            if (swap_setTypeSizeLookup(c->db,c->argv[1],set) == 0) {
+#else
+            if (setTypeSize(set) == 0) {
+#endif
                 dbDelete(c->db,c->argv[1]);
                 keyremoved = 1;
                 break;
@@ -366,6 +377,7 @@ void sremCommand(client *c) {
     }
     if (deleted) {
         signalModifiedKey(c,c->db,c->argv[1]);
+#ifdef ENABLE_SWAP
         if (keyremoved) {
             notifyKeyspaceEvent(NOTIFY_SET,"srem",c->argv[1],c->db->id);
             notifyKeyspaceEvent(NOTIFY_GENERIC,"del",c->argv[1],
@@ -374,6 +386,12 @@ void sremCommand(client *c) {
             notifyKeyspaceEventDirtyMeta(NOTIFY_SET,"srem",c->argv[1],
                     c->db->id,set);
         }
+#else
+        notifyKeyspaceEvent(NOTIFY_SET,"srem",c->argv[1],c->db->id);
+        if (keyremoved)
+            notifyKeyspaceEvent(NOTIFY_GENERIC,"del",c->argv[1],
+                                c->db->id);
+#endif
         server.dirty += deleted;
     }
     addReplyLongLong(c,deleted);
@@ -408,13 +426,21 @@ void smoveCommand(client *c) {
         addReply(c,shared.czero);
         return;
     }
+#ifdef ENABLE_SWAP
     sds dirty_subkeys[1] = {(sds)ele->ptr};
     size_t dirty_sublens[1] = {sdslen(ele->ptr)};
     notifyKeyspaceEventDirtySubkeys(NOTIFY_SET,"srem",c->argv[1],c->db->id,
             srcset,1,dirty_subkeys,dirty_sublens);
+#else
+    notifyKeyspaceEvent(NOTIFY_SET,"srem",c->argv[1],c->db->id);
+#endif
 
     /* Remove the src set from the database when empty */
-    if (ctrip_setTypeSize(c->db, c->argv[1], srcset) == 0) {
+#ifdef ENABLE_SWAP
+    if (swap_setTypeSizeLookup(c->db,c->argv[1],srcset) == 0) {
+#else
+    if (setTypeSize(srcset) == 0) {
+#endif
         dbDelete(c->db,c->argv[1]);
         notifyKeyspaceEvent(NOTIFY_GENERIC,"del",c->argv[1],c->db->id);
     }
@@ -432,8 +458,12 @@ void smoveCommand(client *c) {
     if (setTypeAdd(dstset,ele->ptr)) {
         server.dirty++;
         signalModifiedKey(c,c->db,c->argv[2]);
+#ifdef ENABLE_SWAP
         notifyKeyspaceEventDirtySubkeys(NOTIFY_SET,"sadd",c->argv[2],
                 c->db->id,dstset,1,dirty_subkeys,dirty_sublens);
+#else
+        notifyKeyspaceEvent(NOTIFY_SET,"sadd",c->argv[2],c->db->id);
+#endif
     }
     addReply(c,shared.cone);
 }
@@ -478,18 +508,19 @@ void scardCommand(client *c) {
     addReplyLongLong(c,setTypeSize(o));
 }
 
+#ifdef ENABLE_SWAP
 void ctrip_scardCommand(client *c) {
     robj *o = lookupKeyRead(c->db, c->argv[1]);
     objectMeta *m = lookupMeta(c->db, c->argv[1]);
 
     if (NULL != o && checkType(c,o,OBJ_SET)) return;
     else if (NULL != o || NULL != m) {
-        addReplyLongLong(c, setTypeSizeDiskAndMem(m, o));
-    } else { // NULL == o && NULL == m
+        addReplyLongLong(c, swap_setTypeSize(m, o));
+    } else {
         SentReplyOnKeyMiss(c, shared.czero);
     }
 }
-
+#endif
 /* Handle the "SPOP key <count>" variant. The normal version of the
  * command is handled by the spopCommand() function itself. */
 
@@ -522,7 +553,11 @@ void spopWithCountCommand(client *c) {
     size = setTypeSize(set);
 
     /* Generate an SPOP keyspace notification */
+#ifdef ENABLE_SWAP
     notifyKeyspaceEventDirtyMeta(NOTIFY_SET,"spop",c->argv[1],c->db->id,set);
+#else
+    notifyKeyspaceEvent(NOTIFY_SET,"spop",c->argv[1],c->db->id);
+#endif
     server.dirty += (count >= size) ? size : count;
 
     /* CASE 1:
@@ -672,7 +707,11 @@ void spopCommand(client *c) {
         setTypeRemove(set,ele->ptr);
     }
 
+#ifdef ENABLE_SWAP
     notifyKeyspaceEventDirtyMeta(NOTIFY_SET,"spop",c->argv[1],c->db->id,set);
+#else
+    notifyKeyspaceEvent(NOTIFY_SET,"spop",c->argv[1],c->db->id);
+#endif
 
     /* Replicate/AOF this command as an SREM operation */
     rewriteClientCommandVector(c,3,shared.srem,c->argv[1],ele);
@@ -682,7 +721,11 @@ void spopCommand(client *c) {
     decrRefCount(ele);
 
     /* Delete the set if it's empty */
-    if (ctrip_setTypeSize(c->db, c->argv[1], set) == 0) {
+#ifdef ENABLE_SWAP
+    if (swap_setTypeSizeLookup(c->db,c->argv[1],set) == 0) {
+#else
+    if (setTypeSize(set) == 0) {
+#endif
         dbDelete(c->db,c->argv[1]);
         notifyKeyspaceEvent(NOTIFY_GENERIC,"del",c->argv[1],c->db->id);
     }
@@ -1016,8 +1059,13 @@ void sinterGenericCommand(client *c, robj **setkeys,
         if (setTypeSize(dstset) > 0) {
             setKey(c,c->db,dstkey,dstset);
             addReplyLongLong(c,setTypeSize(dstset));
+#ifdef ENABLE_SWAP
             notifyKeyspaceEventDirty(NOTIFY_SET,"sinterstore",
                 dstkey,c->db->id,dstset,NULL);
+#else
+            notifyKeyspaceEvent(NOTIFY_SET,"sinterstore",
+                dstkey,c->db->id);
+#endif
             server.dirty++;
         } else {
             addReply(c,shared.czero);
@@ -1192,9 +1240,15 @@ void sunionDiffGenericCommand(client *c, robj **setkeys, int setnum,
         if (setTypeSize(dstset) > 0) {
             setKey(c,c->db,dstkey,dstset);
             addReplyLongLong(c,setTypeSize(dstset));
+#ifdef ENABLE_SWAP
             notifyKeyspaceEventDirty(NOTIFY_SET,
                 op == SET_OP_UNION ? "sunionstore" : "sdiffstore",
                 dstkey,c->db->id,dstset,NULL);
+#else
+            notifyKeyspaceEvent(NOTIFY_SET,
+                op == SET_OP_UNION ? "sunionstore" : "sdiffstore",
+                dstkey,c->db->id);
+#endif
             server.dirty++;
         } else {
             addReply(c,shared.czero);

@@ -54,31 +54,32 @@
 int activeExpireCycleTryExpire(redisDb *db, dictEntry *de, long long now) {
     long long t = dictGetSignedIntegerVal(de);
     if (now > t) {
-        int expired = 0;
         sds key = dictGetKey(de);
         robj *keyobj = createStringObject(key,sdslen(key));
-        if (server.swap_mode == SWAP_MODE_MEMORY) {
-            deleteExpiredKeyAndPropagate(db,keyobj);
-            expired = 1;
+#ifdef ENABLE_SWAP
+        int expired = 0;
+        if (lockWouldBlock(server.swap_txid++,db,keyobj)) {
+            /* If there are preceeding request on the key we are about
+             * to expire, most likely it's the in-progress expire request.
+             * on which case, we don't try to expire the key, otherwise
+             * the same we might submit expire request continuesly on the
+             * same key. */
+            expired = 0;
         } else {
-            if (lockWouldBlock(server.swap_txid++,db,keyobj)) {
-                /* If there are preceeding request on the key we are about
-                 * to expire, most likely it's the in-progress expire request.
-                 * on which case, we don't try to expire the key, otherwise
-                 * the same we might submit expire request continuesly on the
-                 * same key. */
-                expired = 0;
-            } else {
-                client *c = server.expire_clients[db->id];
-                int force = server.masterhost ? 1 : 0;
-                /* We assume that slave try expire key is to force expire
-                 * keys generated in writeable slave. */
-                submitExpireClientRequest(c,keyobj,force);
-                expired = 1;
-            }
+            client *c = server.expire_clients[db->id];
+            int force = server.masterhost ? 1 : 0;
+            /* We assume that slave try expire key is to force expire
+             * keys generated in writeable slave. */
+            submitExpireClientRequest(c,keyobj,force);
+            expired = 1;
         }
         decrRefCount(keyobj);
         return expired;
+#else
+        deleteExpiredKeyAndPropagate(db,keyobj);
+        decrRefCount(keyobj);
+        return 1;
+#endif
     } else {
         return 0;
     }
@@ -141,7 +142,11 @@ void activeExpireCycle(int type) {
     config_cycle_fast_duration = ACTIVE_EXPIRE_CYCLE_FAST_DURATION +
                                  ACTIVE_EXPIRE_CYCLE_FAST_DURATION/4*effort,
     config_cycle_slow_time_perc = ACTIVE_EXPIRE_CYCLE_SLOW_TIME_PERC +
+#ifdef ENABLE_SWAP
                                   2*server.swap_slow_expire_effort,
+#else
+                                  2*effort,
+#endif
     config_cycle_acceptable_stale = ACTIVE_EXPIRE_CYCLE_ACCEPTABLE_STALE-
                                     effort;
 
@@ -153,7 +158,10 @@ void activeExpireCycle(int type) {
 
     int j, iteration = 0;
     int dbs_per_call = CRON_DBS_PER_CALL;
-    long long start = ustime(), timelimit, elapsed, remaining_timelimit;
+    long long start = ustime(), timelimit, elapsed;
+#ifdef ENABLE_SWAP
+    long long remaining_timelimit;
+#endif
 
     /* When clients are paused the dataset should be static not just from the
      * POV of clients not being able to write, but also from the POV of
@@ -320,13 +328,14 @@ void activeExpireCycle(int type) {
              * not reclaimed). */
         } while (sampled == 0 ||
                  (expired*100/sampled) > config_cycle_acceptable_stale);
-
+#ifdef ENABLE_SWAP
         /* Scan and del expired keys in rocksdb. */
         elapsed = ustime() - start;
         remaining_timelimit = timelimit - elapsed;
         if (!timelimit_exit && remaining_timelimit > 0) {
             timelimit_exit = scanExpireDbCycle(db,type,remaining_timelimit);
         }
+#endif
     }
 
     elapsed = ustime()-start;
@@ -515,7 +524,7 @@ int checkAlreadyExpired(long long when) {
  * unit is either UNIT_SECONDS or UNIT_MILLISECONDS, and is only used for
  * the argv[2] parameter. The basetime is always specified in milliseconds. */
 void expireGenericCommand(client *c, long long basetime, int unit) {
-    robj *key = c->argv[1], *param = c->argv[2], *o;
+    robj *key = c->argv[1], *param = c->argv[2];
     long long when; /* unix time in milliseconds when the key will expire. */
 
     if (getLongLongFromObjectOrReply(c, param, &when, NULL) != C_OK)
@@ -529,19 +538,46 @@ void expireGenericCommand(client *c, long long basetime, int unit) {
         addReplyErrorFormat(c, "invalid expire time in %s", c->cmd->name);
         return;
     }
-
     /* No key, return zero. */
+#ifdef ENABLE_SWAP
+    robj *o;
     if ((o = lookupKeyWrite(c->db,key)) == NULL) {
+#else
+    if (lookupKeyWrite(c->db,key) == NULL) {
+#endif
         addReply(c,shared.czero);
         return;
     }
 
+#ifdef ENABLE_SWAP
     if (checkAlreadyExpired(when)) when = 0;
     {
+#else
+    if (checkAlreadyExpired(when)) {
+        robj *aux;
+
+        int deleted = server.lazyfree_lazy_expire ? dbAsyncDelete(c->db,key) :
+                                                    dbSyncDelete(c->db,key);
+        serverAssertWithInfo(c,key,deleted);
+        server.dirty++;
+
+        /* Replicate/AOF this as an explicit DEL or UNLINK. */
+        aux = server.lazyfree_lazy_expire ? shared.unlink : shared.del;
+        rewriteClientCommandVector(c,2,aux,key);
+        signalModifiedKey(c,c->db,key);
+        notifyKeyspaceEvent(NOTIFY_GENERIC,"del",key,c->db->id);
+        addReply(c, shared.cone);
+        return;
+    } else {
+#endif
         setExpire(c,c->db,key,when);
         addReply(c,shared.cone);
         signalModifiedKey(c,c->db,key);
+#ifdef ENABLE_SWAP
         notifyKeyspaceEventDirtyMeta(NOTIFY_GENERIC,"expire",key,c->db->id,o);
+#else
+        notifyKeyspaceEvent(NOTIFY_GENERIC,"expire",key,c->db->id);
+#endif
         server.dirty++;
         return;
     }
@@ -602,11 +638,19 @@ void pttlCommand(client *c) {
 
 /* PERSIST key */
 void persistCommand(client *c) {
+#ifdef ENABLE_SWAP
     robj *o;
     if ((o = lookupKeyWrite(c->db,c->argv[1]))) {
+#else
+    if (lookupKeyWrite(c->db,c->argv[1])) {
+#endif
         if (removeExpire(c->db,c->argv[1])) {
             signalModifiedKey(c,c->db,c->argv[1]);
+#ifdef ENABLE_SWAP
             notifyKeyspaceEventDirtyMeta(NOTIFY_GENERIC,"persist",c->argv[1],c->db->id,o);
+#else
+            notifyKeyspaceEvent(NOTIFY_GENERIC,"persist",c->argv[1],c->db->id);
+#endif
             addReply(c,shared.cone);
             server.dirty++;
         } else {

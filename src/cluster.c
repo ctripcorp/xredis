@@ -5177,7 +5177,11 @@ void restoreCommand(client *c) {
 
     rioInitWithBuffer(&payload,c->argv[3]->ptr);
     if (((type = rdbLoadObjectType(&payload)) == -1) ||
+#ifdef ENABLE_SWAP
         ((obj = rdbLoadObject(type,&payload,key->ptr,NULL,0)) == NULL))
+#else
+        ((obj = rdbLoadObject(type,&payload,key->ptr,NULL)) == NULL))
+#endif
     {
         addReplyError(c,"Bad data format");
         return;
@@ -5208,7 +5212,11 @@ void restoreCommand(client *c) {
     }
     objectSetLRUOrLFU(obj,lfu_freq,lru_idle,lru_clock,1000);
     signalModifiedKey(c,c->db,key);
+#ifdef ENABLE_SWAP
     notifyKeyspaceEventDirty(NOTIFY_GENERIC,"restore",key,c->db->id,obj,NULL);
+#else
+    notifyKeyspaceEvent(NOTIFY_GENERIC,"restore",key,c->db->id);
+#endif
     addReply(c,shared.ok);
     server.dirty++;
 }

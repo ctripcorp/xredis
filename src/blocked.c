@@ -64,9 +64,12 @@
 #include "slowlog.h"
 #include "latency.h"
 #include "monotonic.h"
-#include "ctrip_swap.h"
 
+#ifdef ENABLE_SWAP
 int serveClientBlockedOnList(client *receiver, robj *key, robj *dstkey, redisDb *db, robj *value, int wherefrom, int whereto, list* swap_wrong_type_error_keys);
+#else
+int serveClientBlockedOnList(client *receiver, robj *key, robj *dstkey, redisDb *db, robj *value, int wherefrom, int whereto);
+#endif
 int getListPositionFromObjectOrReply(client *c, robj *arg, int *position);
 
 /* This structure represents the blocked key information that we store
@@ -110,7 +113,11 @@ void blockClient(client *c, int btype) {
  * in order to update the total command duration, log the command into
  * the Slow log if needed, and log the reply duration event if needed. */
 void updateStatsOnUnblock(client *c, long blocked_us, long reply_us){
+#ifdef ENABLE_SWAP
     const ustime_t total_cmd_duration = c->duration + c->swap_duration + blocked_us + reply_us;
+#else
+    const ustime_t total_cmd_duration = c->duration + blocked_us + reply_us;
+#endif
     c->lastcmd->microseconds += total_cmd_duration;
 
     /* Log the command into the Slow log if needed. */
@@ -265,7 +272,11 @@ void disconnectAllBlockedClients(void) {
 /* Helper function for handleClientsBlockedOnKeys(). This function is called
  * when there may be clients blocked on a list key, and there may be new
  * data to fetch (the key is ready). */
+#ifdef ENABLE_SWAP
 void serveClientsBlockedOnListKey(robj *o, readyList *rl, list* swap_wrong_type_error_keys) {
+#else
+void serveClientsBlockedOnListKey(robj *o, readyList *rl) {
+#endif
     /* We serve clients in the same order they blocked for
      * this key, from the first blocked to the last. */
     dictEntry *de = dictFind(rl->db->blocking_keys,rl->key);
@@ -287,7 +298,11 @@ void serveClientsBlockedOnListKey(robj *o, readyList *rl, list* swap_wrong_type_
             robj *dstkey = receiver->bpop.target;
             int wherefrom = receiver->bpop.listpos.wherefrom;
             int whereto = receiver->bpop.listpos.whereto;
+#ifdef ENABLE_SWAP
             robj *value = ctripListTypePop(o, wherefrom, rl->db, rl->key);
+#else
+            robj *value = listTypePop(o, wherefrom);
+#endif
 
             if (value) {
                 /* Protect receiver->bpop.target, that will be
@@ -299,11 +314,19 @@ void serveClientsBlockedOnListKey(robj *o, readyList *rl, list* swap_wrong_type_
                 elapsedStart(&replyTimer);
                 if (serveClientBlockedOnList(receiver,
                     rl->key,dstkey,rl->db,value,
+#ifdef ENABLE_SWAP
                     wherefrom, whereto, swap_wrong_type_error_keys) == C_ERR)
+#else
+                    wherefrom, whereto) == C_ERR)
+#endif
                 {
                     /* If we failed serving the client we need
                      * to also undo the POP operation. */
+#ifdef ENABLE_SWAP
                     ctripListTypePush(o,value,wherefrom, rl->db, rl->key);
+#else
+                    listTypePush(o,value,wherefrom);
+#endif
                 }
                 updateStatsOnUnblock(receiver, 0, elapsedUs(replyTimer));
                 unblockClient(receiver);
@@ -315,8 +338,13 @@ void serveClientsBlockedOnListKey(robj *o, readyList *rl, list* swap_wrong_type_
             }
         }
     }
+
+#ifdef ENABLE_SWAP
     objectMeta *om = lookupMeta(rl->db, rl->key);
     if (ctripListTypeLength(o, om) == 0) {
+#else
+    if (listTypeLength(o) == 0) {
+#endif
         dbDelete(rl->db,rl->key);
         notifyKeyspaceEvent(NOTIFY_GENERIC,"del",rl->key,rl->db->id);
     }
@@ -581,7 +609,11 @@ void handleClientsBlockedOnKeys(void) {
 
             if (o != NULL) {
                 if (o->type == OBJ_LIST)
+#ifdef ENABLE_SWAP
                     swapServeClientsBlockedOnListKey(o,rl);
+#else
+                    serveClientsBlockedOnListKey(o,rl);
+#endif
                 else if (o->type == OBJ_ZSET)
                     serveClientsBlockedOnSortedSetKey(o,rl);
                 else if (o->type == OBJ_STREAM)
@@ -634,7 +666,6 @@ void blockForKeys(client *c, int btype, robj **keys, int numkeys, mstime_t timeo
     list *l;
     int j;
 
-
     c->bpop.timeout = timeout;
     c->bpop.target = target;
 
@@ -672,7 +703,9 @@ void blockForKeys(client *c, int btype, robj **keys, int numkeys, mstime_t timeo
         listAddNodeTail(l,c);
         bki->listnode = listLast(l);
     }
+#ifdef ENABLE_SWAP
     incrSwapUnBlockCtxVersion();
+#endif
     blockClient(c,btype);
 }
 
@@ -684,8 +717,6 @@ void unblockClientWaitingData(client *c) {
     list *l;
 
     serverAssertWithInfo(c,NULL,dictSize(c->bpop.keys) != 0);
-
-
     di = dictGetIterator(c->bpop.keys);
     /* The client may wait for multiple keys, so unblock it for every key. */
     while((de = dictNext(di)) != NULL) {

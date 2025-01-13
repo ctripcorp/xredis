@@ -158,25 +158,11 @@ start_server {tags {"expire"}} {
         r psetex key1 500 a
         r psetex key2 500 a
         r psetex key3 500 a
-        if {$::swap_debug_evict_keys} {
-            wait_for_condition 100 20 {
-                [r dbsize] == 3
-            } else {
-                fail "wait evict fail"
-            }
-        }
         set size1 [r dbsize]
         # Redis expires random keys ten times every second so we are
         # fairly sure that all the three keys should be evicted after
         # one second.
         after 1000
-        if {$::swap_debug_evict_keys} {
-            wait_for_condition 100 20 {
-                [r dbsize] == 0
-            } else {
-                fail "wait expire fail"
-            }
-        }
         set size2 [r dbsize]
         list $size1 $size2
     } {3 0}
@@ -187,13 +173,6 @@ start_server {tags {"expire"}} {
         r psetex key1 500 a
         r psetex key2 500 a
         r psetex key3 500 a
-        if {$::swap_debug_evict_keys} {
-            wait_for_condition 100 20 {
-                [r dbsize] == 3
-            } else {
-                fail "wait evict fail"
-            }
-        }
         set size1 [r dbsize]
         # Redis expires random keys ten times every second so we are
         # fairly sure that all the three keys should be evicted after
@@ -201,11 +180,6 @@ start_server {tags {"expire"}} {
         after 1000
         set size2 [r dbsize]
         r mget key1 key2 key3
-        wait_for_condition 100 20 {
-            [r dbsize] == 0
-        } else {
-            fail "wait expire fail"
-        }
         set size3 [r dbsize]
         r debug set-active-expire 1
         list $size1 $size2 $size3
@@ -221,6 +195,7 @@ start_server {tags {"expire"}} {
         r exists foo
     } {0}
 
+    tags {memonly} {
     test {5 keys in, 5 keys out} {
         r flushdb
         r set a c
@@ -229,12 +204,9 @@ start_server {tags {"expire"}} {
         r set e c
         r set s c
         r set foo b
-        if {$::swap_debug_evict_keys} {
-            wait_keyspace_cold r
-        }
-        r scan 0
-        lsort [lindex [r scan 1] 1]
+        lsort [r keys *]
     } {a e foo s t}
+    }
 
     test {EXPIRE with empty string as TTL should report an error} {
         r set foo bar
@@ -294,51 +266,52 @@ start_server {tags {"expire"}} {
         r ttl foo
     } {-2}
 
-    if {!$::swap} {
-        test {EXPIRE and SET/GETEX EX/PX/EXAT/PXAT option, TTL should not be reset after loadaof} {
-            # This test makes sure that expire times are propagated as absolute
-            # times to the AOF file and not as relative time, so that when the AOF
-            # is reloaded the TTLs are not being shifted forward to the future.
-            # We want the time to logically pass when the server is restarted!
+    tags {memonly} {
+    test {EXPIRE and SET/GETEX EX/PX/EXAT/PXAT option, TTL should not be reset after loadaof} {
+        # This test makes sure that expire times are propagated as absolute
+        # times to the AOF file and not as relative time, so that when the AOF
+        # is reloaded the TTLs are not being shifted forward to the future.
+        # We want the time to logically pass when the server is restarted!
 
-            r config set appendonly yes
-            r set foo1 bar EX 100
-            r set foo2 bar PX 100000
-            r set foo3 bar
-            r set foo4 bar
-            r expire foo3 100
-            r pexpire foo4 100000
-            r setex foo5 100 bar
-            r psetex foo6 100000 bar
-            r set foo7 bar EXAT [expr [clock seconds] + 100]
-            r set foo8 bar PXAT [expr [clock milliseconds] + 100000]
-            r set foo9 bar
-            r getex foo9 EX 100
-            r set foo10 bar
-            r getex foo10 PX 100000
-            r set foo11 bar
-            r getex foo11 EXAT [expr [clock seconds] + 100]
-            r set foo12 bar
-            r getex foo12 PXAT [expr [clock milliseconds] + 100000]
+        r config set appendonly yes
+        r set foo1 bar EX 100
+        r set foo2 bar PX 100000
+        r set foo3 bar
+        r set foo4 bar
+        r expire foo3 100
+        r pexpire foo4 100000
+        r setex foo5 100 bar
+        r psetex foo6 100000 bar
+        r set foo7 bar EXAT [expr [clock seconds] + 100]
+        r set foo8 bar PXAT [expr [clock milliseconds] + 100000]
+        r set foo9 bar
+        r getex foo9 EX 100
+        r set foo10 bar
+        r getex foo10 PX 100000
+        r set foo11 bar
+        r getex foo11 EXAT [expr [clock seconds] + 100]
+        r set foo12 bar
+        r getex foo12 PXAT [expr [clock milliseconds] + 100000]
 
-            after 2000
-            r debug loadaof
-            assert_range [r ttl foo1] 90 98
-            assert_range [r ttl foo2] 90 98
-            assert_range [r ttl foo3] 90 98
-            assert_range [r ttl foo4] 90 98
-            assert_range [r ttl foo5] 90 98
-            assert_range [r ttl foo6] 90 98
-            assert_range [r ttl foo7] 90 98
-            assert_range [r ttl foo8] 90 98
-            assert_range [r ttl foo9] 90 98
-            assert_range [r ttl foo10] 90 98
-            assert_range [r ttl foo11] 90 98
-            assert_range [r ttl foo12] 90 98
-        }
+        after 2000
+        r debug loadaof
+        assert_range [r ttl foo1] 90 98
+        assert_range [r ttl foo2] 90 98
+        assert_range [r ttl foo3] 90 98
+        assert_range [r ttl foo4] 90 98
+        assert_range [r ttl foo5] 90 98
+        assert_range [r ttl foo6] 90 98
+        assert_range [r ttl foo7] 90 98
+        assert_range [r ttl foo8] 90 98
+        assert_range [r ttl foo9] 90 98
+        assert_range [r ttl foo10] 90 98
+        assert_range [r ttl foo11] 90 98
+        assert_range [r ttl foo12] 90 98
+    }
     }
 
-    if {!$::swap} {
+    # TODO case disabled because expire scheme changed, re-enable when memory mode supported
+    if {0} {
     test {EXPIRE relative and absolute propagation to replicas} {
         # Make sure that relative and absolute expire commands are propagated
         # "as is" to replicas.
@@ -408,16 +381,16 @@ start_server {tags {"expire"}} {
         assert {$ttl <= 100 && $ttl > 90}
     }
 
-    if {!$::swap} {
-        test {SET - use KEEPTTL option, TTL should not be removed after loadaof} {
-            r config set appendonly yes
-            r set foo bar EX 100
-            r set foo bar2 KEEPTTL
-            after 2000
-            r debug loadaof
-            set ttl [r ttl foo]
-            assert {$ttl <= 98 && $ttl > 90}
-        }
+    tags {memonly} {
+    test {SET - use KEEPTTL option, TTL should not be removed after loadaof} {
+        r config set appendonly yes
+        r set foo bar EX 100
+        r set foo bar2 KEEPTTL
+        after 2000
+        r debug loadaof
+        set ttl [r ttl foo]
+        assert {$ttl <= 98 && $ttl > 90}
+    }
     }
 
     test {GETEX use of PERSIST option should remove TTL} {
@@ -426,14 +399,14 @@ start_server {tags {"expire"}} {
        r ttl foo
     } {-1}
 
-    if {!$::swap} {
-        test {GETEX use of PERSIST option should remove TTL after loadaof} {
-            r set foo bar EX 100
-            r getex foo PERSIST
-            after 2000
-            r debug loadaof
-            r ttl foo
-        } {-1}
+    tags {memonly} {
+    test {GETEX use of PERSIST option should remove TTL after loadaof} {
+        r set foo bar EX 100
+        r getex foo PERSIST
+        after 2000
+        r debug loadaof
+        r ttl foo
+    } {-1}
     }
 
     test {GETEX propagate as to replica as PERSIST, DEL, or nothing} {

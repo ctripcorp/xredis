@@ -1,6 +1,6 @@
 # tests of corrupt ziplist payload with valid CRC
 
-tags {"dump" "corruption"} {
+tags {"dump" "corruption" "memonly"} {
 
 proc generate_collections {suffix elements} {
     set rd [redis_deferring_client]

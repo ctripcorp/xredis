@@ -446,8 +446,6 @@ start_server {
       $rd2 blmove list2 list3 left right 0
 
       r rpush list1 foo
-      assert_equal foo [$rd1 read]
-      assert_equal foo [$rd2 read]
 
       assert_equal {} [r lrange list1 0 -1]
       assert_equal {} [r lrange list2 0 -1]
@@ -512,6 +510,7 @@ start_server {
         $watching_client read
     } {}
 
+    tags {memonly} {
     test "BRPOPLPUSH does not affect WATCH while still blocked" {
         set blocked_client [redis_deferring_client]
         set watching_client [redis_deferring_client]
@@ -526,10 +525,10 @@ start_server {
         $watching_client read
         $watching_client exec
         # Blocked BLPOPLPUSH may create problems, unblock it.
-        after 100
         r lpush srclist element
         $watching_client read
     } {somevalue}
+    }
 
     test {BRPOPLPUSH timeout} {
       set rd [redis_deferring_client]

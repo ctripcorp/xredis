@@ -1,4 +1,4 @@
-start_server {tags {"repl network"}} {
+start_server {tags {"repl network" "memonly"}} {
     start_server {} {
 
         set master [srv -1 client]
@@ -39,7 +39,7 @@ start_server {tags {"repl network"}} {
     }
 }
 
-start_server {tags {"repl"}} {
+start_server {tags {"repl" "memonly"}} {
     start_server {} {
         set master [srv -1 client]
         set master_host [srv -1 host]
@@ -98,7 +98,7 @@ start_server {tags {"repl"}} {
     }
 }
 
-start_server {tags {"repl"}} {
+start_server {tags {"repl" "memonly"}} {
     start_server {} {
         set master [srv -1 client]
         set master_host [srv -1 host]

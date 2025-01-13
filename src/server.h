@@ -85,6 +85,9 @@ typedef long long ustime_t; /* microsecond time type. */
 #include "endianconv.h"
 #include "crc64.h"
 #include "gtid.h"
+#ifdef ENABLE_SWAP
+#include "ctrip_swap_server.h"
+#endif
 
 #define REPL_MODE_UNSET -1
 #define REPL_MODE_PSYNC 0
@@ -184,9 +187,13 @@ static inline const char *gtidSyncTypeName(int type) {
 #define STATS_METRIC_COMMAND 0      /* Number of commands executed. */
 #define STATS_METRIC_NET_INPUT 1    /* Bytes read to network .*/
 #define STATS_METRIC_NET_OUTPUT 2   /* Bytes written to network. */
+#ifdef ENABLE_SWAP
 #define STATS_METRIC_COUNT_MEM 3
 #define STATS_METRIC_COUNT_SWAP 77 /* define directly here to avoid dependcy cycle, will be checked later. */
 #define STATS_METRIC_COUNT (STATS_METRIC_COUNT_SWAP + STATS_METRIC_COUNT_MEM)
+#else
+#define STATS_METRIC_COUNT 3
+#endif
 
 /* Protocol and I/O related defines */
 #define PROTO_IOBUF_LEN         (1024*16)  /* Generic I/O buffer size */
@@ -263,16 +270,6 @@ extern int configOOMScoreAdjValuesDefaults[CONFIG_OOM_COUNT];
 #define CMD_CATEGORY_TRANSACTION (1ULL<<38)
 #define CMD_CATEGORY_SCRIPTING (1ULL<<39)
 
-/* swap datatype flags*/
-#define CMD_SWAP_DATATYPE_KEYSPACE (1ULL<<40)
-#define CMD_SWAP_DATATYPE_STRING (1ULL<<41)
-#define CMD_SWAP_DATATYPE_HASH (1ULL<<42)
-#define CMD_SWAP_DATATYPE_SET (1ULL<<43)
-#define CMD_SWAP_DATATYPE_ZSET (1ULL<<44)
-#define CMD_SWAP_DATATYPE_LIST (1ULL<<45)
-#define CMD_SWAP_DATATYPE_BITMAP (1ULL<<46)
-
-
 /* AOF states */
 #define AOF_OFF 0             /* AOF is off */
 #define AOF_ON 1              /* AOF is on */
@@ -335,13 +332,6 @@ extern int configOOMScoreAdjValuesDefaults[CONFIG_OOM_COUNT];
                                            and AOF client */
 #define CLIENT_REPL_RDBONLY (1ULL<<42) /* This client is a replica that only wants
                                           RDB without replication buffer. */
-#define CLIENT_SWAPPING (1ULL<<43) /* The client is waiting swap. */
-#define CLIENT_SWAP_UNLOCKING (1ULL<<44) /* Client is releasing swap lock. */
-#define CLIENT_CTRIP_MONITOR (1ULL<<45) /* Client for ctrip monitor. */
-#define CLIENT_SWAP_REWINDING (1ULL<<46) /* The client is waiting rewind. */
-#define CLIENT_SWAP_DISCARD_CACHED_MASTER (1ULL<<47) /* The client will not be saved as cached_master. */
-#define CLIENT_SWAP_SHIFT_REPL_ID (1ULL<<48) /* shift repl id when this client (drainning master) drained. */
-#define CLIENT_SWAP_DONT_RECONNECT_MASTER (1ULL<<49) /* shift repl id when this client (drainning master) drained. */
 
 /* Client block type (btype field in client structure)
  * if CLIENT_BLOCKED flag is set. */
@@ -410,8 +400,6 @@ typedef enum {
 #define SLAVE_CAPA_NONE 0
 #define SLAVE_CAPA_EOF (1<<0)    /* Can parse the RDB EOF streaming format. */
 #define SLAVE_CAPA_PSYNC2 (1<<1) /* Supports PSYNC2 protocol. */
-#define SLAVE_CAPA_RORDB (1<<2) /* Can parse RORDB format. */
-#define SLAVE_CAPA_SWAP_INFO (1<<3) /* Supports SWAP.INFO cmd. */
 
 /* Synchronous read timeout - slave side */
 #define CONFIG_REPL_SYNCIO_TIMEOUT 5
@@ -595,9 +583,6 @@ typedef enum {
 #define REDISMODULE_TYPE_ENCVER(id) (id & REDISMODULE_TYPE_ENCVER_MASK)
 #define REDISMODULE_TYPE_SIGN(id) ((id & ~((uint64_t)REDISMODULE_TYPE_ENCVER_MASK)) >>REDISMODULE_TYPE_ENCVER_BITS)
 
-#define SWAP_MODE_MEMORY 0
-#define SWAP_MODE_DISK 1
-
 /* Bit flags for moduleTypeAuxSaveFunc */
 #define REDISMODULE_AUX_BEFORE_RDB (1<<0)
 #define REDISMODULE_AUX_AFTER_RDB (1<<1)
@@ -608,9 +593,6 @@ struct RedisModuleDigest;
 struct RedisModuleCtx;
 struct redisObject;
 struct RedisModuleDefragCtx;
-struct getKeyRequestsResult;
-
-typedef void (*dataSwapFinishedCallback)(void *ctx, int action, char *rawkey, char *rawval, void *pd);
 
 /* Each module type implementation should export a set of methods in order
  * to serialize and deserialize the value in the RDB file, rewrite the AOF
@@ -628,11 +610,6 @@ typedef size_t (*moduleTypeFreeEffortFunc)(struct redisObject *key, const void *
 typedef void (*moduleTypeUnlinkFunc)(struct redisObject *key, void *value);
 typedef void *(*moduleTypeCopyFunc)(struct redisObject *fromkey, struct redisObject *tokey, const void *value);
 typedef int (*moduleTypeDefragFunc)(struct RedisModuleDefragCtx *ctx, struct redisObject *key, void **value);
-typedef void* (*moduleTypeLookupSwappingClientsFunc)(struct RedisModuleCtx *ctx, struct redisObject *key, struct redisObject *subkey);
-typedef void (*moduleTypeSetupSwappingClientsFunc)(struct RedisModuleCtx *ctx, struct redisObject *key, struct redisObject *subkey, void *scs);
-typedef void (*moduleTypeGetDataKeyRequestsFunc)(struct RedisModuleCtx *ctx, struct redisObject *key, int mode, struct getKeyRequestsResult *result);
-typedef int (*moduleTypeSwapAnaFunc)(struct RedisModuleCtx *ctx, struct redisObject *key, struct redisObject *subkey, int *action, char **rawkey, char **rawval, dataSwapFinishedCallback *cb, void **pd);
-
 
 /* This callback type is called by moduleNotifyUserChanged() every time
  * a user authenticated via the module API is associated with a different
@@ -743,9 +720,13 @@ typedef struct RedisModuleDigest {
 #define LRU_CLOCK_MAX ((1<<LRU_BITS)-1) /* Max value of obj->lru */
 #define LRU_CLOCK_RESOLUTION 1000 /* LRU clock resolution in ms */
 
-#define REFCOUNT_BITS 28
+#ifdef ENABLE_SWAP
 #define OBJ_SHARED_REFCOUNT ((1<<(REFCOUNT_BITS-1))-1)  /* Global object never destroyed. */
 #define OBJ_STATIC_REFCOUNT (OBJ_SHARED_REFCOUNT-1) /* Object allocated in the stack. */
+#else
+#define OBJ_SHARED_REFCOUNT INT_MAX     /* Global object never destroyed. */
+#define OBJ_STATIC_REFCOUNT (INT_MAX-1) /* Object allocated in the stack. */
+#endif
 #define OBJ_FIRST_SPECIAL_REFCOUNT OBJ_STATIC_REFCOUNT
 typedef struct redisObject {
     unsigned type:4;
@@ -753,11 +734,11 @@ typedef struct redisObject {
     unsigned lru:LRU_BITS; /* LRU time (relative to global lru_clock) or
                             * LFU data (least significant 8 bits frequency
                             * and most significant 16 bits access time). */
-    unsigned dirty_meta:1;     /* set to 1 if rocksdb and redis meta differs */
-    unsigned dirty_data:1;     /* set to 1 if rocksdb and redis data differs */
-    unsigned persistent:1;
-    unsigned persist_keep:1;   /* set to 1 if persist key should keep value in memory */
-    int refcount:REFCOUNT_BITS;
+#ifdef ENABLE_SWAP
+    SWAP_REDIS_OBJECT;
+#else
+    int refcount;
+#endif
     void *ptr;
 } robj;
 
@@ -799,14 +780,9 @@ typedef struct redisDb {
     long long avg_ttl;          /* Average TTL, just for stats */
     unsigned long expires_cursor; /* Cursor of the active expire cycle. */
     list *defrag_later;         /* List of key names to attempt to defrag one by one, gradually. */
-    /* swap */
-    dict *meta;                 /* meta for rocksdb subkeys of big object. */
-    dict *dirty_subkeys;        /* dirty subkeys. */
-    list *evict_asap;           /* keys to be evicted asap. */
-    long long cold_keys;        /* # of cold keys. */
-    sds randomkey_nextseek;     /* nextseek for randomkey command */
-    struct scanExpire *scan_expire; /* scan expire related */
-    struct coldFilter *cold_filter; /* cold keys filter: absent cache & cuckoo filter. */
+#ifdef ENABLE_SWAP
+    SWAP_REDIS_DB
+#endif
 } redisDb;
 
 /* Declare database backup that include redis main DBs and slots to keys map.
@@ -814,16 +790,15 @@ typedef struct redisDb {
  * in cluster.h. */
 typedef struct dbBackup dbBackup;
 
-typedef struct swapCmdTrace swapCmdTrace;
-typedef struct swapTrace swapTrace;
-
 /* Client MULTI/EXEC state */
 typedef struct multiCmd {
     robj **argv;
     int argc;
-    struct argRewrites *swap_arg_rewrites;
     struct redisCommand *cmd;
-    swapCmdTrace *swap_cmd;
+#ifdef ENABLE_SWAP
+    struct argRewrites *swap_arg_rewrites;
+    struct swapCmdTrace *swap_cmd;
+#endif
 } multiCmd;
 
 typedef struct multiState {
@@ -942,12 +917,6 @@ typedef struct {
                         ALLCHANNELS is set in the user. */
 } user;
 
-#define CLIENT_HOLD_MODE_CMD 0  /* Hold all key in cmd if any key in cmd needs swap. */
-#define CLIENT_HOLD_MODE_EVICT 1  /* Hold key if needs swap. */
-#define CLIENT_HOLD_MODE_REPL 2 /* Hold all key no matter what. */
-
-typedef void (*voidfuncptr)(void);
-
 /* With multiplexing we need to take per-client state.
  * Clients are taken in a linked list. */
 
@@ -1046,24 +1015,9 @@ typedef struct client {
     /* Response buffer */
     int bufpos;
     char buf[PROTO_REPLY_CHUNK_BYTES];
-
-    /* swap */
-    int keyrequests_count;
-    swapCmdTrace *swap_cmd;
-    long swap_duration; /* microseconds used in swap */
-    int swap_result;
-    voidfuncptr client_swap_finished_cb;
-    void *client_swap_finished_pd;
-    int client_hold_mode; /* indicates how client should hold key */
-    int CLIENT_DEFERED_CLOSING;
-    int CLIENT_REPL_SWAPPING;
-    long long cmd_reploff; /* Command replication offset when dispatch if this is a repl worker */
-    struct client *repl_client; /* Master or peer client if this is a repl worker */
-    list *swap_locks; /* swap locks */
-    struct metaScanResult *swap_metas;
-    int swap_errcode;
-    struct argRewrites *swap_arg_rewrites;
-    int rate_limit_event_id; /* add time event when rate limit */
+#ifdef ENABLE_SWAP
+    SWAP_CLIENT
+#endif
 } client;
 
 struct saveparam {
@@ -1096,7 +1050,7 @@ struct sharedObjectsStruct {
     *emptyarray, *wrongtypeerr, *nokeyerr, *syntaxerr, *sameobjecterr,
     *outofrangeerr, *noscripterr, *loadingerr, *slowscripterr, *bgsaveerr,
     *masterdownerr, *roslaveerr, *execaborterr, *noautherr, *noreplicaserr,
-    *busykeyerr, *oomerr, *outofdiskerr, *rocksdbdiskerr, *plus, *messagebulk, *pmessagebulk, *subscribebulk,
+    *busykeyerr, *oomerr, *plus, *messagebulk, *pmessagebulk, *subscribebulk,
     *unsubscribebulk, *psubscribebulk, *punsubscribebulk, *del, *unlink,
     *rpop, *lpop, *lpush, *rpoplpush, *lmove, *blmove, *zpopmin, *zpopmax,
     *emptyscan, *multi, *exec, *left, *right, *hset, *srem, *xgroup, *xclaim,  
@@ -1104,7 +1058,10 @@ struct sharedObjectsStruct {
     *time, *pxat, *px, *retrycount, *force, *justid, 
     *lastid, *ping, *setid, *keepttl, *load, *createconsumer,
     *getack, *special_asterick, *special_equals, *default_username, *redacted,
-    *emptystring, *gtid, *swap_info, *sst_age_limit,
+    *gtid,
+#ifdef ENABLE_SWAP
+    *outofdiskerr, *rocksdbdiskerr, *emptystring, *swap_info, *sst_age_limit,
+#endif
     *select[PROTO_SHARED_SELECT_CMDS],
     *integers[OBJ_SHARED_INTEGERS],
     *mbulkhdr[OBJ_SHARED_BULKHDR_LEN], /* "*<value>\r\n" */
@@ -1141,12 +1098,6 @@ typedef struct clientBufferLimitsConfig {
 } clientBufferLimitsConfig;
 
 extern clientBufferLimitsConfig clientBufferLimitsDefaults[CLIENT_TYPE_OBUF_COUNT];
-
-#define SWAP_TYPES_FORWARD 5
-typedef struct swapBatchLimitsConfig {
-    int count;
-    unsigned long long mem;
-} swapBatchLimitsConfig;
 
 /* The redisOp structure defines a Redis Operation, that is an instance of
  * a command with an argument vector, database ID, propagation target
@@ -1189,8 +1140,10 @@ struct redisMemOverhead {
     size_t bytes_per_key;
     float dataset_perc;
     float peak_perc;
+#ifdef ENABLE_SWAP
     float rectified_frag;
     ssize_t rectified_frag_bytes;
+#endif
     float total_frag;
     ssize_t total_frag_bytes;
     float allocator_frag;
@@ -1204,10 +1157,14 @@ struct redisMemOverhead {
         size_t dbid;
         size_t overhead_ht_main;
         size_t overhead_ht_expires;
+#ifdef ENABLE_SWAP
         size_t overhead_ht_meta;
         size_t overhead_ht_dirty_subkeys;
+#endif
     } *db;
+#ifdef ENABLE_SWAP
     struct rocksdbMemOverhead *rocks;
+#endif
 };
 
 /* This structure can be optionally passed to RDB save/load functions in
@@ -1288,8 +1245,12 @@ typedef enum childInfoType {
     CHILD_INFO_TYPE_CURRENT_INFO,
     CHILD_INFO_TYPE_AOF_COW_SIZE,
     CHILD_INFO_TYPE_RDB_COW_SIZE,
+#ifdef ENABLE_SWAP
     CHILD_INFO_TYPE_MODULE_COW_SIZE,
     CHILD_INFO_TYPE_SWAP_RDB_SIZE
+#else
+    CHILD_INFO_TYPE_MODULE_COW_SIZE
+#endif
 } childInfoType;
 
 struct redisServer {
@@ -1352,7 +1313,6 @@ struct redisServer {
     socketFds cfd;              /* Cluster bus listening socket */
     list *clients;              /* List of active clients */
     list *clients_to_close;     /* Clients to close asynchronously */
-    list *clients_to_free;      /* Clients to close when swaps finished. */
     list *clients_pending_write; /* There is to write or install handler. */
     list *clients_pending_read;  /* Client has pending read socket buffers. */
     list *slaves, *monitors;    /* List of slaves and MONITORs */
@@ -1449,12 +1409,10 @@ struct redisServer {
     int tcpkeepalive;               /* Set SO_KEEPALIVE if non-zero. */
     int active_expire_enabled;      /* Can be disabled for testing purposes. */
     int active_expire_effort;       /* From 1 (default) to 10, active effort. */
-    int swap_slow_expire_effort;    /* From -10 to 10, default -5, swap slow expire effort */
     int active_defrag_enabled;
     int sanitize_dump_payload;      /* Enables deep sanitization for ziplist and listpack in RDB and RESTORE. */
     int skip_checksum_validation;   /* Disables checksum validateion for RDB and RESTORE payload. */
     int jemalloc_bg_thread;         /* Enable jemalloc background thread */
-    int jemalloc_max_bg_threads;    /* Maximum jemalloc background threads num */
     size_t active_defrag_ignore_bytes; /* minimum amount of fragmentation waste to start active defrag */
     int active_defrag_threshold_lower; /* minimum percentage of fragmentation to start active defrag */
     int active_defrag_threshold_upper; /* maximum percentage of fragmentation at which we use maximum effort */
@@ -1521,8 +1479,6 @@ struct redisServer {
     int rdb_del_sync_files;         /* Remove RDB files used only for SYNC if
                                        the instance does not use persistence. */
     time_t lastsave;                /* Unix time of last successful save */
-    time_t swap_lastsave;           /* Unix time of last successful save for ror */
-    size_t swap_rdb_size;           /* Size of last successful save */
     time_t lastbgsave_try;          /* Unix time of last attempted bgsave */
     time_t rdb_save_time_last;      /* Time used by last RDB save run. */
     time_t rdb_save_time_start;     /* Current RDB save start time. */
@@ -1627,11 +1583,7 @@ struct redisServer {
     int get_ack_from_slaves;            /* If true we send REPLCONF GETACK. */
     /* Limits */
     unsigned int maxclients;            /* Max number of simultaneous clients */
-    unsigned long long swap_max_db_size;     /* Max number of disk bytes to use */
     unsigned long long maxmemory;   /* Max number of memory bytes to use */
-    time_t maxmemory_updated_time_last;
-    unsigned long long maxmemory_scale_from;
-    unsigned long long maxmemory_scaledown_rate; /* Number of bytes actually scale down maxmemory every seconds */
     int maxmemory_policy;           /* Policy for key eviction */
     int maxmemory_samples;          /* Precision of random sampling */
     int maxmemory_eviction_tenacity;/* Aggressiveness of eviction processing */
@@ -1766,170 +1718,9 @@ struct redisServer {
                                 * failover then any replica can be used. */
     int target_replica_port; /* Failover target port */
     int failover_state; /* Failover state */
-
-    /* accept ignore */
-    int ctrip_ignore_accept;
-    int ctrip_monitor_port;
-    int ctrip_monitorfd;
-
-    int swap_mode;      /* Swap mode: memory/swap/disk */
-		/* rocksdb engine */
-    int rocksdb_disk_error;
-    int rocksdb_disk_error_since;
-    int swap_rocksdb_stats_collect_interval_ms;
-    struct rocks *rocks;
-    struct rocksdb_checkpoint_t* rocksdb_checkpoint;
-    sds rocksdb_checkpoint_dir;
-    sds rocksdb_rdb_checkpoint_dir; /* checkpoint dir use for rdb saved */
-    struct rocksdbInternalStats *rocksdb_internal_stats;
-
-    redisAtomic size_t inflight_snapshot;
-    struct rocksdbUtilTaskManager* util_task_manager;
-    /* swap threads */
-    int swap_threads_num;
-    int swap_defer_thread_idx;
-    int swap_util_thread_idx;
-    int total_swap_threads_num; /* swap_threads_num + extra_swap_threads_num */
-    struct swapThread *swap_threads;
-    /* async */
-    struct asyncCompleteQueue *CQ;
-    /* parallel sync */
-    struct parallelSync *parallel_sync;
-    unsigned long long rocksdb_disk_used; /* rocksd disk usage bytes, updated every 1 minute. */
-		/* swaps */
-    client **evict_clients; /* array of evict clients (one for each db). */
-    client **expire_clients; /* array of rocks expire clients (one for each db). */
-    client **scan_expire_clients; /* array of expire scan clients (one for each db). */
-    client **ttl_clients; /* array of expire scan clients (one for each db). */
-    client **load_clients;
-    client *mutex_client; /* exec op needed global swap lock */
-    struct rorStat *ror_stats;
-    struct swapHitStat *swap_hit_stats;
-    struct swapDebugInfo *swap_debug_info;
-    int swap_debug_evict_keys; /* num of keys to evict before calling cmd. */
-    uint64_t req_submitted; /* whether request already submitted or not,
-                            request will be executed with global swap lock */
-    /* swap rate limiting */
-    redisAtomic size_t swap_inprogress_batch; /* swap request inprogress batch */
-    redisAtomic size_t swap_inprogress_count; /* swap request inprogress count */
-    redisAtomic size_t swap_inprogress_memory;  /* swap consumed memory in bytes */
-    redisAtomic size_t swap_error_count;  /* swap error count */
-    int swap_debug_rio_delay_micro; /* sleep swap_debug_rio_delay microsencods to simulate ssd delay. */
-    int swap_debug_swapout_notify_delay_micro; /* sleep swap_debug_swapout_notify_delay microsencods
-                                        to simulate notify queue blocked after swap out */
-    int swap_debug_before_exec_swap_delay_micro; /* sleep swap_debug_before_exec_swap_delay microsencods before exec swap request */
-    int swap_debug_init_rocksdb_delay_micro; /* sleep swap_debug_init_rocksdb_delay microsencods before init rocksdb */
-    int swap_debug_rio_error; /* mock rio error */
-    int swap_debug_rio_error_action;
-    int swap_debug_trace_latency;
-    int swap_debug_bgsave_metalen_addition;
-    int swap_debug_compaction_filter_delay_micro;
-    int swap_debug_rdb_key_save_delay_micro;
-    int swap_rordb_load_incremental_fsync;
-
-    /* repl swap */
-    int repl_workers;   /* num of repl worker clients */
-    list *repl_worker_clients_free; /* free clients for repl(slaveof & peerof) swap. */
-    list *repl_worker_clients_used; /* used clients for repl swap. */
-    list *repl_swapping_clients; /* list of repl swapping clients. */
-    /* rdb swap */
-    int ps_parallism_rdb;  /* parallel swap parallelism for rdb save & load. */
-    struct ctripRdbLoadCtx *rdb_load_ctx; /* parallel swap for rdb load */
-    int swap_bgsave_fix_metalen_mismatch;
-    int swap_child_err_pipe[2];
-    size_t swap_child_err_nread;
-    /* request wait */
-    struct swapLock *swap_lock;
-    /* big object */
-    int swap_evict_step_max_subkeys; /* max subkeys evict in one step. */
-    unsigned long long swap_evict_step_max_memory; /* max memory evict in one step. */
-    unsigned long long swap_repl_max_rocksdb_read_bps; /* max rocksdb iterator read bps. */ 
-    int64_t swap_txid; /* swap txid. */
-    int swap_rewind_type;
-    list *swap_torewind_clients;
-    list *swap_rewinding_clients;
-    uint64_t swap_key_version;
-    size_t swap_bitmap_subkey_size;
-    redisAtomic unsigned long long swap_bitmap_switched_to_string_count;
-    redisAtomic unsigned long long swap_string_switched_to_bitmap_count;
-    int swap_rdb_bitmap_encode_enabled;
-    int swap_bitmap_subkeys_enabled;
-
-    /* swap eviction */
-    int swap_evict_inprogress_limit;
-    int swap_evict_inprogress_growth_rate;
-    int swap_evict_loop_check_interval;
-    struct swapEvictionCtx *swap_eviction_ctx;
-
-    int swap_load_inprogress_count;
-    int swap_load_paused;
-    size_t swap_load_err_cnt;
-
-    /* swap scan session */
-    struct swapScanSessions *swap_scan_sessions;
-    int swap_scan_session_bits;
-    int swap_scan_session_max_idle_seconds;
-
-    /* rocksdb configs */
-    unsigned long long rocksdb_meta_block_cache_size;
-    unsigned long long rocksdb_data_block_cache_size;
-    int rocksdb_max_open_files;
-    int rocksdb_WAL_ttl_seconds;
-    int rocksdb_WAL_size_limit_MB;
-    unsigned long long rocksdb_data_write_buffer_size;
-    unsigned long long rocksdb_meta_write_buffer_size;
-    unsigned long long rocksdb_data_target_file_size_base;
-    unsigned long long rocksdb_meta_target_file_size_base;
-    unsigned long long rocksdb_ratelimiter_rate_per_sec;
-    unsigned long long rocksdb_bytes_per_sync;
-    unsigned long long rocksdb_data_periodic_compaction_seconds;
-    unsigned long long rocksdb_meta_periodic_compaction_seconds;
-    unsigned long long rocksdb_data_max_bytes_for_level_base;
-    unsigned long long rocksdb_meta_max_bytes_for_level_base;
-    unsigned long long rocksdb_max_total_wal_size;
-    unsigned long long rocksdb_data_suggest_compact_sliding_window_size;
-    unsigned long long rocksdb_data_suggest_compact_num_dels_trigger;
-    unsigned long long rocksdb_meta_suggest_compact_sliding_window_size;
-    unsigned long long rocksdb_meta_suggest_compact_num_dels_trigger;
-    unsigned long long rocksdb_data_min_blob_size;
-    unsigned long long rocksdb_meta_min_blob_size;
-    unsigned long long rocksdb_data_blob_file_size;
-    unsigned long long rocksdb_meta_blob_file_size;
-    int rocksdb_data_max_bytes_for_level_multiplier;
-    int rocksdb_meta_max_bytes_for_level_multiplier;
-    int rocksdb_data_compaction_dynamic_level_bytes;
-    int rocksdb_meta_compaction_dynamic_level_bytes;
-    int rocksdb_data_suggest_compact_deletion_percentage;
-    int rocksdb_meta_suggest_compact_deletion_percentage;
-    int rocksdb_data_max_write_buffer_number;
-    int rocksdb_meta_max_write_buffer_number;
-    int rocksdb_max_background_compactions;
-    int rocksdb_max_background_flushes;
-    int rocksdb_max_background_jobs;
-    int rocksdb_max_subcompactions;
-    int rocksdb_data_block_size;
-    int rocksdb_meta_block_size;
-    int rocksdb_data_cache_index_and_filter_blocks;
-    int rocksdb_meta_cache_index_and_filter_blocks;
-    int rocksdb_enable_pipelined_write;
-    int rocksdb_data_level0_slowdown_writes_trigger;
-    int rocksdb_meta_level0_slowdown_writes_trigger;
-    int rocksdb_data_disable_auto_compactions;
-    int rocksdb_meta_disable_auto_compactions;
-    int rocksdb_data_compression; /* rocksdb compresssion type: no/snappy/zlib. */
-    int rocksdb_meta_compression;
-    int rocksdb_data_enable_blob_files;
-    int rocksdb_meta_enable_blob_files;
-    int rocksdb_data_enable_blob_garbage_collection;
-    int rocksdb_meta_enable_blob_garbage_collection;
-    int rocksdb_data_blob_garbage_collection_age_cutoff_percentage;
-    int rocksdb_meta_blob_garbage_collection_age_cutoff_percentage;
-    int rocksdb_data_blob_garbage_collection_force_threshold_percentage;
-    int rocksdb_meta_blob_garbage_collection_force_threshold_percentage;
-
-    /* swap block*/
-    struct swapUnblockCtx* swap_dependency_block_ctx;
-
+#ifdef ENABLE_SWAP
+    SWAP_REDIS_SERVER
+#endif
     /* gtid executed */
     int gtid_enabled;  /* Is gtid enabled? */
     unsigned long long gtid_xsync_max_gap;
@@ -1949,70 +1740,6 @@ struct redisServer {
     long long gtid_ignored_cmd_count;
     long long gtid_executed_cmd_count;
     long long gtid_sync_stat[GTID_SYNC_TYPES];
-
-    /* absent cache */
-    int swap_absent_cache_enabled;
-    int swap_absent_cache_include_subkey;
-    unsigned long long swap_absent_cache_capacity;
-
-    /* cuckoo filter */
-    int swap_cuckoo_filter_enabled;
-    int swap_cuckoo_filter_bit_type;
-    unsigned long long swap_cuckoo_filter_estimated_keys;
-
-#ifndef __APPLE__
-    /* swap_cpu_usage */
-    redisAtomic int swap_threads_initialized;
-    struct swapThreadCpuUsage *swap_cpu_usage;
-#endif
-
-    /* swap batch */
-    struct swapBatchCtx *swap_batch_ctx;
-    swapBatchLimitsConfig swap_batch_limits[SWAP_TYPES_FORWARD];
-
-    /* swap ratelimit */
-    int swap_ratelimit_maxmemory_percentage;
-    int swap_ratelimit_maxmemory_pause_growth_rate;
-    int swap_ratelimit_policy;
-    long long stat_swap_ratelimit_client_pause_ms;
-    long long stat_swap_ratelimit_client_pause_count;
-    long long stat_swap_ratelimit_rejected_cmd_count;
-
-    unsigned long long swap_compaction_filter_disable_until;
-    int swap_compaction_filter_skip_level;
-
-    int swap_dirty_subkeys_enabled;
-
-    /* swap persist */
-    int swap_persist_enabled;
-    struct swapPersistCtx *swap_persist_ctx;
-    int swap_persist_lag_millis;
-    int swap_persist_inprogress_growth_rate;
-    int swap_ratelimit_persist_lag;
-    int swap_ratelimit_persist_pause_growth_rate;
-    uint64_t swap_persist_load_fix_version;
-
-    /* swap meta flush */
-    int swap_flush_meta_deletes_percentage;
-    unsigned long long swap_flush_meta_deletes_num;
-
-    /* swap rordb */
-    int swap_repl_rordb_sync;
-    unsigned long long swap_repl_rordb_max_write_bps;
-
-    client *swap_draining_master;
-
-    /* ttl compact, only compact default CF */
-    int swap_ttl_compact_enabled;
-    unsigned int swap_ttl_compact_expire_percentile;
-    unsigned long long swap_ttl_compact_period; /* seconds */
-    unsigned long long swap_sst_age_limit_refresh_period; /* seconds */
-    struct swapTtlCompactCtx *swap_ttl_compact_ctx;
-
-    /* for swap.info command, which propagate system info to replica */
-    int swap_swap_info_supported;
-    int swap_swap_info_propagate_mode;
-    unsigned long long swap_swap_info_slave_period;     /* Master send cmd swap.info to the slave every N seconds */
 };
 
 #define MAX_KEYS_BUFFER 256
@@ -2030,7 +1757,9 @@ typedef struct {
 
 typedef void redisCommandProc(client *c);
 typedef int redisGetKeysProc(struct redisCommand *cmd, robj **argv, int argc, getKeysResult *result);
+#ifdef ENABLE_SWAP
 typedef int (*redisGetKeyRequestsProc)(int dbid, struct redisCommand *cmd, robj **argv, int argc, struct getKeyRequestsResult *result);
+#endif
 struct redisCommand {
     char *name;
     redisCommandProc *proc;
@@ -2040,9 +1769,11 @@ struct redisCommand {
     /* Use a function to determine keys arguments in a command line.
      * Used for Redis Cluster redirect. */
     redisGetKeysProc *getkeys_proc;
+#ifdef ENABLE_SWAP
     redisGetKeyRequestsProc getkeyrequests_proc;
     int intention; /* Action type if swap needed (NOP/GET/PUT/DEL). */
     uint32_t intention_flags; /* extended swap intention flags */
+#endif
     /* What keys should be loaded in background when calling this command? */
     int firstkey; /* The first argument that's a key (0 = no keys) */
     int lastkey;  /* The last argument that's a key */
@@ -2053,11 +1784,6 @@ struct redisCommand {
                    ACLs. A connection is able to execute a given command if
                    the user associated to the connection has this command
                    bit set in the bitmap of allowed commands. */
-    /* Function used to find swap target key (or subkey). Note that:
-     * - no need to query keyspace to decide if swap needed , which will
-     *   be done later.
-     * - should return key (or subkey) even if intention is NOP, otherwise
-     *   current command will not block when key is swapping. */
 };
 
 struct redisError {
@@ -2130,7 +1856,6 @@ typedef struct {
 extern struct redisServer server;
 extern struct sharedObjectsStruct shared;
 extern dictType objectKeyPointerValueDictType;
-extern dictType objectKeyObjectValueDictType;
 extern dictType objectKeyHeapPointerValueDictType;
 extern dictType setDictType;
 extern dictType zsetDictType;
@@ -2187,7 +1912,6 @@ int moduleDefragValue(robj *key, robj *obj, long *defragged);
 int moduleLateDefrag(robj *key, robj *value, unsigned long *cursor, long long endtime, long long *defragged);
 long moduleDefragGlobals(void);
 
-
 /* Utils */
 long long ustime(void);
 long long mstime(void);
@@ -2216,7 +1940,6 @@ void setDeferredSetLen(client *c, void *node, long length);
 void setDeferredAttributeLen(client *c, void *node, long length);
 void setDeferredPushLen(client *c, void *node, long length);
 void processInputBuffer(client *c);
-void commandProcessed(client *c);
 void processGopherRequest(client *c);
 void acceptHandler(aeEventLoop *el, int fd, void *privdata, int mask);
 void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask);
@@ -2270,7 +1993,6 @@ void replaceClientCommandVector(client *c, int argc, robj **argv);
 void redactClientCommandArgument(client *c, int argc);
 unsigned long getClientOutputBufferMemoryUsage(client *c);
 int freeClientsInAsyncFreeQueue(void);
-void freeClientsInDeferedQueue(void);
 int closeClientOnOutputBufferLimitReached(client *c, int async);
 int getClientType(client *c);
 int getClientTypeByName(char *name);
@@ -2342,8 +2064,12 @@ void listTypeConvert(robj *subject, int enc);
 robj *listTypeDup(robj *o);
 void unblockClientWaitingData(client *c);
 void popGenericCommand(client *c, int where);
+#ifdef ENABLE_SWAP
 struct objectMeta;
 void listElementsRemoved(client *c, robj *key, int where, robj *o, struct objectMeta *om, long count);
+#else
+void listElementsRemoved(client *c, robj *key, int where, robj *o, long count);
+#endif
 
 /* MULTI/EXEC/WATCH... */
 void unwatchAllKeys(client *c);
@@ -2497,7 +2223,6 @@ void replicationFeedSlavesFromMasterStream(list *slaves, char *buf, size_t bufle
 void replicationFeedMonitors(client *c, list *monitors, int dictid, robj **argv, int argc);
 void updateSlavesWaitingBgsave(int bgsaveerr, int type);
 void replicationCron(void);
-void ctrip_replicationStartPendingFork(void);
 void replicationStartPendingFork(void);
 void replicationHandleMasterDisconnection(void);
 void replicationCacheMaster(client *c);
@@ -2567,9 +2292,17 @@ void restartAOFAfterSYNC();
 /* Child info */
 void openChildInfoPipe(void);
 void closeChildInfoPipe(void);
+#ifdef ENABLE_SWAP
 void sendChildInfoGeneric(childInfoType info_type, size_t keys, double progress, size_t swap_rdb_size, char *pname);
+#else
+void sendChildInfoGeneric(childInfoType info_type, size_t keys, double progress, char *pname);
+#endif
 void sendChildCowInfo(childInfoType info_type, char *pname);
+#ifdef ENABLE_SWAP
 void sendChildInfo(childInfoType info_type, size_t keys, size_t swap_rdb_size, char *pname);
+#else
+void sendChildInfo(childInfoType info_type, size_t keys, char *pname);
+#endif
 void receiveChildInfo(void);
 
 /* Fork helpers */
@@ -2635,7 +2368,6 @@ typedef struct {
     sds min, max;     /* May be set to shared.(minstring|maxstring) */
     int minex, maxex; /* are min or max exclusive? */
 } zlexrangespec;
-int zslParseRange(robj *min, robj *max, zrangespec *spec);
 zskiplist *zslCreate(void);
 void zslFree(zskiplist *zsl);
 zskiplistNode *zslInsert(zskiplist *zsl, double score, sds ele);
@@ -2734,11 +2466,6 @@ robj *activeDefragStringOb(robj* ob, long *defragged);
 #define RESTART_SERVER_CONFIG_REWRITE (1<<1) /* CONFIG REWRITE before restart.*/
 int restartServer(int flags, mstime_t delay);
 
-/* accept ignore */
-void ctrip_ignoreAcceptEvent();
-void ctrip_resetAcceptIgnore();
-void acceptMonitorHandler(aeEventLoop *el, int fd, void *privdata, int mask);
-
 /* Set data type */
 robj *setTypeCreate(sds value);
 int setTypeAdd(robj *subject, sds value);
@@ -2825,7 +2552,6 @@ int objectSetLRUOrLFU(robj *val, long long lfu_freq, long long lru_idle,
 #define LOOKUP_NONE 0
 #define LOOKUP_NOTOUCH (1<<0)
 #define LOOKUP_NONOTIFY (1<<1)
-
 void dbAdd(redisDb *db, robj *key, robj *val);
 int dbAddRDBLoad(redisDb *db, sds key, robj *val);
 void dbOverwrite(redisDb *db, robj *key, robj *val);
@@ -2835,8 +2561,6 @@ robj *dbRandomKey(redisDb *db);
 int dbSyncDelete(redisDb *db, robj *key);
 int dbDelete(redisDb *db, robj *key);
 robj *dbUnshareStringValue(redisDb *db, robj *key, robj *o);
-void dbPauseRehash(redisDb *db);
-void dbResumeRehash(redisDb *db);
 
 #define EMPTYDB_NO_FLAGS 0      /* No flags. */
 #define EMPTYDB_ASYNC (1<<0)    /* Reclaim memory in another thread. */
@@ -2874,7 +2598,6 @@ void freeSlotsToKeysMap(rax *rt, int async);
 int *getKeysPrepareResult(getKeysResult *result, int numkeys);
 int getKeysFromCommand(struct redisCommand *cmd, robj **argv, int argc, getKeysResult *result);
 void getKeysFreeResult(getKeysResult *result);
-int getKeysUsingCommandTable(struct redisCommand *cmd,robj **argv, int argc, getKeysResult *result);
 int zunionInterDiffGetKeys(struct redisCommand *cmd,robj **argv, int argc, getKeysResult *result);
 int zunionInterDiffStoreGetKeys(struct redisCommand *cmd,robj **argv, int argc, getKeysResult *result);
 int evalGetKeys(struct redisCommand *cmd, robj **argv, int argc, getKeysResult *result);
@@ -2884,7 +2607,6 @@ int georadiusGetKeys(struct redisCommand *cmd, robj **argv, int argc, getKeysRes
 int xreadGetKeys(struct redisCommand *cmd, robj **argv, int argc, getKeysResult *result);
 int memoryGetKeys(struct redisCommand *cmd, robj **argv, int argc, getKeysResult *result);
 int lcsGetKeys(struct redisCommand *cmd, robj **argv, int argc, getKeysResult *result);
-int debugGetKeys(struct redisCommand *cmd, robj **argv, int argc, getKeysResult *result);
 
 /* Cluster */
 void clusterInit(void);
@@ -2931,7 +2653,6 @@ void handleClientsBlockedOnKeys(void);
 void signalKeyAsReady(redisDb *db, robj *key, int type);
 void blockForKeys(client *c, int btype, robj **keys, int numkeys, mstime_t timeout, robj *target, struct listPos *listpos, streamID *ids);
 void updateStatsOnUnblock(client *c, long blocked_us, long reply_us);
-void serveClientsBlockedOnListKey(robj *o, readyList *rl, list* swap_wrong_type_error_keys);
 
 /* timeout.c -- Blocked clients timeout and connections timeout. */
 void addClientToTimeoutTable(client *c);
@@ -2962,7 +2683,6 @@ int performEvictions(void);
 uint64_t dictSdsHash(const void *key);
 int dictSdsKeyCompare(void *privdata, const void *key1, const void *key2);
 void dictSdsDestructor(void *privdata, void *val);
-void dictListDestructor(void *privdata, void *val);
 
 /* Git SHA1 */
 char *redisGitSHA1(void);
@@ -3030,7 +2750,6 @@ void smoveCommand(client *c);
 void sismemberCommand(client *c);
 void smismemberCommand(client *c);
 void scardCommand(client *c);
-void ctrip_scardCommand(client *c);
 void spopCommand(client *c);
 void srandmemberCommand(client *c);
 void sinterCommand(client *c);
@@ -3244,12 +2963,25 @@ int tlsConfigure(redisTLSContextConfig *ctx_config);
 
 int iAmMaster(void);
 
+#include "ctrip.h"
+
+#ifdef ENABLE_SWAP
+void commandProcessed(client *c);
+void freeClientsInDeferedQueue(void);
+void ctrip_replicationStartPendingFork(void);
+/* accept ignore */
+void ctrip_ignoreAcceptEvent();
+void ctrip_resetAcceptIgnore();
+void acceptMonitorHandler(aeEventLoop *el, int fd, void *privdata, int mask);
+void dbPauseRehash(redisDb *db);
+void dbResumeRehash(redisDb *db);
+int debugGetKeys(struct redisCommand *cmd, robj **argv, int argc, getKeysResult *result);
 void rdbSaveProgress(rio *rdb, int rdbflags);
 ssize_t rdbWriteRaw(rio *rdb, void *p, size_t len);
 void trackInstantaneousMetric(int metric, long long current_reading);
 long long getInstantaneousMetric(int metric);
+void ctrip_scardCommand(client *c);
 
-#include "ctrip.h"
 #include "ctrip_swap.h"
 
 #if defined(SWAP_STATS_METRIC_COUNT) && (STATS_METRIC_COUNT_SWAP != SWAP_STATS_METRIC_COUNT)
@@ -3258,5 +2990,6 @@ long long getInstantaneousMetric(int metric);
 #if defined(SWAP_TYPES) && (SWAP_TYPES_FORWARD != SWAP_TYPES)
 #error swap types inconsist
 #endif
+#endif /* ENABLE_SWAP */
 
 #endif

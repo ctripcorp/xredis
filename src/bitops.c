@@ -473,11 +473,12 @@ int getBitfieldTypeFromArgument(client *c, robj *o, int *sign, int *bits) {
     return C_OK;
 }
 
+#ifdef ENABLE_SWAP
 static robj* ctripCreateBitmap(redisDb *db, robj *key, size_t byte) {
 
     robj *o = createObject(OBJ_STRING,sdsnewlen(NULL, byte));
     dbAdd(db,key,o);
-    if (server.swap_mode == SWAP_MODE_DISK && server.swap_bitmap_subkeys_enabled) {
+    if (server.swap_bitmap_subkeys_enabled) {
         /* bitmap is not processed as whole string, 
         so add meta to distinguish between bitmap and string types. */
         dbAddMeta(db,key,createBitmapObjectMarker());
@@ -497,7 +498,7 @@ static void ctripGrowBitmap(redisDb *db, robj *key, robj *o, size_t byte) {
     }
     metaBitmapGrow(&meta_bitmap, byte);
 }
-
+#endif
 /* This is an helper function for commands implementations that need to write
  * bits to a string object. The command creates or pad with zeroes the string
  * so that the 'maxbit' bit can be addressed. The object is finally
@@ -509,10 +510,19 @@ robj *lookupStringForBitCommand(client *c, uint64_t maxbit) {
     if (checkType(c,o,OBJ_STRING)) return NULL;
 
     if (o == NULL) {
+#ifdef ENABLE_SWAP
         o = ctripCreateBitmap(c->db,c->argv[1],byte+1);
+#else
+        o = createObject(OBJ_STRING,sdsnewlen(NULL, byte+1));
+        dbAdd(c->db,c->argv[1],o);
+#endif
     } else {
         o = dbUnshareStringValue(c->db,c->argv[1],o);
+#ifdef ENABLE_SWAP
         ctripGrowBitmap(c->db,c->argv[1],o,byte+1);
+#else
+        o->ptr = sdsgrowzero(o->ptr,byte+1);
+#endif
     }
     return o;
 }
@@ -582,7 +592,11 @@ void setbitCommand(client *c) {
     byteval |= ((on & 0x1) << bit);
     ((uint8_t*)o->ptr)[byte] = byteval;
     signalModifiedKey(c,c->db,c->argv[1]);
+#ifdef ENABLE_SWAP
     notifyKeyspaceEventDirty(NOTIFY_STRING,"setbit",c->argv[1],c->db->id,o,NULL);
+#else
+    notifyKeyspaceEvent(NOTIFY_STRING,"setbit",c->argv[1],c->db->id);
+#endif
     server.dirty++;
     addReply(c, bitval ? shared.cone : shared.czero);
 }
@@ -698,6 +712,7 @@ void bitopCommand(client *c) {
             unsigned long *lp[16];
             unsigned long *lres = (unsigned long*) res;
 
+            /* Note: sds pointer is always aligned to 8 byte boundary. */
             memcpy(lp,src,sizeof(unsigned long*)*numkeys);
             memcpy(res,src[0],minlen);
 
@@ -792,12 +807,18 @@ void bitopCommand(client *c) {
     /* Store the computed value into the target key */
     if (maxlen) {
         o = createObject(OBJ_STRING,res);
+#ifdef ENABLE_SWAP
         bitmapClearObjectMarkerIfExist(c->db,targetkey);
+#endif
         setKey(c,c->db,targetkey,o);
-        if (server.swap_mode == SWAP_MODE_DISK && server.swap_bitmap_subkeys_enabled) {
+#ifdef ENABLE_SWAP
+        if (server.swap_bitmap_subkeys_enabled) {
             bitmapSetObjectMarkerIfNotExist(c->db,targetkey);
         }
         notifyKeyspaceEventDirty(NOTIFY_STRING,"set",targetkey,c->db->id,o,NULL);
+#else
+        notifyKeyspaceEvent(NOTIFY_STRING,"set",targetkey,c->db->id);
+#endif
         decrRefCount(o);
         server.dirty++;
     } else if (dbDelete(c->db,targetkey)) {
@@ -808,6 +829,7 @@ void bitopCommand(client *c) {
     addReplyLongLong(c,maxlen); /* Return the output string length in bytes. */
 }
 
+#ifdef ENABLE_SWAP
 void metaBitmapBitcount(metaBitmap *meta_bitmap, client *c)
 {
     long start, end, strlen;
@@ -882,7 +904,58 @@ void bitcountCommand(client *c) {
     }
     metaBitmapBitcount(&meta_bitmap, c);
 }
+#else
+/* BITCOUNT key [start end] */
+void bitcountCommand(client *c) {
+    robj *o;
+    long start, end, strlen;
+    unsigned char *p;
+    char llbuf[LONG_STR_SIZE];
 
+    /* Lookup, check for type, and return 0 for non existing keys. */
+    if ((o = lookupKeyReadOrReply(c,c->argv[1],shared.czero)) == NULL ||
+        checkType(c,o,OBJ_STRING)) return;
+    p = getObjectReadOnlyString(o,&strlen,llbuf);
+
+    /* Parse start/end range if any. */
+    if (c->argc == 4) {
+        if (getLongFromObjectOrReply(c,c->argv[2],&start,NULL) != C_OK)
+            return;
+        if (getLongFromObjectOrReply(c,c->argv[3],&end,NULL) != C_OK)
+            return;
+        /* Convert negative indexes */
+        if (start < 0 && end < 0 && start > end) {
+            addReply(c,shared.czero);
+            return;
+        }
+        if (start < 0) start = strlen+start;
+        if (end < 0) end = strlen+end;
+        if (start < 0) start = 0;
+        if (end < 0) end = 0;
+        if (end >= strlen) end = strlen-1;
+    } else if (c->argc == 2) {
+        /* The whole string. */
+        start = 0;
+        end = strlen-1;
+    } else {
+        /* Syntax error. */
+        addReplyErrorObject(c,shared.syntaxerr);
+        return;
+    }
+
+    /* Precondition: end >= 0 && end < strlen, so the only condition where
+     * zero can be returned is: start > end. */
+    if (start > end) {
+        addReply(c,shared.czero);
+    } else {
+        long bytes = end-start+1;
+
+        addReplyLongLong(c,redisPopcount(p+start,bytes));
+    }
+}
+#endif
+
+#ifdef ENABLE_SWAP
 void metaBitmapBitpos(metaBitmap *meta_bitmap, client *c, unsigned long bit)
 {
     long start, end, strlen;
@@ -990,6 +1063,85 @@ void bitposCommand(client *c) {
 
     metaBitmapBitpos(&meta_bitmap, c, bit);
 }
+#else
+/* BITPOS key bit [start [end]] */
+void bitposCommand(client *c) {
+    robj *o;
+    long bit, start, end, strlen;
+    unsigned char *p;
+    char llbuf[LONG_STR_SIZE];
+    int end_given = 0;
+
+    /* Parse the bit argument to understand what we are looking for, set
+     * or clear bits. */
+    if (getLongFromObjectOrReply(c,c->argv[2],&bit,NULL) != C_OK)
+        return;
+    if (bit != 0 && bit != 1) {
+        addReplyError(c, "The bit argument must be 1 or 0.");
+        return;
+    }
+
+    /* If the key does not exist, from our point of view it is an infinite
+     * array of 0 bits. If the user is looking for the fist clear bit return 0,
+     * If the user is looking for the first set bit, return -1. */
+    if ((o = lookupKeyRead(c->db,c->argv[1])) == NULL) {
+        addReplyLongLong(c, bit ? -1 : 0);
+        return;
+    }
+    if (checkType(c,o,OBJ_STRING)) return;
+    p = getObjectReadOnlyString(o,&strlen,llbuf);
+
+    /* Parse start/end range if any. */
+    if (c->argc == 4 || c->argc == 5) {
+        if (getLongFromObjectOrReply(c,c->argv[3],&start,NULL) != C_OK)
+            return;
+        if (c->argc == 5) {
+            if (getLongFromObjectOrReply(c,c->argv[4],&end,NULL) != C_OK)
+                return;
+            end_given = 1;
+        } else {
+            end = strlen-1;
+        }
+        /* Convert negative indexes */
+        if (start < 0) start = strlen+start;
+        if (end < 0) end = strlen+end;
+        if (start < 0) start = 0;
+        if (end < 0) end = 0;
+        if (end >= strlen) end = strlen-1;
+    } else if (c->argc == 3) {
+        /* The whole string. */
+        start = 0;
+        end = strlen-1;
+    } else {
+        /* Syntax error. */
+        addReplyErrorObject(c,shared.syntaxerr);
+        return;
+    }
+
+    /* For empty ranges (start > end) we return -1 as an empty range does
+     * not contain a 0 nor a 1. */
+    if (start > end) {
+        addReplyLongLong(c, -1);
+    } else {
+        long bytes = end-start+1;
+        long long pos = redisBitpos(p+start,bytes,bit);
+
+        /* If we are looking for clear bits, and the user specified an exact
+         * range with start-end, we can't consider the right of the range as
+         * zero padded (as we do when no explicit end is given).
+         *
+         * So if redisBitpos() returns the first bit outside the range,
+         * we return -1 to the caller, to mean, in the specified range there
+         * is not a single "0" bit. */
+        if (end_given && bit == 0 && pos == (long long)bytes<<3) {
+            addReplyLongLong(c,-1);
+            return;
+        }
+        if (pos != -1) pos += (long long)start<<3; /* Adjust for the bytes we skipped. */
+        addReplyLongLong(c,pos);
+    }
+}
+#endif
 
 /* BITFIELD key subcommmand-1 arg ... subcommand-2 arg ... subcommand-N ...
  *
@@ -1234,7 +1386,11 @@ void bitfieldGeneric(client *c, int flags) {
 
     if (changes) {
         signalModifiedKey(c,c->db,c->argv[1]);
+#ifdef ENABLE_SWAP
         notifyKeyspaceEventDirty(NOTIFY_STRING,"setbit",c->argv[1],c->db->id,o,NULL);
+#else
+        notifyKeyspaceEvent(NOTIFY_STRING,"setbit",c->argv[1],c->db->id);
+#endif
         server.dirty += changes;
     }
     zfree(ops);

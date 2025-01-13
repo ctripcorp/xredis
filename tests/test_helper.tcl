@@ -11,177 +11,146 @@ source tests/support/tmpfile.tcl
 source tests/support/test.tcl
 source tests/support/util.tcl
 source tests/support/gtid.tcl
-source tests/swap/support/util.tcl
 
-set ::disk_tests {
-    swap/integration/rordb
-    swap/integration/client_rate_limit_bug
-    swap/integration/type_error
-    swap/integration/zset
-    swap/integration/info_rocksdb_stats
-    swap/integration/concurrency
-    swap/integration/multi_bighash
-    swap/integration/concurrent
-    swap/integration/pipeline
-    swap/integration/overwrite
-    swap/integration/bgsave
-    swap/integration/compact_range
-    swap/integration/expire_evict
-    swap/integration/swap_load
-    swap/integration/persist
-    swap/ported/replication-psync
-    swap/ported/replication
-    swap/ported/other
-    swap/ported/stream-cgroups
-    swap/ported/stream
-    swap/ported/replication-3
-    swap/ported/rdb
-    swap/ported/multi
-    swap/ported/block-repl
-    swap/ported/replication-2
-    swap/ported/replication-4
-    swap/ported/psync2-reg
-    swap/unit/swap_mode
-    swap/unit/absent_cache
-    swap/unit/dbsize
-    swap/unit/lock
-    swap/unit/list
-    swap/unit/dirty
-    swap/unit/expire
-    swap/unit/rdb
-    swap/unit/del
-    swap/unit/load_rdb
-    swap/unit/save_rdb
-    swap/unit/swap_out+del
-    swap/unit/swap_out+in
-    swap/unit/hash
-    swap/unit/zset
-    swap/unit/bitmap
-    swap/unit/geo
-    swap/unit/big_hash
-    swap/unit/big_set
-    swap/unit/latency-monitor
-    swap/unit/keyspace
-    swap/unit/lazydel
-    swap/unit/swap_error
-    swap/unit/multi
-    swap/unit/info
-    swap/unit/client
-    swap/unit/debug
-    swap/unit/select
-    swap/unit/slowlog
-    swap/unit/scripting
-    swap/unit/ttl_compact
-    swap/unit/swap_info
-    unit/shutdown
-    gtid/gtid
-    gtid/gtid_seq
-    gtid/monitor
-    gtid/replication-psync
-    gtid/sync
-    gtid/xsync
-    unit/printver
-    unit/dump
-    unit/auth
-    unit/protocol
-    unit/scan
-    unit/info
-    unit/type/string
-    unit/type/incr
-    unit/type/list
-    unit/type/list-2
-    unit/type/list-3
-    unit/type/hash
-    unit/expire
-    unit/quit
-    unit/acl
-    unit/slowlog
-    unit/introspection-2
-    unit/limits
-    unit/bitops
-    unit/geo
-    unit/hyperloglog
-    unit/wait
-    unit/pendingquerybuf
-    unit/tls
-    unit/oom-score-adj
-    unit/networking
-    unit/introspection
-    unit/bitfield
-    unit/tracking
-    unit/pubsub
-    integration/logging
-    integration/redis-cli
-    integration/psync2-pingoff
-    integration/failover
-    integration/corrupt-dump
-    integration/convert-zipmap-hash-on-load
-    integration/redis-benchmark
-    integration/psync2
+set ::gtid_tests {
+	gtid/gtid
+	gtid/gtid_seq
+	gtid/replication-psync
+	gtid/sync
+	gtid/xsync
 }
 
 set ::all_tests {
-    gtid/gtid
-    gtid/gtid_seq
-    gtid/monitor
-    gtid/sync
-    unit/shutdown
-    unit/printver
-    unit/dump
-    unit/auth
-    unit/protocol
-    unit/keyspace
-    unit/scan
-    unit/info
-    unit/type/string
-    unit/type/incr
-    unit/type/list
-    unit/type/list-2
-    unit/type/list-3
-    unit/type/set
-    unit/type/zset
-    unit/type/hash
-    unit/type/stream
-    unit/type/stream-cgroups
-    unit/expire
-    unit/multi
-    unit/quit
-    unit/acl
-    unit/latency-monitor
-    unit/slowlog
-    unit/introspection-2
-    unit/limits
-    unit/bitops
-    unit/geo
-    unit/hyperloglog
-    unit/wait
-    unit/pendingquerybuf
-    unit/tls
-    unit/oom-score-adj
-    unit/networking
-    unit/other
-    unit/introspection
-    unit/bitfield
-    unit/tracking
-    unit/pubsub
-    integration/logging
-    integration/redis-cli
-    integration/replication
-    integration/replication-2
-    integration/replication-3
-    integration/replication-4
-    integration/psync2-reg
-    integration/psync2-pingoff
-    integration/replication-psync
-    integration/failover
-    integration/corrupt-dump
-    integration/corrupt-dump-fuzzer
-    integration/convert-zipmap-hash-on-load
-    integration/aof
-    integration/redis-benchmark
-    integration/rdb
-    integration/psync2
+	unit/printver
+	unit/dump
+	unit/auth
+	unit/protocol
+	unit/keyspace
+	unit/scan
+	unit/info
+	unit/type/string
+	unit/type/incr
+	unit/type/list
+	unit/type/list-2
+	unit/type/list-3
+	unit/type/set
+	unit/type/zset
+	unit/type/hash
+	unit/type/stream
+	unit/type/stream-cgroups
+	unit/sort
+	unit/expire
+	unit/other
+	unit/multi
+	unit/quit
+	unit/aofrw
+	unit/acl
+	unit/latency-monitor
+	integration/block-repl
+	integration/replication
+	integration/replication-2
+	integration/replication-3
+	integration/replication-4
+	integration/replication-psync
+	integration/aof
+	integration/rdb
+	integration/corrupt-dump
+	integration/corrupt-dump-fuzzer
+	integration/convert-zipmap-hash-on-load
+	integration/logging
+	integration/psync2
+	integration/psync2-reg
+	integration/psync2-pingoff
+	integration/failover
+	integration/redis-cli
+	integration/redis-benchmark
+	unit/pubsub
+	unit/slowlog
+	unit/scripting
+	unit/maxmemory
+	unit/introspection
+	unit/introspection-2
+	unit/limits
+	unit/obuf-limits
+	unit/bitops
+	unit/bitfield
+	unit/geo
+	unit/memefficiency
+	unit/hyperloglog
+	unit/lazyfree
+	unit/wait
+	unit/pendingquerybuf
+	unit/tls
+	unit/tracking
+	unit/oom-score-adj
+	unit/shutdown
+	unit/networking
 }
+
+set ::disk_tests {
+	swap/ported/integration/replication-psync
+	swap/ported/integration/replication
+	swap/ported/integration/replication-3
+	swap/ported/integration/rdb
+	swap/ported/integration/block-repl
+	swap/ported/integration/replication-2
+	swap/ported/integration/replication-4
+	swap/ported/integration/psync2-reg
+	swap/ported/unit/multi
+	swap/ported/unit/type/list
+	swap/ported/unit/type/string
+	swap/ported/unit/pubsub
+	swap/ported/unit/keyspace
+	swap/ported/unit/introspection-2
+	swap/ported/unit/expire
+	swap/ported/unit/other
+	swap/integration/rordb
+	swap/integration/client_rate_limit_bug
+	swap/integration/type_error
+	swap/integration/zset
+	swap/integration/info_rocksdb_stats
+	swap/integration/concurrency
+	swap/integration/multi_bighash
+	swap/integration/concurrent
+	swap/integration/pipeline
+	swap/integration/overwrite
+	swap/integration/bgsave
+	swap/integration/compact_range
+	swap/integration/expire_evict
+	swap/integration/swap_load
+	swap/integration/persist
+	swap/unit/swap_mode
+	swap/unit/absent_cache
+	swap/unit/dbsize
+	swap/unit/lock
+	swap/unit/list
+	swap/unit/dirty
+	swap/unit/expire
+	swap/unit/rdb
+	swap/unit/del
+	swap/unit/load_rdb
+	swap/unit/save_rdb
+	swap/unit/swap_out+del
+	swap/unit/swap_out+in
+	swap/unit/hash
+	swap/unit/zset
+	swap/unit/bitmap
+	swap/unit/geo
+	swap/unit/big_hash
+	swap/unit/big_set
+	swap/unit/lazydel
+	swap/unit/swap_error
+	swap/unit/multi
+	swap/unit/info
+	swap/unit/client
+	swap/unit/debug
+	swap/unit/select
+	swap/unit/slowlog
+	swap/unit/scripting
+	swap/unit/monitor
+}
+
+set ::all_tests [concat $::gtid_tests $::all_tests]
 
 # Index to the next test to run in the ::all_tests list.
 set ::next_test 0
@@ -222,7 +191,6 @@ set ::loop 0
 set ::tlsdir "tests/tls"
 set ::swap 0
 set ::target_db 9
-set ::swap_debug_evict_keys 0
 
 # Set to 1 when we are running in client mode. The Redis test uses a
 # server-client model to run tests simultaneously. The server instance
@@ -778,18 +746,6 @@ for {set j 0} {$j < [llength $argv]} {incr j} {
     } elseif {$opt eq {--timeout}} {
         set ::timeout $arg
         incr j
-    } elseif {$opt eq {--swap}} {
-        set ::swap 1
-        set ::target_db 0
-    } elseif {$opt eq {--swap-mode}} {
-        set ::swap_mode $arg 
-        set ::swap 1
-        if {$::swap_mode == "disk"} {
-            set ::all_tests $::disk_tests
-            set ::swap_debug_evict_keys -1
-            set ::target_db 0
-        } 
-        incr j
     } elseif {$opt eq {--help}} {
         print_help_screen
         exit 0
@@ -797,6 +753,22 @@ for {set j 0} {$j < [llength $argv]} {incr j} {
         puts "Wrong argument: $opt"
         exit 1
     }
+}
+
+proc is_swap_enabled {} {
+    if {[string match {*swap=*} [exec src/redis-server --version]]} {
+        set _ 1
+    } else {
+        set _ 0
+    }
+}
+
+if {[is_swap_enabled]} {
+    set ::swap 1
+    set ::target_db 0
+    lappend ::denytags {memonly}
+    set ::all_tests [concat $::disk_tests $::all_tests]
+	source tests/swap/support/util.tcl
 }
 
 set filtered_tests {}

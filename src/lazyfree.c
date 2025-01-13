@@ -19,16 +19,20 @@ void lazyfreeFreeObject(void *args[]) {
  * database which was substituted with a fresh one in the main thread
  * when the database was logically deleted. */
 void lazyfreeFreeDatabase(void *args[]) {
-    dict *ht1 = (dict *) args[0]; /* dict */
-    dict *ht2 = (dict *) args[1]; /* expire */
+    dict *ht1 = (dict *) args[0];
+    dict *ht2 = (dict *) args[1];
+#ifdef ENABLE_SWAP
     dict *ht3 = (dict *) args[2]; /* meta */
     dict *ht4 = (dict *) args[3]; /* dirty_subkeys */
+#endif
 
     size_t numkeys = dictSize(ht1);
     dictRelease(ht1);
     dictRelease(ht2);
+#ifdef ENABLE_SWAP
     dictRelease(ht3);
     dictRelease(ht4);
+#endif
     atomicDecr(lazyfree_objects,numkeys);
     atomicIncr(lazyfreed_objects,numkeys);
 }
@@ -151,8 +155,10 @@ int dbAsyncDelete(redisDb *db, robj *key) {
     /* Deleting an entry from the expires dict will not free the sds of
      * the key, because it is shared with the main dictionary. */
     if (dictSize(db->expires) > 0) dictDelete(db->expires,key->ptr);
+#ifdef ENABLE_SWAP
     if (dictSize(db->meta) > 0) dictDelete(db->meta,key->ptr);
     if (dictSize(db->dirty_subkeys) > 0) dictDelete(db->dirty_subkeys,key->ptr);
+#endif
 
     /* If the value is composed of a few allocations, to free in a lazy way
      * is actually just slower... So under a certain limit we just free
@@ -207,15 +213,21 @@ void freeObjAsync(robj *key, robj *obj) {
  * create a new empty set of hash tables and scheduling the old ones for
  * lazy freeing. */
 void emptyDbAsync(redisDb *db) {
-    dict *oldht1 = db->dict, *oldht2 = db->expires, *oldht3 = db->meta,
-         *oldht4 = db->dirty_subkeys;
+    dict *oldht1 = db->dict, *oldht2 = db->expires;
+#ifdef ENABLE_SWAP
+    dict *oldht3 = db->meta, *oldht4 = db->dirty_subkeys;
+#endif
     db->dict = dictCreate(&dbDictType,NULL);
     db->expires = dictCreate(&dbExpiresDictType,NULL);
+    atomicIncr(lazyfree_objects,dictSize(oldht1));
+#ifdef ENABLE_SWAP
     db->meta = dictCreate(&objectMetaDictType,NULL);
     db->dirty_subkeys = dictCreate(&dbDirtySubkeysDictType,NULL);
     coldFilterReset(db->cold_filter);
-    atomicIncr(lazyfree_objects,dictSize(oldht1));
     bioCreateLazyFreeJob(lazyfreeFreeDatabase,4,oldht1,oldht2,oldht3,oldht4);
+#else
+    bioCreateLazyFreeJob(lazyfreeFreeDatabase,2,oldht1,oldht2);
+#endif
 }
 
 /* Release the radix tree mapping Redis Cluster keys to slots asynchronously. */

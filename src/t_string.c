@@ -105,12 +105,16 @@ void setGenericCommand(client *c, int flags, robj *key, robj *val, robj *expire,
         if (getGenericCommand(c) == C_ERR) return;
     }
 
-    genericSetKey(c,c->db,key,val,flags & OBJ_KEEPTTL,1);
+    genericSetKey(c,c->db,key, val,flags & OBJ_KEEPTTL,1);
     server.dirty++;
+#ifdef ENABLE_SWAP
     notifyKeyspaceEventDirty(NOTIFY_STRING,"set",key,c->db->id,val,NULL);
+#else
+    notifyKeyspaceEvent(NOTIFY_STRING,"set",key,c->db->id);
+#endif
     if (expire) {
         setExpire(c,c->db,key,when);
-        notifyKeyspaceEvent(NOTIFY_GENERIC,"expire",key,c->db->id); /* already set dirty */
+        notifyKeyspaceEvent(NOTIFY_GENERIC,"expire",key,c->db->id);
 
         /* Propagate as SET Key Value PXAT millisecond-timestamp if there is EXAT/PXAT or
          * propagate as SET Key Value PX millisecond if there is EX/PX flag.
@@ -384,13 +388,21 @@ void getexCommand(client *c) {
         rewriteClientCommandVector(c,3,exp,c->argv[1],millisecondObj);
         decrRefCount(millisecondObj);
         signalModifiedKey(c, c->db, c->argv[1]);
+#ifdef ENABLE_SWAP
         notifyKeyspaceEventDirty(NOTIFY_GENERIC,"expire",c->argv[1],c->db->id,o,NULL);
+#else
+        notifyKeyspaceEvent(NOTIFY_GENERIC,"expire",c->argv[1],c->db->id);
+#endif
         server.dirty++;
     } else if (flags & OBJ_PERSIST) {
         if (removeExpire(c->db, c->argv[1])) {
             signalModifiedKey(c, c->db, c->argv[1]);
             rewriteClientCommandVector(c, 2, shared.persist, c->argv[1]);
+#ifdef ENABLE_SWAP
             notifyKeyspaceEventDirty(NOTIFY_GENERIC,"persist",c->argv[1],c->db->id,o,NULL);
+#else
+            notifyKeyspaceEvent(NOTIFY_GENERIC,"persist",c->argv[1],c->db->id);
+#endif
             server.dirty++;
         }
     }
@@ -414,8 +426,12 @@ void getsetCommand(client *c) {
     if (getGenericCommand(c) == C_ERR) return;
     c->argv[2] = tryObjectEncoding(c->argv[2]);
     setKey(c,c->db,c->argv[1],c->argv[2]);
+#ifdef ENABLE_SWAP
     notifyKeyspaceEventDirty(NOTIFY_STRING,"set",c->argv[1],c->db->id,
             c->argv[2],NULL);
+#else
+    notifyKeyspaceEvent(NOTIFY_STRING,"set",c->argv[1],c->db->id);
+#endif
     server.dirty++;
 
     /* Propagate as SET command */
@@ -475,8 +491,13 @@ void setrangeCommand(client *c) {
         o->ptr = sdsgrowzero(o->ptr,offset+sdslen(value));
         memcpy((char*)o->ptr+offset,value,sdslen(value));
         signalModifiedKey(c,c->db,c->argv[1]);
+#ifdef ENABLE_SWAP
         notifyKeyspaceEventDirty(NOTIFY_STRING,
             "setrange",c->argv[1],c->db->id,o,NULL);
+#else
+        notifyKeyspaceEvent(NOTIFY_STRING,
+            "setrange",c->argv[1],c->db->id);
+#endif
         server.dirty++;
     }
     addReplyLongLong(c,sdslen(o->ptr));
@@ -563,8 +584,12 @@ void msetGenericCommand(client *c, int nx) {
     for (j = 1; j < c->argc; j += 2) {
         c->argv[j+1] = tryObjectEncoding(c->argv[j+1]);
         setKey(c,c->db,c->argv[j],c->argv[j+1]);
+#ifdef ENABLE_SWAP
         notifyKeyspaceEventDirty(NOTIFY_STRING,"set",c->argv[j],c->db->id,
                 c->argv[j+1],NULL);
+#else
+        notifyKeyspaceEvent(NOTIFY_STRING,"set",c->argv[j],c->db->id);
+#endif
     }
     server.dirty += (c->argc-1)/2;
     addReply(c, nx ? shared.cone : shared.ok);
@@ -603,14 +628,20 @@ void incrDecrCommand(client *c, long long incr) {
     } else {
         new = createStringObjectFromLongLongForValue(value);
         if (o) {
+#ifdef ENABLE_SWAP
             overwriteObjectPersistKeep(new,o->persist_keep);
+#endif
             dbOverwrite(c->db,c->argv[1],new);
         } else {
             dbAdd(c->db,c->argv[1],new);
         }
     }
     signalModifiedKey(c,c->db,c->argv[1]);
+#ifdef ENABLE_SWAP
     notifyKeyspaceEventDirty(NOTIFY_STRING,"incrby",c->argv[1],c->db->id,new,NULL);
+#else
+    notifyKeyspaceEvent(NOTIFY_STRING,"incrby",c->argv[1],c->db->id);
+#endif
     server.dirty++;
     addReply(c,shared.colon);
     addReply(c,new);
@@ -655,14 +686,25 @@ void incrbyfloatCommand(client *c) {
         return;
     }
     new = createStringObjectFromLongDouble(value,1);
+#ifdef ENABLE_SWAP
     if (o) {
         overwriteObjectPersistKeep(new,o->persist_keep);
         dbOverwrite(c->db,c->argv[1],new);
     } else {
         dbAdd(c->db,c->argv[1],new);
     }
+#else
+    if (o)
+        dbOverwrite(c->db,c->argv[1],new);
+    else
+        dbAdd(c->db,c->argv[1],new);
+#endif
     signalModifiedKey(c,c->db,c->argv[1]);
+#ifdef ENABLE_SWAP
     notifyKeyspaceEventDirty(NOTIFY_STRING,"incrbyfloat",c->argv[1],c->db->id,new,NULL);
+#else
+    notifyKeyspaceEvent(NOTIFY_STRING,"incrbyfloat",c->argv[1],c->db->id);
+#endif
     server.dirty++;
     addReplyBulk(c,new);
 
@@ -702,7 +744,11 @@ void appendCommand(client *c) {
         totlen = sdslen(o->ptr);
     }
     signalModifiedKey(c,c->db,c->argv[1]);
+#ifdef ENABLE_SWAP
     notifyKeyspaceEventDirty(NOTIFY_STRING,"append",c->argv[1],c->db->id,o,NULL);
+#else
+    notifyKeyspaceEvent(NOTIFY_STRING,"append",c->argv[1],c->db->id);
+#endif
     server.dirty++;
     addReplyLongLong(c,totlen);
 }

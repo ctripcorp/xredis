@@ -2033,7 +2033,6 @@ int swapDataBitmapTest(int argc, char **argv, int accurate) {
     initServerConfig();
     ACLInit();
     server.hz = 10;
-    server.swap_mode = SWAP_MODE_DISK;
     server.swap_bitmap_subkeys_enabled = 1;
     initTestRedisServer();
 

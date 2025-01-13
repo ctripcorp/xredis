@@ -571,8 +571,13 @@ void sortCommand(client *c) {
         }
         if (outputlen) {
             setKey(c,c->db,storekey,sobj);
+#ifdef ENABLE_SWAP
             notifyKeyspaceEventDirty(NOTIFY_LIST,"sortstore",storekey,
                                 c->db->id,sobj,NULL);
+#else
+            notifyKeyspaceEvent(NOTIFY_LIST,"sortstore",storekey,
+                                c->db->id);
+#endif
             server.dirty += outputlen;
         } else if (dbDelete(c->db,storekey)) {
             signalModifiedKey(c,c->db,storekey);

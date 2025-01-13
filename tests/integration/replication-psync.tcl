@@ -9,7 +9,7 @@
 # reconnect with the master, otherwise just the initial synchronization is
 # checked for consistency.
 proc test_psync {descr duration backlog_size backlog_ttl delay cond mdl sdl reconnect} {
-    start_server {tags {"repl"}} {
+    start_server {tags {"repl" "memonly"}} {
         start_server {} {
 
             set master [srv -1 client]
@@ -24,6 +24,8 @@ proc test_psync {descr duration backlog_size backlog_ttl delay cond mdl sdl reco
             $slave config set repl-diskless-load $sdl
 
             set load_handle0 [start_bg_complex_data $master_host $master_port 9 100000]
+            set load_handle1 [start_bg_complex_data $master_host $master_port 11 100000]
+            set load_handle2 [start_bg_complex_data $master_host $master_port 12 100000]
 
             test {Slave should be able to synchronize with the master} {
                 $slave slaveof $master_host $master_port
@@ -68,10 +70,22 @@ proc test_psync {descr duration backlog_size backlog_ttl delay cond mdl sdl reco
                 }
 
                 stop_bg_complex_data $load_handle0
+                stop_bg_complex_data $load_handle1
+                stop_bg_complex_data $load_handle2
 
                 # Wait for the slave to reach the "online"
                 # state from the POV of the master.
-                wait_slave_online $master 5000 100 {
+                set retry 5000
+                while {$retry} {
+                    set info [$master info]
+                    if {[string match {*slave0:*state=online*} $info]} {
+                        break
+                    } else {
+                        incr retry -1
+                        after 100
+                    }
+                }
+                if {$retry == 0} {
                     error "assertion:Slave not correctly synchronized"
                 }
 
@@ -82,53 +96,20 @@ proc test_psync {descr duration backlog_size backlog_ttl delay cond mdl sdl reco
                     [lindex [$slave role] 3] eq {connected}
                 } else {
                     fail "Slave still not connected after some time"
-                }  
-                if {$::swap_debug_evict_keys == 0} {
-                    wait_for_condition 100 100 {
-                        [$master dbsize] == [$slave dbsize]
-                    } else {
-                        set csv1 [csvdump r]
-                        set csv2 [csvdump {r -1}]
-                        set fd [open /tmp/repldump1.txt w]
-                        puts -nonewline $fd $csv1
-                        close $fd
-                        set fd [open /tmp/repldump2.txt w]
-                        puts -nonewline $fd $csv2
-                        close $fd
-                        fail "Master - Replica inconsistency, Run diff -u against /tmp/repldump*.txt for more info"
-                    }
+                }
+
+                wait_for_condition 100 100 {
+                    [$master debug digest] == [$slave debug digest]
                 } else {
-                    set keyspace_info [$master info keyspace]
-                    set try 3
-                    while {$try > 0} {
-                        after 1000
-                        if {$keyspace_info == [$master info keyspace]} {
-                            $master debug swapout
-                            $slave debug swapout
-                            set try [expr {$try - 1}]    
-                            continue
-                        }
-                        set keyspace_info [$master info keyspace]
-                    }
-                    
-                    wait_for_condition 100 200 {
-                        [$master info keyspace] == [$slave info keyspace]
-                    } else {    
-                         fail "Master - Replica sync fail"
-                    }
-                    wait_for_condition 100 100 {
-                        [$master dbsize] == [$slave dbsize]
-                    } else {
-                        set csv1 [csvdump r]
-                        set csv2 [csvdump {r -1}]
-                        set fd [open /tmp/repldump1.txt w]
-                        puts -nonewline $fd $csv1
-                        close $fd
-                        set fd [open /tmp/repldump2.txt w]
-                        puts -nonewline $fd $csv2
-                        close $fd
-                        fail "Master - Replica inconsistency, Run diff -u against /tmp/repldump*.txt for more info"
-                    }
+                    set csv1 [csvdump r]
+                    set csv2 [csvdump {r -1}]
+                    set fd [open /tmp/repldump1.txt w]
+                    puts -nonewline $fd $csv1
+                    close $fd
+                    set fd [open /tmp/repldump2.txt w]
+                    puts -nonewline $fd $csv2
+                    close $fd
+                    fail "Master - Replica inconsistency, Run diff -u against /tmp/repldump*.txt for more info"
                 }
                 assert {[$master dbsize] > 0}
                 eval $cond

@@ -54,7 +54,7 @@ start_server {overrides {save ""} tags {"other"}} {
         set _ $err
     } {*index is out of range*}
 
-    tags {consistency} {
+    tags {consistency memonly} {
         if {true} {
             if {$::accurate} {set numops 10000} else {set numops 1000}
             test {Check consistency of different data types after a reload} {
@@ -108,6 +108,7 @@ start_server {overrides {save ""} tags {"other"}} {
         }
     }
 
+    tags {memonly} {
     test {EXPIRES after a reload (snapshot + append only file rewrite)} {
         r flushdb
         r set x 10
@@ -162,6 +163,7 @@ start_server {overrides {save ""} tags {"other"}} {
         set ttl [r ttl pz]
         assert {$ttl > 2900 && $ttl <= 3000}
         r config set appendonly no
+    }
     }
 
     tags {protocol} {
@@ -299,8 +301,7 @@ start_server {overrides {save ""} tags {"other"}} {
     }
 }
 
-if {!$::swap_debug_evict_keys} {
-start_server {tags {"other"}} {
+start_server {tags {"other" "memonly"}} {
     test {Don't rehash if redis has child proecess} {
         r config set save ""
         r config set rdb-key-save-delay 1000000
@@ -324,7 +325,6 @@ start_server {tags {"other"}} {
         r set k3 v3
         assert_match "*table size: 8192*" [r debug HTSTATS $::target_db]
     }
-}
 }
 
 proc read_proc_title {pid} {

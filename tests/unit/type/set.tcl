@@ -365,6 +365,7 @@ start_server {
         r sinter set1 set2 set3
     } {}
 
+    tags {memonly} {
     test "SINTER with same integer elements but different encoding" {
         r del set1 set2
         r sadd set1 1 2 3
@@ -374,6 +375,7 @@ start_server {
         assert_encoding hashtable set2
         lsort [r sinter set1 set2]
     } {1 2 3}
+    }
 
     test "SINTERSTORE against non-set should throw error" {
         r del set1{t} set2{t} set3{t} key1{t}

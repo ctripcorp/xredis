@@ -194,7 +194,7 @@ inline int swapEvictGetInprogressLimit(size_t mem_tofree) {
 
 inline size_t ctrip_getMemoryToFree(size_t mem_used) {
     size_t mem_tofree;
-    if (server.swap_mode != SWAP_MODE_MEMORY && server.maxmemory_scale_from > server.maxmemory) {
+    if (server.maxmemory_scale_from > server.maxmemory) {
         mem_tofree = mem_used - server.maxmemory_scale_from;
     } else {
         mem_tofree = mem_used - server.maxmemory;
@@ -208,7 +208,6 @@ inline int swapEvictionReachedInprogressLimit() {
 }
 
 inline void ctrip_performEvictionStart(swapEvictKeysCtx *sectx) {
-    if (sectx->swap_mode == SWAP_MODE_MEMORY) return;
     /* Evict keys registered to be evicted ASAP even if not over maxmemory,
      * because evict asap could reduce cow. */
     server.swap_eviction_ctx->inprogress_limit = swapEvictGetInprogressLimit(sectx->mem_tofree);
@@ -218,7 +217,7 @@ inline void ctrip_performEvictionStart(swapEvictKeysCtx *sectx) {
 }
 
 inline int ctrip_performEvictionLoopStartShouldBreak(swapEvictKeysCtx *sectx) {
-    if (sectx->swap_mode == SWAP_MODE_MEMORY) return 0;
+    UNUSED(sectx);
     if (swapEvictionReachedInprogressLimit()) {
         ctrip_startEvictionTimeProc();
         return 1;
@@ -248,8 +247,6 @@ inline size_t performEvictionSwapSelectedKey(swapEvictKeysCtx *sectx, redisDb *d
     mstime_t eviction_latency;
     swapEvictionCtx *ctx = server.swap_eviction_ctx;
 
-    serverAssert(sectx->swap_mode != SWAP_MODE_MEMORY);
-
     latencyStartMonitor(eviction_latency);
 
     /* Key might be directly freed if not dirty, so we need to compute key
@@ -277,7 +274,7 @@ inline size_t performEvictionSwapSelectedKey(swapEvictKeysCtx *sectx, redisDb *d
 
 inline int ctrip_performEvictionLoopCheckShouldBreak(swapEvictKeysCtx *sectx) {
     swapEvictionCtx *ctx = server.swap_eviction_ctx;
-    if (sectx->swap_mode == SWAP_MODE_MEMORY) return 0;
+    UNUSED(sectx);
     /* evict failed too much continously, continue evict are most
      * likely to fail again. */
     if (ctx->failed_inrow > 16) return 1;
@@ -288,7 +285,7 @@ inline void ctrip_performEvictionEnd(swapEvictKeysCtx *sectx) {
     static long long nscaned, nloop, nswap;
     static mstime_t prev_logtime;
 
-    if (sectx->swap_mode == SWAP_MODE_MEMORY || sectx->ended) return;
+    if (sectx->ended) return;
 
     nloop++;
     nscaned += sectx->keys_scanned;
@@ -436,8 +433,6 @@ inline int swapRatelimitMaxmemoryNeeded(swapRatelimitCtx *rlctx, int policy, int
 void rejectCommand(client *c, robj *reply);
 /* return 1 if command rejected */
 int swapRateLimitReject(swapRatelimitCtx *rlctx, client *c) {
-    serverAssert(server.swap_mode != SWAP_MODE_MEMORY);
-
     if (server.swap_ratelimit_policy != SWAP_RATELIMIT_POLICY_REJECT_OOM &&
         server.swap_ratelimit_policy != SWAP_RATELIMIT_POLICY_REJECT_ALL) {
         return 0;
@@ -471,7 +466,6 @@ static int unprotectClientdProc(
 
 void swapRateLimitPause(swapRatelimitCtx *rlctx, client *c) {
     int pause_ms;
-    serverAssert(server.swap_mode != SWAP_MODE_MEMORY);
     rlctx->keyrequests_count = c->keyrequests_count;
 
     if (server.swap_ratelimit_policy != SWAP_RATELIMIT_POLICY_PAUSE) return;

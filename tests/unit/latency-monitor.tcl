@@ -52,6 +52,7 @@ start_server {tags {"latency-monitor"}} {
         assert {[r latency latest] eq {}}
     }
 
+    tags {memonly} {
     test {LATENCY of expire events are correctly collected} {
         r config set latency-monitor-threshold 20
         r flushdb
@@ -70,6 +71,7 @@ start_server {tags {"latency-monitor"}} {
             fail "key wasn't expired"
         }
         assert_match {*expire-cycle*} [r latency latest]
+    }
     }
 
     test {LATENCY HELP should not have unexpected options} {

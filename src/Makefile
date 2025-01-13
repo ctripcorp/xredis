@@ -292,6 +292,10 @@ else
     endef
 endif
 
+ifdef SWAP
+	FINAL_CFLAGS+=-DENABLE_SWAP=1
+endif
+
 REDIS_CC=$(QUIET_CC)$(CC) $(FINAL_CFLAGS)
 REDIS_LD=$(QUIET_LINK)$(CC) $(FINAL_LDFLAGS)
 REDIS_INSTALL=$(QUIET_INSTALL)$(INSTALL)
@@ -311,7 +315,11 @@ endif
 
 REDIS_SERVER_NAME=redis-server$(PROG_SUFFIX)
 REDIS_SENTINEL_NAME=redis-sentinel$(PROG_SUFFIX)
-REDIS_SERVER_OBJ=adlist.o quicklist.o ae.o anet.o dict.o server.o sds.o zmalloc.o lzf_c.o lzf_d.o pqsort.o zipmap.o sha1.o ziplist.o release.o networking.o util.o object.o db.o replication.o rdb.o t_string.o t_list.o t_set.o t_zset.o t_hash.o config.o aof.o pubsub.o multi.o debug.o sort.o intset.o syncio.o cluster.o crc16.o endianconv.o slowlog.o scripting.o bio.o rio.o rand.o memtest.o crcspeed.o crc64.o bitops.o sentinel.o notify.o setproctitle.o blocked.o hyperloglog.o latency.o sparkline.o redis-check-rdb.o redis-check-aof.o geo.o lazyfree.o module.o evict.o expire.o geohash.o geohash_helper.o childinfo.o defrag.o siphash.o rax.o t_stream.o listpack.o localtime.o lolwut.o lolwut5.o lolwut6.o acl.o gopher.o tracking.o connection.o tls.o sha256.o timeout.o setcpuaffinity.o monotonic.o mt19937-64.o ctrip.o ctrip_swap.o ctrip_swap_adlist.o ctrip_lru_cache.o ctrip_swap_async.o ctrip_swap_batch.o ctrip_swap_cmd.o ctrip_swap_data.o ctrip_swap_debug.o ctrip_swap_evict.o ctrip_swap_exec.o ctrip_swap_expire.o ctrip_swap_hash.o ctrip_swap_set.o ctrip_swap_list.o ctrip_swap_iter.o ctrip_swap_zset.o ctrip_swap_meta.o ctrip_swap_object.o ctrip_swap_rdb.o ctrip_swap_repl.o ctrip_swap_rio.o ctrip_swap_rocks.o ctrip_swap_stat.o ctrip_swap_sync.o ctrip_swap_thread.o ctrip_swap_util.o ctrip_swap_lock.o ctrip_swap_string.o ctrip_swap_bitmap.o ctrip_swap_compact.o  ctrip_swap_slowlog.o ctrip_swap_blocked.o xredis_gtid.o ctrip_cuckoo_hash.o ctrip_cuckoo_filter.o ctrip_swap_filter.o ctrip_absent_cache.o ctrip_swap_load.o ctrip_swap_dirty.o ctrip_swap_persist.o ctrip_roaring_bitmap.o ctrip_swap_rordb.o ctrip_wtdigest.o
+REDIS_SWAP_OBJ=ctrip_swap.o ctrip_swap_adlist.o ctrip_lru_cache.o ctrip_swap_async.o ctrip_swap_batch.o ctrip_swap_cmd.o ctrip_swap_data.o ctrip_swap_debug.o ctrip_swap_evict.o ctrip_swap_exec.o ctrip_swap_expire.o ctrip_swap_hash.o ctrip_swap_set.o ctrip_swap_list.o ctrip_swap_iter.o ctrip_swap_zset.o ctrip_swap_meta.o ctrip_swap_object.o ctrip_swap_rdb.o ctrip_swap_repl.o ctrip_swap_rio.o ctrip_swap_rocks.o ctrip_swap_stat.o ctrip_swap_sync.o ctrip_swap_thread.o ctrip_swap_util.o ctrip_swap_lock.o ctrip_swap_string.o ctrip_swap_bitmap.o ctrip_swap_compact.o  ctrip_swap_slowlog.o ctrip_swap_blocked.o ctrip_cuckoo_hash.o ctrip_cuckoo_filter.o ctrip_swap_filter.o ctrip_absent_cache.o ctrip_swap_load.o ctrip_swap_dirty.o ctrip_swap_persist.o ctrip_roaring_bitmap.o ctrip_swap_rordb.o ctrip_wtdigest.o
+REDIS_SERVER_OBJ=adlist.o quicklist.o ae.o anet.o dict.o server.o sds.o zmalloc.o lzf_c.o lzf_d.o pqsort.o zipmap.o sha1.o ziplist.o release.o networking.o util.o object.o db.o replication.o rdb.o t_string.o t_list.o t_set.o t_zset.o t_hash.o config.o aof.o pubsub.o multi.o debug.o sort.o intset.o syncio.o cluster.o crc16.o endianconv.o slowlog.o scripting.o bio.o rio.o rand.o memtest.o crcspeed.o crc64.o bitops.o sentinel.o notify.o setproctitle.o blocked.o hyperloglog.o latency.o sparkline.o redis-check-rdb.o redis-check-aof.o geo.o lazyfree.o module.o evict.o expire.o geohash.o geohash_helper.o childinfo.o defrag.o siphash.o rax.o t_stream.o listpack.o localtime.o lolwut.o lolwut5.o lolwut6.o acl.o gopher.o tracking.o connection.o tls.o sha256.o timeout.o setcpuaffinity.o monotonic.o mt19937-64.o ctrip.o xredis_gtid.o
+ifdef SWAP
+REDIS_SERVER_OBJ+= $(REDIS_SWAP_OBJ)
+endif
 REDIS_CLI_NAME=redis-cli$(PROG_SUFFIX)
 REDIS_CLI_OBJ=anet.o adlist.o dict.o redis-cli.o zmalloc.o release.o ae.o crcspeed.o crc64.o siphash.o crc16.o monotonic.o cli_common.o mt19937-64.o
 REDIS_BENCHMARK_NAME=redis-benchmark$(PROG_SUFFIX)
@@ -420,10 +428,7 @@ distclean: clean
 .PHONY: distclean
 
 test: $(REDIS_SERVER_NAME) $(REDIS_CHECK_AOF_NAME) $(REDIS_CLI_NAME) $(REDIS_BENCHMARK_NAME)
-	@(cd ..; ./runtest --swap-mode memory)
-
-test-disk: $(REDIS_SERVER_NAME) $(REDIS_CHECK_AOF_NAME) $(REDIS_CLI_NAME) $(REDIS_BENCHMARK_NAME)
-	@(cd ..; ./runtest --swap-mode disk)
+	@(cd ..; ./runtest)
 
 test-asan-disk: $(REDIS_SERVER_NAME) $(REDIS_CHECK_AOF_NAME) $(REDIS_CLI_NAME) $(REDIS_BENCHMARK_NAME)
 	@(cd ..; ./runtest --swap-mode disk --tags -nosanitizer)
@@ -475,7 +480,9 @@ helgrind:
 unit-test:
 	$(MAKE) CFLAGS="-DREDIS_TEST" OPTIMIZATION="-O0"
 	@(./$(REDIS_SERVER_NAME) test gtid)
+ifdef SWAP
 	@(./$(REDIS_SERVER_NAME) test swap)
+endif
 
 src/help.h:
 	@../utils/generate-command-help.rb > help.h

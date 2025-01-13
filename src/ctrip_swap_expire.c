@@ -512,8 +512,6 @@ void expireSlaveKeysSwapMode(void) {
     if (slaveKeysWithExpire == NULL ||
         dictSize(slaveKeysWithExpire) == 0) return;
 
-    serverAssert(server.swap_mode != SWAP_MODE_MEMORY);
-
     int cycles = 0, noexpire = 0, slaveexpire = 0;
     mstime_t start = mstime();
     while(1) {

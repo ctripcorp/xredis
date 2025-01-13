@@ -1998,7 +1998,6 @@ static inline listMeta *lookupListMeta(redisDb *db, robj *key) {
 
 void ctripListTypePush(robj *subject, robj *value, int where, redisDb *db, robj *key) {
     listTypePush(subject,value,where);
-    if (server.swap_mode == SWAP_MODE_MEMORY) return;
     long head = where == LIST_HEAD ? 1 : 0;
     long tail = where == LIST_TAIL ? 1 : 0;
     listMeta *meta = lookupListMeta(db,key);
@@ -2007,7 +2006,6 @@ void ctripListTypePush(robj *subject, robj *value, int where, redisDb *db, robj 
 
 robj *ctripListTypePop(robj *subject, int where, redisDb *db, robj *key) {
     robj *val = listTypePop(subject,where);
-    if (server.swap_mode == SWAP_MODE_MEMORY) return val;
     long head = where == LIST_HEAD ? -1 : 0;
     long tail = where == LIST_TAIL ? -1 : 0;
     listMeta *meta = lookupListMeta(db,key);
@@ -2016,7 +2014,6 @@ robj *ctripListTypePop(robj *subject, int where, redisDb *db, robj *key) {
 }
 
 void ctripListMetaDelRange(redisDb *db, robj *key, long ltrim, long rtrim) {
-    if (server.swap_mode == SWAP_MODE_MEMORY) return;
     listMeta *meta = lookupListMeta(db,key);
     if (meta) listMetaExtend(meta,-ltrim,-rtrim);
 }
@@ -3632,7 +3629,6 @@ int swapListUtilsTest(int argc, char *argv[], int accurate) {
     robj *list = createQuicklistObject();
     robj *key = createStringObject("key",3);
     robj *ele = createStringObject("ele",3), *poped;
-    server.swap_mode = SWAP_MODE_DISK;
     dbAdd(db,key,list);
 
     TEST("list-utils: maintain hot mata") {

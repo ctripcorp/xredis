@@ -1,3 +1,150 @@
+# overwrite functions
+if {!$::swap} {
+    error "swap/ported/support/util.tcl should not be use in memory mode"
+}
+
+if {[info commands wait_for_sync] == "" || [info commands wait_for_ofs_sync] == "" || [info commands createComplexDataset] == "" || [info commands csvdump ] == ""} {
+    error "support/util.tcl should be sourced before swap/ported/support/util.tcl"
+}
+
+proc wait_for_sync r {
+    # 100 => 300
+    wait_for_condition 50 300 {
+        [status $r master_link_status] eq "up"
+    } else {
+        fail "replica didn't sync in time"
+    }
+}
+
+proc wait_for_ofs_sync {r1 r2} {
+    # 50 => 500
+    wait_for_condition 500 100 {
+        [status $r1 master_repl_offset] eq [status $r2 master_repl_offset]
+    } else {
+        fail "replica didn't sync in time"
+    }
+}
+
+proc createComplexDataset {r ops {opt {}}} {
+    for {set j 0} {$j < $ops} {incr j} {
+        # if {$j % 100 == 0} { puts "$j: [$r dbsize]" }
+        set k [randomKey]
+        set k2 [randomKey]
+        set f [randomValue]
+        set v [randomValue]
+
+        if {[lsearch -exact $opt useexpire] != -1} {
+            if {rand() < 0.1} {
+				{*}$r expire [randomKey] [expr 1+[randomInt 2]]
+            }
+        }
+
+        randpath {
+            set d [expr {rand()}]
+        } {
+            set d [expr {rand()}]
+        } {
+            set d [expr {rand()}]
+        } {
+            set d [expr {rand()}]
+        } {
+            set d [expr {rand()}]
+        } {
+            randpath {set d +inf} {set d -inf}
+        }
+        set t [{*}$r type $k]
+
+        if {$t eq {none}} {
+            randpath {
+                {*}$r set $k $v
+            } {
+                {*}$r lpush $k $v
+            } {
+                {*}$r sadd $k $v
+            } {
+                {*}$r zadd $k $d $v
+            } {
+                {*}$r hset $k $f $v
+            } {
+                {*}$r del $k
+            }
+            set t [{*}$r type $k]
+        }
+
+        switch $t {
+            {string} {
+                # Nothing to do
+            }
+            {list} {
+                randpath {{*}$r lpush $k $v} \
+                        {{*}$r rpush $k $v} \
+                        {{*}$r lrem $k 0 $v} \
+                        {{*}$r rpop $k} \
+                        {{*}$r lpop $k}
+            }
+            {set} {
+                randpath {{*}$r sadd $k $v} \
+                        {{*}$r srem $k $v} \
+                        {
+                            set otherset [findKeyWithType {*}$r set]
+                            if {$otherset ne {}} {
+                                randpath {
+                                    {*}$r sunionstore $k2 $k $otherset
+                                } {
+                                    {*}$r sinterstore $k2 $k $otherset
+                                } {
+                                    {*}$r sdiffstore $k2 $k $otherset
+                                }
+                            }
+                        }
+            }
+            {zset} {
+                randpath {{*}$r zadd $k $d $v} \
+                        {{*}$r zrem $k $v} \
+                        {
+                            set otherzset [findKeyWithType {*}$r zset]
+                            if {$otherzset ne {}} {
+                                randpath {
+                                    {*}$r zunionstore $k2 2 $k $otherzset
+                                } {
+                                    {*}$r zinterstore $k2 2 $k $otherzset
+                                }
+                            }
+                        }
+            }
+            {hash} {
+                randpath {{*}$r hset $k $f $v} \
+                        {{*}$r hdel $k $f}
+            }
+        }
+    }
+}
+
+# swap specific functions
+proc wait_slave_online {master maxtries delay elsescript} {
+    set retry $maxtries
+    while {$retry} {
+        set info [$master info]
+        if {[string match {*slave0:*state=online*} $info]} {
+            break
+        } else {
+            incr retry -1
+            after $delay
+        }
+    }
+    if {$retry == 0} {
+        # https://github.com/google/sanitizers/issues/774 for more detail.
+        puts "wait slave online timeout, that's may ok on ASan open. For ASan may hang fork child process."
+        set errcode [catch [uplevel 1 $elsescript] result]
+        return -code $errcode $result
+    }
+}
+
+proc start_write_load_ignore_err {host port seconds} {
+    set tclsh [info nameofexecutable]
+    exec $tclsh tests/helpers/gen_write_load.tcl $host $port $seconds $::tls $::target_db 2> /dev/null &
+}
+
 proc press_enter_to_continue {{message "Hit Enter to continue ==> "}} {
     puts -nonewline $message
     flush stdout
